@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+
+def _validate_required(payload: object, schema: dict[str, object], path: str = "$") -> None:
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path}: expected object")
+    required = schema.get("required", [])
+    if isinstance(required, list):
+        for key in required:
+            if key not in payload:
+                raise ValueError(f"{path}: missing required key '{key}'")
+    props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        return
+    for key, sub_schema in props.items():
+        if key in payload and isinstance(sub_schema, dict) and sub_schema.get("type") == "object":
+            _validate_required(payload[key], sub_schema, f"{path}.{key}")
+
+
+def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
+    payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    _validate_required(payload, schema)
+
+
+def validate_geneset_tsv(geneset_path: Path) -> None:
+    with geneset_path.open("r", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        required = {"gene_id", "weight"}
+        if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
+            raise ValueError("geneset.tsv missing required columns gene_id and weight")
+        seen: set[str] = set()
+        for row in reader:
+            gid = row["gene_id"]
+            if gid in seen:
+                raise ValueError(f"duplicate gene_id in geneset.tsv: {gid}")
+            seen.add(gid)
+            float(row["weight"])
+
+
+def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> None:
+    out = Path(out_dir)
+    geneset = out / "geneset.tsv"
+    meta = out / "geneset.meta.json"
+    if not geneset.exists() or not meta.exists():
+        raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
+    validate_geneset_tsv(geneset)
+    validate_metadata_schema(meta, Path(schema_path))

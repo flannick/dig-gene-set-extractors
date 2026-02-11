@@ -1,0 +1,74 @@
+{
+  "converter": {
+    "code": {
+      "git_commit": null
+    },
+    "name": "atac_bulk",
+    "parameters": {
+      "command": "convert",
+      "converter": "atac_bulk",
+      "decay_length_bp": 50000,
+      "genome_build": "hg38",
+      "gtf": "tests/data/toy.gtf",
+      "gtf_source": null,
+      "link_method": "promoter_overlap",
+      "max_distance_bp": 100000,
+      "max_genes_per_peak": 5,
+      "normalize": "l1",
+      "organism": "human",
+      "out_dir": "tests/tmp/manual_bulk",
+      "peak_weight_transform": "abs",
+      "peak_weights_tsv": "tests/data/toy_peak_weights.tsv",
+      "peaks": "tests/data/toy_peaks.bed",
+      "peaks_weight_column": 5,
+      "promoter_downstream_bp": 500,
+      "promoter_upstream_bp": 2000
+    },
+    "version": "0.1.0"
+  },
+  "created_at": "2026-02-11T18:03:44.507626+00:00",
+  "gene_annotation": {
+    "gene_id_field": "gene_id",
+    "gtf_path": "tests/data/toy.gtf",
+    "source": "user"
+  },
+  "geneset_id": "74525f63b324fe3ee32acb24",
+  "input": {
+    "assay": "bulk",
+    "data_type": "atac_seq",
+    "files": [
+      {
+        "path": "tests/data/toy_peaks.bed",
+        "role": "peaks",
+        "sha256": "08d12780a7884e53b5bd3dcbc6426ecffa0b6b32a32b4b281844383bfb0c9073"
+      },
+      {
+        "path": "tests/data/toy.gtf",
+        "role": "gtf",
+        "sha256": "a8e6f23745f7b9e119e2df2d9cc2599bf262862286a04c4e72cf0793f2b7b3f5"
+      },
+      {
+        "path": "tests/data/toy_peak_weights.tsv",
+        "role": "peak_weights_tsv",
+        "sha256": "51e6fab3eb9683cfd2fa0ed46b38605a620187e104a8a93a41632af842cd3437"
+      }
+    ],
+    "genome_build": "hg38",
+    "organism": "human"
+  },
+  "schema_version": "1.0.0",
+  "summary": {
+    "fraction_features_assigned": 0.6666666666666666,
+    "n_features_assigned": 2,
+    "n_genes": 2,
+    "n_input_features": 3
+  },
+  "weights": {
+    "aggregation": "sum",
+    "normalization": {
+      "method": "l1",
+      "target_sum": 1.0
+    },
+    "weight_type": "nonnegative"
+  }
+}

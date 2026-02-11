@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "created_at",
+    "geneset_id",
+    "converter",
+    "input",
+    "gene_annotation",
+    "weights",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "created_at": {"type": "string"},
+    "geneset_id": {"type": "string"},
+    "converter": {
+      "type": "object",
+      "required": ["name", "version", "parameters", "code"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "parameters": {"type": "object"},
+        "code": {"type": "object"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["data_type", "assay", "organism", "genome_build", "files"],
+      "properties": {
+        "data_type": {"type": "string"},
+        "assay": {"type": "string"},
+        "organism": {"type": "string"},
+        "genome_build": {"type": "string", "minLength": 1},
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role", "sha256"],
+            "properties": {
+              "path": {"type": "string"},
+              "role": {"type": "string"},
+              "sha256": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "gene_annotation": {
+      "type": "object",
+      "required": ["gtf_path", "source", "gene_id_field"],
+      "properties": {
+        "gtf_path": {"type": "string"},
+        "source": {"type": "string"},
+        "gene_id_field": {"type": "string"}
+      }
+    },
+    "weights": {
+      "type": "object",
+      "required": ["weight_type", "normalization", "aggregation"],
+      "properties": {
+        "weight_type": {"type": "string"},
+        "normalization": {"type": "object"},
+        "aggregation": {"type": "string"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["n_input_features", "n_genes", "n_features_assigned", "fraction_features_assigned"],
+      "properties": {
+        "n_input_features": {"type": "integer"},
+        "n_genes": {"type": "integer"},
+        "n_features_assigned": {"type": "integer"},
+        "fraction_features_assigned": {"type": "number"}
+      }
+    }
+  }
+}

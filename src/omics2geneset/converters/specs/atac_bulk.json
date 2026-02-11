@@ -1,0 +1,14 @@
+{
+  "name": "atac_bulk",
+  "description": "Bulk ATAC peaks with per-peak weights to gene weights",
+  "inputs": [
+    {"name": "peaks", "type": "bed"},
+    {"name": "gtf", "type": "gtf"}
+  ],
+  "parameters": [
+    {"name": "link_method", "type": "string", "default": "promoter_overlap"},
+    {"name": "peak_weight_transform", "type": "string", "default": "abs"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}

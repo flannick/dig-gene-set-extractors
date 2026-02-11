@@ -1,0 +1,64 @@
+{
+  "converter": {
+    "code": {
+      "git_commit": null
+    },
+    "name": "atac_sc_10x",
+    "parameters": {
+      "command": "convert",
+      "converter": "atac_sc_10x",
+      "decay_length_bp": 50000,
+      "genome_build": "hg38",
+      "group": "g2",
+      "groups_tsv": "tests/data/barcode_groups.tsv",
+      "gtf": "tests/data/toy.gtf",
+      "gtf_source": null,
+      "link_method": "promoter_overlap",
+      "matrix_dir": "tests/data/toy_10x_mtx",
+      "max_distance_bp": 100000,
+      "max_genes_per_peak": 5,
+      "normalize": "l1",
+      "organism": "human",
+      "out_dir": "tests/tmp/manual_sc",
+      "peak_summary": "sum_counts",
+      "promoter_downstream_bp": 500,
+      "promoter_upstream_bp": 2000
+    },
+    "version": "0.1.0"
+  },
+  "created_at": "2026-02-11T18:06:31.480079+00:00",
+  "gene_annotation": {
+    "gene_id_field": "gene_id",
+    "gtf_path": "tests/data/toy.gtf",
+    "source": "user"
+  },
+  "geneset_id": "04d6b9b4d2db8445276e1625",
+  "input": {
+    "assay": "single_cell",
+    "data_type": "atac_seq",
+    "files": [
+      {
+        "path": "tests/data/toy.gtf",
+        "role": "gtf",
+        "sha256": "a8e6f23745f7b9e119e2df2d9cc2599bf262862286a04c4e72cf0793f2b7b3f5"
+      }
+    ],
+    "genome_build": "hg38",
+    "organism": "human"
+  },
+  "schema_version": "1.0.0",
+  "summary": {
+    "fraction_features_assigned": 0.6666666666666666,
+    "n_features_assigned": 2,
+    "n_genes": 2,
+    "n_input_features": 3
+  },
+  "weights": {
+    "aggregation": "sum",
+    "normalization": {
+      "method": "l1",
+      "target_sum": 1.0
+    },
+    "weight_type": "nonnegative"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "atac_sc_10x",
+  "description": "10x peak-by-cell matrix to gene weights",
+  "inputs": [
+    {"name": "matrix_dir", "type": "10x_mtx"},
+    {"name": "gtf", "type": "gtf"}
+  ],
+  "parameters": [
+    {"name": "peak_summary", "type": "string", "default": "sum_counts"},
+    {"name": "link_method", "type": "string", "default": "promoter_overlap"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}

@@ -1,0 +1,4 @@
+chrom	start	end	weight
+chr1	900	1100	2.0
+chr1	1800	1900	-1.5
+chr1	6000	6100	3.0
