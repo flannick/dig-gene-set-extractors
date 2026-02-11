@@ -18,6 +18,11 @@ def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max_genes_per_peak", type=int, default=5)
 
 
+def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default=default)
+    parser.add_argument("--normalize", choices=["l1", "none"], default="l1")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omics2geneset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -57,6 +62,59 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--normalize", choices=["l1", "none"], default="l1")
     p_sc.add_argument("--gtf_source")
     _add_linking_flags(p_sc)
+
+    p_rna = conv.add_parser("rna_deg")
+    p_rna.add_argument("--deg_tsv", required=True)
+    p_rna.add_argument("--out_dir", required=True)
+    p_rna.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_rna.add_argument("--genome_build", required=True)
+    p_rna.add_argument("--gene_id_column", default="gene_id")
+    p_rna.add_argument("--score_column", default="log2fc")
+    _add_transform_flags(p_rna, default="signed")
+
+    p_chip = conv.add_parser("chipseq_peak")
+    p_chip.add_argument("--peaks", required=True)
+    p_chip.add_argument("--gtf", required=True)
+    p_chip.add_argument("--out_dir", required=True)
+    p_chip.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_chip.add_argument("--genome_build", required=True)
+    p_chip.add_argument("--weight_column", type=int, default=5)
+    p_chip.add_argument("--peak_weight_transform", choices=["signed", "abs", "positive", "negative"], default="positive")
+    p_chip.add_argument("--normalize", choices=["l1", "none"], default="l1")
+    p_chip.add_argument("--gtf_source")
+    _add_linking_flags(p_chip)
+
+    p_meth = conv.add_parser("methylation_dmr")
+    p_meth.add_argument("--dmr_tsv", required=True)
+    p_meth.add_argument("--out_dir", required=True)
+    p_meth.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_meth.add_argument("--genome_build", required=True)
+    p_meth.add_argument("--gene_id_column", default="gene_id")
+    p_meth.add_argument("--score_column", default="delta_methylation")
+    _add_transform_flags(p_meth, default="abs")
+
+    p_prot = conv.add_parser("proteomics_diff")
+    p_prot.add_argument("--proteomics_tsv", required=True)
+    p_prot.add_argument("--out_dir", required=True)
+    p_prot.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_prot.add_argument("--genome_build", required=True)
+    p_prot.add_argument("--gene_id_column", default="gene_id")
+    p_prot.add_argument("--score_column", default="log2fc")
+    _add_transform_flags(p_prot, default="abs")
+
+    p_scrna = conv.add_parser("sc_rna_marker")
+    p_scrna.add_argument("--counts_tsv", required=True)
+    p_scrna.add_argument("--out_dir", required=True)
+    p_scrna.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_scrna.add_argument("--genome_build", required=True)
+    p_scrna.add_argument("--groups_tsv")
+    p_scrna.add_argument("--gene_id_column", default="gene_id")
+    p_scrna.add_argument("--barcode_column", default="barcode")
+    p_scrna.add_argument("--value_column", default="count")
+    p_scrna.add_argument("--group_barcode_column", default="barcode")
+    p_scrna.add_argument("--group_column", default="group")
+    p_scrna.add_argument("--peak_summary", choices=["sum_counts", "mean_counts", "frac_cells_nonzero"], default="sum_counts")
+    p_scrna.add_argument("--normalize", choices=["l1", "none"], default="l1")
 
     return parser
 

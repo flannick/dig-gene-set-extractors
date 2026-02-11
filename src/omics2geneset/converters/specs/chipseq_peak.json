@@ -1,0 +1,11 @@
+{
+  "name": "chipseq_peak",
+  "description": "ChIP-seq peaks to gene weights via peak-to-gene linking",
+  "inputs": [{"name": "peaks", "type": "bed"}, {"name": "gtf", "type": "gtf"}],
+  "parameters": [
+    {"name": "link_method", "type": "string", "default": "promoter_overlap"},
+    {"name": "peak_weight_transform", "type": "string", "default": "positive"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}

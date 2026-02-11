@@ -1,0 +1,10 @@
+{
+  "name": "sc_rna_marker",
+  "description": "Single-cell RNA long-table counts to gene weights, optionally by group",
+  "inputs": [{"name": "counts_tsv", "type": "tsv"}, {"name": "groups_tsv", "type": "tsv_optional"}],
+  "parameters": [
+    {"name": "peak_summary", "type": "string", "default": "sum_counts"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}

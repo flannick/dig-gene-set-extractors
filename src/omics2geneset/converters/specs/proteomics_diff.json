@@ -1,0 +1,11 @@
+{
+  "name": "proteomics_diff",
+  "description": "Differential proteomics table to gene weights",
+  "inputs": [{"name": "proteomics_tsv", "type": "tsv"}],
+  "parameters": [
+    {"name": "score_column", "type": "string", "default": "log2fc"},
+    {"name": "score_transform", "type": "string", "default": "abs"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}

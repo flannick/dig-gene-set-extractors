@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from omics2geneset.converters import atac_bulk, atac_sc_10x
+from omics2geneset.converters import atac_bulk, atac_sc_10x, chipseq_peak, methylation_dmr, proteomics_diff, rna_deg, sc_rna_marker
 
 
 CONVERTERS = {
     "atac_bulk": atac_bulk,
     "atac_sc_10x": atac_sc_10x,
+    "chipseq_peak": chipseq_peak,
+    "methylation_dmr": methylation_dmr,
+    "proteomics_diff": proteomics_diff,
+    "rna_deg": rna_deg,
+    "sc_rna_marker": sc_rna_marker,
 }
 
 

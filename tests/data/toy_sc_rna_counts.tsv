@@ -1,0 +1,6 @@
+gene_id	barcode	count
+GENE1	cellA	5
+GENE2	cellA	1
+GENE1	cellB	2
+GENE2	cellB	0
+GENE3	cellB	3

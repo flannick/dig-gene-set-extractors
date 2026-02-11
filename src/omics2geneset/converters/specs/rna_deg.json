@@ -1,0 +1,11 @@
+{
+  "name": "rna_deg",
+  "description": "Bulk RNA-seq differential expression table to gene weights",
+  "inputs": [{"name": "deg_tsv", "type": "tsv"}],
+  "parameters": [
+    {"name": "score_column", "type": "string", "default": "log2fc"},
+    {"name": "score_transform", "type": "string", "default": "signed"},
+    {"name": "normalize", "type": "string", "default": "l1"}
+  ],
+  "outputs": ["geneset.tsv", "geneset.meta.json"]
+}
