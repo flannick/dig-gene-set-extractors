@@ -5,7 +5,12 @@ import sys
 
 
 def _run(*args: str):
-    return subprocess.run([sys.executable, "-m", "omics2geneset.cli", *args], capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, "-m", "omics2geneset.cli", *args],
+        capture_output=True,
+        text=True,
+        env={**__import__("os").environ, "PYTHONPATH": "src"},
+    )
 
 
 def test_cli_list():

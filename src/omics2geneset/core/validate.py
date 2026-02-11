@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-def _validate_required(payload: object, schema: dict[str, object], path: str = "$") -> None:
+def _validate_required_fallback(payload: object, schema: dict[str, object], path: str = "$") -> None:
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: expected object")
     required = schema.get("required", [])
@@ -18,13 +18,19 @@ def _validate_required(payload: object, schema: dict[str, object], path: str = "
         return
     for key, sub_schema in props.items():
         if key in payload and isinstance(sub_schema, dict) and sub_schema.get("type") == "object":
-            _validate_required(payload[key], sub_schema, f"{path}.{key}")
+            _validate_required_fallback(payload[key], sub_schema, f"{path}.{key}")
 
 
 def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    _validate_required(payload, schema)
+    try:
+        import jsonschema  # type: ignore
+    except ModuleNotFoundError:
+        # Compatibility fallback when jsonschema is not yet installed.
+        _validate_required_fallback(payload, schema)
+    else:
+        jsonschema.validate(payload, schema)
 
 
 def validate_geneset_tsv(geneset_path: Path) -> None:

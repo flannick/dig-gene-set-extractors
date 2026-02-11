@@ -17,7 +17,7 @@ class Args:
     link_method = "promoter_overlap"
     promoter_upstream_bp = 2000
     promoter_downstream_bp = 500
-    max_distance_bp = 100000
+    max_distance_bp = None
     decay_length_bp = 50000
     max_genes_per_peak = 5
     peak_weight_transform = "abs"
@@ -52,3 +52,23 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
 
     payload = json.loads(meta.read_text(encoding="utf-8"))
     assert payload["summary"]["fraction_features_assigned"] == 2.0 / 3.0
+
+
+def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_nearest")
+    args.link_method = "nearest_tss"
+    args.max_distance_bp = None
+    atac_bulk.run(args)
+    payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert payload["converter"]["parameters"]["max_distance_bp"] == 100000
+
+
+def test_bulk_distance_decay_uses_method_default(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_decay")
+    args.link_method = "distance_decay"
+    args.max_distance_bp = None
+    atac_bulk.run(args)
+    payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert payload["converter"]["parameters"]["max_distance_bp"] == 500000

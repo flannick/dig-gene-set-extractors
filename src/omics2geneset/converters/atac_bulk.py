@@ -33,13 +33,30 @@ def _extract_peak_weights(peaks: list[dict[str, object]], peaks_weight_column: i
     return out
 
 
+def _resolve_max_distance(args) -> int:
+    if args.max_distance_bp is not None:
+        return int(args.max_distance_bp)
+    if args.link_method == "nearest_tss":
+        return 100000
+    if args.link_method == "distance_decay":
+        return 500000
+    return 100000
+
+
+def _resolved_parameters(args) -> dict[str, object]:
+    params = vars(args).copy()
+    params["max_distance_bp"] = _resolve_max_distance(args)
+    return params
+
+
 def _link(peaks: list[dict[str, object]], genes, args):
+    max_distance_bp = _resolve_max_distance(args)
     if args.link_method == "promoter_overlap":
         return link_promoter_overlap(peaks, genes, args.promoter_upstream_bp, args.promoter_downstream_bp)
     if args.link_method == "nearest_tss":
-        return link_nearest_tss(peaks, genes, args.max_distance_bp)
+        return link_nearest_tss(peaks, genes, max_distance_bp)
     if args.link_method == "distance_decay":
-        return link_distance_decay(peaks, genes, args.max_distance_bp, args.decay_length_bp, args.max_genes_per_peak)
+        return link_distance_decay(peaks, genes, max_distance_bp, args.decay_length_bp, args.max_genes_per_peak)
     raise ValueError(f"Unsupported link_method: {args.link_method}")
 
 
@@ -68,7 +85,7 @@ def run(args) -> dict[str, object]:
     files = [input_file_record(args.peaks, "peaks"), input_file_record(args.gtf, "gtf")]
     if args.peak_weights_tsv:
         files.append(input_file_record(args.peak_weights_tsv, "peak_weights_tsv"))
-    params = vars(args)
+    params = _resolved_parameters(args)
     meta = make_metadata(
         converter_name="atac_bulk",
         parameters=params,

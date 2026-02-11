@@ -13,7 +13,7 @@ def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--link_method", choices=["promoter_overlap", "nearest_tss", "distance_decay"], default="promoter_overlap")
     parser.add_argument("--promoter_upstream_bp", type=int, default=2000)
     parser.add_argument("--promoter_downstream_bp", type=int, default=500)
-    parser.add_argument("--max_distance_bp", type=int, default=100000)
+    parser.add_argument("--max_distance_bp", type=int)
     parser.add_argument("--decay_length_bp", type=int, default=50000)
     parser.add_argument("--max_genes_per_peak", type=int, default=5)
 

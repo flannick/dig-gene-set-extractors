@@ -12,13 +12,31 @@ from omics2geneset.io.gtf import read_genes_from_gtf
 from omics2geneset.io.mtx_10x import make_group_indices, read_10x_matrix_dir, read_groups_tsv, summarize_peaks
 
 
+def _resolve_max_distance(args) -> int:
+    if args.max_distance_bp is not None:
+        return int(args.max_distance_bp)
+    if args.link_method == "nearest_tss":
+        return 100000
+    if args.link_method == "distance_decay":
+        return 500000
+    return 100000
+
+
+def _resolved_parameters(args, group_name: str) -> dict[str, object]:
+    params = vars(args).copy()
+    params["max_distance_bp"] = _resolve_max_distance(args)
+    params["group"] = group_name
+    return params
+
+
 def _link(peaks: list[dict[str, object]], genes, args):
+    max_distance_bp = _resolve_max_distance(args)
     if args.link_method == "promoter_overlap":
         return link_promoter_overlap(peaks, genes, args.promoter_upstream_bp, args.promoter_downstream_bp)
     if args.link_method == "nearest_tss":
-        return link_nearest_tss(peaks, genes, args.max_distance_bp)
+        return link_nearest_tss(peaks, genes, max_distance_bp)
     if args.link_method == "distance_decay":
-        return link_distance_decay(peaks, genes, args.max_distance_bp, args.decay_length_bp, args.max_genes_per_peak)
+        return link_distance_decay(peaks, genes, max_distance_bp, args.decay_length_bp, args.max_genes_per_peak)
     raise ValueError(f"Unsupported link_method: {args.link_method}")
 
 
@@ -30,14 +48,20 @@ def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    peaks, barcodes, entries = read_10x_matrix_dir(args.matrix_dir)
+    peaks, barcodes, entries, matrix_files = read_10x_matrix_dir(args.matrix_dir)
     genes = read_genes_from_gtf(args.gtf)
     groups = read_groups_tsv(args.groups_tsv) if args.groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
     links = _link(peaks, genes, args)
 
-    files = [input_file_record(args.gtf, "gtf")]
-    params = vars(args)
+    files = [
+        input_file_record(matrix_files["matrix"], "matrix"),
+        input_file_record(matrix_files["barcodes"], "barcodes"),
+        input_file_record(matrix_files["peaks_or_features"], "peaks_or_features"),
+        input_file_record(args.gtf, "gtf"),
+    ]
+    if args.groups_tsv:
+        files.append(input_file_record(args.groups_tsv, "groups_tsv"))
     manifest_rows: list[tuple[str, str]] = []
 
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
@@ -64,7 +88,7 @@ def run(args) -> dict[str, object]:
 
         meta = make_metadata(
             converter_name="atac_sc_10x",
-            parameters={**params, "group": group_name},
+            parameters=_resolved_parameters(args, group_name),
             data_type="atac_seq",
             assay="single_cell",
             organism=args.organism,

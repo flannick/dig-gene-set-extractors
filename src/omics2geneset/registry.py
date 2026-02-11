@@ -20,11 +20,16 @@ def _specs_dir() -> Path:
     return Path(__file__).parent / "converters" / "specs"
 
 
-def _validate_converter_spec(payload: dict[str, object]) -> None:
-    required = ["name", "description", "inputs", "parameters", "outputs"]
-    missing = [k for k in required if k not in payload]
-    if missing:
-        raise ValueError(f"converter spec missing required fields: {', '.join(missing)}")
+def _validate_converter_spec(payload: dict[str, object], schema: dict[str, object]) -> None:
+    try:
+        import jsonschema  # type: ignore
+    except ModuleNotFoundError:
+        required = ["name", "description", "inputs", "parameters", "outputs"]
+        missing = [k for k in required if k not in payload]
+        if missing:
+            raise ValueError(f"converter spec missing required fields: {', '.join(missing)}")
+    else:
+        jsonschema.validate(payload, schema)
 
 
 def list_converters() -> list[tuple[str, str]]:
@@ -46,5 +51,6 @@ def get_converter_spec(name: str) -> dict[str, object]:
     if not p.exists():
         raise FileNotFoundError(f"Missing converter spec: {p}")
     payload = json.loads(p.read_text(encoding="utf-8"))
-    _validate_converter_spec(payload)
+    schema = json.loads((_schemas_dir() / "converter_spec.schema.json").read_text(encoding="utf-8"))
+    _validate_converter_spec(payload, schema)
     return payload

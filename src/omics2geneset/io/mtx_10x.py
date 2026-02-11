@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 import gzip
 from pathlib import Path
+import re
+
+
+FEATURE_COORD_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
 
 
 def _open_text(path: Path):
@@ -19,7 +23,22 @@ def _resolve_one(base: Path, names: list[str]) -> Path:
     raise FileNotFoundError(f"None of expected files found in {base}: {names}")
 
 
-def read_10x_matrix_dir(matrix_dir: str | Path) -> tuple[list[dict[str, object]], list[str], list[tuple[int, int, float]]]:
+def _parse_feature_line(parts: list[str]) -> dict[str, object]:
+    if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+        return {"chrom": parts[0], "start": int(parts[1]), "end": int(parts[2])}
+
+    if parts:
+        m = FEATURE_COORD_RE.match(parts[0])
+        if m:
+            chrom, start, end = m.groups()
+            return {"chrom": chrom, "start": int(start), "end": int(end)}
+
+    raise ValueError(f"Could not parse peak coordinates from feature row: {'\t'.join(parts)}")
+
+
+def read_10x_matrix_dir(
+    matrix_dir: str | Path,
+) -> tuple[list[dict[str, object]], list[str], list[tuple[int, int, float]], dict[str, Path]]:
     base = Path(matrix_dir)
     matrix_path = _resolve_one(base, ["matrix.mtx", "matrix.mtx.gz"])
     barcodes_path = _resolve_one(base, ["barcodes.tsv", "barcodes.tsv.gz"])
@@ -31,9 +50,7 @@ def read_10x_matrix_dir(matrix_dir: str | Path) -> tuple[list[dict[str, object]]
             if not line.strip():
                 continue
             p = line.rstrip("\n").split("\t")
-            if len(p) < 3:
-                continue
-            peaks.append({"chrom": p[0], "start": int(p[1]), "end": int(p[2])})
+            peaks.append(_parse_feature_line(p))
 
     barcodes: list[str] = []
     with _open_text(barcodes_path) as fh:
@@ -44,7 +61,7 @@ def read_10x_matrix_dir(matrix_dir: str | Path) -> tuple[list[dict[str, object]]
     entries: list[tuple[int, int, float]] = []
     with _open_text(matrix_path) as fh:
         for line in fh:
-            if line.startswith("%"):  # MatrixMarket header comments
+            if line.startswith("%"):
                 continue
             dims = line.strip().split()
             if len(dims) == 3:
@@ -55,7 +72,12 @@ def read_10x_matrix_dir(matrix_dir: str | Path) -> tuple[list[dict[str, object]]
             r, c, v = line.strip().split()
             entries.append((int(r) - 1, int(c) - 1, float(v)))
 
-    return peaks, barcodes, entries
+    files = {
+        "matrix": matrix_path,
+        "barcodes": barcodes_path,
+        "peaks_or_features": peaks_path,
+    }
+    return peaks, barcodes, entries, files
 
 
 def summarize_peaks(entries: list[tuple[int, int, float]], n_peaks: int, n_cells: int, cell_indices: list[int], method: str) -> list[float]:
