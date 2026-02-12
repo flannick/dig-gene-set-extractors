@@ -134,8 +134,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "validate":
             schema = Path(__file__).parent / "schemas" / "geneset_metadata.schema.json"
-            validate_output_dir(args.output_dir, schema)
-            print("ok")
+            result = validate_output_dir(args.output_dir, schema)
+            if result.get("mode") == "grouped":
+                print(f"ok: validated grouped output with n_groups={result.get('n_groups')}")
+            else:
+                print("ok")
             return 0
 
         if args.command == "convert":

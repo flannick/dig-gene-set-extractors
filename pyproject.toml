@@ -24,6 +24,13 @@ omics2geneset = "omics2geneset.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+omics2geneset = [
+  "schemas/*.json",
+  "converters/specs/*.json",
+]

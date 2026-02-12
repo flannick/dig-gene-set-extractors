@@ -1,14 +1,26 @@
 {
   "name": "atac_sc_10x",
-  "description": "10x peak-by-cell matrix to gene weights",
+  "description": "10x scATAC peak-by-cell matrix converted to gene weights",
   "inputs": [
-    {"name": "matrix_dir", "type": "10x_mtx"},
-    {"name": "gtf", "type": "gtf"}
+    {"name": "matrix_dir", "type": "10x_mtx_dir", "description": "Directory with matrix.mtx(.gz), barcodes.tsv(.gz), peaks.bed or features.tsv(.gz)", "required": true},
+    {"name": "gtf", "type": "gtf", "description": "Gene annotation with gene features", "required": true},
+    {"name": "groups_tsv", "type": "tsv_optional", "description": "Optional barcode->group mapping", "required": false}
   ],
   "parameters": [
-    {"name": "peak_summary", "type": "string", "default": "sum_counts"},
-    {"name": "link_method", "type": "string", "default": "promoter_overlap"},
-    {"name": "normalize", "type": "string", "default": "l1"}
+    {"name": "peak_summary", "type": "string", "default": "sum_counts", "enum": ["sum_counts", "mean_counts", "frac_cells_nonzero"], "help": "How to summarize per-peak accessibility within each group"},
+    {"name": "link_method", "type": "string", "default": "promoter_overlap", "enum": ["promoter_overlap", "nearest_tss", "distance_decay"], "help": "Peak-to-gene linkage strategy"},
+    {"name": "promoter_upstream_bp", "type": "int", "default": 2000, "help": "Promoter upstream window for promoter_overlap"},
+    {"name": "promoter_downstream_bp", "type": "int", "default": 500, "help": "Promoter downstream window for promoter_overlap"},
+    {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
+    {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
+    {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
+    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
   ],
-  "outputs": ["geneset.tsv", "geneset.meta.json"]
+  "outputs": [
+    {"name": "geneset.tsv", "description": "Single output when groups are not provided"},
+    {"name": "geneset.meta.json", "description": "Metadata for the single output"},
+    {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group gene sets when groups_tsv is provided"},
+    {"name": "group=<GROUP>/geneset.meta.json", "description": "Per-group metadata when groups_tsv is provided"},
+    {"name": "manifest.tsv", "description": "Group-to-output-path mapping for grouped runs"}
+  ]
 }

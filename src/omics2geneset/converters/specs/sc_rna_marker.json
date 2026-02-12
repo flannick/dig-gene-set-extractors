@@ -1,10 +1,24 @@
 {
   "name": "sc_rna_marker",
-  "description": "Single-cell RNA long-table counts to gene weights, optionally by group",
-  "inputs": [{"name": "counts_tsv", "type": "tsv"}, {"name": "groups_tsv", "type": "tsv_optional"}],
-  "parameters": [
-    {"name": "peak_summary", "type": "string", "default": "sum_counts"},
-    {"name": "normalize", "type": "string", "default": "l1"}
+  "description": "Single-cell RNA counts summary converted to gene weights, optionally by group",
+  "inputs": [
+    {"name": "counts_tsv", "type": "tsv", "description": "Long table with gene, barcode, and count values", "required": true},
+    {"name": "groups_tsv", "type": "tsv_optional", "description": "Optional barcode-to-group mapping", "required": false}
   ],
-  "outputs": ["geneset.tsv", "geneset.meta.json"]
+  "parameters": [
+    {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Column containing gene identifiers"},
+    {"name": "barcode_column", "type": "string", "default": "barcode", "help": "Column containing barcode IDs in counts_tsv"},
+    {"name": "value_column", "type": "string", "default": "count", "help": "Column containing numeric abundance values"},
+    {"name": "group_barcode_column", "type": "string", "default": "barcode", "help": "Column containing barcode IDs in groups_tsv"},
+    {"name": "group_column", "type": "string", "default": "group", "help": "Column containing group labels in groups_tsv"},
+    {"name": "peak_summary", "type": "string", "default": "sum_counts", "enum": ["sum_counts", "mean_counts", "frac_cells_nonzero"], "help": "Group summary strategy for per-gene values"},
+    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
+  ],
+  "outputs": [
+    {"name": "geneset.tsv", "description": "Single output when groups are not provided"},
+    {"name": "geneset.meta.json", "description": "Metadata for the single output"},
+    {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group gene sets when groups_tsv is provided"},
+    {"name": "group=<GROUP>/geneset.meta.json", "description": "Per-group metadata when groups_tsv is provided"},
+    {"name": "manifest.tsv", "description": "Group-to-output-path mapping for grouped runs"}
+  ]
 }

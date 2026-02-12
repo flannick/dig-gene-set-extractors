@@ -5,8 +5,44 @@
   "properties": {
     "name": {"type": "string"},
     "description": {"type": "string"},
-    "inputs": {"type": "array"},
-    "parameters": {"type": "array"},
-    "outputs": {"type": "array"}
-  }
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "description"],
+        "properties": {
+          "name": {"type": "string"},
+          "type": {"type": "string"},
+          "description": {"type": "string"},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "default", "help"],
+        "properties": {
+          "name": {"type": "string"},
+          "type": {"type": "string"},
+          "default": {},
+          "enum": {"type": "array", "items": {}},
+          "help": {"type": "string"}
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": false
 }

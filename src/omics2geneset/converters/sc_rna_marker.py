@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import re
 
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.models import GeneWeights
@@ -31,7 +32,8 @@ def _read_groups(path: str | Path, barcode_col: str, group_col: str) -> dict[str
 
 
 def _safe_group_name(name: str) -> str:
-    return name.replace("/", "_").replace(" ", "_")
+    out = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_")
+    return out or "group"
 
 
 def _summarize(values: list[float], method: str, n_cells: int) -> float:
@@ -84,13 +86,23 @@ def run(args) -> dict[str, object]:
 
         meta = make_metadata(
             converter_name="sc_rna_marker",
-            parameters={**vars(args).copy(), "group": group},
+            parameters={
+                "gene_id_column": args.gene_id_column,
+                "barcode_column": args.barcode_column,
+                "value_column": args.value_column,
+                "group_barcode_column": args.group_barcode_column,
+                "group_column": args.group_column,
+                "peak_summary": args.peak_summary,
+                "normalize": args.normalize,
+                "group": group,
+                "aggregation": "sum",
+            },
             data_type="rna_seq",
             assay="single_cell",
             organism=args.organism,
             genome_build=args.genome_build,
             files=files,
-            gene_annotation={"gtf_path": "", "source": "none", "gene_id_field": args.gene_id_column},
+            gene_annotation={"mode": "none", "source": "none", "gene_id_field": args.gene_id_column},
             weights={
                 "weight_type": "nonnegative",
                 "normalization": {"method": args.normalize, "target_sum": 1.0 if args.normalize == "l1" else None},
@@ -104,7 +116,7 @@ def run(args) -> dict[str, object]:
             },
         )
         write_metadata(group_dir / "geneset.meta.json", meta)
-        manifest_rows.append((group, str(group_dir)))
+        manifest_rows.append((group, str(group_dir.relative_to(out_dir))))
 
     if args.groups_tsv:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:

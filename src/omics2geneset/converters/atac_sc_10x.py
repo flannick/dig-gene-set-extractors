@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import re
 
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.models import GeneWeights
@@ -9,7 +10,7 @@ from omics2geneset.core.normalization import normalize
 from omics2geneset.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
 from omics2geneset.core.scoring import score_genes
 from omics2geneset.io.gtf import read_genes_from_gtf
-from omics2geneset.io.mtx_10x import make_group_indices, read_10x_matrix_dir, read_groups_tsv, summarize_peaks
+from omics2geneset.io.mtx_10x import make_group_indices, read_10x_matrix_dir, read_groups_tsv, summarize_peaks, summarize_peaks_by_group
 
 
 def _resolve_max_distance(args) -> int:
@@ -22,10 +23,19 @@ def _resolve_max_distance(args) -> int:
     return 100000
 
 
-def _resolved_parameters(args, group_name: str) -> dict[str, object]:
-    params = vars(args).copy()
-    params["max_distance_bp"] = _resolve_max_distance(args)
-    params["group"] = group_name
+def _resolved_parameters(args, group_name: str | None = None) -> dict[str, object]:
+    params: dict[str, object] = {
+        "link_method": args.link_method,
+        "promoter_upstream_bp": args.promoter_upstream_bp,
+        "promoter_downstream_bp": args.promoter_downstream_bp,
+        "max_distance_bp": _resolve_max_distance(args),
+        "decay_length_bp": args.decay_length_bp,
+        "max_genes_per_peak": args.max_genes_per_peak,
+        "peak_summary": args.peak_summary,
+        "normalize": args.normalize,
+    }
+    if group_name is not None:
+        params["group"] = group_name
     return params
 
 
@@ -41,14 +51,15 @@ def _link(peaks: list[dict[str, object]], genes, args):
 
 
 def _safe_group_name(name: str) -> str:
-    return name.replace("/", "_").replace(" ", "_")
+    out = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_")
+    return out or "group"
 
 
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    peaks, barcodes, entries, matrix_files = read_10x_matrix_dir(args.matrix_dir)
+    peaks, barcodes, matrix_files = read_10x_matrix_dir(args.matrix_dir)
     genes = read_genes_from_gtf(args.gtf)
     groups = read_groups_tsv(args.groups_tsv) if args.groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
@@ -66,8 +77,15 @@ def run(args) -> dict[str, object]:
 
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
 
+    if args.groups_tsv:
+        group_peak_weights = summarize_peaks_by_group(Path(matrix_files["matrix"]), len(peaks), group_indices, args.peak_summary)
+    else:
+        group_peak_weights = {
+            "all": summarize_peaks(Path(matrix_files["matrix"]), len(peaks), group_indices["all"], args.peak_summary)
+        }
+
     for group_name, cell_indices in group_indices.items():
-        peak_weights = summarize_peaks(entries, len(peaks), len(barcodes), cell_indices, args.peak_summary)
+        peak_weights = group_peak_weights[group_name]
         raw_gene_weights = score_genes(peak_weights, links, "positive")
         final_gene_weights = normalize(raw_gene_weights, args.normalize)
 
@@ -95,6 +113,7 @@ def run(args) -> dict[str, object]:
             genome_build=args.genome_build,
             files=files,
             gene_annotation={
+                "mode": "gtf",
                 "gtf_path": str(args.gtf),
                 "source": args.gtf_source or "user",
                 "gene_id_field": "gene_id",
@@ -112,7 +131,7 @@ def run(args) -> dict[str, object]:
             },
         )
         write_metadata(group_dir / "geneset.meta.json", meta)
-        manifest_rows.append((group_name, str(group_dir)))
+        manifest_rows.append((group_name, str(group_dir.relative_to(out_dir))))
 
     if args.groups_tsv:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:

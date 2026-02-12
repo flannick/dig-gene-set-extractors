@@ -48,11 +48,54 @@ def validate_geneset_tsv(geneset_path: Path) -> None:
             float(row["weight"])
 
 
-def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> None:
-    out = Path(out_dir)
+def _resolve_manifest_path(root: Path, manifest_value: str) -> Path:
+    candidate = Path(manifest_value)
+    if candidate.is_absolute():
+        return candidate
+    joined = root / candidate
+    if joined.exists():
+        return joined
+    return candidate
+
+
+def _validate_grouped_output_dir(out_dir: Path, schema_path: Path) -> dict[str, object]:
+    manifest = out_dir / "manifest.tsv"
+    if not manifest.exists():
+        raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json, or manifest.tsv for grouped outputs")
+    with manifest.open("r", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames or "path" not in reader.fieldnames:
+            raise ValueError("manifest.tsv must contain a path column")
+        rows = list(reader)
+    if not rows:
+        raise ValueError("manifest.tsv contains no group rows")
+    failures: list[str] = []
+    for row in rows:
+        group_path = _resolve_manifest_path(out_dir, str(row["path"]))
+        try:
+            _validate_single_output_dir(group_path, schema_path)
+        except Exception as exc:
+            failures.append(f"{group_path}: {exc}")
+    if failures:
+        raise ValueError("grouped validation failed: " + "; ".join(failures))
+    return {"mode": "grouped", "n_groups": len(rows)}
+
+
+def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     geneset = out / "geneset.tsv"
     meta = out / "geneset.meta.json"
     if not geneset.exists() or not meta.exists():
         raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
     validate_geneset_tsv(geneset)
-    validate_metadata_schema(meta, Path(schema_path))
+    validate_metadata_schema(meta, schema_path)
+
+
+def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> dict[str, object]:
+    out = Path(out_dir)
+    schema = Path(schema_path)
+    geneset = out / "geneset.tsv"
+    meta = out / "geneset.meta.json"
+    if geneset.exists() and meta.exists():
+        _validate_single_output_dir(out, schema)
+        return {"mode": "single", "n_groups": 1}
+    return _validate_grouped_output_dir(out, schema)

@@ -28,7 +28,7 @@ class GeneWeights:
         self.rows = rows
 
     def sort_desc(self) -> "GeneWeights":
-        self.rows = sorted(self.rows, key=lambda r: float(r["weight"]), reverse=True)
+        self.rows = sorted(self.rows, key=lambda r: (-float(r["weight"]), str(r["gene_id"])))
         for idx, row in enumerate(self.rows, start=1):
             row["rank"] = idx
         return self

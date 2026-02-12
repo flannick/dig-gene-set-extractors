@@ -41,11 +41,15 @@ def test_sc_converter_with_groups(tmp_path: Path):
     manifest = Path(args.out_dir) / "manifest.tsv"
     assert manifest.exists()
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    validate_output_dir(Path(args.out_dir), schema)
     validate_output_dir(Path(args.out_dir) / "group=g1", schema)
     validate_output_dir(Path(args.out_dir) / "group=g2", schema)
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     roles = {f["role"] for f in meta["input"]["files"]}
     assert {"matrix", "barcodes", "peaks_or_features", "gtf", "groups_tsv"}.issubset(roles)
+    params = meta["converter"]["parameters"]
+    assert "matrix_dir" not in params
+    assert "out_dir" not in params
 
 
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):

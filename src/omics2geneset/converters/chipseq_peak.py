@@ -60,8 +60,18 @@ def run(args) -> dict[str, object]:
     GeneWeights(rows).sort_desc().to_tsv(out_dir / "geneset.tsv")
 
     assigned_peaks = len({int(link["peak_index"]) for link in links})
-    params = vars(args).copy()
-    params["max_distance_bp"] = _resolve_max_distance(args)
+    params = {
+        "link_method": args.link_method,
+        "promoter_upstream_bp": args.promoter_upstream_bp,
+        "promoter_downstream_bp": args.promoter_downstream_bp,
+        "max_distance_bp": _resolve_max_distance(args),
+        "decay_length_bp": args.decay_length_bp,
+        "max_genes_per_peak": args.max_genes_per_peak,
+        "weight_column": args.weight_column,
+        "peak_weight_transform": args.peak_weight_transform,
+        "normalize": args.normalize,
+        "aggregation": "sum",
+    }
 
     meta = make_metadata(
         converter_name="chipseq_peak",
@@ -71,7 +81,7 @@ def run(args) -> dict[str, object]:
         organism=args.organism,
         genome_build=args.genome_build,
         files=[input_file_record(args.peaks, "peaks"), input_file_record(args.gtf, "gtf")],
-        gene_annotation={"gtf_path": str(args.gtf), "source": args.gtf_source or "user", "gene_id_field": "gene_id"},
+        gene_annotation={"mode": "gtf", "gtf_path": str(args.gtf), "source": args.gtf_source or "user", "gene_id_field": "gene_id"},
         weights={
             "weight_type": "signed" if args.peak_weight_transform == "signed" else "nonnegative",
             "normalization": {"method": args.normalize, "target_sum": 1.0 if args.normalize == "l1" else None},

@@ -36,13 +36,19 @@ def run(args) -> dict[str, object]:
 
     meta = make_metadata(
         converter_name="rna_deg",
-        parameters=vars(args).copy(),
+        parameters={
+            "gene_id_column": args.gene_id_column,
+            "score_column": args.score_column,
+            "score_transform": args.score_transform,
+            "normalize": args.normalize,
+            "aggregation": "sum",
+        },
         data_type="rna_seq",
         assay="bulk",
         organism=args.organism,
         genome_build=args.genome_build,
         files=[input_file_record(args.deg_tsv, "deg_tsv")],
-        gene_annotation={"gtf_path": "", "source": "none", "gene_id_field": args.gene_id_column},
+        gene_annotation={"mode": "none", "source": "none", "gene_id_field": args.gene_id_column},
         weights={
             "weight_type": "signed" if args.score_transform == "signed" else "nonnegative",
             "normalization": {"method": args.normalize, "target_sum": 1.0 if args.normalize == "l1" else None},

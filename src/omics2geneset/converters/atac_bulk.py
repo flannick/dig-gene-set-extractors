@@ -44,9 +44,17 @@ def _resolve_max_distance(args) -> int:
 
 
 def _resolved_parameters(args) -> dict[str, object]:
-    params = vars(args).copy()
-    params["max_distance_bp"] = _resolve_max_distance(args)
-    return params
+    return {
+        "link_method": args.link_method,
+        "promoter_upstream_bp": args.promoter_upstream_bp,
+        "promoter_downstream_bp": args.promoter_downstream_bp,
+        "max_distance_bp": _resolve_max_distance(args),
+        "decay_length_bp": args.decay_length_bp,
+        "max_genes_per_peak": args.max_genes_per_peak,
+        "peak_weight_transform": args.peak_weight_transform,
+        "normalize": args.normalize,
+        "aggregation": "sum",
+    }
 
 
 def _link(peaks: list[dict[str, object]], genes, args):
@@ -95,6 +103,7 @@ def run(args) -> dict[str, object]:
         genome_build=args.genome_build,
         files=files,
         gene_annotation={
+            "mode": "gtf",
             "gtf_path": str(args.gtf),
             "source": args.gtf_source or "user",
             "gene_id_field": "gene_id",

@@ -52,6 +52,9 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
 
     payload = json.loads(meta.read_text(encoding="utf-8"))
     assert payload["summary"]["fraction_features_assigned"] == 2.0 / 3.0
+    params = payload["converter"]["parameters"]
+    assert "peaks" not in params
+    assert "out_dir" not in params
 
 
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):

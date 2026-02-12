@@ -1,14 +1,39 @@
 {
   "name": "atac_bulk",
-  "description": "Bulk ATAC peaks with per-peak weights to gene weights",
+  "description": "Bulk ATAC-seq peaks and per-peak weights mapped to gene weights",
   "inputs": [
-    {"name": "peaks", "type": "bed"},
-    {"name": "gtf", "type": "gtf"}
+    {
+      "name": "peaks",
+      "type": "bed",
+      "description": "Peak intervals; may include score column for weights",
+      "required": true
+    },
+    {
+      "name": "gtf",
+      "type": "gtf",
+      "description": "Gene annotation with gene features",
+      "required": true
+    },
+    {
+      "name": "peak_weights_tsv",
+      "type": "tsv_optional",
+      "description": "Optional explicit (chrom,start,end,weight) override table",
+      "required": false
+    }
   ],
   "parameters": [
-    {"name": "link_method", "type": "string", "default": "promoter_overlap"},
-    {"name": "peak_weight_transform", "type": "string", "default": "abs"},
-    {"name": "normalize", "type": "string", "default": "l1"}
+    {"name": "link_method", "type": "string", "default": "promoter_overlap", "enum": ["promoter_overlap", "nearest_tss", "distance_decay"], "help": "Peak-to-gene linkage strategy"},
+    {"name": "promoter_upstream_bp", "type": "int", "default": 2000, "help": "Promoter upstream window for promoter_overlap"},
+    {"name": "promoter_downstream_bp", "type": "int", "default": 500, "help": "Promoter downstream window for promoter_overlap"},
+    {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
+    {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
+    {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
+    {"name": "peaks_weight_column", "type": "int", "default": 5, "help": "1-based score column in peaks file"},
+    {"name": "peak_weight_transform", "type": "string", "default": "abs", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to peak weights prior to scoring"},
+    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
   ],
-  "outputs": ["geneset.tsv", "geneset.meta.json"]
+  "outputs": [
+    {"name": "geneset.tsv", "description": "Gene-weight table with required columns gene_id and weight"},
+    {"name": "geneset.meta.json", "description": "Run metadata and provenance validated against schema"}
+  ]
 }

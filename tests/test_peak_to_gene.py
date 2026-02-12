@@ -1,5 +1,7 @@
 from pathlib import Path
+import time
 
+from omics2geneset.core.models import Gene
 from omics2geneset.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
 from omics2geneset.io.bed import read_bed
 from omics2geneset.io.gtf import read_genes_from_gtf
@@ -20,3 +22,24 @@ def test_link_methods_basic():
     assert p0
     if len(p0) > 1:
         assert p0[0]["link_weight"] >= p0[-1]["link_weight"]
+
+
+def test_link_nearest_tss_perf_smoke():
+    genes = [
+        Gene(
+            gene_id=f"G{i}",
+            gene_symbol=None,
+            chrom="chr1",
+            tss=i * 100,
+            strand="+",
+            gene_start=i * 100,
+            gene_end=(i * 100) + 50,
+        )
+        for i in range(10000)
+    ]
+    peaks = [{"chrom": "chr1", "start": i * 100 + 10, "end": i * 100 + 40} for i in range(10000)]
+    t0 = time.monotonic()
+    links = link_nearest_tss(peaks, genes, max_distance_bp=1000)
+    elapsed = time.monotonic() - t0
+    assert len(links) == len(peaks)
+    assert elapsed < 3.0

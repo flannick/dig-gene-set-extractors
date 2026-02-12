@@ -31,3 +31,51 @@ def test_cli_validate_fails_on_malformed(tmp_path: Path):
     bad.mkdir()
     p = _run("validate", str(bad))
     assert p.returncode != 0
+
+
+def test_cli_validate_single_good_output(tmp_path: Path):
+    out = tmp_path / "bulk_cli"
+    convert = _run(
+        "convert",
+        "atac_bulk",
+        "--peaks",
+        "tests/data/toy_peaks.bed",
+        "--gtf",
+        "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--peak_weights_tsv",
+        "tests/data/toy_peak_weights.tsv",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+    assert "ok" in validate.stdout
+
+
+def test_cli_validate_grouped_root(tmp_path: Path):
+    out = tmp_path / "sc_grouped_cli"
+    convert = _run(
+        "convert",
+        "atac_sc_10x",
+        "--matrix_dir",
+        "tests/data/toy_10x_mtx",
+        "--gtf",
+        "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--groups_tsv",
+        "tests/data/barcode_groups.tsv",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+    assert "n_groups=" in validate.stdout

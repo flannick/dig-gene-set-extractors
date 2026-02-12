@@ -1,11 +1,17 @@
 {
   "name": "methylation_dmr",
-  "description": "DMR-level methylation effects to gene weights",
-  "inputs": [{"name": "dmr_tsv", "type": "tsv"}],
-  "parameters": [
-    {"name": "score_column", "type": "string", "default": "delta_methylation"},
-    {"name": "score_transform", "type": "string", "default": "abs"},
-    {"name": "normalize", "type": "string", "default": "l1"}
+  "description": "DMR summary table converted to gene weights",
+  "inputs": [
+    {"name": "dmr_tsv", "type": "tsv", "description": "Table with gene IDs and methylation effect sizes", "required": true}
   ],
-  "outputs": ["geneset.tsv", "geneset.meta.json"]
+  "parameters": [
+    {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Column containing gene identifiers"},
+    {"name": "score_column", "type": "string", "default": "delta_methylation", "help": "Column containing methylation effect size"},
+    {"name": "score_transform", "type": "string", "default": "abs", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to score values"},
+    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
+  ],
+  "outputs": [
+    {"name": "geneset.tsv", "description": "Gene-weight table"},
+    {"name": "geneset.meta.json", "description": "Run metadata and provenance"}
+  ]
 }

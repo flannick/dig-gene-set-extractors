@@ -12,18 +12,18 @@ The package is built around converter plugins so new assay-specific extractors c
 From this repo root:
 
 ```bash
-../../.venv/bin/python -m pip install -e ".[dev]"
-../../.venv/bin/python -m omics2geneset.cli list
-../../.venv/bin/python -m pytest -q
+python -m pip install -e ".[dev]"
+omics2geneset list
+pytest -q
 ```
 
 Core CLI commands:
 
 ```bash
-../../.venv/bin/python -m omics2geneset.cli list
-../../.venv/bin/python -m omics2geneset.cli describe atac_bulk
-../../.venv/bin/python -m omics2geneset.cli convert <converter_name> [flags]
-../../.venv/bin/python -m omics2geneset.cli validate <output_dir>
+omics2geneset list
+omics2geneset describe atac_bulk
+omics2geneset convert <converter_name> [flags]
+omics2geneset validate <output_dir>
 ```
 
 ## Output Contract
@@ -123,7 +123,7 @@ In `--out_dir`:
 ### Quickstart Command
 
 ```bash
-../../.venv/bin/python -m omics2geneset.cli convert atac_bulk \
+omics2geneset convert atac_bulk \
   --peaks tests/data/toy_peaks.bed \
   --gtf tests/data/toy.gtf \
   --out_dir tests/tmp/readme_bulk \
@@ -188,7 +188,7 @@ With `--groups_tsv`:
 ### Quickstart Command
 
 ```bash
-../../.venv/bin/python -m omics2geneset.cli convert atac_sc_10x \
+omics2geneset convert atac_sc_10x \
   --matrix_dir tests/data/toy_10x_mtx \
   --gtf tests/data/toy.gtf \
   --out_dir tests/tmp/readme_sc \

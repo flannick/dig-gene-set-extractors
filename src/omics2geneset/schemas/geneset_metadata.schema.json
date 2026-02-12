@@ -48,13 +48,27 @@
       }
     },
     "gene_annotation": {
-      "type": "object",
-      "required": ["gtf_path", "source", "gene_id_field"],
-      "properties": {
-        "gtf_path": {"type": "string"},
-        "source": {"type": "string"},
-        "gene_id_field": {"type": "string"}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode", "gtf_path", "source", "gene_id_field"],
+          "properties": {
+            "mode": {"const": "gtf"},
+            "gtf_path": {"type": "string", "minLength": 1},
+            "source": {"type": "string"},
+            "gene_id_field": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "source", "gene_id_field"],
+          "properties": {
+            "mode": {"const": "none"},
+            "source": {"type": "string"},
+            "gene_id_field": {"type": "string"}
+          }
+        }
+      ]
     },
     "weights": {
       "type": "object",

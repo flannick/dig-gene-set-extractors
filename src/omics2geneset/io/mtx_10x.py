@@ -4,6 +4,7 @@ from collections import defaultdict
 import gzip
 from pathlib import Path
 import re
+from typing import Iterator
 
 
 FEATURE_COORD_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
@@ -33,12 +34,13 @@ def _parse_feature_line(parts: list[str]) -> dict[str, object]:
             chrom, start, end = m.groups()
             return {"chrom": chrom, "start": int(start), "end": int(end)}
 
-    raise ValueError(f"Could not parse peak coordinates from feature row: {'\t'.join(parts)}")
+    joined = "\t".join(parts)
+    raise ValueError(f"Could not parse peak coordinates from feature row: {joined}")
 
 
 def read_10x_matrix_dir(
     matrix_dir: str | Path,
-) -> tuple[list[dict[str, object]], list[str], list[tuple[int, int, float]], dict[str, Path]]:
+) -> tuple[list[dict[str, object]], list[str], dict[str, Path]]:
     base = Path(matrix_dir)
     matrix_path = _resolve_one(base, ["matrix.mtx", "matrix.mtx.gz"])
     barcodes_path = _resolve_one(base, ["barcodes.tsv", "barcodes.tsv.gz"])
@@ -58,7 +60,15 @@ def read_10x_matrix_dir(
             if line.strip():
                 barcodes.append(line.strip().split("\t")[0])
 
-    entries: list[tuple[int, int, float]] = []
+    files = {
+        "matrix": matrix_path,
+        "barcodes": barcodes_path,
+        "peaks_or_features": peaks_path,
+    }
+    return peaks, barcodes, files
+
+
+def iter_mtx_entries(matrix_path: Path) -> Iterator[tuple[int, int, float]]:
     with _open_text(matrix_path) as fh:
         for line in fh:
             if line.startswith("%"):
@@ -70,21 +80,14 @@ def read_10x_matrix_dir(
             if not line.strip():
                 continue
             r, c, v = line.strip().split()
-            entries.append((int(r) - 1, int(c) - 1, float(v)))
-
-    files = {
-        "matrix": matrix_path,
-        "barcodes": barcodes_path,
-        "peaks_or_features": peaks_path,
-    }
-    return peaks, barcodes, entries, files
+            yield int(r) - 1, int(c) - 1, float(v)
 
 
-def summarize_peaks(entries: list[tuple[int, int, float]], n_peaks: int, n_cells: int, cell_indices: list[int], method: str) -> list[float]:
+def summarize_peaks(matrix_path: Path, n_peaks: int, cell_indices: list[int], method: str) -> list[float]:
     sums = [0.0] * n_peaks
     nonzero = [0] * n_peaks
     selected = set(cell_indices)
-    for peak_i, cell_i, val in entries:
+    for peak_i, cell_i, val in iter_mtx_entries(matrix_path):
         if cell_i not in selected:
             continue
         sums[peak_i] += val
@@ -98,6 +101,43 @@ def summarize_peaks(entries: list[tuple[int, int, float]], n_peaks: int, n_cells
     if method == "frac_cells_nonzero":
         return [x / denom for x in nonzero]
     raise ValueError(f"Unsupported peak_summary: {method}")
+
+
+def summarize_peaks_by_group(
+    matrix_path: Path,
+    n_peaks: int,
+    group_indices: dict[str, list[int]],
+    method: str,
+) -> dict[str, list[float]]:
+    group_names = list(group_indices)
+    cell_to_group_idx: dict[int, int] = {}
+    for gi, group in enumerate(group_names):
+        for cell_idx in group_indices[group]:
+            cell_to_group_idx[cell_idx] = gi
+
+    sums = [[0.0] * n_peaks for _ in group_names]
+    nonzero = [[0] * n_peaks for _ in group_names]
+
+    for peak_i, cell_i, val in iter_mtx_entries(matrix_path):
+        gi = cell_to_group_idx.get(cell_i)
+        if gi is None:
+            continue
+        sums[gi][peak_i] += val
+        if val != 0:
+            nonzero[gi][peak_i] += 1
+
+    result: dict[str, list[float]] = {}
+    for gi, group in enumerate(group_names):
+        denom = max(len(group_indices[group]), 1)
+        if method == "sum_counts":
+            result[group] = sums[gi]
+        elif method == "mean_counts":
+            result[group] = [x / denom for x in sums[gi]]
+        elif method == "frac_cells_nonzero":
+            result[group] = [x / denom for x in nonzero[gi]]
+        else:
+            raise ValueError(f"Unsupported peak_summary: {method}")
+    return result
 
 
 def read_groups_tsv(path: str | Path) -> dict[str, str]:
