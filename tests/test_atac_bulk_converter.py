@@ -1,4 +1,5 @@
 import csv
+import gzip
 import json
 from pathlib import Path
 
@@ -75,3 +76,18 @@ def test_bulk_distance_decay_uses_method_default(tmp_path: Path):
     atac_bulk.run(args)
     payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert payload["converter"]["parameters"]["max_distance_bp"] == 500000
+
+
+def test_bulk_converter_accepts_gzipped_peaks(tmp_path: Path):
+    gz_peaks = tmp_path / "toy_peaks.bed.gz"
+    with Path("tests/data/toy_peaks.bed").open("rb") as src, gzip.open(gz_peaks, "wb") as dst:
+        dst.write(src.read())
+
+    args = Args()
+    args.peaks = str(gz_peaks)
+    args.out_dir = str(tmp_path / "bulk_gz")
+    args.peak_weights_tsv = "tests/data/toy_peak_weights.tsv"
+    atac_bulk.run(args)
+
+    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    validate_output_dir(Path(args.out_dir), schema)

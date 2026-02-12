@@ -144,10 +144,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "convert":
             converter = get_converter(args.converter)
             result = converter.run(args)
-            print(
-                f"converted peaks={result.get('n_peaks')} genes={result.get('n_genes')} out={result.get('out_dir')}",
-                file=sys.stderr,
-            )
+            if int(result.get("n_groups", 1)) > 1:
+                print(
+                    "converted "
+                    f"peaks={result.get('n_peaks')} "
+                    f"groups={result.get('n_groups')} "
+                    f"genes_per_group={result.get('n_genes_min')}-{result.get('n_genes_max')} "
+                    f"unique_genes={result.get('n_genes_unique')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"converted peaks={result.get('n_peaks')} genes={result.get('n_genes')} out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
             return 0
     except Exception as exc:  # pragma: no cover
         print(f"error: {exc}", file=sys.stderr)

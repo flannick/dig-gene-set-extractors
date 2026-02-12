@@ -76,6 +76,9 @@ def test_cli_validate_grouped_root(tmp_path: Path):
         "tests/data/barcode_groups.tsv",
     )
     assert convert.returncode == 0
+    assert "groups=" in convert.stderr
+    assert "genes_per_group=" in convert.stderr
+    assert "unique_genes=" in convert.stderr
     validate = _run("validate", str(out))
     assert validate.returncode == 0
     assert "n_groups=" in validate.stdout

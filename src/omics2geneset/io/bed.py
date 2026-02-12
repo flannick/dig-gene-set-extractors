@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import gzip
 from pathlib import Path
+from typing import TextIO
+
+
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _open_text_maybe_gzip(path: Path) -> TextIO:
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8")
+    with path.open("rb") as fh:
+        magic = fh.read(2)
+    if magic == GZIP_MAGIC:
+        return gzip.open(path, "rt", encoding="utf-8")
+    return path.open("r", encoding="utf-8")
 
 
 def read_bed(path: str | Path) -> list[dict[str, object]]:
     peaks: list[dict[str, object]] = []
-    with Path(path).open("r", encoding="utf-8") as fh:
+    with _open_text_maybe_gzip(Path(path)) as fh:
         for line in fh:
             if not line.strip() or line.startswith("#"):
                 continue
@@ -25,7 +40,7 @@ def read_bed(path: str | Path) -> list[dict[str, object]]:
 
 def read_peak_weights_tsv(path: str | Path) -> dict[tuple[str, int, int], float]:
     out: dict[tuple[str, int, int], float] = {}
-    with Path(path).open("r", encoding="utf-8") as fh:
+    with _open_text_maybe_gzip(Path(path)) as fh:
         header = fh.readline().rstrip("\n").split("\t")
         index = {name: i for i, name in enumerate(header)}
         for key in ("chrom", "start", "end", "weight"):

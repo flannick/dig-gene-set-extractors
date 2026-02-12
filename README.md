@@ -17,6 +17,24 @@ omics2geneset list
 pytest -q
 ```
 
+## Offline / Air-Gapped Install
+
+If your environment cannot reach PyPI, default `pip install -e ".[dev]"` may fail because build isolation tries to resolve build requirements online.
+
+Use a local wheelhouse and disable build isolation:
+
+```bash
+# Example: WHEELHOUSE contains local wheels for setuptools, wheel, build, jsonschema, pytest, etc.
+python -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel build
+python -m pip install --no-index --find-links "$WHEELHOUSE" -e ".[dev]" --no-build-isolation
+```
+
+If you only need to run the package from source without install:
+
+```bash
+PYTHONPATH=src python -m omics2geneset.cli list
+```
+
 Core CLI commands:
 
 ```bash

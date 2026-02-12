@@ -76,6 +76,8 @@ def run(args) -> dict[str, object]:
     manifest_rows: list[tuple[str, str]] = []
 
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
+    unique_output_genes: set[str] = set()
+    n_genes_per_group: list[int] = []
 
     if args.groups_tsv:
         group_peak_weights = summarize_peaks_by_group(Path(matrix_files["matrix"]), len(peaks), group_indices, args.peak_summary)
@@ -93,6 +95,8 @@ def run(args) -> dict[str, object]:
             {"gene_id": gid, "weight": w, "gene_symbol": gene_symbol_by_id.get(gid)}
             for gid, w in final_gene_weights.items()
         ]
+        n_genes_per_group.append(len(rows))
+        unique_output_genes.update(str(r["gene_id"]) for r in rows)
         gw = GeneWeights(rows).sort_desc()
 
         if args.groups_tsv:
@@ -139,4 +143,13 @@ def run(args) -> dict[str, object]:
             writer.writerow(["group", "path"])
             writer.writerows(manifest_rows)
 
-    return {"n_peaks": len(peaks), "n_genes": len(genes), "out_dir": str(out_dir), "n_groups": len(group_indices)}
+    if args.groups_tsv:
+        return {
+            "n_peaks": len(peaks),
+            "out_dir": str(out_dir),
+            "n_groups": len(group_indices),
+            "n_genes_unique": len(unique_output_genes),
+            "n_genes_min": min(n_genes_per_group) if n_genes_per_group else 0,
+            "n_genes_max": max(n_genes_per_group) if n_genes_per_group else 0,
+        }
+    return {"n_peaks": len(peaks), "n_genes": n_genes_per_group[0] if n_genes_per_group else 0, "out_dir": str(out_dir), "n_groups": 1}
