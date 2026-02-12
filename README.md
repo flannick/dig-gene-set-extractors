@@ -12,6 +12,7 @@ The package is built around converter plugins so new assay-specific extractors c
 From this repo root:
 
 ```bash
+python -m pip install -U pip setuptools wheel
 python -m pip install -e ".[dev]"
 omics2geneset list
 pytest -q
@@ -27,6 +28,22 @@ Use a local wheelhouse and disable build isolation:
 # Example: WHEELHOUSE contains local wheels for setuptools, wheel, build, jsonschema, pytest, etc.
 python -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel build
 python -m pip install --no-index --find-links "$WHEELHOUSE" -e ".[dev]" --no-build-isolation
+```
+
+Reproducible helper script (recommended):
+
+```bash
+scripts/install_offline.sh --wheelhouse "$WHEELHOUSE" --python python
+```
+
+Important:
+
+- `pip install -e . --no-build-isolation --no-deps` can fail in a fresh venv if `wheel` is not preinstalled (`invalid command 'bdist_wheel'`).
+- If you must use `--no-deps`, bootstrap build tools first:
+
+```bash
+python -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel
+python -m pip install -e . --no-build-isolation --no-deps
 ```
 
 If you only need to run the package from source without install:
