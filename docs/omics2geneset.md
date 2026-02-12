@@ -26,7 +26,7 @@ Optional columns:
 From repo root:
 
 ```bash
-python -m pip install -U pip setuptools wheel
+python -m pip install -U pip
 python -m pip install -e ".[dev]"
 omics2geneset list
 pytest -q
@@ -43,36 +43,9 @@ omics2geneset validate <output_dir>
 
 ## Offline / Air-Gapped Install
 
-If your environment cannot reach PyPI, default `pip install -e ".[dev]"` may fail because build isolation tries to resolve build requirements online.
+For offline installation workflows (wheelhouse checks, bootstrap scripts, and no-build-isolation guidance), see:
 
-Use a local wheelhouse and disable build isolation:
-
-```bash
-# Example: WHEELHOUSE contains local wheels for setuptools, wheel, build, jsonschema, pytest, etc.
-python -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel build
-python -m pip install --no-index --find-links "$WHEELHOUSE" -e ".[dev]" --no-build-isolation
-```
-
-Reproducible helper scripts (recommended):
-
-```bash
-scripts/check_wheelhouse.py --wheelhouse "$WHEELHOUSE" --with-dev
-scripts/install_offline.sh --wheelhouse "$WHEELHOUSE" --python python
-```
-
-Important:
-
-- `pip install -e . --no-build-isolation --no-deps` can fail in a fresh venv if `wheel` is not preinstalled (`invalid command 'bdist_wheel'`).
-- If you must use `--no-deps`, bootstrap build tools first:
-
-```bash
-scripts/bootstrap_build_tools.sh --python python --wheelhouse "$WHEELHOUSE"
-python -m pip install -e . --no-build-isolation --no-deps
-```
-
-Reference:
-
-- `offline/wheelhouse_manifest.example.txt` lists a minimal starter manifest and example commands.
+- `docs/air_gapped_install.md`
 
 If you only need to run package code directly from source:
 

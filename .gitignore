@@ -10,3 +10,6 @@ build/
 .envrc
 .DS_Store
 .pytest_cache/
+docs/*.aux
+docs/*.log
+docs/*.out

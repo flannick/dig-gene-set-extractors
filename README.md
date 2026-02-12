@@ -18,14 +18,16 @@ A gene set extractor maps assay-specific inputs into a common output contract:
 - CLI: `omics2geneset`
 - Detailed package docs: `docs/omics2geneset.md`
 
-## Quick Start (Current Package)
+## Quick Start (Common Online Case)
 
 ```bash
-python -m pip install -U pip setuptools wheel
+python -m pip install -U pip
 python -m pip install -e ".[dev]"
 omics2geneset list
 pytest -q
 ```
+
+For offline/air-gapped setup and bootstrap details, see `docs/air_gapped_install.md`.
 
 ## Output Contract (All Extractors)
 
@@ -59,5 +61,6 @@ For a new family/package (for example a non-omics extractor module):
 
 - Repository-level guide: `README.md` (this file)
 - Current package deep-dive: `docs/omics2geneset.md`
+- Offline installation guide: `docs/air_gapped_install.md`
 
 As more extractor families are implemented, add corresponding docs in `docs/`.
