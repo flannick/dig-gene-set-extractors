@@ -24,6 +24,7 @@ WHEELHOUSE=""
 PY_BIN="python"
 WITH_DEV=1
 EDITABLE=1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,6 +67,12 @@ if [[ ! -d "$WHEELHOUSE" ]]; then
   exit 2
 fi
 
+if [[ "$WITH_DEV" -eq 1 ]]; then
+  "$PY_BIN" "$SCRIPT_DIR/check_wheelhouse.py" --wheelhouse "$WHEELHOUSE" --with-dev
+else
+  "$PY_BIN" "$SCRIPT_DIR/check_wheelhouse.py" --wheelhouse "$WHEELHOUSE"
+fi
+
 TARGET="."
 if [[ "$WITH_DEV" -eq 1 ]]; then
   TARGET=".[dev]"
@@ -73,6 +80,13 @@ fi
 
 echo "Bootstrapping build prerequisites from wheelhouse..."
 "$PY_BIN" -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel build
+"$PY_BIN" - <<'PY'
+import importlib.util
+import sys
+if importlib.util.find_spec("wheel") is None:
+    print("wheel package is still missing after bootstrap; cannot continue with --no-build-isolation install", file=sys.stderr)
+    raise SystemExit(2)
+PY
 
 echo "Installing omics2geneset from local source..."
 if [[ "$EDITABLE" -eq 1 ]]; then

@@ -1,0 +1,22 @@
+# Example wheelhouse manifest for offline installation (Python 3.10+)
+#
+# Include at least these direct packages:
+# - setuptools
+# - wheel
+# - build
+# - jsonschema
+# - pytest   (if using .[dev])
+#
+# Include transitive dependencies for your target Python/OS as well.
+# A practical way to build this wheelhouse on a connected machine is:
+#
+#   python -m pip download --dest /path/to/wheelhouse \
+#     setuptools wheel build jsonschema pytest
+#
+# Then copy the wheelhouse directory to the offline machine and run:
+#
+#   scripts/install_offline.sh --wheelhouse /path/to/wheelhouse
+#
+# You can sanity-check it with:
+#
+#   scripts/check_wheelhouse.py --wheelhouse /path/to/wheelhouse --with-dev

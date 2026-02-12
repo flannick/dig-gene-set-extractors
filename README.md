@@ -33,6 +33,7 @@ python -m pip install --no-index --find-links "$WHEELHOUSE" -e ".[dev]" --no-bui
 Reproducible helper script (recommended):
 
 ```bash
+scripts/check_wheelhouse.py --wheelhouse "$WHEELHOUSE" --with-dev
 scripts/install_offline.sh --wheelhouse "$WHEELHOUSE" --python python
 ```
 
@@ -42,9 +43,13 @@ Important:
 - If you must use `--no-deps`, bootstrap build tools first:
 
 ```bash
-python -m pip install --no-index --find-links "$WHEELHOUSE" setuptools wheel
+scripts/bootstrap_build_tools.sh --python python --wheelhouse "$WHEELHOUSE"
 python -m pip install -e . --no-build-isolation --no-deps
 ```
+
+Reference:
+
+- `offline/wheelhouse_manifest.example.txt` lists a minimal starter manifest and example commands.
 
 If you only need to run the package from source without install:
 
