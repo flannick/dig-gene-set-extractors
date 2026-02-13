@@ -36,6 +36,8 @@ GMT defaults favor cleaner symbols:
 
 - `--gmt_require_symbol true` drops rows whose symbol is missing or Ensembl-like.
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
+- `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
+- `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 
 `geneset.tsv` columns:
 

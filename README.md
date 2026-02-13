@@ -41,7 +41,9 @@ For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 - `--normalize within_set_l1`
 - `--emit_full true`
 - `--emit_gmt true`
-- `--gmt_topk_list 200`
+- `--link_method all`
+- `--gmt_topk_list 100,200,500`
+- `--gmt_mass_list 0.5,0.8,0.9`
 - `--gmt_require_symbol true`
 - `--gmt_biotype_allowlist protein_coding`
 - `--gmt_min_genes 100`

@@ -16,7 +16,7 @@ class Args:
     groups_tsv = None
     peak_summary = "sum_counts"
     peak_weight_transform = "positive"
-    link_method = "promoter_overlap"
+    link_method = "all"
     promoter_upstream_bp = 2000
     promoter_downstream_bp = 500
     max_distance_bp = None
@@ -33,8 +33,8 @@ class Args:
     gmt_prefer_symbol = True
     gmt_min_genes = 100
     gmt_max_genes = 500
-    gmt_topk_list = "200"
-    gmt_mass_list = ""
+    gmt_topk_list = "100,200,500"
+    gmt_mass_list = "0.5,0.8,0.9"
     gmt_split_signed = False
     contrast = None
     contrast_metric = "log2fc"

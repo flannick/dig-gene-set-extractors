@@ -36,15 +36,26 @@ from omics2geneset.io.mtx_10x import (
 )
 
 
+_LINK_METHODS = ("promoter_overlap", "nearest_tss", "distance_decay")
+
+
 def _arg(args, name: str, default):
     return getattr(args, name, default)
 
 
-def _resolve_max_distance(args) -> int:
+def _resolve_link_methods(args) -> list[str]:
+    link_method = str(_arg(args, "link_method", "all"))
+    if link_method == "all":
+        return list(_LINK_METHODS)
+    if link_method not in _LINK_METHODS:
+        raise ValueError(f"Unsupported link_method: {link_method}")
+    return [link_method]
+
+
+def _resolve_max_distance(args, link_method: str) -> int:
     max_distance_bp = _arg(args, "max_distance_bp", None)
     if max_distance_bp is not None:
         return int(max_distance_bp)
-    link_method = _arg(args, "link_method", "promoter_overlap")
     if link_method == "nearest_tss":
         return 100000
     if link_method == "distance_decay":
@@ -72,14 +83,22 @@ def _resolve_pseudocount(args) -> float:
 
 def _resolved_parameters(args, group_name: str | None = None) -> dict[str, object]:
     contrast = _resolve_contrast(args)
-    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
-    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "100,200,500")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
+    link_methods = _resolve_link_methods(args)
+    max_distance = (
+        _resolve_max_distance(args, link_methods[0])
+        if len(link_methods) == 1
+        else {method: _resolve_max_distance(args, method) for method in link_methods}
+    )
     params: dict[str, object] = {
-        "link_method": _arg(args, "link_method", "promoter_overlap"),
+        "link_method": _arg(args, "link_method", "all"),
+        "link_methods_evaluated": link_methods,
+        "primary_link_method": link_methods[0],
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
         "promoter_downstream_bp": _arg(args, "promoter_downstream_bp", 500),
-        "max_distance_bp": _resolve_max_distance(args),
+        "max_distance_bp": max_distance,
         "decay_length_bp": _arg(args, "decay_length_bp", 50000),
         "max_genes_per_peak": _arg(args, "max_genes_per_peak", 5),
         "peak_summary": _arg(args, "peak_summary", "sum_counts"),
@@ -108,9 +127,8 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
     return params
 
 
-def _link(peaks: list[dict[str, object]], genes, args):
-    max_distance_bp = _resolve_max_distance(args)
-    link_method = _arg(args, "link_method", "promoter_overlap")
+def _link(peaks: list[dict[str, object]], genes, args, link_method: str):
+    max_distance_bp = _resolve_max_distance(args, link_method)
     if link_method == "promoter_overlap":
         return link_promoter_overlap(
             peaks,
@@ -212,15 +230,17 @@ def run(args) -> dict[str, object]:
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     gmt_min_genes = int(_arg(args, "gmt_min_genes", 100))
     gmt_max_genes = int(_arg(args, "gmt_max_genes", 500))
-    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
-    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "100,200,500")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
     gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
     gmt_out = _arg(args, "gmt_out", None)
     contrast_metric = _arg(args, "contrast_metric", "log2fc")
 
     groups = read_groups_tsv(groups_tsv) if groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
-    links = _link(peaks, genes, args)
+    link_methods = _resolve_link_methods(args)
+    primary_link_method = link_methods[0]
+    links_by_method = {method: _link(peaks, genes, args, method) for method in link_methods}
 
     contrast = _resolve_contrast(args)
     pseudocount = _resolve_pseudocount(args)
@@ -270,8 +290,12 @@ def run(args) -> dict[str, object]:
         else:
             peak_stat = group_summary[group_name]
 
-        raw_scores = score_genes(peak_stat, links, peak_weight_transform)
-        full_scores = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
+        full_scores_by_method: dict[str, dict[str, float]] = {}
+        for method in link_methods:
+            raw_scores = score_genes(peak_stat, links_by_method[method], peak_weight_transform)
+            full_scores_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
+
+        full_scores = full_scores_by_method[primary_link_method]
         selected_gene_ids = _select_gene_ids(full_scores, args)
         selected_weights = _selected_weights(full_scores, selected_gene_ids, normalize)
 
@@ -288,18 +312,21 @@ def run(args) -> dict[str, object]:
                 }
             )
 
-        full_gene_ids = ranked_gene_ids(full_scores)
-        full_rows: list[dict[str, object]] = []
-        for rank, gene_id in enumerate(full_gene_ids, start=1):
-            full_rows.append(
-                {
-                    "gene_id": gene_id,
-                    "score": float(full_scores[gene_id]),
-                    "rank": rank,
-                    "gene_symbol": gene_symbol_by_id.get(gene_id),
-                    "gene_biotype": gene_biotype_by_id.get(gene_id),
-                }
-            )
+        full_rows_by_method: dict[str, list[dict[str, object]]] = {}
+        for method in link_methods:
+            method_rows: list[dict[str, object]] = []
+            for rank, gene_id in enumerate(ranked_gene_ids(full_scores_by_method[method]), start=1):
+                method_rows.append(
+                    {
+                        "gene_id": gene_id,
+                        "score": float(full_scores_by_method[method][gene_id]),
+                        "rank": rank,
+                        "gene_symbol": gene_symbol_by_id.get(gene_id),
+                        "gene_biotype": gene_biotype_by_id.get(gene_id),
+                    }
+                )
+            full_rows_by_method[method] = method_rows
+        full_rows = full_rows_by_method[primary_link_method]
 
         if groups_tsv:
             group_dir = out_dir / f"group={_safe_group_name(group_name)}"
@@ -315,23 +342,30 @@ def run(args) -> dict[str, object]:
         group_gmt_sets: list[tuple[str, list[str]]] = []
         group_gmt_plans: list[dict[str, object]] = []
         if emit_gmt:
-            group_gmt_sets, group_gmt_plans = build_gmt_sets_from_rows(
-                rows=full_rows,
-                base_name=f"atac_sc_10x__group={group_name}",
-                prefer_symbol=gmt_prefer_symbol,
-                min_genes=gmt_min_genes,
-                max_genes=gmt_max_genes,
-                topk_list=gmt_topk_list,
-                mass_list=gmt_mass_list,
-                split_signed=gmt_split_signed,
-                require_symbol=gmt_require_symbol,
-                allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
-            )
+            for method in link_methods:
+                method_sets, method_plans = build_gmt_sets_from_rows(
+                    rows=full_rows_by_method[method],
+                    base_name=f"atac_sc_10x__group={group_name}__link_method={method}",
+                    prefer_symbol=gmt_prefer_symbol,
+                    min_genes=gmt_min_genes,
+                    max_genes=gmt_max_genes,
+                    topk_list=gmt_topk_list,
+                    mass_list=gmt_mass_list,
+                    split_signed=gmt_split_signed,
+                    require_symbol=gmt_require_symbol,
+                    allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                )
+                for plan in method_plans:
+                    params = dict(plan.get("parameters", {}))
+                    params["link_method"] = method
+                    plan["parameters"] = params
+                group_gmt_sets.extend(method_sets)
+                group_gmt_plans.extend(method_plans)
             write_gmt(group_gmt_sets, group_gmt_path)
             combined_gmt_sets.extend(group_gmt_sets)
             combined_gmt_plans.extend(group_gmt_plans)
 
-        assigned_peaks = len({int(link["peak_index"]) for link in links})
+        assigned_peaks = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})
         n_genes_per_group.append(len(selected_rows))
         unique_output_genes.update(gid for gid in selected_gene_ids)
 

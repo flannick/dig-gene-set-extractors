@@ -22,7 +22,7 @@
     }
   ],
   "parameters": [
-    {"name": "link_method", "type": "string", "default": "promoter_overlap", "enum": ["promoter_overlap", "nearest_tss", "distance_decay"], "help": "Peak-to-gene linkage strategy"},
+    {"name": "link_method", "type": "string", "default": "all", "enum": ["all", "promoter_overlap", "nearest_tss", "distance_decay"], "help": "Peak-to-gene linkage strategy; all runs all linkage models for GMT emission"},
     {"name": "promoter_upstream_bp", "type": "int", "default": 2000, "help": "Promoter upstream window for promoter_overlap"},
     {"name": "promoter_downstream_bp", "type": "int", "default": 500, "help": "Promoter downstream window for promoter_overlap"},
     {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
@@ -43,8 +43,8 @@
     {"name": "gmt_biotype_allowlist", "type": "string_csv", "default": "protein_coding", "help": "Comma-separated allowed gene biotypes from GTF; empty string disables filter"},
     {"name": "gmt_min_genes", "type": "int", "default": 100, "help": "Minimum genes per emitted GMT set"},
     {"name": "gmt_max_genes", "type": "int", "default": 500, "help": "Maximum genes per emitted GMT set"},
-    {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "200", "help": "Comma-separated top-K plans for GMT emission"},
-    {"name": "gmt_mass_list", "type": "string_csv_floats", "default": "", "help": "Comma-separated HPD mass thresholds for GMT emission"},
+    {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "100,200,500", "help": "Comma-separated top-K plans for GMT emission"},
+    {"name": "gmt_mass_list", "type": "string_csv_floats", "default": "0.5,0.8,0.9", "help": "Comma-separated HPD mass thresholds for GMT emission"},
     {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"}
   ],
   "outputs": [

@@ -19,7 +19,7 @@ def _parse_bool(value: str) -> bool:
 
 
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--link_method", choices=["promoter_overlap", "nearest_tss", "distance_decay"], default="promoter_overlap")
+    parser.add_argument("--link_method", choices=["all", "promoter_overlap", "nearest_tss", "distance_decay"], default="all")
     parser.add_argument("--promoter_upstream_bp", type=int, default=2000)
     parser.add_argument("--promoter_downstream_bp", type=int, default=500)
     parser.add_argument("--max_distance_bp", type=int)
@@ -43,8 +43,8 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_biotype_allowlist", default="protein_coding")
     parser.add_argument("--gmt_min_genes", type=int, default=100)
     parser.add_argument("--gmt_max_genes", type=int, default=500)
-    parser.add_argument("--gmt_topk_list", default="200")
-    parser.add_argument("--gmt_mass_list", default="")
+    parser.add_argument("--gmt_topk_list", default="100,200,500")
+    parser.add_argument("--gmt_mass_list", default="0.5,0.8,0.9")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
 
 

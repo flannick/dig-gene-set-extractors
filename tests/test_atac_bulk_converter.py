@@ -15,7 +15,7 @@ class Args:
     genome_build = "hg38"
     peaks_weight_column = 5
     peak_weights_tsv = "tests/data/toy_peak_weights.tsv"
-    link_method = "promoter_overlap"
+    link_method = "all"
     promoter_upstream_bp = 2000
     promoter_downstream_bp = 500
     max_distance_bp = None
@@ -33,8 +33,8 @@ class Args:
     gmt_prefer_symbol = True
     gmt_min_genes = 100
     gmt_max_genes = 500
-    gmt_topk_list = "200"
-    gmt_mass_list = ""
+    gmt_topk_list = "100,200,500"
+    gmt_mass_list = "0.5,0.8,0.9"
     gmt_split_signed = False
     gtf_source = "toy"
 
@@ -101,11 +101,13 @@ def test_bulk_converter_writes_gmt(tmp_path: Path):
     gmt_path = Path(args.out_dir) / "genesets.gmt"
     assert gmt_path.exists()
     lines = gmt_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
-    assert lines[0].count("\t") == 1
-    name, genes = lines[0].split("\t")
-    assert name.endswith("__topk=3")
-    assert genes.split(" ") == ["G2", "G1"]
+    assert len(lines) == 3
+    for line in lines:
+        assert line.count("\t") == 1
+        name, genes = line.split("\t")
+        assert name.endswith("__topk=3")
+        assert "__link_method=" in name
+        assert set(genes.split(" ")) == {"G1", "G2"}
 
 
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
