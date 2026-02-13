@@ -39,6 +39,8 @@
     {"name": "emit_gmt", "type": "bool", "default": true, "help": "If true, write program gene sets in GMT format"},
     {"name": "gmt_out", "type": "string_or_none", "default": null, "help": "Output GMT path relative to out_dir (or absolute path)"},
     {"name": "gmt_prefer_symbol", "type": "bool", "default": true, "help": "Prefer gene_symbol over gene_id when writing GMT tokens"},
+    {"name": "gmt_require_symbol", "type": "bool", "default": true, "help": "Require non-Ensembl-like gene symbols for GMT tokens; drop unmapped entries"},
+    {"name": "gmt_biotype_allowlist", "type": "string_csv", "default": "protein_coding", "help": "Comma-separated allowed gene biotypes from GTF; empty string disables filter"},
     {"name": "gmt_min_genes", "type": "int", "default": 100, "help": "Minimum genes per emitted GMT set"},
     {"name": "gmt_max_genes", "type": "int", "default": 500, "help": "Maximum genes per emitted GMT set"},
     {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "200", "help": "Comma-separated top-K plans for GMT emission"},

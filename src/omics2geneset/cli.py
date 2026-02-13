@@ -39,6 +39,8 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--emit_gmt", type=_parse_bool, default=True)
     parser.add_argument("--gmt_out")
     parser.add_argument("--gmt_prefer_symbol", type=_parse_bool, default=True)
+    parser.add_argument("--gmt_require_symbol", type=_parse_bool, default=True)
+    parser.add_argument("--gmt_biotype_allowlist", default="protein_coding")
     parser.add_argument("--gmt_min_genes", type=int, default=100)
     parser.add_argument("--gmt_max_genes", type=int, default=500)
     parser.add_argument("--gmt_topk_list", default="200")

@@ -32,6 +32,11 @@ Optional:
 3. `geneset.full.tsv` (full nonzero score table when `--emit_full true`)
 4. `genesets.gmt` (one or more exported gene sets when `--emit_gmt true`)
 
+GMT defaults favor cleaner symbols:
+
+- `--gmt_require_symbol true` drops rows whose symbol is missing or Ensembl-like.
+- `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
+
 `geneset.tsv` columns:
 
 - required: `gene_id`, `score`, `rank`

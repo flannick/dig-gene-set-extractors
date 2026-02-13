@@ -21,6 +21,7 @@ class Gene:
     strand: str
     gene_start: int
     gene_end: int
+    gene_biotype: str | None = None
 
 
 class GeneWeights:

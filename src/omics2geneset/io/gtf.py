@@ -32,6 +32,7 @@ def read_genes_from_gtf(path: str | Path, gene_id_field: str = "gene_id") -> lis
             if not gene_id:
                 continue
             gene_symbol = attrs.get("gene_name")
+            gene_biotype = attrs.get("gene_type") or attrs.get("gene_biotype")
             start_1 = int(start)
             end_1 = int(end)
             start_0 = start_1 - 1
@@ -46,6 +47,7 @@ def read_genes_from_gtf(path: str | Path, gene_id_field: str = "gene_id") -> lis
                     strand=strand,
                     gene_start=start_0,
                     gene_end=end_0,
+                    gene_biotype=gene_biotype,
                 )
             )
     return genes

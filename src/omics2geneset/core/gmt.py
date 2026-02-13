@@ -6,6 +6,7 @@ import re
 
 _WS_RE = re.compile(r"\s+")
 _BAD_RE = re.compile(r"[^A-Za-z0-9_.=:-]")
+_ENSEMBL_LIKE_RE = re.compile(r"^ENS[A-Z]*G[0-9]+(?:\.[0-9]+)?$")
 
 
 def sanitize_gmt_name(name: str) -> str:
@@ -15,20 +16,28 @@ def sanitize_gmt_name(name: str) -> str:
     return s or "geneset"
 
 
-def _candidate_token(row: dict[str, object], prefer_symbol: bool) -> str:
+def _is_ensembl_like(value: str) -> bool:
+    return bool(_ENSEMBL_LIKE_RE.match(value))
+
+
+def _candidate_token(row: dict[str, object], prefer_symbol: bool, require_symbol: bool = False) -> str:
     gene_id = str(row.get("gene_id", "")).strip()
     gene_symbol_obj = row.get("gene_symbol")
     gene_symbol = "" if gene_symbol_obj is None else str(gene_symbol_obj).strip()
+    if require_symbol:
+        if gene_symbol and not _is_ensembl_like(gene_symbol):
+            return gene_symbol
+        return ""
     if prefer_symbol and gene_symbol:
         return gene_symbol
     return gene_id
 
 
-def choose_gene_tokens(rows, prefer_symbol: bool) -> list[str]:
+def choose_gene_tokens(rows, prefer_symbol: bool, require_symbol: bool = False) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for row in rows:
-        token = _candidate_token(row, prefer_symbol)
+        token = _candidate_token(row, prefer_symbol, require_symbol=require_symbol)
         if not token or token in seen:
             continue
         seen.add(token)
@@ -76,6 +85,13 @@ def parse_mass_list_csv(value: str) -> list[float]:
     return out
 
 
+def parse_str_list_csv(value: str) -> list[str]:
+    text = str(value).strip()
+    if not text:
+        return []
+    return [tok.strip() for tok in text.split(",") if tok.strip()]
+
+
 def resolve_gmt_out_path(base_dir: Path, gmt_out: str | None) -> Path:
     if gmt_out is None or not str(gmt_out).strip():
         return base_dir / "genesets.gmt"
@@ -93,9 +109,22 @@ def _rows_sorted_by_score(rows: list[dict[str, object]]) -> list[dict[str, objec
     return sorted(rows, key=lambda r: (-float(r.get("score", 0.0)), str(r.get("gene_id", ""))))
 
 
-def _dup_count(rows: list[dict[str, object]], prefer_symbol: bool, emitted: list[str]) -> int:
-    candidates = [tok for tok in (_candidate_token(r, prefer_symbol) for r in rows) if tok]
+def _dup_count(rows: list[dict[str, object]], prefer_symbol: bool, require_symbol: bool, emitted: list[str]) -> int:
+    candidates = [tok for tok in (_candidate_token(r, prefer_symbol, require_symbol=require_symbol) for r in rows) if tok]
     return max(0, len(candidates) - len(emitted))
+
+
+def _passes_biotype_filter(row: dict[str, object], allowed_biotypes: set[str] | None) -> bool:
+    if not allowed_biotypes:
+        return True
+    b = row.get("gene_biotype")
+    if b is None:
+        # Backward compatibility for toy rows without biotype annotation.
+        return True
+    biotype = str(b).strip().lower()
+    if not biotype:
+        return True
+    return biotype in allowed_biotypes
 
 
 def _topk_plan_rows(rows: list[dict[str, object]], k: int) -> list[dict[str, object]]:
@@ -136,13 +165,15 @@ def build_gmt_sets_from_rows(
     topk_list: list[int],
     mass_list: list[float],
     split_signed: bool,
+    require_symbol: bool = False,
+    allowed_biotypes: set[str] | None = None,
 ) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
     if min_genes <= 0 or max_genes <= 0:
         raise ValueError("gmt_min_genes and gmt_max_genes must be positive")
     if min_genes > max_genes:
         raise ValueError("gmt_min_genes must be <= gmt_max_genes")
 
-    ranked = _rows_sorted_by_score(rows)
+    ranked = _rows_sorted_by_score([r for r in rows if _passes_biotype_filter(r, allowed_biotypes)])
     has_negative = any(float(r.get("score", 0.0)) < 0.0 for r in ranked)
 
     variants: list[tuple[str, list[dict[str, object]]]]
@@ -165,7 +196,7 @@ def build_gmt_sets_from_rows(
         for requested_k in topk_list:
             k = _clamp_k(int(requested_k), min_genes, max_genes)
             selected_rows = _topk_plan_rows(variant_rows, k)
-            genes = choose_gene_tokens(selected_rows, prefer_symbol)
+            genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
             if set_name in seen_names or not genes:
                 continue
@@ -178,13 +209,18 @@ def build_gmt_sets_from_rows(
                     "parameters": {"k": k},
                     "n_genes_emitted": len(genes),
                     "token_type": "gene_symbol" if prefer_symbol else "gene_id",
-                    "n_duplicates_dropped": _dup_count(selected_rows, prefer_symbol, genes),
+                    "n_duplicates_dropped": _dup_count(
+                        selected_rows,
+                        prefer_symbol,
+                        require_symbol,
+                        genes,
+                    ),
                 }
             )
 
         for tau in mass_list:
             selected_rows, k = _mass_plan_rows(variant_rows, float(tau), min_genes, max_genes)
-            genes = choose_gene_tokens(selected_rows, prefer_symbol)
+            genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             tau_str = format(float(tau), ".6g")
             set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
             if set_name in seen_names or not genes:
@@ -198,7 +234,12 @@ def build_gmt_sets_from_rows(
                     "parameters": {"tau": float(tau), "k": k},
                     "n_genes_emitted": len(genes),
                     "token_type": "gene_symbol" if prefer_symbol else "gene_id",
-                    "n_duplicates_dropped": _dup_count(selected_rows, prefer_symbol, genes),
+                    "n_duplicates_dropped": _dup_count(
+                        selected_rows,
+                        prefer_symbol,
+                        require_symbol,
+                        genes,
+                    ),
                 }
             )
     return sets, plans

@@ -7,6 +7,7 @@ from omics2geneset.core.gmt import (
     build_gmt_sets_from_rows,
     parse_int_list_csv,
     parse_mass_list_csv,
+    parse_str_list_csv,
     resolve_gmt_out_path,
     write_gmt,
 )
@@ -66,6 +67,7 @@ def _resolve_max_distance(args) -> int:
 def _resolved_parameters(args) -> dict[str, object]:
     gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
     gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
+    gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     return {
         "link_method": _arg(args, "link_method", "promoter_overlap"),
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
@@ -82,6 +84,8 @@ def _resolved_parameters(args) -> dict[str, object]:
         "emit_full": bool(_arg(args, "emit_full", True)),
         "emit_gmt": bool(_arg(args, "emit_gmt", True)),
         "gmt_prefer_symbol": bool(_arg(args, "gmt_prefer_symbol", True)),
+        "gmt_require_symbol": bool(_arg(args, "gmt_require_symbol", True)),
+        "gmt_biotype_allowlist": gmt_biotype_allowlist,
         "gmt_min_genes": int(_arg(args, "gmt_min_genes", 100)),
         "gmt_max_genes": int(_arg(args, "gmt_max_genes", 500)),
         "gmt_topk_list": gmt_topk_list,
@@ -165,6 +169,8 @@ def run(args) -> dict[str, object]:
     emit_full = bool(_arg(args, "emit_full", True))
     emit_gmt = bool(_arg(args, "emit_gmt", True))
     gmt_prefer_symbol = bool(_arg(args, "gmt_prefer_symbol", True))
+    gmt_require_symbol = bool(_arg(args, "gmt_require_symbol", True))
+    gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     gmt_min_genes = int(_arg(args, "gmt_min_genes", 100))
     gmt_max_genes = int(_arg(args, "gmt_max_genes", 500))
     gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
@@ -178,6 +184,7 @@ def run(args) -> dict[str, object]:
     selected_weights = _selected_weights(full_scores, selected_gene_ids, normalize)
 
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
+    gene_biotype_by_id = {g.gene_id: g.gene_biotype for g in genes}
 
     selected_rows: list[dict[str, object]] = []
     for rank, gene_id in enumerate(selected_gene_ids, start=1):
@@ -188,6 +195,7 @@ def run(args) -> dict[str, object]:
                 "weight": float(selected_weights.get(gene_id, 0.0)),
                 "rank": rank,
                 "gene_symbol": gene_symbol_by_id.get(gene_id),
+                "gene_biotype": gene_biotype_by_id.get(gene_id),
             }
         )
     _write_rows(out_dir / "geneset.tsv", selected_rows)
@@ -201,6 +209,7 @@ def run(args) -> dict[str, object]:
                 "score": float(full_scores[gene_id]),
                 "rank": rank,
                 "gene_symbol": gene_symbol_by_id.get(gene_id),
+                "gene_biotype": gene_biotype_by_id.get(gene_id),
             }
         )
     if emit_full:
@@ -219,6 +228,8 @@ def run(args) -> dict[str, object]:
             topk_list=gmt_topk_list,
             mass_list=gmt_mass_list,
             split_signed=gmt_split_signed,
+            require_symbol=gmt_require_symbol,
+            allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
         )
         write_gmt(gmt_sets, gmt_path)
 
@@ -282,6 +293,8 @@ def run(args) -> dict[str, object]:
             if emit_gmt
             else None,
             "prefer_symbol": gmt_prefer_symbol,
+            "require_symbol": gmt_require_symbol,
+            "biotype_allowlist": gmt_biotype_allowlist,
             "min_genes": gmt_min_genes,
             "max_genes": gmt_max_genes,
             "plans": gmt_plans,
