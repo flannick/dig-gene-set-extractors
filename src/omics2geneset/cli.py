@@ -9,6 +9,15 @@ from omics2geneset.core.validate import validate_output_dir
 from omics2geneset.registry import get_converter, get_converter_spec, list_converters
 
 
+def _parse_bool(value: str) -> bool:
+    v = value.strip().lower()
+    if v in {"true", "1", "yes", "y"}:
+        return True
+    if v in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
+
+
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--link_method", choices=["promoter_overlap", "nearest_tss", "distance_decay"], default="promoter_overlap")
     parser.add_argument("--promoter_upstream_bp", type=int, default=2000)
@@ -16,6 +25,14 @@ def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max_distance_bp", type=int)
     parser.add_argument("--decay_length_bp", type=int, default=50000)
     parser.add_argument("--max_genes_per_peak", type=int, default=5)
+
+
+def _add_program_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
 
 
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
@@ -47,9 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_bulk.add_argument("--peaks_weight_column", type=int, default=5)
     p_bulk.add_argument("--peak_weights_tsv")
     p_bulk.add_argument("--peak_weight_transform", choices=["signed", "abs", "positive", "negative"], default="abs")
-    p_bulk.add_argument("--normalize", choices=["l1", "none"], default="l1")
+    p_bulk.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
     p_bulk.add_argument("--gtf_source")
     _add_linking_flags(p_bulk)
+    _add_program_flags(p_bulk)
 
     p_sc = conv.add_parser("atac_sc_10x")
     p_sc.add_argument("--matrix_dir", required=True)
@@ -59,9 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--genome_build", required=True)
     p_sc.add_argument("--groups_tsv")
     p_sc.add_argument("--peak_summary", choices=["sum_counts", "mean_counts", "frac_cells_nonzero"], default="sum_counts")
-    p_sc.add_argument("--normalize", choices=["l1", "none"], default="l1")
+    p_sc.add_argument("--peak_weight_transform", choices=["signed", "abs", "positive", "negative"], default="positive")
+    p_sc.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    p_sc.add_argument("--contrast", choices=["none", "group_vs_rest"])
+    p_sc.add_argument("--contrast_metric", choices=["log2fc", "diff"], default="log2fc")
+    p_sc.add_argument("--contrast_pseudocount", type=float)
     p_sc.add_argument("--gtf_source")
     _add_linking_flags(p_sc)
+    _add_program_flags(p_sc)
 
     p_rna = conv.add_parser("rna_deg")
     p_rna.add_argument("--deg_tsv", required=True)

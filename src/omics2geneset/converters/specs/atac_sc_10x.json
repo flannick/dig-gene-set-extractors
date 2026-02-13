@@ -1,6 +1,6 @@
 {
   "name": "atac_sc_10x",
-  "description": "10x scATAC peak-by-cell matrix converted to gene weights",
+  "description": "10x scATAC peak-by-cell matrix converted to compact gene programs",
   "inputs": [
     {"name": "matrix_dir", "type": "10x_mtx_dir", "description": "Directory with matrix.mtx(.gz), barcodes.tsv(.gz), peaks.bed or features.tsv(.gz)", "required": true},
     {"name": "gtf", "type": "gtf", "description": "Gene annotation with gene features", "required": true},
@@ -8,18 +8,29 @@
   ],
   "parameters": [
     {"name": "peak_summary", "type": "string", "default": "sum_counts", "enum": ["sum_counts", "mean_counts", "frac_cells_nonzero"], "help": "How to summarize per-peak accessibility within each group"},
+    {"name": "peak_weight_transform", "type": "string", "default": "positive", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied after optional contrast statistic"},
+    {"name": "contrast", "type": "string_or_none", "default": null, "enum": ["none", "group_vs_rest"], "help": "Group contrast mode; default resolves to group_vs_rest when groups_tsv is provided"},
+    {"name": "contrast_metric", "type": "string", "default": "log2fc", "enum": ["log2fc", "diff"], "help": "Peak contrast metric for group_vs_rest"},
+    {"name": "contrast_pseudocount", "type": "float_or_none", "default": null, "help": "Pseudocount for log2fc; defaults depend on peak_summary"},
     {"name": "link_method", "type": "string", "default": "promoter_overlap", "enum": ["promoter_overlap", "nearest_tss", "distance_decay"], "help": "Peak-to-gene linkage strategy"},
     {"name": "promoter_upstream_bp", "type": "int", "default": 2000, "help": "Promoter upstream window for promoter_overlap"},
     {"name": "promoter_downstream_bp", "type": "int", "default": 500, "help": "Promoter downstream window for promoter_overlap"},
     {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
     {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
     {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
-    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Method for selecting the compact output gene program"},
+    {"name": "top_k", "type": "int", "default": 200, "help": "Number of genes kept when select=top_k"},
+    {"name": "quantile", "type": "float", "default": 0.01, "help": "Top fraction kept when select=quantile"},
+    {"name": "min_score", "type": "float", "default": 0.0, "help": "Score threshold when select=threshold"},
+    {"name": "emit_full", "type": "bool", "default": true, "help": "If true, also write geneset.full.tsv with all nonzero scores"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"}
   ],
   "outputs": [
-    {"name": "geneset.tsv", "description": "Single output when groups are not provided"},
-    {"name": "geneset.meta.json", "description": "Metadata for the single output"},
-    {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group gene sets when groups_tsv is provided"},
+    {"name": "geneset.tsv", "description": "Selected compact program for each output directory"},
+    {"name": "geneset.full.tsv", "description": "Optional full score table for all nonzero genes"},
+    {"name": "geneset.meta.json", "description": "Metadata for each selected program"},
+    {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group program when groups_tsv is provided"},
+    {"name": "group=<GROUP>/geneset.full.tsv", "description": "Optional per-group full score table"},
     {"name": "group=<GROUP>/geneset.meta.json", "description": "Per-group metadata when groups_tsv is provided"},
     {"name": "manifest.tsv", "description": "Group-to-output-path mapping for grouped runs"}
   ]

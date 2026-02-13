@@ -36,16 +36,20 @@ def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
 def validate_geneset_tsv(geneset_path: Path) -> None:
     with geneset_path.open("r", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
-        required = {"gene_id", "weight"}
+        required = {"gene_id", "score"}
         if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
-            raise ValueError("geneset.tsv missing required columns gene_id and weight")
+            raise ValueError("geneset.tsv missing required columns gene_id and score")
         seen: set[str] = set()
         for row in reader:
             gid = row["gene_id"]
             if gid in seen:
                 raise ValueError(f"duplicate gene_id in geneset.tsv: {gid}")
             seen.add(gid)
-            float(row["weight"])
+            float(row["score"])
+            if "weight" in row and str(row["weight"]).strip() != "":
+                float(row["weight"])
+            if "rank" in row and str(row["rank"]).strip() != "":
+                int(float(row["rank"]))
 
 
 def _resolve_manifest_path(root: Path, manifest_value: str) -> Path:
@@ -83,10 +87,13 @@ def _validate_grouped_output_dir(out_dir: Path, schema_path: Path) -> dict[str, 
 
 def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     geneset = out / "geneset.tsv"
+    geneset_full = out / "geneset.full.tsv"
     meta = out / "geneset.meta.json"
     if not geneset.exists() or not meta.exists():
         raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
     validate_geneset_tsv(geneset)
+    if geneset_full.exists():
+        validate_geneset_tsv(geneset_full)
     validate_metadata_schema(meta, schema_path)
 
 

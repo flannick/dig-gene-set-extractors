@@ -1,10 +1,10 @@
 {
   "name": "atac_bulk",
-  "description": "Bulk ATAC-seq peaks and per-peak weights mapped to gene weights",
+  "description": "Bulk ATAC-seq peaks and per-peak weights mapped to compact gene programs",
   "inputs": [
     {
       "name": "peaks",
-      "type": "bed",
+      "type": "bed_or_narrowPeak_gz",
       "description": "Peak intervals; may include score column for weights",
       "required": true
     },
@@ -30,10 +30,16 @@
     {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
     {"name": "peaks_weight_column", "type": "int", "default": 5, "help": "1-based score column in peaks file"},
     {"name": "peak_weight_transform", "type": "string", "default": "abs", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to peak weights prior to scoring"},
-    {"name": "normalize", "type": "string", "default": "l1", "enum": ["l1", "none"], "help": "Final gene-weight normalization"}
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Method for selecting the compact output gene program"},
+    {"name": "top_k", "type": "int", "default": 200, "help": "Number of genes kept when select=top_k"},
+    {"name": "quantile", "type": "float", "default": 0.01, "help": "Top fraction kept when select=quantile"},
+    {"name": "min_score", "type": "float", "default": 0.0, "help": "Score threshold when select=threshold"},
+    {"name": "emit_full", "type": "bool", "default": true, "help": "If true, also write geneset.full.tsv with all nonzero scores"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"}
   ],
   "outputs": [
-    {"name": "geneset.tsv", "description": "Gene-weight table with required columns gene_id and weight"},
+    {"name": "geneset.tsv", "description": "Selected compact gene program with columns gene_id, score, rank, weight"},
+    {"name": "geneset.full.tsv", "description": "Optional full score table for all nonzero genes"},
     {"name": "geneset.meta.json", "description": "Run metadata and provenance validated against schema"}
   ]
 }

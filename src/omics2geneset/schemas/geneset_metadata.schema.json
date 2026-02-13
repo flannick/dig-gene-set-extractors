@@ -79,6 +79,34 @@
         "aggregation": {"type": "string"}
       }
     },
+    "program_extraction": {
+      "type": "object",
+      "required": ["selection_method", "selection_params", "normalize", "n_selected_genes", "score_definition"],
+      "properties": {
+        "selection_method": {"type": "string"},
+        "selection_params": {"type": "object"},
+        "normalize": {"type": "string"},
+        "n_selected_genes": {"type": "integer"},
+        "score_definition": {"type": "string"},
+        "contrast": {"type": "object"}
+      }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role"],
+            "properties": {
+              "path": {"type": "string"},
+              "role": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
     "summary": {
       "type": "object",
       "required": ["n_input_features", "n_genes", "n_features_assigned", "fraction_features_assigned"],

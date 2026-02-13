@@ -140,6 +140,58 @@ def summarize_peaks_by_group(
     return result
 
 
+def summarize_group_vs_rest(
+    matrix_path: Path,
+    n_peaks: int,
+    n_cells: int,
+    group_indices: dict[str, list[int]],
+    method: str,
+) -> tuple[dict[str, list[float]], dict[str, list[float]], dict[str, int]]:
+    group_names = list(group_indices)
+    cell_to_group_idx: dict[int, int] = {}
+    for gi, group in enumerate(group_names):
+        for cell_idx in group_indices[group]:
+            cell_to_group_idx[cell_idx] = gi
+
+    group_sums = [[0.0] * n_peaks for _ in group_names]
+    group_nonzero = [[0] * n_peaks for _ in group_names]
+    all_sums = [0.0] * n_peaks
+    all_nonzero = [0] * n_peaks
+
+    for peak_i, cell_i, val in iter_mtx_entries(matrix_path):
+        all_sums[peak_i] += val
+        if val != 0:
+            all_nonzero[peak_i] += 1
+        gi = cell_to_group_idx.get(cell_i)
+        if gi is None:
+            continue
+        group_sums[gi][peak_i] += val
+        if val != 0:
+            group_nonzero[gi][peak_i] += 1
+
+    group_summary: dict[str, list[float]] = {}
+    rest_summary: dict[str, list[float]] = {}
+    group_sizes = {g: len(group_indices[g]) for g in group_names}
+
+    for gi, group in enumerate(group_names):
+        n_group = max(group_sizes[group], 1)
+        n_rest = max(n_cells - group_sizes[group], 1)
+        if method == "sum_counts":
+            g_vals = group_sums[gi]
+            r_vals = [all_sums[i] - group_sums[gi][i] for i in range(n_peaks)]
+        elif method == "mean_counts":
+            g_vals = [x / n_group for x in group_sums[gi]]
+            r_vals = [(all_sums[i] - group_sums[gi][i]) / n_rest for i in range(n_peaks)]
+        elif method == "frac_cells_nonzero":
+            g_vals = [x / n_group for x in group_nonzero[gi]]
+            r_vals = [(all_nonzero[i] - group_nonzero[gi][i]) / n_rest for i in range(n_peaks)]
+        else:
+            raise ValueError(f"Unsupported peak_summary: {method}")
+        group_summary[group] = g_vals
+        rest_summary[group] = r_vals
+    return group_summary, rest_summary, group_sizes
+
+
 def read_groups_tsv(path: str | Path) -> dict[str, str]:
     groups: dict[str, str] = {}
     with Path(path).open("r", encoding="utf-8") as fh:

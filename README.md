@@ -1,24 +1,12 @@
 # DIG Gene Set Extractors
 
-This repository is a framework for building and running **gene set extractors** across assay types.  
-A gene set extractor maps assay-specific inputs into a common output contract:
+This repository is a framework for building and running gene set extractors across assay types.
 
-- `geneset.tsv` (gene weights)
-- `geneset.meta.json` (provenance + parameters + summary)
+- Repository goal: support multiple extractor families over time.
+- Current implemented family: `omics2geneset`.
+- First production extractors: ATAC-seq (`atac_bulk`, `atac_sc_10x`).
 
-## Scope
-
-- Repository-level goal: host multiple extractor families over time.
-- Current implemented family: `omics2geneset` (ATAC-seq first, extensible to additional data types).
-
-## Current Package
-
-- Package name: `omics2geneset`
-- Source: `src/omics2geneset`
-- CLI: `omics2geneset`
-- Detailed package docs: `docs/omics2geneset.md`
-
-## Quick Start (Common Online Case)
+## Quick Start (Common Case)
 
 ```bash
 python -m pip install -U pip
@@ -27,40 +15,72 @@ omics2geneset list
 pytest -q
 ```
 
-For offline/air-gapped setup and bootstrap details, see `docs/air_gapped_install.md`.
+For offline/air-gapped setup only, see `docs/air_gapped_install.md`.
 
-## Output Contract (All Extractors)
+## Output Contract
 
-Every extractor should write:
+All extractors write:
 
 1. `geneset.tsv`
 2. `geneset.meta.json`
 
-`geneset.tsv` must include at least:
+ATAC extractors now default to compact program outputs:
 
-- `gene_id`
-- `weight`
+- `geneset.tsv`: selected program (`gene_id`, `score`, `rank`, optional `weight`, optional `gene_symbol`)
+- `geneset.full.tsv` (optional): full nonzero score table when `--emit_full true`
 
-`geneset.meta.json` must include enough metadata for reproducibility:
+`geneset.meta.json` records resolved parameters, input file hashes, and summary/provenance fields.
 
-- schema version
-- resolved converter parameters
-- input file paths + hashes
-- summary statistics
+## Program-Sized Defaults
 
-## Adding New Extractor Families
+For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 
-For a new family/package (for example a non-omics extractor module):
+- `--select top_k`
+- `--top_k 200`
+- `--normalize within_set_l1`
+- `--emit_full true`
 
-1. Add a package under `src/` with its own CLI integration.
-2. Reuse the shared output contract.
-3. Add converter specs and tests with toy data.
-4. Add a package-specific guide under `docs/`.
+`within_set_l1` normalizes only selected genes, so `weight` sums to 1 inside the program.
 
-## Documentation Layout
+## Recommended scATAC Cluster Programs
 
-- Repository-level guide: `README.md` (this file)
-- Current package deep-dive: `docs/omics2geneset.md`
-- Offline installation guide: `docs/air_gapped_install.md`
+Use grouped differential extraction:
 
-As more extractor families are implemented, add corresponding docs in `docs/`.
+```bash
+omics2geneset convert atac_sc_10x \
+  --matrix_dir <10x_matrix_dir> \
+  --gtf <genes.gtf> \
+  --groups_tsv <barcode_to_cluster.tsv> \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build hg38 \
+  --contrast group_vs_rest \
+  --contrast_metric log2fc \
+  --peak_summary frac_cells_nonzero \
+  --link_method promoter_overlap \
+  --peak_weight_transform positive \
+  --select top_k \
+  --top_k 200 \
+  --normalize within_set_l1
+```
+
+Grouped runs write `group=<GROUP>/...` outputs plus `manifest.tsv`.  
+`omics2geneset validate <out_dir>` validates grouped roots via the manifest.
+
+## Choosing 100-500 Genes
+
+- Start with `--top_k 200`.
+- Use `100-150` for strict marker-style programs.
+- Use `300-500` for broader pathway coverage.
+- If results are too diffuse, prefer `group_vs_rest` contrast and `positive` transform before increasing `top_k`.
+
+## About Global L1 (`--normalize l1`)
+
+Global L1 distributes total mass across all scored genes.  
+It is useful for legacy comparability, but not a probability that a gene is "active".  
+For compact programs, `within_set_l1` is the recommended default.
+
+## Documentation
+
+- Package guide: `docs/omics2geneset.md`
+- Offline install guide: `docs/air_gapped_install.md`

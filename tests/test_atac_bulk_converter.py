@@ -22,31 +22,48 @@ class Args:
     decay_length_bp = 50000
     max_genes_per_peak = 5
     peak_weight_transform = "abs"
-    normalize = "l1"
+    normalize = "within_set_l1"
+    select = "top_k"
+    top_k = 200
+    quantile = 0.01
+    min_score = 0.0
+    emit_full = True
     gtf_source = "toy"
 
 
 def test_bulk_converter_end_to_end(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "bulk")
+    args.top_k = 1
     atac_bulk.run(args)
 
     geneset = Path(args.out_dir) / "geneset.tsv"
+    geneset_full = Path(args.out_dir) / "geneset.full.tsv"
     meta = Path(args.out_dir) / "geneset.meta.json"
     assert geneset.exists()
+    assert geneset_full.exists()
     assert meta.exists()
 
     total = 0.0
     with geneset.open("r", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         rows = list(reader)
+    assert len(rows) == 1
     assert "gene_id" in reader.fieldnames
+    assert "score" in reader.fieldnames
     assert "weight" in reader.fieldnames
+    assert "rank" in reader.fieldnames
     for r in rows:
+        s = float(r["score"])
+        assert s >= 0
         w = float(r["weight"])
         assert w >= 0
         total += w
     assert abs(total - 1.0) < 1e-9
+
+    with geneset_full.open("r", encoding="utf-8") as fh:
+        full_rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert len(full_rows) >= len(rows)
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
@@ -56,6 +73,9 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
     params = payload["converter"]["parameters"]
     assert "peaks" not in params
     assert "out_dir" not in params
+    assert payload["program_extraction"]["n_selected_genes"] == 1
+    output_roles = {f["role"] for f in payload["output"]["files"]}
+    assert output_roles == {"selected_program", "full_scores"}
 
 
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):

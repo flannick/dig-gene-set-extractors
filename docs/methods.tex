@@ -1,6 +1,6 @@
 \documentclass[11pt]{article}
 
-\usepackage{amsmath, amssymb, amsthm}
+\usepackage{amsmath, amssymb}
 \usepackage{geometry}
 \usepackage{hyperref}
 \usepackage{booktabs}
@@ -8,484 +8,282 @@
 
 \geometry{margin=1in}
 
-\title{Supplementary Note: Models for Converting ATAC-seq Data into Weighted Gene Sets}
+\title{Supplementary Note: Extracting Gene Programs (100--500 genes) from ATAC-seq}
 \author{}
 \date{}
 
 \begin{document}
 \maketitle
 
-\section*{Summary}
-This note derives and summarizes a family of models that transform ATAC-seq data into gene-level weights suitable for downstream analyses that consume (i) gene lists or (ii) weighted gene lists.
-ATAC-seq measures chromatin accessibility at genomic loci. Any gene-level score is therefore a model-based projection from locus space to gene space.
-We organize the models under a shared mathematical framework: assign each ATAC feature (typically a peak) a peak-level weight and a peak-to-gene linkage distribution, then aggregate peak contributions to obtain a gene-weight vector. We provide biological motivations, explicit equations, and practical implementation heuristics for both bulk and single-cell ATAC-seq.
+\section*{Motivation and scope}
+The goal of these converters is not merely to output a gene-weight vector over all genes, but to extract compact gene sets (on the order of 100--500 genes) that represent an interpretable \emph{gene program} or \emph{mechanism} for downstream enrichment.
+ATAC-seq measures chromatin accessibility at regulatory loci. Mapping ATAC signal to genes is therefore a model-based projection from locus space to gene space. In addition, extracting a compact program requires an explicit \emph{selection} step to identify the most informative genes for a given dataset, condition, or cell group.
 
-\section{Notation and inputs}
-Let:
+This note provides:
 \begin{itemize}[leftmargin=2em]
-\item Peaks (or regions) be indexed by $p \in \{1,\dots,P\}$.
-Each peak $p$ has genomic coordinates $(c_p, s_p, e_p)$ (chromosome, start, end).
-\item Genes be indexed by $g \in \{1,\dots,G\}$.
-Each gene $g$ has chromosome $c_g$, strand $\sigma_g \in \{+,-\}$, transcription start site (TSS) position $t_g$, and promoter interval $\mathcal{P}_g$ (defined below).
-\item The observed ATAC signal for peak $p$ is $x_p$.
-This could be raw counts, normalized accessibility, or a differential accessibility statistic (possibly signed).
-\item The desired gene-level weight for gene $g$ is $w_g$.
-We may further normalize $\mathbf{w} = (w_1,\dots,w_G)$ to form a distribution over genes.
+\item a shared mathematical framework for ATAC-to-gene scoring,
+\item a family of peak-to-gene linkage models (promoter, distance, priors, co-accessibility),
+\item and, critically, a set of \emph{program extraction operators} that convert gene scores into a 100--500 gene set with optional within-set weights.
 \end{itemize}
 
-Throughout, we will distinguish:
+\section{Notation}
 \begin{itemize}[leftmargin=2em]
-\item \textbf{Peak weights} (how important each peak is in the dataset/contrast): $\alpha_p$.
-\item \textbf{Peak-to-gene link weights} (how peak $p$ is attributed to gene $g$): $L_{pg} \ge 0$.
+\item Peaks (regions) indexed by $p \in \{1,\dots,P\}$ with coordinates $(c_p,s_p,e_p)$.
+\item Genes indexed by $g \in \{1,\dots,G\}$ with chromosome $c_g$, strand $\sigma_g \in \{+,-\}$, TSS position $t_g$, and promoter interval $\mathcal{P}_g$.
+\item Peak-level observed statistic $x_p$ (counts, coverage, or differential statistic).
+\item Peak weight $\alpha_p$ derived from $x_p$ via a transform $\phi(\cdot)$.
+\item Peak-to-gene linkage weight $L_{pg} \ge 0$.
+\item Raw gene score $s_g$ and (optional) reported gene weight $w_g$.
 \end{itemize}
 
-\subsection{Coordinate conventions}
-Implementations must be explicit about coordinate systems:
-\begin{itemize}[leftmargin=2em]
-\item BED is 0-based, half-open: interval $[s,e)$.
-\item GTF/GFF is 1-based, closed: interval $[s,e]$.
-\end{itemize}
-A common approach is to convert all inputs into a single internal convention (typically 0-based half-open) before overlap computations.
+\section{Unified model: peak weights and peak-to-gene links}
 
-\subsection{TSS and promoter definition}
-Given gene interval $[a_g, b_g]$ in 0-based coordinates:
-\[
-t_g =
-\begin{cases}
-a_g, & \sigma_g = + \\
-b_g, & \sigma_g = -
-\end{cases}
-\]
-Define promoter window parameters $(u,d)$ (upstream and downstream in bp). A strand-aware promoter interval is:
-\[
-\mathcal{P}_g =
-\begin{cases}
-[t_g - u,\; t_g + d), & \sigma_g = + \\
-[t_g - d,\; t_g + u), & \sigma_g = -
-\end{cases}
-\]
-Clipping to chromosome bounds is recommended in practice.
-
-\section{ATAC-seq gene set extraction: general modeling framework}
-
-\subsection{Biological rationale}
-ATAC-seq captures chromatin accessibility at regulatory DNA:
-promoters, enhancers, insulators, and other elements. Accessibility is a proxy for regulatory activity and/or potential: regions must typically be accessible to be bound by transcription factors and co-factors.
-Gene regulation is driven by both promoter state and distal regulatory elements connected through 3D genome organization and regulatory wiring.
-Thus, mapping ATAC signal to genes requires a \emph{peak-to-gene} model.
-
-\subsection{A generic linear projection model}
-We represent the gene-level weight as a linear projection of peak-level weights:
-\begin{equation}
-w_g \;=\; \sum_{p=1}^P \alpha_p \, L_{pg}.
-\label{eq:generic_projection}
-\end{equation}
-Here:
-\begin{itemize}[leftmargin=2em]
-\item $\alpha_p$ encodes how strongly peak $p$ is implicated by the ATAC dataset (or contrast).
-\item $L_{pg}$ encodes how strongly peak $p$ regulates or is associated with gene $g$.
-\end{itemize}
-
-Equation \eqref{eq:generic_projection} can be motivated as a pragmatic approximation to an unknown cis-regulatory model.
-For example, suppose a (latent) gene regulatory response $y_g$ obeys:
-\[
-y_g \approx \sum_{p=1}^P \beta_{pg}\, x_p,
-\]
-where $\beta_{pg}$ are unknown peak-to-gene effects. If we have a prior or proxy for $\beta_{pg}$ in the form of nonnegative link weights $L_{pg}$ (possibly rescaled), and we choose a peak statistic $\alpha_p$ derived from $x_p$ (or from a comparison), then the induced gene score \eqref{eq:generic_projection} is an interpretable, reproducible surrogate for regulatory potential or regulatory change.
-
-\subsection{Peak-weight transforms}
-ATAC peak statistics can be signed (e.g., differential accessibility) or nonnegative (e.g., counts).
-Downstream enrichment methods often expect nonnegative weights, or separate up and down signatures.
-Define a transform $\phi(\cdot)$ mapping a raw peak statistic $x_p$ to a peak weight $\alpha_p$:
+\subsection{Peak weights}
+Define a peak weight transform $\phi$:
 \[
 \alpha_p = \phi(x_p).
 \]
-Common choices:
+Common transforms:
 \begin{align*}
-\phi_{\mathrm{signed}}(x) &= x \\
-\phi_{\mathrm{abs}}(x) &= |x| \\
-\phi_{\mathrm{pos}}(x) &= \max(x, 0) \\
+\phi_{\mathrm{signed}}(x) &= x, \\
+\phi_{\mathrm{abs}}(x) &= |x|, \\
+\phi_{\mathrm{pos}}(x) &= \max(x, 0), \\
 \phi_{\mathrm{neg}}(x) &= \max(-x, 0).
 \end{align*}
-The \texttt{pos} and \texttt{neg} transforms allow constructing separate gene sets for opening vs closing chromatin (or case up vs case down).
+For program extraction, \texttt{pos} and \texttt{neg} are often preferable when $x_p$ is differential, because they yield direction-specific programs (opening vs closing chromatin).
 
-\subsection{Normalization to a gene-weight distribution}
-Many downstream tools benefit from comparable scaling across samples or groups. A common normalization is L1 normalization:
+\subsection{Gene scores as a linear projection}
+We compute a raw gene score:
 \begin{equation}
-\tilde{w}_g = \frac{w_g}{\sum_{h=1}^G w_h},
-\qquad \text{assuming } w_g \ge 0 \text{ and not all zero.}
-\label{eq:l1_norm}
+s_g \;=\; \sum_{p=1}^P \alpha_p \, L_{pg}.
+\label{eq:gene_score}
 \end{equation}
-This yields a distribution over genes: $\sum_g \tilde{w}_g = 1$.
-If signed weights are retained, an alternative is to normalize the positive and negative parts separately or to report both.
+Equation \eqref{eq:gene_score} is a pragmatic surrogate for cis-regulatory influence: peaks with large $\alpha_p$ contribute more, and $L_{pg}$ encodes how peak $p$ is attributed to gene $g$.
 
-\section{ATAC-seq peak-to-gene linkage models}
-This section defines the linkage weights $L_{pg}$ used in Eq.\ \eqref{eq:generic_projection}.
-Each model encodes different biological assumptions about cis-regulatory wiring.
+\section{From gene scores to gene programs: selection and calibration}
 
-\subsection{Model family A: promoter-only linkage}
-\subsubsection*{Biological justification}
-Promoter accessibility is tightly coupled to transcriptional competency: an inaccessible promoter often indicates repression or low transcriptional activity.
-Promoter-only models focus on the most direct and least ambiguous association between peaks and genes.
+\subsection{Why selection is necessary}
+If we output $s_g$ for all genes and then normalize to sum to 1 (L1), the resulting weights can become small and nearly uniform when many genes receive some mass. This is expected mathematically but undesirable for extracting a compact, interpretable program.
+Therefore, we explicitly define a \emph{selection operator} that turns scores $\{s_g\}$ into a gene set of target size 100--500.
 
-\subsubsection*{Definition}
-Define an overlap indicator:
+\subsection{Selection operator}
+Let $\mathbf{s} = (s_1,\dots,s_G)$ denote raw scores.
+A selection operator $\mathcal{S}$ outputs an index set of genes $\widehat{\mathcal{G}} \subseteq \{1,\dots,G\}$ and optionally within-set weights.
+
+\subsubsection*{Operator S1: top-$K$ selection (recommended default)}
 \[
-L_{pg} = \mathbf{1}\{ c_p = c_g \;\wedge\; [s_p,e_p) \cap \mathcal{P}_g \neq \emptyset \}.
+\widehat{\mathcal{G}}_K \;=\; \{ g : s_g \text{ is among the } K \text{ largest scores} \}.
 \]
-Then:
+This is equivalent to solving:
 \[
-w_g = \sum_{p: p \cap \mathcal{P}_g \neq \emptyset} \alpha_p.
+\widehat{\mathcal{G}}_K = \arg\max_{\mathcal{G}:|\mathcal{G}|=K} \sum_{g \in \mathcal{G}} s_g.
 \]
+Within the selected set, define optional weights:
+\begin{equation}
+w_g =
+\begin{cases}
+\dfrac{s_g}{\sum_{h \in \widehat{\mathcal{G}}_K} s_h}, & g \in \widehat{\mathcal{G}}_K \\
+0, & \text{otherwise.}
+\end{cases}
+\label{eq:within_set_l1}
+\end{equation}
+This yields a compact program of exactly $K$ genes (e.g., $K \in [100,500]$) and interpretable relative weights within the program.
 
-\subsubsection*{Practical heuristics}
+\subsubsection*{Operator S2: quantile selection}
+Let $q_\tau(\mathbf{s})$ denote the $(1-\tau)$ quantile of scores, for $\tau \in (0,1)$:
+\[
+\widehat{\mathcal{G}}_\tau \;=\; \{ g : s_g \ge q_\tau(\mathbf{s}) \}.
+\]
+This selects a fraction of genes rather than a fixed number. It is useful when $G$ varies across annotations, but may not guarantee 100--500 genes without tuning $\tau$.
+
+\subsubsection*{Operator S3: threshold selection}
+\[
+\widehat{\mathcal{G}}_t \;=\; \{ g : s_g \ge t \}.
+\]
+This is useful when $s_g$ has a stable absolute meaning (rare for ATAC without calibration). In practice, $t$ is usually chosen to match a desired set size.
+
+\subsubsection*{Operator S4: softmax calibration to a target effective size (optional)}
+If one wants a simplex-valued weight vector but not near-uniformity, define a temperature-scaled softmax:
+\[
+w_g(T) = \frac{\exp(s_g/T)}{\sum_h \exp(s_h/T)}.
+\]
+Define the effective number of genes:
+\[
+N_{\mathrm{eff}}(T) = \frac{1}{\sum_g w_g(T)^2}.
+\]
+Choose $T$ (via binary search) so that $N_{\mathrm{eff}}(T)$ lies in a target range (e.g., 200--400).
+One can then take the top-$K$ genes under $w_g(T)$ for reporting.
+This approach is optional; top-$K$ on $s_g$ is simpler and usually sufficient.
+
+\subsection{What the resulting program represents}
+Programs can represent different biological notions depending on how $\alpha_p$ is constructed:
 \begin{itemize}[leftmargin=2em]
-\item Choose promoter window defaults such as $(u,d)=(2000,500)$ bp, but expose as parameters.
-\item Handle multiple TSS per gene by either:
-  (i) using a canonical transcript definition, or
-  (ii) taking the union of promoter intervals across transcripts and aggregating.
-\item If multiple peaks overlap the same promoter, summing is typical; max is an alternative if peaks are highly redundant.
+\item \textbf{Activity program:} genes with the highest overall promoter or linked accessibility in a sample or group.
+\item \textbf{Specificity program (recommended for scATAC clusters):} genes most specifically accessible in a group versus a background.
+\item \textbf{Directional program:} opening versus closing programs using positive/negative transforms on differential peak statistics.
 \end{itemize}
 
-\subsection{Model family B: nearest-TSS hard assignment}
-\subsubsection*{Biological justification}
-A substantial fraction of enhancers regulate the nearest gene, and nearest-TSS assignment is a simple heuristic that includes distal signal while preserving a one-peak-to-one-gene mapping.
+\section{Peak-to-gene linkage models $L_{pg}$}
+We summarize linkage models used in Eq.\ \eqref{eq:gene_score}. All models can be paired with any selection operator.
 
-\subsubsection*{Definition}
-Let $d(p,g)$ be the distance from peak center to gene TSS:
+\subsection{Model A: promoter overlap (high specificity, misses distal enhancers)}
+\paragraph{Biology.} Promoter accessibility is a direct indicator of local transcriptional competence and is least ambiguous to map.
+\paragraph{Definition.}
 \[
-m_p = \frac{s_p + e_p}{2}, \qquad d(p,g) = |m_p - t_g|.
+L_{pg} = \mathbf{1}\{ c_p=c_g \wedge [s_p,e_p) \cap \mathcal{P}_g \neq \emptyset \}.
 \]
-Then assign each peak to the nearest gene within a maximum distance $D$:
-\[
-g^*(p) = \arg\min_{g: c_g = c_p,\; d(p,g)\le D} d(p,g).
-\]
-Define:
-\[
-L_{pg} = \mathbf{1}\{g = g^*(p)\}.
-\]
-Then:
-\[
-w_g = \sum_{p: g^*(p)=g} \alpha_p.
-\]
+\paragraph{Heuristics.} Typical promoter window defaults $(u,d)=(2000,500)$ bp; expose as parameters. Consider union across transcripts or canonical TSS only; record choice.
 
-\subsubsection*{Practical heuristics}
-\begin{itemize}[leftmargin=2em]
-\item Use chromosome-specific sorted lists of TSS positions to compute $g^*(p)$ in $O(\log G_c)$ via binary search.
-\item Choose $D$ (e.g., 100 kb) based on expected cis range.
-\item Tie-breaking: if two genes are equidistant, pick the one with smallest gene ID for determinism.
-\item Consider promoter-prioritized nearest assignment: if peak overlaps any promoter, assign to that promoter gene(s) before applying nearest rule.
-\end{itemize}
+\subsection{Model B: nearest TSS assignment (simple distal inclusion)}
+\paragraph{Biology.} Many enhancers act on nearby genes; nearest-gene is a coarse but common heuristic.
+\paragraph{Definition.} Let $m_p=(s_p+e_p)/2$ and $d(p,g)=|m_p-t_g|$. If $d(p,g)\le D$:
+\[
+g^*(p)=\arg\min_g d(p,g), \quad L_{pg}=\mathbf{1}\{g=g^*(p)\}.
+\]
+\paragraph{Heuristics.} Use per-chromosome sorted TSS arrays for $O(\log G)$ nearest lookup; cap by max distance $D$.
 
-\subsection{Model family C: distance-decay soft assignment}
-\subsubsection*{Biological justification}
-3D contact probability and regulatory influence often decrease with genomic distance on average. A soft assignment allows a distal peak to contribute to multiple nearby genes with weights that decay with distance, reflecting uncertainty and long-range regulation.
-
-\subsubsection*{Definition}
-Let $d(p,g)$ be distance as above, and let $D$ be a maximum distance and $\lambda$ a decay length scale.
-Define an unnormalized affinity:
+\subsection{Model C: distance-decay soft assignment (recommended distal-aware heuristic)}
+\paragraph{Biology.} Regulatory influence and contact probability tend to decrease with genomic distance on average.
+\paragraph{Definition.} For distance $d(p,g)$, max distance $D$, and decay length $\lambda$:
 \[
 A_{pg} =
 \begin{cases}
-\exp\left(-\dfrac{d(p,g)}{\lambda}\right), & \text{if } c_p=c_g \text{ and } d(p,g)\le D \\
-0, & \text{otherwise.}
+\exp(-d(p,g)/\lambda), & d(p,g)\le D \\
+0, & \text{otherwise}
 \end{cases}
 \]
-Two common variants:
-
-\paragraph{Variant C1: unnormalized links}
-Set $L_{pg}=A_{pg}$ and compute $w_g$ via Eq.\ \eqref{eq:generic_projection}.
-This causes peaks in gene-dense regions to contribute more total mass across genes.
-
-\paragraph{Variant C2: per-peak normalized links}
-Normalize affinities across genes for each peak:
+Either use $L_{pg}=A_{pg}$ (unnormalized) or normalize per peak:
 \[
-L_{pg} = \frac{A_{pg}}{\sum_{h=1}^G A_{ph} + \epsilon},
+L_{pg} = \frac{A_{pg}}{\sum_h A_{ph}+\epsilon}.
 \]
-where $\epsilon$ is a small constant to avoid division by zero if a peak has no nearby genes.
-This ensures each peak contributes the same total mass (in expectation) regardless of gene density.
+\paragraph{Heuristics.} Defaults such as $D=500$ kb, $\lambda=50$ kb; cap links per peak to top $K_{\max}$ genes by $A_{pg}$.
 
-\subsubsection*{Practical heuristics}
+\subsection{Model D: gene body activity (gene activity / gene score)}
+\paragraph{Biology.} Aggregated accessibility across promoter and gene body can correlate with transcriptional activity and provides robustness in sparse scATAC.
+\paragraph{Definition.} Define a gene locus interval $\mathcal{G}_g$ (gene body plus upstream extension) and sum accessibility over overlapping peaks:
+\[
+s_g = \sum_{p: [s_p,e_p) \cap \mathcal{G}_g \neq \emptyset} \alpha_p.
+\]
+\paragraph{Heuristics.} Mitigate gene-length bias by using promoter-only, length normalization, or restricting to standardized windows.
+
+\subsection{Model E: co-accessibility linkage (data-driven enhancer to promoter)}
+\paragraph{Biology.} Peaks that co-vary across cells can reflect regulatory coupling and enhancer-promoter communication.
+\paragraph{Definition.} Estimate co-accessibility $C_{p,q(g)}$ between distal peak $p$ and promoter peak(s) $q(g)$ for gene $g$:
+\[
+L_{pg} = \max(C_{p,q(g)},0)\cdot \mathbf{1}\{d(p,g)\le D\}.
+\]
+\paragraph{Heuristics.} Requires many cells; restrict candidate pairs within $D$; threshold edges; optionally combine with distance-decay.
+
+\subsection{Model F: external enhancer-gene priors}
+\paragraph{Biology.} External maps integrate multi-assay evidence and can improve specificity.
+\paragraph{Definition.} Overlap peaks to external elements $e$ with link matrix $M_{eg}$:
+\[
+L_{pg} = \sum_e \mathbf{1}\{p \cap e \neq \emptyset\} M_{eg}.
+\]
+\paragraph{Heuristics.} Choose a default map per genome build; record version; handle biosample mismatch via closest match or aggregate union.
+
+\subsection{Model G: Activity-by-Contact style linkage}
+\paragraph{Biology.} Enhancer effect is proportional to activity and contact with a promoter.
+\paragraph{Definition.} With activity $A_p$ and contact kernel $K_{pg}$:
+\[
+S_{pg} = A_p K_{pg}, \qquad L_{pg} = \frac{S_{pg}}{\sum_h S_{ph}+\epsilon}.
+\]
+\paragraph{Heuristics.} If no contact map, approximate $K_{pg}$ by a distance kernel (power law or exponential) and record that approximation.
+
+\subsection{Model H: TF-centric programs (motif activity to gene targets)}
+\paragraph{Biology.} ATAC is sensitive to TF-driven regulatory programs; infer TF activity and project to target genes.
+\paragraph{Definition.} With TF activities $a_k$ and TF-to-gene prior $T_{kg}$:
+\[
+s_g = \sum_{k=1}^K a_k T_{kg}.
+\]
+\paragraph{Heuristics.} Depends on a TF-target prior; useful as a complementary view.
+
+\section{Bulk ATAC-seq programs}
+Bulk ATAC programs are most interpretable when driven by contrasts (differential accessibility). Single-sample programs are possible but often highlight broadly accessible promoters.
+
+\subsection{Bulk model B1: single-sample activity program}
+\paragraph{Peak weights.} Use nonnegative peak signal, e.g., normalized coverage or narrowPeak signalValue: $\alpha_p = x_p$.
+\paragraph{Link.} Model A (promoter) or C (distance-decay).
+\paragraph{Program extraction.} Use top-$K$ selection (S1) on $s_g$ to get an activity program.
+\paragraph{Heuristic.} Choose $K=200$ by default; optionally exclude mitochondrial or blacklisted genes.
+
+\subsection{Bulk model B2: differential opening/closing programs (recommended)}
+\paragraph{Peak weights.} Let $x_p$ be a signed differential statistic (log fold-change or Wald z). Define:
+\[
+\alpha^{\mathrm{open}}_p = \max(x_p,0), \qquad \alpha^{\mathrm{close}}_p = \max(-x_p,0).
+\]
+\paragraph{Link.} Prefer Model C (distance-decay) to capture distal regulation; Model A for promoter-specific effects.
+\paragraph{Program extraction.} Produce two programs via S1:
+\[
+\widehat{\mathcal{G}}^{\mathrm{open}}_K = \mathcal{S}_K(\mathbf{s}^{\mathrm{open}}), \quad
+\widehat{\mathcal{G}}^{\mathrm{close}}_K = \mathcal{S}_K(\mathbf{s}^{\mathrm{close}}).
+\]
+\paragraph{Heuristic.} $K=200$ each direction; record direction in metadata.
+
+\subsection{Bulk model B3: differential with external priors}
+Use Model F or G for $L_{pg}$ if available; proceed as in B2 for program extraction.
+
+\section{Single-cell ATAC-seq programs}
+For scATAC, group-level (cluster-level) programs are typically more stable for enrichment than per-cell gene scores.
+
+\subsection{Peak summaries for groups}
+Let $X_{pc}$ be peak-by-cell counts (or binary).
+For a group $\mathcal{C}$ define:
 \begin{itemize}[leftmargin=2em]
-\item Typical defaults: $D=500$ kb, $\lambda=50$ kb; but expose both.
-\item Cap the number of genes per peak to reduce computation: keep only top $K$ genes by $A_{pg}$ (e.g., $K=5$).
-\item Optionally boost promoters: if peak overlaps a promoter, multiply $A_{pg}$ by a factor (e.g., 5 to 20) for that gene.
-\item Efficient implementation: for each chromosome, maintain genes sorted by TSS; for each peak center, expand outward from the insertion index until distance exceeds $D$.
+\item sum counts: $\bar{x}_p = \sum_{c\in\mathcal{C}} X_{pc}$
+\item mean counts: $\bar{x}_p = \frac{1}{|\mathcal{C}|}\sum_{c\in\mathcal{C}} X_{pc}$
+\item fraction nonzero: $\bar{x}_p = \frac{1}{|\mathcal{C}|}\sum_{c\in\mathcal{C}} \mathbf{1}\{X_{pc}>0\}$
 \end{itemize}
+Then $\alpha_p = \bar{x}_p$ defines an absolute activity program.
 
-\subsection{Model family D: gene-body activity models (gene activity / gene score)}
-\subsubsection*{Biological justification}
-In single-cell contexts, sparse peak calls and weak signal-to-noise can make distal peak-to-gene assignment difficult.
-A robust proxy for gene regulatory state is aggregated accessibility in the promoter and gene body (and sometimes flanking regions), which can correlate with transcriptional activity and chromatin state.
+\subsection{scATAC model S1: absolute group activity program}
+\paragraph{Biology.} Captures genes with high promoter (or linked) accessibility in the group.
+\paragraph{Model.} Compute $\alpha_p=\bar{x}_p$, link with Model A or C, compute $s_g$ and select top-$K$ (S1).
+\paragraph{Caveat.} Can be dominated by broadly accessible promoters; may not yield cluster-specific programs.
 
-\subsubsection*{Definition (continuous accessibility)}
-Let $a(z)$ be an accessibility signal along the genome. Define a gene locus interval $\mathcal{G}_g$ (gene body plus an upstream extension).
-Then:
-\[
-w_g = \int_{\mathcal{G}_g} a(z)\, dz.
-\]
-In practice, ATAC is discrete (reads/fragments) or summarized in peaks. If peaks partition the genome, then:
-\[
-w_g \approx \sum_{p: [s_p,e_p)\cap \mathcal{G}_g \neq \emptyset} \alpha_p \cdot \ell_{pg},
-\]
-where $\ell_{pg}$ is the overlap length (or an indicator), and $\alpha_p$ is a peak accessibility summary.
-
-\subsubsection*{Practical heuristics}
-\begin{itemize}[leftmargin=2em]
-\item Define $\mathcal{G}_g$ as gene body plus $u$ bp upstream (e.g., 2 kb) and optionally a downstream extension.
-\item Control gene-length bias:
-  \begin{itemize}[leftmargin=2em]
-  \item normalize by gene length, or
-  \item restrict to promoter-only for comparability, or
-  \item use TF-IDF-like normalization at the peak/cell level before aggregation in scATAC.
-  \end{itemize}
-\item When using a peak-by-cell matrix, define peak-level summaries (per group or per cell) as described in the single-cell section.
-\end{itemize}
-
-\subsection{Model family E: co-accessibility based linkage}
-\subsubsection*{Biological justification}
-In single-cell ATAC, peaks that are co-accessible across cells often reflect coordinated regulatory programs and can proxy enhancer-promoter communication.
-Co-accessibility scores can be used to link distal peaks to promoters more specifically than distance alone.
-
-\subsubsection*{Definition}
-Let $X_{pc}$ be accessibility of peak $p$ in cell $c$, and let $q(g)$ denote a promoter peak (or set of promoter peaks) representing gene $g$.
-Define a co-accessibility score $C_{p,q(g)}$ (e.g., correlation after smoothing/aggregation).
-Then set:
-\[
-L_{pg} =
-\begin{cases}
-C_{p,q(g)} \cdot \mathbf{1}\{d(p,g)\le D\}, & \text{if } C_{p,q(g)} > 0 \\
-0, & \text{otherwise.}
-\end{cases}
-\]
-Gene weights follow Eq.\ \eqref{eq:generic_projection}.
-
-\subsubsection*{Practical heuristics}
-\begin{itemize}[leftmargin=2em]
-\item Co-accessibility estimation typically requires many cells and careful handling of sparsity (kNN smoothing or aggregation).
-\item Restrict candidate pairs to within $D$ (e.g., 250 kb to 500 kb) to reduce computation.
-\item Threshold $C_{p,q(g)}$ to reduce noise (e.g., keep top edges or $C > \tau$).
-\item Combine with distance decay by setting $L_{pg} \propto C_{p,q(g)} \exp(-d/\lambda)$.
-\end{itemize}
-
-\subsection{Model family F: external enhancer-gene maps (priors)}
-\subsubsection*{Biological justification}
-Large consortia and prior models provide predicted enhancer-gene links based on multi-assay evidence (chromatin marks, accessibility, eQTL, 3D contacts, etc.).
-Using a precomputed map can improve biological specificity compared to purely distance-based heuristics, at the cost of possible context mismatch.
-
-\subsubsection*{Definition}
-Let $\mathcal{E}$ be a set of regulatory elements (e.g., cCREs) and a precomputed link matrix $M_{eg}$ mapping element $e$ to gene $g$ (nonnegative).
-We map peaks to elements (by overlap), then elements to genes:
-\[
-L_{pg} = \sum_{e \in \mathcal{E}} \mathbf{1}\{p \cap e \neq \emptyset\} \, M_{eg}.
-\]
-If $M_{eg}$ is probabilistic, one may normalize per peak or per element.
-
-\subsubsection*{Practical heuristics}
-\begin{itemize}[leftmargin=2em]
-\item Provide sensible defaults: pick a broadly applicable map for human and mouse; document version and source.
-\item If multiple biosample-specific maps exist, choose:
-  (i) the closest matching tissue/cell type, or
-  (ii) an aggregate union map, but record the choice in metadata.
-\item If peaks overlap multiple elements, sum their contributions or take the maximum to avoid double counting.
-\end{itemize}
-
-\subsection{Model family G: Activity-by-Contact style linkage}
-\subsubsection*{Biological justification}
-Enhancer influence can be modeled as a product of enhancer activity and enhancer-promoter contact probability.
-This is a mechanistic approximation: enhancers must be active and physically contact promoters to regulate transcription.
-
-\subsubsection*{Definition}
-Assume each peak $p$ is a candidate enhancer with activity $A_p \ge 0$, and each gene $g$ has a promoter contact probability $K_{pg} \ge 0$.
-Define an ABC-like score:
+\subsection{scATAC model S2: group-specific differential program (recommended default for clusters)}
+\paragraph{Biology.} Captures genes whose regulatory regions are more accessible in the group than in a background (all other cells), aligning with marker programs and mechanisms.
+\paragraph{Definition.} Let $\bar{x}^{(1)}_p$ be group summary and $\bar{x}^{(0)}_p$ be background summary. Define a contrast score:
 \begin{equation}
-S_{pg} = A_p \, K_{pg}.
-\label{eq:abc_score}
+x_p = \log_2\left(\frac{\bar{x}^{(1)}_p + a}{\bar{x}^{(0)}_p + a}\right),
+\label{eq:sc_logfc}
 \end{equation}
-Then define link weights by optional normalization:
+where $a>0$ is a pseudocount (chosen based on summary type). Then use:
 \[
-L_{pg} = \frac{S_{pg}}{\sum_{h=1}^G S_{ph} + \epsilon}.
+\alpha_p = \max(x_p,0)
 \]
-Finally compute gene weights by:
+to obtain a group-specific opening program, link to genes, compute $s_g$, and select top-$K$.
+\paragraph{Heuristics.} For fraction nonzero, use small $a$ (e.g., $10^{-3}$); for counts, use $a=1$. Optionally also emit closing programs via $\max(-x_p,0)$.
+
+\subsection{scATAC model S3: gene activity window}
+Compute gene activity $s_g$ over promoter+gene body (Model D), then select top-$K$ for a group or differential contrast (apply Eq.\ \eqref{eq:sc_logfc} to gene activity scores).
+
+\subsection{scATAC model S4: co-accessibility-enhanced programs}
+Estimate co-accessibility links (Model E), compute $s_g$ and select top-$K$.
+This yields programs that better reflect enhancer-promoter wiring, at higher computational cost.
+
+\subsection{scATAC model S5: latent program extraction (optional extension)}
+\paragraph{Biology.} Cell states can be described by multiple overlapping programs (topics). A single top-$K$ list per cluster may miss subprograms.
+\paragraph{Model.} Factorize the peak-by-cell matrix using a nonnegative factorization:
 \[
-w_g = \sum_{p=1}^P \alpha_p \, L_{pg}.
+X \approx W H,
 \]
+where $W$ is peak-by-topic and $H$ is topic-by-cell. For topic $k$, define topic peak weights $\alpha^{(k)}_p = W_{pk}$, map to genes via $L_{pg}$, and select top-$K$ genes as the topic program.
+\paragraph{Heuristic.} Use a small number of topics (e.g., 10--50), then treat each topic as a program.
 
-\subsubsection*{Practical heuristics}
+\section{Recommended defaults for program-sized outputs}
+For the objective of extracting 100--500 gene programs suitable for enrichment:
 \begin{itemize}[leftmargin=2em]
-\item If only ATAC is available, set $A_p$ proportional to ATAC signal in the peak; if histone marks are available, combine (e.g., ATAC and H3K27ac).
-\item If no sample-specific contact map is available, approximate $K_{pg}$ by a distance-based contact kernel, e.g., $K_{pg} \propto \exp(-d(p,g)/\lambda_c)$ or a power-law.
-\item Thresholding: keep links with $S_{pg}$ above a cutoff to reduce spurious long-range assignments.
+\item \textbf{Bulk ATAC:} differential opening and closing programs (B2) with distance-decay links (C), select top-$K$ with $K=200$ per direction.
+\item \textbf{scATAC clusters:} group-specific differential programs (S2) using log2 fold-change (Eq.\ \ref{eq:sc_logfc}), promoter overlap (A) as baseline and distance-decay (C) as distal-aware alternative, select top-$K$ with $K=200$.
+\item \textbf{Output:} report raw score $s_g$ and a within-program normalized weight (Eq.\ \ref{eq:within_set_l1}) for interpretability; avoid global L1 normalization over all genes as the primary output when the goal is a compact program.
 \end{itemize}
 
-\subsection{Model family H: TF-centric gene sets via motif accessibility}
-\subsubsection*{Biological justification}
-ATAC-seq is sensitive to transcription factor (TF) binding and regulatory program activation.
-Instead of mapping peaks to genes directly, one may infer TF activity from motif accessibility and then project TF activity onto genes via a TF-target network, producing a gene-weight vector that emphasizes putative regulatory targets.
-
-\subsubsection*{Definition}
-Let $a_k$ be an activity score for TF (or motif) $k \in \{1,\dots,K\}$ inferred from ATAC (e.g., motif deviation scores).
-Let $T_{kg} \ge 0$ be a TF-to-gene prior weight (e.g., regulatory network edge weight).
-Define:
-\begin{equation}
-w_g = \sum_{k=1}^K a_k \, T_{kg}.
-\label{eq:tf_projection}
-\end{equation}
-Optionally combine with direct peak-to-gene scoring by convex combination:
-\[
-w_g^{\mathrm{combo}} = \eta \, w_g^{\mathrm{peak}} + (1-\eta)\, w_g^{\mathrm{TF}},
-\qquad \eta \in [0,1].
-\]
-
-\subsubsection*{Practical heuristics}
+\section{Implementation notes (practical)}
 \begin{itemize}[leftmargin=2em]
-\item Choose a TF-target prior appropriate for the organism and context.
-\item Motif redundancy and shared motifs can blur specificity; consider grouping motifs by TF family.
-\item Report TF activities alongside gene weights for interpretability.
-\end{itemize}
-
-\section{ATAC-seq: Bulk models}
-Bulk ATAC typically yields a set of peaks with per-peak accessibility (single sample) or differential accessibility statistics (two-group contrasts, regression).
-Bulk models differ mainly in how $\alpha_p$ is defined and whether signed information is retained.
-
-\subsection{Bulk peak-weight choices}
-\subsubsection*{Single-sample bulk accessibility}
-Let $x_p$ be normalized accessibility (e.g., counts per million or normalized coverage).
-Then set $\alpha_p = x_p$ (nonnegative), optionally after log transform.
-
-\subsubsection*{Differential accessibility}
-Let $x_p$ be a signed statistic (e.g., log fold change or Wald $z$).
-Then choose transform $\phi$:
-\begin{itemize}[leftmargin=2em]
-\item A nonnegative "magnitude" gene set: $\alpha_p = |x_p|$.
-\item An "opening" gene set: $\alpha_p = \max(x_p,0)$.
-\item A "closing" gene set: $\alpha_p = \max(-x_p,0)$.
-\item A signed gene set for methods that accept signed ranks: $\alpha_p = x_p$.
-\end{itemize}
-Constructing separate opening and closing gene sets is often the most interpretable.
-
-\subsection{Bulk model B1: promoter overlap}
-Use Model family A with bulk $\alpha_p$.
-
-\subsection{Bulk model B2: nearest TSS}
-Use Model family B with bulk $\alpha_p$.
-
-\subsection{Bulk model B3: distance-decay}
-Use Model family C with bulk $\alpha_p$.
-
-\subsection{Bulk model B4: external maps or ABC-style}
-Use Model family F or G if an external enhancer-gene prior is available.
-
-\subsection{Bulk model B5: TF-centric}
-Use Model family H when the scientific question emphasizes upstream regulators and their targets rather than direct peak-to-gene wiring.
-
-\subsection{Bulk implementation heuristics}
-\begin{itemize}[leftmargin=2em]
-\item \textbf{Peak file formats:} narrowPeak is common; decide which column to use as $x_p$ (score, signalValue, or a separate differential weight file).
-\item \textbf{Chromosome naming:} ensure peak and GTF chromosomes match (e.g., "chr1" vs "1").
-\item \textbf{Filtering:} remove peaks on nonstandard contigs unless needed; record filters in metadata.
-\item \textbf{Diagnostics:} report number of peaks assigned to at least one gene and fraction assigned; extreme low assignment rates often indicate genome build mismatch.
-\end{itemize}
-
-\section{ATAC-seq: Single-cell models}
-Single-cell ATAC provides cell-by-peak accessibility $X_{pc}$ that is sparse.
-It is often useful to compute gene weights:
-\begin{itemize}[leftmargin=2em]
-\item per cell (for integration), or
-\item per group/cluster (for enrichment and interpretation).
-\end{itemize}
-This note focuses on producing one gene-weight vector per group, which is typically the most stable for enrichment.
-
-\subsection{Single-cell peak summarization (pseudo-bulk)}
-Given a group of cells $c \in \mathcal{C}$, define a per-peak summary statistic $\bar{x}_p$:
-\begin{itemize}[leftmargin=2em]
-\item \textbf{Sum of counts:} $\bar{x}_p = \sum_{c \in \mathcal{C}} X_{pc}$.
-\item \textbf{Mean counts:} $\bar{x}_p = \frac{1}{|\mathcal{C}|}\sum_{c \in \mathcal{C}} X_{pc}$.
-\item \textbf{Fraction nonzero:} $\bar{x}_p = \frac{1}{|\mathcal{C}|}\sum_{c \in \mathcal{C}} \mathbf{1}\{X_{pc} > 0\}$.
-\end{itemize}
-Then set $\alpha_p = \bar{x}_p$ (or apply a transform).
-Fraction nonzero is often robust to outliers and library size variation.
-
-\subsection{scATAC model S1: group-level promoter overlap}
-Compute $\alpha_p$ as above for a group and apply promoter-only linkage (Model A).
-This yields a promoter accessibility signature for the group.
-
-\subsection{scATAC model S2: group-level distance-decay}
-Compute $\alpha_p$ for the group and apply distance-decay linkage (Model C), capturing distal regulatory programs.
-This is computationally heavier but often more sensitive to cell-type identity enhancers.
-
-\subsection{scATAC model S3: gene activity (gene body + upstream)}
-Define gene locus $\mathcal{G}_g$ (gene body plus upstream).
-Compute:
-\[
-w_g = \sum_{p: p \cap \mathcal{G}_g \neq \emptyset} \alpha_p.
-\]
-Optionally normalize by locus length or by number of peaks to mitigate gene-length bias.
-
-\subsection{scATAC model S4: co-accessibility enhanced linkage}
-Estimate co-accessibility between distal peaks and promoter peaks, then use Model E to define $L_{pg}$.
-Compute gene weights by Eq.\ \eqref{eq:generic_projection}.
-This model is often the most biologically specific but requires sufficient cells and careful estimation.
-
-\subsection{scATAC model S5: multiome-guided peak-to-gene}
-If paired RNA (multiome) is available, estimate peak-to-gene links by correlation or regression of accessibility and expression across cells:
-\[
-L_{pg} \propto \mathrm{corr}(X_{p\cdot}, Y_{g\cdot}) \cdot \mathbf{1}\{d(p,g)\le D\},
-\]
-then compute gene weights using peak weights.
-This is highly context-specific and can be used as a reference to evaluate simpler models.
-
-\subsection{Single-cell implementation heuristics}
-\begin{itemize}[leftmargin=2em]
-\item \textbf{Grouping labels:} use existing clustering labels if available; otherwise define coarse groups (e.g., by known markers or using scATAC clustering pipeline).
-\item \textbf{Matrix I/O:} 10x peak-by-cell matrices may be large; implement streaming accumulation per group to avoid repeated scans.
-\item \textbf{Normalization:} L1 normalize gene weights per group to compare distributions across groups.
-\item \textbf{Stability:} compare top-$N$ gene overlap across models (promoter vs decay) as a robustness diagnostic.
-\end{itemize}
-
-\section{Practical implementation guidance (cross-cutting)}
-\subsection{A minimal recipe}
-A practical pipeline for any ATAC dataset:
-\begin{enumerate}[leftmargin=2em]
-\item Choose peak statistic $x_p$ (counts, signal, differential statistic).
-\item Transform to peak weights $\alpha_p = \phi(x_p)$.
-\item Choose a peak-to-gene linkage model $L_{pg}$ (A/B/C/D/E/F/G/H).
-\item Aggregate gene weights: $w_g = \sum_p \alpha_p L_{pg}$.
-\item Optionally normalize gene weights to a distribution (Eq.\ \eqref{eq:l1_norm}).
-\item Export as a weighted gene list and record full metadata (parameters, genome build, annotation version).
-\end{enumerate}
-
-\subsection{Computational considerations}
-\begin{itemize}[leftmargin=2em]
-\item Avoid quadratic peak-gene loops by indexing genes per chromosome by TSS and using binary search to find candidate genes within $D$.
-\item For promoter overlaps and gene-body aggregation, use interval indexing or sorted sweeps.
-\item Determinism: sort outputs by decreasing weight with a stable tie-break (e.g., gene ID).
-\end{itemize}
-
-\subsection{Diagnostics and failure modes}
-\begin{itemize}[leftmargin=2em]
-\item \textbf{Low assigned fraction:} often indicates genome build mismatch or chromosome naming mismatch.
-\item \textbf{Gene-length bias:} gene-body models can overweight long genes; mitigate via normalization or promoter-only variants.
-\item \textbf{Over-smoothing:} large $D$ and large $\lambda$ in distance-decay can blur specificity; evaluate sensitivity.
-\item \textbf{Context mismatch in external maps:} priors may not match the sample; consider reporting multiple models and comparing concordance.
-\end{itemize}
-
-\section{Recommended defaults (pragmatic)}
-For a general-purpose, reproducible starting point:
-\begin{itemize}[leftmargin=2em]
-\item Bulk ATAC:
-  \begin{itemize}[leftmargin=2em]
-  \item promoter overlap with $(u,d)=(2000,500)$ bp
-  \item distance-decay with $D=500$ kb, $\lambda=50$ kb, cap $K=5$
-  \item separate opening and closing gene sets if differential statistics are available
-  \end{itemize}
-\item Single-cell ATAC (group-level):
-  \begin{itemize}[leftmargin=2em]
-  \item summarize peaks by fraction nonzero per group
-  \item promoter overlap as a stable baseline
-  \item distance-decay or gene-body gene activity as distal-aware extensions
-  \end{itemize}
+\item Always record: genome build, GTF source/version, link method and parameters, peak statistic source, contrast definition, and selection method ($K$ or quantile).
+\item Provide diagnostics: number of peaks assigned to any gene; low assignment suggests genome build or chromosome naming mismatch.
+\item Ensure deterministic ranking: sort by decreasing score, tie-break by gene_id.
 \end{itemize}
 
 \end{document}
-

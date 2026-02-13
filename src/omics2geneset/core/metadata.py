@@ -35,10 +35,12 @@ def make_metadata(
     gene_annotation: dict[str, object],
     weights: dict[str, object],
     summary: dict[str, object],
+    program_extraction: dict[str, object] | None = None,
+    output_files: list[dict[str, str]] | None = None,
 ) -> dict[str, object]:
     file_hashes = [f["sha256"] for f in files]
     geneset_id = build_geneset_id(converter_name, file_hashes, parameters)
-    return {
+    payload: dict[str, object] = {
         "schema_version": "1.0.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "geneset_id": geneset_id,
@@ -59,6 +61,11 @@ def make_metadata(
         "weights": weights,
         "summary": summary,
     }
+    if program_extraction is not None:
+        payload["program_extraction"] = program_extraction
+    if output_files is not None:
+        payload["output"] = {"files": output_files}
+    return payload
 
 
 def input_file_record(path: str | Path, role: str) -> dict[str, str]:
