@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from pathlib import Path
 import re
 
+from omics2geneset.core.gmt import (
+    build_gmt_sets_from_rows,
+    parse_int_list_csv,
+    parse_mass_list_csv,
+    resolve_gmt_out_path,
+    write_gmt,
+)
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
 from omics2geneset.core.scoring import score_genes
@@ -63,6 +71,8 @@ def _resolve_pseudocount(args) -> float:
 
 def _resolved_parameters(args, group_name: str | None = None) -> dict[str, object]:
     contrast = _resolve_contrast(args)
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
     params: dict[str, object] = {
         "link_method": _arg(args, "link_method", "promoter_overlap"),
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
@@ -81,6 +91,13 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "min_score": _arg(args, "min_score", 0.0),
         "emit_full": bool(_arg(args, "emit_full", True)),
         "normalize": _arg(args, "normalize", "within_set_l1"),
+        "emit_gmt": bool(_arg(args, "emit_gmt", True)),
+        "gmt_prefer_symbol": bool(_arg(args, "gmt_prefer_symbol", True)),
+        "gmt_min_genes": int(_arg(args, "gmt_min_genes", 100)),
+        "gmt_max_genes": int(_arg(args, "gmt_max_genes", 500)),
+        "gmt_topk_list": gmt_topk_list,
+        "gmt_mass_list": gmt_mass_list,
+        "gmt_split_signed": bool(_arg(args, "gmt_split_signed", False)),
     }
     if group_name is not None:
         params["group"] = group_name
@@ -152,6 +169,15 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def _resolve_group_gmt_out_path(group_dir: Path, gmt_out: str | None) -> Path:
+    if gmt_out is None or not str(gmt_out).strip():
+        return group_dir / "genesets.gmt"
+    p = Path(gmt_out)
+    if p.is_absolute():
+        return group_dir / p.name
+    return group_dir / p
+
+
 def _contrast_peaks(group_vals: list[float], rest_vals: list[float], metric: str, pseudocount: float) -> list[float]:
     out = [0.0] * len(group_vals)
     if metric == "log2fc":
@@ -176,6 +202,14 @@ def run(args) -> dict[str, object]:
     peak_weight_transform = _arg(args, "peak_weight_transform", "positive")
     normalize = _arg(args, "normalize", "within_set_l1")
     emit_full = bool(_arg(args, "emit_full", True))
+    emit_gmt = bool(_arg(args, "emit_gmt", True))
+    gmt_prefer_symbol = bool(_arg(args, "gmt_prefer_symbol", True))
+    gmt_min_genes = int(_arg(args, "gmt_min_genes", 100))
+    gmt_max_genes = int(_arg(args, "gmt_max_genes", 500))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
+    gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
+    gmt_out = _arg(args, "gmt_out", None)
     contrast_metric = _arg(args, "contrast_metric", "log2fc")
 
     groups = read_groups_tsv(groups_tsv) if groups_tsv else None
@@ -194,7 +228,7 @@ def run(args) -> dict[str, object]:
     if groups_tsv:
         files.append(input_file_record(groups_tsv, "groups_tsv"))
 
-    manifest_rows: list[tuple[str, str]] = []
+    manifest_rows: list[tuple[str, str, str]] = []
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
 
     if contrast == "group_vs_rest" and not groups_tsv:
@@ -220,6 +254,8 @@ def run(args) -> dict[str, object]:
 
     unique_output_genes: set[str] = set()
     n_genes_per_group: list[int] = []
+    combined_gmt_sets: list[tuple[str, list[str]]] = []
+    combined_gmt_plans: list[dict[str, object]] = []
 
     for group_name, cell_indices in group_indices.items():
         if contrast == "group_vs_rest":
@@ -266,6 +302,24 @@ def run(args) -> dict[str, object]:
         if emit_full:
             _write_rows(group_dir / "geneset.full.tsv", full_rows)
 
+        group_gmt_path = _resolve_group_gmt_out_path(group_dir, gmt_out)
+        group_gmt_sets: list[tuple[str, list[str]]] = []
+        group_gmt_plans: list[dict[str, object]] = []
+        if emit_gmt:
+            group_gmt_sets, group_gmt_plans = build_gmt_sets_from_rows(
+                rows=full_rows,
+                base_name=f"atac_sc_10x__group={group_name}",
+                prefer_symbol=gmt_prefer_symbol,
+                min_genes=gmt_min_genes,
+                max_genes=gmt_max_genes,
+                topk_list=gmt_topk_list,
+                mass_list=gmt_mass_list,
+                split_signed=gmt_split_signed,
+            )
+            write_gmt(group_gmt_sets, group_gmt_path)
+            combined_gmt_sets.extend(group_gmt_sets)
+            combined_gmt_plans.extend(group_gmt_plans)
+
         assigned_peaks = len({int(link["peak_index"]) for link in links})
         n_genes_per_group.append(len(selected_rows))
         unique_output_genes.update(gid for gid in selected_gene_ids)
@@ -273,6 +327,8 @@ def run(args) -> dict[str, object]:
         output_files = [{"path": str(group_dir / "geneset.tsv"), "role": "selected_program"}]
         if emit_full:
             output_files.append({"path": str(group_dir / "geneset.full.tsv"), "role": "full_scores"})
+        if emit_gmt:
+            output_files.append({"path": str(group_gmt_path), "role": "gmt"})
 
         contrast_meta: dict[str, object] = {
             "mode": contrast,
@@ -329,14 +385,51 @@ def run(args) -> dict[str, object]:
                 "contrast": contrast_meta,
             },
             output_files=output_files,
+            gmt={
+                "written": emit_gmt,
+                "path": (
+                    str(group_gmt_path.relative_to(group_dir))
+                    if group_gmt_path.is_relative_to(group_dir)
+                    else str(group_gmt_path)
+                )
+                if emit_gmt
+                else None,
+                "prefer_symbol": gmt_prefer_symbol,
+                "min_genes": gmt_min_genes,
+                "max_genes": gmt_max_genes,
+                "plans": group_gmt_plans,
+            },
         )
         write_metadata(group_dir / "geneset.meta.json", meta)
-        manifest_rows.append((group_name, str(group_dir.relative_to(out_dir))))
+        group_rel = str(group_dir.relative_to(out_dir))
+        gmt_rel = ""
+        if emit_gmt and group_gmt_path.is_relative_to(out_dir):
+            gmt_rel = str(group_gmt_path.relative_to(out_dir))
+        elif emit_gmt:
+            gmt_rel = str(group_gmt_path)
+        manifest_rows.append((group_name, group_rel, gmt_rel))
 
     if groups_tsv:
+        root_gmt_path = resolve_gmt_out_path(out_dir, gmt_out)
+        if emit_gmt:
+            write_gmt(combined_gmt_sets, root_gmt_path)
+            root_payload = {
+                "groups": len(group_indices),
+                "gmt": {
+                    "written": True,
+                    "path": str(root_gmt_path.relative_to(out_dir))
+                    if root_gmt_path.is_relative_to(out_dir)
+                    else str(root_gmt_path),
+                    "prefer_symbol": gmt_prefer_symbol,
+                    "min_genes": gmt_min_genes,
+                    "max_genes": gmt_max_genes,
+                    "plans": combined_gmt_plans,
+                },
+            }
+            (out_dir / "manifest.meta.json").write_text(json.dumps(root_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
             writer = csv.writer(fh, delimiter="\t")
-            writer.writerow(["group", "path"])
+            writer.writerow(["group", "path", "gmt_path"])
             writer.writerows(manifest_rows)
 
     if groups_tsv:

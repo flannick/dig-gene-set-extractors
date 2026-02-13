@@ -35,6 +35,17 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
 
 
+def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--emit_gmt", type=_parse_bool, default=True)
+    parser.add_argument("--gmt_out")
+    parser.add_argument("--gmt_prefer_symbol", type=_parse_bool, default=True)
+    parser.add_argument("--gmt_min_genes", type=int, default=100)
+    parser.add_argument("--gmt_max_genes", type=int, default=500)
+    parser.add_argument("--gmt_topk_list", default="200")
+    parser.add_argument("--gmt_mass_list", default="")
+    parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
+
+
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
     parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default=default)
     parser.add_argument("--normalize", choices=["l1", "none"], default="l1")
@@ -68,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bulk.add_argument("--gtf_source")
     _add_linking_flags(p_bulk)
     _add_program_flags(p_bulk)
+    _add_gmt_flags(p_bulk)
 
     p_sc = conv.add_parser("atac_sc_10x")
     p_sc.add_argument("--matrix_dir", required=True)
@@ -85,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--gtf_source")
     _add_linking_flags(p_sc)
     _add_program_flags(p_sc)
+    _add_gmt_flags(p_sc)
 
     p_rna = conv.add_parser("rna_deg")
     p_rna.add_argument("--deg_tsv", required=True)

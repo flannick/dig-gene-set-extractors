@@ -28,6 +28,7 @@ ATAC extractors now default to compact program outputs:
 
 - `geneset.tsv`: selected program (`gene_id`, `score`, `rank`, optional `weight`, optional `gene_symbol`)
 - `geneset.full.tsv` (optional): full nonzero score table when `--emit_full true`
+- `genesets.gmt` (optional, default on): one or more 100-500 gene sets for enrichment workflows
 
 `geneset.meta.json` records resolved parameters, input file hashes, and summary/provenance fields.
 
@@ -39,6 +40,10 @@ For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 - `--top_k 200`
 - `--normalize within_set_l1`
 - `--emit_full true`
+- `--emit_gmt true`
+- `--gmt_topk_list 200`
+- `--gmt_min_genes 100`
+- `--gmt_max_genes 500`
 
 `within_set_l1` normalizes only selected genes, so `weight` sums to 1 inside the program.
 

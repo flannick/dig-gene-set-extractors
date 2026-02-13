@@ -28,6 +28,14 @@ class Args:
     quantile = 0.01
     min_score = 0.0
     emit_full = True
+    emit_gmt = True
+    gmt_out = None
+    gmt_prefer_symbol = True
+    gmt_min_genes = 100
+    gmt_max_genes = 500
+    gmt_topk_list = "200"
+    gmt_mass_list = ""
+    gmt_split_signed = False
     contrast = None
     contrast_metric = "log2fc"
     contrast_pseudocount = None
@@ -44,6 +52,7 @@ def test_sc_converter_without_groups(tmp_path: Path):
     assert rows
     total = sum(float(r["weight"]) for r in rows)
     assert abs(total - 1.0) < 1e-9
+    assert (Path(args.out_dir) / "genesets.gmt").exists()
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
@@ -53,6 +62,9 @@ def test_sc_converter_with_groups(tmp_path: Path):
     args.out_dir = str(tmp_path / "sc_groups")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
     args.top_k = 1
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
     atac_sc_10x.run(args)
     manifest = Path(args.out_dir) / "manifest.tsv"
     assert manifest.exists()
@@ -65,12 +77,20 @@ def test_sc_converter_with_groups(tmp_path: Path):
             rows = list(csv.DictReader(fh, delimiter="\t"))
         assert len(rows) == 1
         assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
+        assert (Path(args.out_dir) / f"group={group}" / "genesets.gmt").exists()
+    combined_gmt = Path(args.out_dir) / "genesets.gmt"
+    assert combined_gmt.exists()
+    combined_text = combined_gmt.read_text(encoding="utf-8")
+    assert "group=g1" in combined_text
+    assert "group=g2" in combined_text
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     roles = {f["role"] for f in meta["input"]["files"]}
     assert {"matrix", "barcodes", "peaks_or_features", "gtf", "groups_tsv"}.issubset(roles)
     params = meta["converter"]["parameters"]
     assert "matrix_dir" not in params
     assert "out_dir" not in params
+    assert meta["gmt"]["written"] is True
+    assert meta["gmt"]["plans"]
 
 
 def test_sc_converter_group_vs_rest_contrast_marks_expected_genes(tmp_path: Path):
@@ -84,6 +104,9 @@ def test_sc_converter_group_vs_rest_contrast_marks_expected_genes(tmp_path: Path
     args.select = "top_k"
     args.top_k = 1
     args.emit_full = False
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
     atac_sc_10x.run(args)
 
     with (Path(args.out_dir) / "group=g1" / "geneset.tsv").open("r", encoding="utf-8") as fh:

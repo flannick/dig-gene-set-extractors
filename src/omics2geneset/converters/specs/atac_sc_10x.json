@@ -23,14 +23,24 @@
     {"name": "quantile", "type": "float", "default": 0.01, "help": "Top fraction kept when select=quantile"},
     {"name": "min_score", "type": "float", "default": 0.0, "help": "Score threshold when select=threshold"},
     {"name": "emit_full", "type": "bool", "default": true, "help": "If true, also write geneset.full.tsv with all nonzero scores"},
-    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"}
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"},
+    {"name": "emit_gmt", "type": "bool", "default": true, "help": "If true, write program gene sets in GMT format"},
+    {"name": "gmt_out", "type": "string_or_none", "default": null, "help": "Output GMT path relative to out_dir/group_dir (or absolute path)"},
+    {"name": "gmt_prefer_symbol", "type": "bool", "default": true, "help": "Prefer gene_symbol over gene_id when writing GMT tokens"},
+    {"name": "gmt_min_genes", "type": "int", "default": 100, "help": "Minimum genes per emitted GMT set"},
+    {"name": "gmt_max_genes", "type": "int", "default": 500, "help": "Maximum genes per emitted GMT set"},
+    {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "200", "help": "Comma-separated top-K plans for GMT emission"},
+    {"name": "gmt_mass_list", "type": "string_csv_floats", "default": "", "help": "Comma-separated HPD mass thresholds for GMT emission"},
+    {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"}
   ],
   "outputs": [
     {"name": "geneset.tsv", "description": "Selected compact program for each output directory"},
     {"name": "geneset.full.tsv", "description": "Optional full score table for all nonzero genes"},
+    {"name": "genesets.gmt", "description": "Combined grouped GMT file at root or single-output GMT file"},
     {"name": "geneset.meta.json", "description": "Metadata for each selected program"},
     {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group program when groups_tsv is provided"},
     {"name": "group=<GROUP>/geneset.full.tsv", "description": "Optional per-group full score table"},
+    {"name": "group=<GROUP>/genesets.gmt", "description": "Per-group exported GMT gene sets"},
     {"name": "group=<GROUP>/geneset.meta.json", "description": "Per-group metadata when groups_tsv is provided"},
     {"name": "manifest.tsv", "description": "Group-to-output-path mapping for grouped runs"}
   ]

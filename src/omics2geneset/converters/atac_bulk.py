@@ -3,6 +3,13 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from omics2geneset.core.gmt import (
+    build_gmt_sets_from_rows,
+    parse_int_list_csv,
+    parse_mass_list_csv,
+    resolve_gmt_out_path,
+    write_gmt,
+)
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
 from omics2geneset.core.scoring import score_genes
@@ -57,6 +64,8 @@ def _resolve_max_distance(args) -> int:
 
 
 def _resolved_parameters(args) -> dict[str, object]:
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
     return {
         "link_method": _arg(args, "link_method", "promoter_overlap"),
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
@@ -71,6 +80,13 @@ def _resolved_parameters(args) -> dict[str, object]:
         "quantile": _arg(args, "quantile", 0.01),
         "min_score": _arg(args, "min_score", 0.0),
         "emit_full": bool(_arg(args, "emit_full", True)),
+        "emit_gmt": bool(_arg(args, "emit_gmt", True)),
+        "gmt_prefer_symbol": bool(_arg(args, "gmt_prefer_symbol", True)),
+        "gmt_min_genes": int(_arg(args, "gmt_min_genes", 100)),
+        "gmt_max_genes": int(_arg(args, "gmt_max_genes", 500)),
+        "gmt_topk_list": gmt_topk_list,
+        "gmt_mass_list": gmt_mass_list,
+        "gmt_split_signed": bool(_arg(args, "gmt_split_signed", False)),
         "aggregation": "sum",
     }
 
@@ -147,6 +163,14 @@ def run(args) -> dict[str, object]:
     peak_weight_transform = _arg(args, "peak_weight_transform", "abs")
     normalize = _arg(args, "normalize", "within_set_l1")
     emit_full = bool(_arg(args, "emit_full", True))
+    emit_gmt = bool(_arg(args, "emit_gmt", True))
+    gmt_prefer_symbol = bool(_arg(args, "gmt_prefer_symbol", True))
+    gmt_min_genes = int(_arg(args, "gmt_min_genes", 100))
+    gmt_max_genes = int(_arg(args, "gmt_max_genes", 500))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
+    gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
+    gmt_out = _arg(args, "gmt_out", None)
 
     raw_scores = score_genes(peak_weights, links, peak_weight_transform)
     full_scores = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
@@ -182,6 +206,22 @@ def run(args) -> dict[str, object]:
     if emit_full:
         _write_rows(out_dir / "geneset.full.tsv", full_rows)
 
+    gmt_path = resolve_gmt_out_path(out_dir, gmt_out)
+    gmt_sets: list[tuple[str, list[str]]] = []
+    gmt_plans: list[dict[str, object]] = []
+    if emit_gmt:
+        gmt_sets, gmt_plans = build_gmt_sets_from_rows(
+            rows=full_rows,
+            base_name="atac_bulk",
+            prefer_symbol=gmt_prefer_symbol,
+            min_genes=gmt_min_genes,
+            max_genes=gmt_max_genes,
+            topk_list=gmt_topk_list,
+            mass_list=gmt_mass_list,
+            split_signed=gmt_split_signed,
+        )
+        write_gmt(gmt_sets, gmt_path)
+
     assigned_peaks = len({int(link["peak_index"]) for link in links})
     files = [input_file_record(args.peaks, "peaks"), input_file_record(args.gtf, "gtf")]
     if args.peak_weights_tsv:
@@ -190,6 +230,8 @@ def run(args) -> dict[str, object]:
     output_files = [{"path": str(out_dir / "geneset.tsv"), "role": "selected_program"}]
     if emit_full:
         output_files.append({"path": str(out_dir / "geneset.full.tsv"), "role": "full_scores"})
+    if emit_gmt:
+        output_files.append({"path": str(gmt_path), "role": "gmt"})
 
     params = _resolved_parameters(args)
     meta = make_metadata(
@@ -232,6 +274,18 @@ def run(args) -> dict[str, object]:
             "score_definition": "sum over peaks of transformed peak_weight times link_weight",
         },
         output_files=output_files,
+        gmt={
+            "written": emit_gmt,
+            "path": (
+                str(gmt_path.relative_to(out_dir)) if gmt_path.is_relative_to(out_dir) else str(gmt_path)
+            )
+            if emit_gmt
+            else None,
+            "prefer_symbol": gmt_prefer_symbol,
+            "min_genes": gmt_min_genes,
+            "max_genes": gmt_max_genes,
+            "plans": gmt_plans,
+        },
     )
     write_metadata(out_dir / "geneset.meta.json", meta)
 

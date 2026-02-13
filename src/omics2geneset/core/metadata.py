@@ -37,6 +37,7 @@ def make_metadata(
     summary: dict[str, object],
     program_extraction: dict[str, object] | None = None,
     output_files: list[dict[str, str]] | None = None,
+    gmt: dict[str, object] | None = None,
 ) -> dict[str, object]:
     file_hashes = [f["sha256"] for f in files]
     geneset_id = build_geneset_id(converter_name, file_hashes, parameters)
@@ -65,6 +66,8 @@ def make_metadata(
         payload["program_extraction"] = program_extraction
     if output_files is not None:
         payload["output"] = {"files": output_files}
+    if gmt is not None:
+        payload["gmt"] = gmt
     return payload
 
 

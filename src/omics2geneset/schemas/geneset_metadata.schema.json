@@ -107,6 +107,32 @@
         }
       }
     },
+    "gmt": {
+      "type": "object",
+      "required": ["written", "path", "prefer_symbol", "min_genes", "max_genes", "plans"],
+      "properties": {
+        "written": {"type": "boolean"},
+        "path": {"type": ["string", "null"]},
+        "prefer_symbol": {"type": "boolean"},
+        "min_genes": {"type": "integer"},
+        "max_genes": {"type": "integer"},
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "method", "parameters", "n_genes_emitted", "token_type", "n_duplicates_dropped"],
+            "properties": {
+              "name": {"type": "string"},
+              "method": {"type": "string"},
+              "parameters": {"type": "object"},
+              "n_genes_emitted": {"type": "integer"},
+              "token_type": {"type": "string"},
+              "n_duplicates_dropped": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
     "summary": {
       "type": "object",
       "required": ["n_input_features", "n_genes", "n_features_assigned", "fraction_features_assigned"],

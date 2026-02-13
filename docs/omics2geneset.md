@@ -30,6 +30,7 @@ Program extractors write:
 Optional:
 
 3. `geneset.full.tsv` (full nonzero score table when `--emit_full true`)
+4. `genesets.gmt` (one or more exported gene sets when `--emit_gmt true`)
 
 `geneset.tsv` columns:
 
@@ -88,6 +89,7 @@ Optional peak weights:
 
 - `out_dir/geneset.tsv` (selected program)
 - `out_dir/geneset.full.tsv` (optional full nonzero table)
+- `out_dir/genesets.gmt` (optional GMT export; default on)
 - `out_dir/geneset.meta.json`
 
 ### Quickstart
@@ -144,13 +146,16 @@ Without groups:
 
 - `out_dir/geneset.tsv`
 - `out_dir/geneset.full.tsv` (optional)
+- `out_dir/genesets.gmt` (optional; default on)
 - `out_dir/geneset.meta.json`
 
 With groups:
 
 - `out_dir/group=<GROUP>/geneset.tsv`
 - `out_dir/group=<GROUP>/geneset.full.tsv` (optional)
+- `out_dir/group=<GROUP>/genesets.gmt` (optional; default on)
 - `out_dir/group=<GROUP>/geneset.meta.json`
+- `out_dir/genesets.gmt` (combined all-group GMT file)
 - `out_dir/manifest.tsv`
 
 Top-level grouped validation:

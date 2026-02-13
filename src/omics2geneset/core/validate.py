@@ -52,6 +52,24 @@ def validate_geneset_tsv(geneset_path: Path) -> None:
                 int(float(row["rank"]))
 
 
+def validate_gmt(gmt_path: Path) -> None:
+    with gmt_path.open("r", encoding="utf-8") as fh:
+        for line_no, raw in enumerate(fh, start=1):
+            line = raw.rstrip("\n")
+            if not line:
+                raise ValueError(f"{gmt_path}: line {line_no} is empty")
+            if line.count("\t") != 1:
+                raise ValueError(f"{gmt_path}: line {line_no} must contain exactly one tab separator")
+            name, genes_field = line.split("\t")
+            if not name.strip():
+                raise ValueError(f"{gmt_path}: line {line_no} has empty set name")
+            if not genes_field:
+                raise ValueError(f"{gmt_path}: line {line_no} has empty gene list")
+            tokens = genes_field.split(" ")
+            if any(tok == "" for tok in tokens):
+                raise ValueError(f"{gmt_path}: line {line_no} has empty gene token")
+
+
 def _resolve_manifest_path(root: Path, manifest_value: str) -> Path:
     candidate = Path(manifest_value)
     if candidate.is_absolute():
@@ -82,18 +100,24 @@ def _validate_grouped_output_dir(out_dir: Path, schema_path: Path) -> dict[str, 
             failures.append(f"{group_path}: {exc}")
     if failures:
         raise ValueError("grouped validation failed: " + "; ".join(failures))
+    root_gmt = out_dir / "genesets.gmt"
+    if root_gmt.exists():
+        validate_gmt(root_gmt)
     return {"mode": "grouped", "n_groups": len(rows)}
 
 
 def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     geneset = out / "geneset.tsv"
     geneset_full = out / "geneset.full.tsv"
+    gmt = out / "genesets.gmt"
     meta = out / "geneset.meta.json"
     if not geneset.exists() or not meta.exists():
         raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
     validate_geneset_tsv(geneset)
     if geneset_full.exists():
         validate_geneset_tsv(geneset_full)
+    if gmt.exists():
+        validate_gmt(gmt)
     validate_metadata_schema(meta, schema_path)
 
 

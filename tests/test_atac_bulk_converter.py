@@ -28,6 +28,14 @@ class Args:
     quantile = 0.01
     min_score = 0.0
     emit_full = True
+    emit_gmt = True
+    gmt_out = None
+    gmt_prefer_symbol = True
+    gmt_min_genes = 100
+    gmt_max_genes = 500
+    gmt_topk_list = "200"
+    gmt_mass_list = ""
+    gmt_split_signed = False
     gtf_source = "toy"
 
 
@@ -75,7 +83,29 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
     assert "out_dir" not in params
     assert payload["program_extraction"]["n_selected_genes"] == 1
     output_roles = {f["role"] for f in payload["output"]["files"]}
-    assert output_roles == {"selected_program", "full_scores"}
+    assert output_roles == {"selected_program", "full_scores", "gmt"}
+    assert payload["gmt"]["written"] is True
+    assert payload["gmt"]["plans"]
+
+
+def test_bulk_converter_writes_gmt(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_gmt")
+    args.emit_gmt = True
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_path = Path(args.out_dir) / "genesets.gmt"
+    assert gmt_path.exists()
+    lines = gmt_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert lines[0].count("\t") == 1
+    name, genes = lines[0].split("\t")
+    assert name.endswith("__topk=3")
+    assert genes.split(" ") == ["G2", "G1"]
 
 
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
