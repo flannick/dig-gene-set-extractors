@@ -56,6 +56,13 @@ For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 - bulk: `linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`
 - scATAC: same plus `tfidf_distal`
 
+Optional resource-backed methods:
+
+- `ref_ubiquity_penalty`
+- `atlas_residual`
+
+Enable them with `--program_preset all` or explicit `--program_methods ...`.
+
 ## Recommended scATAC Cluster Programs
 
 Use grouped differential extraction:
@@ -93,6 +100,14 @@ Standardized external linkage TSV format:
 - coordinates are 0-based half-open intervals
 - `gene_id` should match GTF gene IDs (versioned or unversioned Ensembl IDs are both accepted)
 
+Optional resource-backed program flags:
+
+- `--resource_policy {skip,fail}` (default `skip`)
+- `--resources_manifest <manifest.json>` (optional override)
+- `--resources_dir <resource_cache_dir>` (optional override)
+- `--ref_ubiquity_resource_id <id>` and `--atlas_resource_id <id>`
+- `--atlas_metric {logratio,zscore}` and `--atlas_eps <float>`
+
 ## Choosing 100-500 Genes
 
 - Start with `--top_k 200`.
@@ -122,3 +137,13 @@ omics2geneset resources fetch --preset atac_default_optional
 ```
 
 Set `OMICS2GENESET_RESOURCES_DIR` to override the default cache location.
+
+Resource file formats used by resource-backed program methods:
+
+- `ref_ubiquity_penalty` table:
+  - required columns: `chrom`, `start`, `end`, plus either:
+    - `idf_ref`, or
+    - `df_ref` and `n_ref` (idf computed as `log((n_ref+1)/(df_ref+1))+1`)
+- `atlas_residual` table:
+  - required columns: `gene_id`, `median_score`, `mad_score`
+  - accepted aliases: `median` / `mad`

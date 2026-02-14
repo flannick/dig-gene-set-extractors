@@ -52,7 +52,7 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
         "--program_methods",
         help=(
             "Optional comma-separated program methods overriding preset. "
-            "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias. "
+            "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual. "
             "scATAC adds tfidf_distal."
         ),
     )
@@ -61,6 +61,16 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--quantile", type=float, default=0.01)
     parser.add_argument("--min_score", type=float, default=0.0)
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
+
+
+def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--resources_manifest", help="Optional resources manifest path (defaults to bundled manifest)")
+    parser.add_argument("--resources_dir", help="Optional resources cache directory (defaults to OMICS2GENESET_RESOURCES_DIR or ~/.cache)")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--ref_ubiquity_resource_id", help="Resource id for ref_ubiquity_penalty program")
+    parser.add_argument("--atlas_resource_id", help="Resource id for atlas_residual program")
+    parser.add_argument("--atlas_metric", choices=["logratio", "zscore"], default="logratio")
+    parser.add_argument("--atlas_eps", type=float, default=1e-6)
 
 
 def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
@@ -125,6 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bulk.add_argument("--gtf_source")
     _add_linking_flags(p_bulk)
     _add_program_flags(p_bulk)
+    _add_resource_flags(p_bulk)
     _add_gmt_flags(p_bulk)
 
     p_sc = conv.add_parser("atac_sc_10x")
@@ -143,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--gtf_source")
     _add_linking_flags(p_sc)
     _add_program_flags(p_sc)
+    _add_resource_flags(p_sc)
     _add_gmt_flags(p_sc)
 
     p_rna = conv.add_parser("rna_deg")

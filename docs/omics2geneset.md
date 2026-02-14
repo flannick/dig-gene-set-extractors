@@ -47,6 +47,7 @@ GMT defaults favor cleaner symbols:
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
 - `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
 - `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
+- `--program_preset all` also attempts resource-backed methods (`ref_ubiquity_penalty`, `atlas_residual`).
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 
 `geneset.tsv` columns:
@@ -100,7 +101,10 @@ Optional peak weights:
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
 - Program families:
   - `--program_preset {none,default,all}` controls additional ATAC program families for GMT output.
-  - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
+  - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
+  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
+  - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
+  - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
 - Program selection (`--select`): `top_k`, `quantile`, `threshold`, or `none`
 - Normalization (`--normalize`):
   - `within_set_l1` (default): normalize only selected genes
@@ -163,6 +167,9 @@ Optional:
 - Program families:
   - `--program_preset {none,default,all}` controls additional ATAC program families.
   - `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
+  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
+  - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
+  - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
 - Gene program selection and normalization: same controls as `atac_bulk`
 
 External linkage TSV format:
@@ -170,6 +177,14 @@ External linkage TSV format:
 - required columns: `chrom`, `start`, `end`, `gene_id`, `link_weight`
 - 0-based half-open coordinates
 - `gene_id` is resolved against GTF IDs; unversioned Ensembl IDs are accepted
+
+Resource-backed table formats:
+
+- `ref_ubiquity_penalty` resource table:
+  - required: `chrom`, `start`, `end`, and either `idf_ref` or (`df_ref`, `n_ref`)
+- `atlas_residual` resource table:
+  - required: `gene_id`, `median_score`, `mad_score`
+  - accepted aliases: `median`, `mad`
 
 ### Outputs
 

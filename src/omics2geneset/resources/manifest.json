@@ -1,6 +1,28 @@
 {
   "resources": [
     {
+      "id": "ccre_ubiquity_hg38",
+      "description": "Reference cCRE ubiquity table for hg38 with columns chrom,start,end,idf_ref (or df_ref,n_ref)",
+      "provider": "user_or_zenodo_placeholder",
+      "stable_id": "TODO",
+      "genome_build": "hg38",
+      "filename": "ccre_ubiquity_hg38.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    },
+    {
+      "id": "ccre_ubiquity_mm10",
+      "description": "Reference cCRE ubiquity table for mm10 with columns chrom,start,end,idf_ref (or df_ref,n_ref)",
+      "provider": "user_or_zenodo_placeholder",
+      "stable_id": "TODO",
+      "genome_build": "mm10",
+      "filename": "ccre_ubiquity_mm10.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    },
+    {
       "id": "encode_ccre_hg38",
       "description": "ENCODE candidate cis-regulatory elements for hg38 (optional ubiquity reference)",
       "provider": "encode_screen",
@@ -32,14 +54,27 @@
       "url": "",
       "sha256": "",
       "license": "TBD"
+    },
+    {
+      "id": "atac_reference_profiles_mm10",
+      "description": "Optional precomputed ATAC gene-score reference profiles for mm10 residualization workflows",
+      "provider": "zenodo_placeholder",
+      "stable_id": "TODO",
+      "genome_build": "mm10",
+      "filename": "atac_reference_profiles_mm10.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
     }
   ],
   "presets": {
     "atac_default_optional": [
-      "encode_ccre_hg38",
+      "ccre_ubiquity_hg38",
       "atac_reference_profiles_hg38"
     ],
     "atac_ccre_only": [
+      "ccre_ubiquity_hg38",
+      "ccre_ubiquity_mm10",
       "encode_ccre_hg38",
       "encode_ccre_mm10"
     ]

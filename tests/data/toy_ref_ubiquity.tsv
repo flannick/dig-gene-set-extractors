@@ -1,0 +1,4 @@
+chrom	start	end	idf_ref
+chr1	850	1150	2.0
+chr1	1700	2000	0.5
+chr1	5900	6200	3.0

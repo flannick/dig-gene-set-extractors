@@ -1,0 +1,26 @@
+{
+  "resources": [
+    {
+      "id": "ccre_ubiquity_hg38",
+      "filename": "toy_ref_ubiquity.tsv",
+      "url": "",
+      "sha256": "",
+      "provider": "test",
+      "genome_build": "hg38"
+    },
+    {
+      "id": "atac_reference_profiles_hg38",
+      "filename": "toy_atlas_gene_stats.tsv",
+      "url": "",
+      "sha256": "",
+      "provider": "test",
+      "genome_build": "hg38"
+    }
+  ],
+  "presets": {
+    "atac_default_optional": [
+      "ccre_ubiquity_hg38",
+      "atac_reference_profiles_hg38"
+    ]
+  }
+}

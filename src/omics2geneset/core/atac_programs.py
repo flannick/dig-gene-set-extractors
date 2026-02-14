@@ -8,6 +8,8 @@ PROGRAM_PROMOTER_ACTIVITY = "promoter_activity"
 PROGRAM_DISTAL_ACTIVITY = "distal_activity"
 PROGRAM_ENHANCER_BIAS = "enhancer_bias"
 PROGRAM_TFIDF_DISTAL = "tfidf_distal"
+PROGRAM_REF_UBIQUITY_PENALTY = "ref_ubiquity_penalty"
+PROGRAM_ATLAS_RESIDUAL = "atlas_residual"
 
 
 _BULK_ALLOWED = (
@@ -15,6 +17,8 @@ _BULK_ALLOWED = (
     PROGRAM_PROMOTER_ACTIVITY,
     PROGRAM_DISTAL_ACTIVITY,
     PROGRAM_ENHANCER_BIAS,
+    PROGRAM_REF_UBIQUITY_PENALTY,
+    PROGRAM_ATLAS_RESIDUAL,
 )
 _SC_ALLOWED = (
     PROGRAM_LINKED_ACTIVITY,
@@ -22,6 +26,8 @@ _SC_ALLOWED = (
     PROGRAM_DISTAL_ACTIVITY,
     PROGRAM_ENHANCER_BIAS,
     PROGRAM_TFIDF_DISTAL,
+    PROGRAM_REF_UBIQUITY_PENALTY,
+    PROGRAM_ATLAS_RESIDUAL,
 )
 
 _BULK_PRESETS: dict[str, tuple[str, ...]] = {
@@ -37,6 +43,8 @@ _BULK_PRESETS: dict[str, tuple[str, ...]] = {
         PROGRAM_PROMOTER_ACTIVITY,
         PROGRAM_DISTAL_ACTIVITY,
         PROGRAM_ENHANCER_BIAS,
+        PROGRAM_REF_UBIQUITY_PENALTY,
+        PROGRAM_ATLAS_RESIDUAL,
     ),
 }
 _SC_PRESETS: dict[str, tuple[str, ...]] = {
@@ -54,6 +62,8 @@ _SC_PRESETS: dict[str, tuple[str, ...]] = {
         PROGRAM_DISTAL_ACTIVITY,
         PROGRAM_ENHANCER_BIAS,
         PROGRAM_TFIDF_DISTAL,
+        PROGRAM_REF_UBIQUITY_PENALTY,
+        PROGRAM_ATLAS_RESIDUAL,
     ),
 }
 
@@ -159,3 +169,26 @@ def compute_peak_idf(
             df[int(peak_i)] += 1
     denom = float(n_cells) + 1.0
     return [math.log(denom / (float(d) + 1.0)) + 1.0 for d in df]
+
+
+def atlas_residual_scores(
+    scores: dict[str, float],
+    gene_stats: dict[str, tuple[float, float]],
+    metric: str,
+    eps: float,
+) -> dict[str, float]:
+    out: dict[str, float] = {}
+    tiny = float(eps)
+    for gene_id, score in scores.items():
+        if gene_id not in gene_stats:
+            continue
+        median, mad = gene_stats[gene_id]
+        s = float(score)
+        if metric == "logratio":
+            out[gene_id] = math.log((s + tiny) / (float(median) + tiny))
+            continue
+        if metric == "zscore":
+            out[gene_id] = (s - float(median)) / (float(mad) + tiny)
+            continue
+        raise ValueError(f"Unsupported atlas metric: {metric}")
+    return out

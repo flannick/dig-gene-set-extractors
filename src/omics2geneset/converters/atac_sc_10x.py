@@ -15,17 +15,21 @@ from omics2geneset.core.gmt import (
     write_gmt,
 )
 from omics2geneset.core.atac_programs import (
+    PROGRAM_ATLAS_RESIDUAL,
     PROGRAM_DISTAL_ACTIVITY,
     PROGRAM_ENHANCER_BIAS,
     PROGRAM_LINKED_ACTIVITY,
     PROGRAM_PROMOTER_ACTIVITY,
+    PROGRAM_REF_UBIQUITY_PENALTY,
     PROGRAM_TFIDF_DISTAL,
     compute_peak_idf,
+    atlas_residual_scores,
     enhancer_bias_scores,
     mask_peak_weights,
     promoter_peak_indices,
     resolve_program_methods,
 )
+from omics2geneset.core.reference_calibration import apply_peak_idf, peak_ref_idf_by_overlap
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.peak_to_gene import (
     link_distance_decay,
@@ -52,7 +56,9 @@ from omics2geneset.io.mtx_10x import (
     summarize_peaks,
     summarize_peaks_by_group,
 )
+from omics2geneset.io.reference_tables import read_atlas_gene_stats_tsv, read_ref_ubiquity_tsv
 from omics2geneset.io.region_gene_links import read_region_gene_links_tsv
+from omics2geneset.resource_manager import default_resources_dir, load_manifest
 
 
 _LINK_METHODS = ("promoter_overlap", "nearest_tss", "distance_decay")
@@ -115,6 +121,24 @@ def _resolve_pseudocount(args) -> float:
     return 1.0
 
 
+def _default_ref_ubiquity_resource_id(genome_build: str) -> str | None:
+    gb = genome_build.strip().lower()
+    if gb in {"hg38", "grch38"}:
+        return "ccre_ubiquity_hg38"
+    if gb in {"mm10", "grcm38"}:
+        return "ccre_ubiquity_mm10"
+    return None
+
+
+def _default_atlas_resource_id(genome_build: str) -> str | None:
+    gb = genome_build.strip().lower()
+    if gb in {"hg38", "grch38"}:
+        return "atac_reference_profiles_hg38"
+    if gb in {"mm10", "grcm38"}:
+        return "atac_reference_profiles_mm10"
+    return None
+
+
 def _resolved_parameters(args, group_name: str | None = None) -> dict[str, object]:
     contrast = _resolve_contrast(args)
     gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "100,200,500")))
@@ -125,6 +149,12 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "single_cell",
         _arg(args, "program_preset", "default"),
         _arg(args, "program_methods", None),
+    )
+    ref_ubiquity_resource_id = _arg(args, "ref_ubiquity_resource_id", None) or _default_ref_ubiquity_resource_id(
+        str(_arg(args, "genome_build", ""))
+    )
+    atlas_resource_id = _arg(args, "atlas_resource_id", None) or _default_atlas_resource_id(
+        str(_arg(args, "genome_build", ""))
     )
     max_distance = (
         _resolve_max_distance(args, link_methods[0])
@@ -138,6 +168,11 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "program_preset": _arg(args, "program_preset", "default"),
         "program_methods": _arg(args, "program_methods", None),
         "program_methods_evaluated": program_methods,
+        "resource_policy": _arg(args, "resource_policy", "skip"),
+        "ref_ubiquity_resource_id": ref_ubiquity_resource_id,
+        "atlas_resource_id": atlas_resource_id,
+        "atlas_metric": _arg(args, "atlas_metric", "logratio"),
+        "atlas_eps": _arg(args, "atlas_eps", 1e-6),
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
         "promoter_downstream_bp": _arg(args, "promoter_downstream_bp", 500),
         "max_distance_bp": max_distance,
@@ -348,11 +383,22 @@ def run(args) -> dict[str, object]:
     gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
     gmt_out = _arg(args, "gmt_out", None)
     contrast_metric = _arg(args, "contrast_metric", "log2fc")
+    resources_manifest = _arg(args, "resources_manifest", None)
+    resources_dir = (
+        Path(_arg(args, "resources_dir", "")).expanduser()
+        if _arg(args, "resources_dir", None)
+        else default_resources_dir()
+    )
+    resource_policy = str(_arg(args, "resource_policy", "skip"))
+    if resource_policy not in {"skip", "fail"}:
+        raise ValueError(f"Unsupported resource_policy: {resource_policy}")
     program_methods = resolve_program_methods(
         "single_cell",
         _arg(args, "program_preset", "default"),
         _arg(args, "program_methods", None),
     )
+    program_methods_skipped: dict[str, str] = {}
+    resources_used: list[dict[str, object]] = []
 
     groups = read_groups_tsv(groups_tsv) if groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
@@ -391,6 +437,64 @@ def run(args) -> dict[str, object]:
         if PROGRAM_TFIDF_DISTAL in program_methods
         else []
     )
+    needs_ref_ubiquity = PROGRAM_REF_UBIQUITY_PENALTY in program_methods
+    needs_atlas = PROGRAM_ATLAS_RESIDUAL in program_methods
+    manifest_resources: dict[str, dict[str, object]] = {}
+    ref_peak_idf: list[float] = []
+    atlas_stats: dict[str, tuple[float, float]] = {}
+    if needs_ref_ubiquity or needs_atlas:
+        _manifest_path, manifest_resources, _presets = load_manifest(resources_manifest)
+
+    if needs_ref_ubiquity:
+        ref_resource_id = _arg(args, "ref_ubiquity_resource_id", None) or _default_ref_ubiquity_resource_id(str(args.genome_build))
+        try:
+            if not ref_resource_id:
+                raise ValueError(f"No default ref ubiquity resource id for genome_build={args.genome_build}")
+            if ref_resource_id not in manifest_resources:
+                raise ValueError(f"Unknown ref ubiquity resource id: {ref_resource_id}")
+            ref_entry = manifest_resources[ref_resource_id]
+            ref_path = resources_dir / str(ref_entry["filename"])
+            if not ref_path.exists():
+                raise FileNotFoundError(f"Missing ref ubiquity resource file: {ref_path}")
+            ref_rows = read_ref_ubiquity_tsv(ref_path)
+            ref_peak_idf = peak_ref_idf_by_overlap(peaks, ref_rows, default_idf=1.0)
+            resources_used.append(
+                {
+                    "id": ref_resource_id,
+                    "path": str(ref_path),
+                    "method": PROGRAM_REF_UBIQUITY_PENALTY,
+                }
+            )
+        except Exception as exc:
+            if resource_policy == "fail":
+                raise
+            program_methods_skipped[PROGRAM_REF_UBIQUITY_PENALTY] = str(exc)
+            program_methods = [m for m in program_methods if m != PROGRAM_REF_UBIQUITY_PENALTY]
+
+    if needs_atlas:
+        atlas_resource_id = _arg(args, "atlas_resource_id", None) or _default_atlas_resource_id(str(args.genome_build))
+        try:
+            if not atlas_resource_id:
+                raise ValueError(f"No default atlas resource id for genome_build={args.genome_build}")
+            if atlas_resource_id not in manifest_resources:
+                raise ValueError(f"Unknown atlas resource id: {atlas_resource_id}")
+            atlas_entry = manifest_resources[atlas_resource_id]
+            atlas_path = resources_dir / str(atlas_entry["filename"])
+            if not atlas_path.exists():
+                raise FileNotFoundError(f"Missing atlas resource file: {atlas_path}")
+            atlas_stats = read_atlas_gene_stats_tsv(atlas_path)
+            resources_used.append(
+                {
+                    "id": atlas_resource_id,
+                    "path": str(atlas_path),
+                    "method": PROGRAM_ATLAS_RESIDUAL,
+                }
+            )
+        except Exception as exc:
+            if resource_policy == "fail":
+                raise
+            program_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
+            program_methods = [m for m in program_methods if m != PROGRAM_ATLAS_RESIDUAL]
 
     contrast = _resolve_contrast(args)
     pseudocount = _resolve_pseudocount(args)
@@ -405,6 +509,8 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(groups_tsv, "groups_tsv"))
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
+    for r in resources_used:
+        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}"))
 
     manifest_rows: list[tuple[str, str, str]] = []
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
@@ -514,6 +620,25 @@ def run(args) -> dict[str, object]:
                 gene_symbol_by_id,
                 gene_biotype_by_id,
             )
+        if PROGRAM_REF_UBIQUITY_PENALTY in program_methods:
+            ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
+            ref_raw = score_genes(ref_peak_stat, links_by_method[primary_link_method], peak_weight_transform)
+            ref_scores = {g: float(s) for g, s in ref_raw.items() if float(s) != 0.0}
+            additional_program_rows[PROGRAM_REF_UBIQUITY_PENALTY] = _rows_from_scores(
+                ref_scores,
+                gene_symbol_by_id,
+                gene_biotype_by_id,
+            )
+        if PROGRAM_ATLAS_RESIDUAL in program_methods:
+            atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
+            atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
+            atlas_scores = atlas_residual_scores(full_scores, atlas_stats, atlas_metric, atlas_eps)
+            atlas_nonzero = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
+            additional_program_rows[PROGRAM_ATLAS_RESIDUAL] = _rows_from_scores(
+                atlas_nonzero,
+                gene_symbol_by_id,
+                gene_biotype_by_id,
+            )
 
         if groups_tsv:
             group_dir = out_dir / f"group={_safe_group_name(group_name)}"
@@ -598,9 +723,13 @@ def run(args) -> dict[str, object]:
                 }
             )
 
+        params = _resolved_parameters(args, group_name)
+        params["program_methods_active"] = program_methods
+        params["program_methods_skipped"] = program_methods_skipped
+
         meta = make_metadata(
             converter_name="atac_sc_10x",
-            parameters=_resolved_parameters(args, group_name),
+            parameters=params,
             data_type="atac_seq",
             assay="single_cell",
             organism=args.organism,
@@ -627,6 +756,7 @@ def run(args) -> dict[str, object]:
                 "fraction_features_assigned": assigned_peaks / len(peaks) if peaks else 0.0,
                 "n_external_links_unresolved_gene_id": external_links_unresolved,
                 "n_program_methods": len(program_methods),
+                "n_resource_methods_skipped": len(program_methods_skipped),
             },
             program_extraction={
                 "selection_method": _arg(args, "select", "top_k"),
@@ -640,6 +770,7 @@ def run(args) -> dict[str, object]:
                 "score_definition": "sum over peaks of transformed peak_stat times link_weight",
                 "contrast": contrast_meta,
                 "program_methods": program_methods,
+                "program_methods_skipped": program_methods_skipped,
                 "primary_program_method": PROGRAM_LINKED_ACTIVITY,
             },
             output_files=output_files,
@@ -660,6 +791,12 @@ def run(args) -> dict[str, object]:
                 "plans": group_gmt_plans,
             },
         )
+        if resources_used:
+            meta["resources"] = {
+                "manifest": str(resources_manifest) if resources_manifest else "bundled",
+                "resources_dir": str(resources_dir),
+                "used": resources_used,
+            }
         write_metadata(group_dir / "geneset.meta.json", meta)
         group_rel = str(group_dir.relative_to(out_dir))
         gmt_rel = ""
@@ -675,6 +812,7 @@ def run(args) -> dict[str, object]:
             write_gmt(combined_gmt_sets, root_gmt_path)
             root_payload = {
                 "groups": len(group_indices),
+                "program_methods_skipped": program_methods_skipped,
                 "gmt": {
                     "written": True,
                     "path": str(root_gmt_path.relative_to(out_dir))
@@ -688,6 +826,12 @@ def run(args) -> dict[str, object]:
                     "plans": combined_gmt_plans,
                 },
             }
+            if resources_used:
+                root_payload["resources"] = {
+                    "manifest": str(resources_manifest) if resources_manifest else "bundled",
+                    "resources_dir": str(resources_dir),
+                    "used": resources_used,
+                }
             (out_dir / "manifest.meta.json").write_text(json.dumps(root_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
             writer = csv.writer(fh, delimiter="\t")

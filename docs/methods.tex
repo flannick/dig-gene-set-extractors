@@ -243,7 +243,7 @@ distal\_activity & Enhancer-driven accessibility (more tissue-specific) & Peaks 
 enhancer\_bias & Distal vs promoter residual (enhancer emphasis) & Peaks + GTF & Yes \\
 group\_vs\_rest\_open & Cluster-specific opening (scATAC) & scATAC + groups & Yes \\
 group\_vs\_rest\_close & Cluster-specific closing (scATAC) & scATAC + groups & Optional \\
-tfidf\_group\_open & TF-IDF specificity-weighted cluster program & scATAC matrix & Yes (sc) \\
+tfidf\_distal & TF-IDF specificity-weighted distal cluster program & scATAC matrix & Yes (sc) \\
 ref\_ubiquity\_penalty & Penalize elements open in many tissues/cells & Reference cCRE/atlas & Optional \\
 atlas\_residual & Sample-specific vs atlas baseline & Reference atlas & Optional \\
 motif\_regulons & TF driver programs via motif hits & Motifs + genome/hits & Optional \\
@@ -327,7 +327,7 @@ with pseudocount $a>0$ (e.g., $a=10^{-3}$ for fractions, $a=1$ for counts).
 \subsubsection{M2.2: group\_vs\_rest\_close (optional)}
 Same as M2.1 but with $\alpha_p^{(k)} = \max(-x_p^{(k)},0)$ to capture peaks that are less accessible in the group than background.
 
-\subsubsection{M2.3: tfidf\_group\_open (scATAC default)}
+\subsubsection{M2.3: tfidf\_distal (scATAC default)}
 \paragraph{Motivation.} Peaks that are accessible in many cells are less informative for defining cell identity.
 A TF-IDF style reweighting emphasizes more specific peaks.
 \paragraph{Definition.} Let $N=C$ be the number of cells in the dataset and define the document frequency:
@@ -446,8 +446,8 @@ To balance usability and flexibility, program methods are grouped into presets.
 \subsection{Default preset (high-value, low-dependency)}
 A recommended default preset emits:
 \begin{itemize}[leftmargin=2em]
-\item \textbf{bulk:} promoter\_activity, distal\_activity, enhancer\_bias (and opening/closing if signed peak statistics are provided).
-\item \textbf{scATAC (grouped):} group\_vs\_rest\_open (and optionally close), tfidf\_group\_open, plus distal variants.
+\item \textbf{bulk:} linked\_activity, promoter\_activity, distal\_activity, enhancer\_bias.
+\item \textbf{scATAC (grouped):} linked\_activity, promoter\_activity, distal\_activity, enhancer\_bias, tfidf\_distal.
 \end{itemize}
 These methods require only the input peaks/matrix and a gene annotation (GTF).
 
@@ -468,6 +468,14 @@ Many optional methods require external resources (reference catalogs, atlases, m
 
 \paragraph{Bundled vs external.}
 Small, permissively licensed resources may be bundled in the repository. Larger resources are hosted externally (e.g., on Zenodo) and fetched on demand.
+
+\paragraph{Current resource-backed hooks (implemented).}
+Two optional methods are wired in the ATAC converters:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{ref\_ubiquity\_penalty}: applies a peak-level multiplier from an overlap table with required columns \texttt{chrom,start,end} and either \texttt{idf\_ref} or \texttt{df\_ref,n\_ref}.
+\item \texttt{atlas\_residual}: transforms projected gene scores using an atlas table with required columns \texttt{gene\_id,median\_score,mad\_score} (aliases: \texttt{median,mad}).
+\end{itemize}
+Execution policy is configurable per run (\texttt{resource\_policy=skip|fail}).
 
 \section{Output artifacts and metadata}
 Each program instance is written to its own output directory containing:

@@ -27,6 +27,13 @@ class Args:
     normalize = "within_set_l1"
     program_preset = "none"
     program_methods = None
+    resources_manifest = None
+    resources_dir = None
+    resource_policy = "skip"
+    ref_ubiquity_resource_id = None
+    atlas_resource_id = None
+    atlas_metric = "logratio"
+    atlas_eps = 1e-6
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -132,6 +139,57 @@ def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "program_methods" in meta["program_extraction"]
     assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
+
+
+def test_bulk_resource_backed_program_methods(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_resource_methods")
+    args.link_method = "promoter_overlap"
+    args.program_preset = "none"
+    args.program_methods = "ref_ubiquity_penalty,atlas_residual"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__program=ref_ubiquity_penalty__topk=3" in gmt_text
+    assert "__program=atlas_residual__topk=3" in gmt_text
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["resources"]["used"]
+    assert not meta["program_extraction"]["program_methods_skipped"]
+
+
+def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_resource_skip")
+    args.program_preset = "none"
+    args.program_methods = "ref_ubiquity_penalty"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = str(tmp_path / "missing_resources")
+    args.resource_policy = "skip"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "ref_ubiquity_penalty" in meta["program_extraction"]["program_methods_skipped"]
+
+
+def test_bulk_resource_policy_fail_raises_on_missing_resource(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_resource_fail")
+    args.program_preset = "none"
+    args.program_methods = "atlas_residual"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = str(tmp_path / "missing_resources")
+    args.resource_policy = "fail"
+    with pytest.raises(FileNotFoundError, match="atlas"):
+        atac_bulk.run(args)
 
 
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
