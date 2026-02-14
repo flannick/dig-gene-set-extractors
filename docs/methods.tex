@@ -468,6 +468,7 @@ Many optional methods require external resources (reference catalogs, atlases, m
 
 \paragraph{Bundled vs external.}
 Small, permissively licensed resources may be bundled in the repository. Larger resources are hosted externally (e.g., on Zenodo) and fetched on demand.
+Resource entries without URLs are treated as manual resources; the fetch command can skip them (recording status) unless strict behavior is requested.
 
 \paragraph{Current resource-backed hooks (implemented).}
 Two optional methods are wired in the ATAC converters:

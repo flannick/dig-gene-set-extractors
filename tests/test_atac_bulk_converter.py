@@ -160,6 +160,8 @@ def test_bulk_resource_backed_program_methods(tmp_path: Path):
     assert "__program=atlas_residual__topk=3" in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["resources"]["used"]
+    assert meta["resources"]["used"][0]["stable_id"]
+    assert meta["resources"]["used"][0]["version"]
     assert not meta["program_extraction"]["program_methods_skipped"]
 
 

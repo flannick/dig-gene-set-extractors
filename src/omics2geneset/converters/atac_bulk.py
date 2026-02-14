@@ -45,7 +45,7 @@ from omics2geneset.io.bed import read_bed, read_peak_weights_tsv
 from omics2geneset.io.gtf import read_genes_from_gtf
 from omics2geneset.io.reference_tables import read_atlas_gene_stats_tsv, read_ref_ubiquity_tsv
 from omics2geneset.io.region_gene_links import read_region_gene_links_tsv
-from omics2geneset.resource_manager import default_resources_dir, load_manifest
+from omics2geneset.resource_manager import default_resources_dir, load_manifest, resource_metadata_record
 
 
 _LINK_METHODS = ("promoter_overlap", "nearest_tss", "distance_decay")
@@ -456,8 +456,10 @@ def run(args) -> dict[str, object]:
     needs_ref_ubiquity = PROGRAM_REF_UBIQUITY_PENALTY in program_methods
     needs_atlas = PROGRAM_ATLAS_RESIDUAL in program_methods
     manifest_resources: dict[str, dict[str, object]] = {}
+    manifest_label = "bundled"
+    manifest_warnings: list[str] = []
     if needs_ref_ubiquity or needs_atlas:
-        _manifest_path, manifest_resources, _presets = load_manifest(resources_manifest)
+        manifest_label, manifest_resources, _presets, manifest_warnings = load_manifest(resources_manifest)
 
     if needs_ref_ubiquity:
         ref_resource_id = _arg(args, "ref_ubiquity_resource_id", None) or _default_ref_ubiquity_resource_id(str(args.genome_build))
@@ -481,11 +483,12 @@ def run(args) -> dict[str, object]:
                 gene_biotype_by_id,
             )
             resources_used.append(
-                {
-                    "id": ref_resource_id,
-                    "path": str(ref_path),
-                    "method": PROGRAM_REF_UBIQUITY_PENALTY,
-                }
+                resource_metadata_record(
+                    resource_id=ref_resource_id,
+                    entry=ref_entry,
+                    local_path=ref_path,
+                    method=PROGRAM_REF_UBIQUITY_PENALTY,
+                )
             )
         except Exception as exc:
             if resource_policy == "fail":
@@ -515,11 +518,12 @@ def run(args) -> dict[str, object]:
                 gene_biotype_by_id,
             )
             resources_used.append(
-                {
-                    "id": atlas_resource_id,
-                    "path": str(atlas_path),
-                    "method": PROGRAM_ATLAS_RESIDUAL,
-                }
+                resource_metadata_record(
+                    resource_id=atlas_resource_id,
+                    entry=atlas_entry,
+                    local_path=atlas_path,
+                    method=PROGRAM_ATLAS_RESIDUAL,
+                )
             )
         except Exception as exc:
             if resource_policy == "fail":
@@ -622,6 +626,7 @@ def run(args) -> dict[str, object]:
             "n_external_links_unresolved_gene_id": external_links_unresolved,
             "n_program_methods": len(program_methods),
             "n_resource_methods_skipped": len(program_methods_skipped),
+            "n_resource_manifest_warnings": len(manifest_warnings),
         },
         program_extraction={
             "selection_method": _arg(args, "select", "top_k"),
@@ -653,11 +658,12 @@ def run(args) -> dict[str, object]:
             "plans": gmt_plans,
         },
     )
-    if resources_used:
+    if resources_used or manifest_warnings:
         meta["resources"] = {
-            "manifest": str(resources_manifest) if resources_manifest else "bundled",
+            "manifest": manifest_label,
             "resources_dir": str(resources_dir),
             "used": resources_used,
+            "warnings": manifest_warnings,
         }
     write_metadata(out_dir / "geneset.meta.json", meta)
 

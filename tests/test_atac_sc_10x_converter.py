@@ -177,6 +177,8 @@ def test_sc_resource_backed_program_methods(tmp_path: Path):
     assert "__program=atlas_residual__topk=3" in text
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["resources"]["used"]
+    assert meta["resources"]["used"][0]["stable_id"]
+    assert meta["resources"]["used"][0]["version"]
 
 
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):

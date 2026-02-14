@@ -62,6 +62,7 @@ Optional resource-backed methods:
 - `atlas_residual`
 
 Enable them with `--program_preset all` or explicit `--program_methods ...`.
+Default preset runs (`--program_preset default`) do not require any external resource downloads.
 
 ## Recommended scATAC Cluster Programs
 
@@ -132,11 +133,17 @@ For methods that need external references (for example cCRE ubiquity references)
 
 ```bash
 omics2geneset resources list
-omics2geneset resources status
+omics2geneset resources status --fast
+omics2geneset resources describe ccre_ubiquity_hg38
 omics2geneset resources fetch --preset atac_default_optional
+omics2geneset resources manifest-validate
 ```
 
 Set `OMICS2GENESET_RESOURCES_DIR` to override the default cache location.
+By default, `resources fetch` skips entries without a URL and reports them as `manual`.
+
+Use `--manifest <path>` to provide a custom manifest.
+Default mode is overlay merge with the bundled manifest; set `--manifest_mode replace` to use only your file.
 
 Resource file formats used by resource-backed program methods:
 
@@ -147,3 +154,10 @@ Resource file formats used by resource-backed program methods:
 - `atlas_residual` table:
   - required columns: `gene_id`, `median_score`, `mad_score`
   - accepted aliases: `median` / `mad`
+
+Resource IDs currently referenced by ATAC methods:
+
+- `ccre_ubiquity_hg38`, `ccre_ubiquity_mm10`: used by `ref_ubiquity_penalty`
+- `atac_reference_profiles_hg38`, `atac_reference_profiles_mm10`: used by `atlas_residual`
+
+Each resource entry tracks `provider`, `stable_id`, `version`, `license`, `filename`, optional `url`, and optional `sha256`.

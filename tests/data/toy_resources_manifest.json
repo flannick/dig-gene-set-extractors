@@ -2,18 +2,26 @@
   "resources": [
     {
       "id": "ccre_ubiquity_hg38",
+      "description": "toy ref ubiquity",
       "filename": "toy_ref_ubiquity.tsv",
       "url": "",
-      "sha256": "",
+      "sha256": "27fa16091a6ec38e04b73a625e729a29410b583d38adaa96871a59a562e1b8e2",
       "provider": "test",
+      "stable_id": "toy-ccre-ubiquity-hg38",
+      "version": "1",
+      "license": "test",
       "genome_build": "hg38"
     },
     {
       "id": "atac_reference_profiles_hg38",
+      "description": "toy atlas",
       "filename": "toy_atlas_gene_stats.tsv",
       "url": "",
-      "sha256": "",
+      "sha256": "806c30464fa2b3484e77e2aaf6feccdff8b3c68c51592eb0c0d07f4370a2ff41",
       "provider": "test",
+      "stable_id": "toy-atlas-hg38",
+      "version": "1",
+      "license": "test",
       "genome_build": "hg38"
     }
   ],

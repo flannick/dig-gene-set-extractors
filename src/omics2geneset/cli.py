@@ -7,6 +7,7 @@ from pathlib import Path
 
 from omics2geneset.core.validate import validate_output_dir
 from omics2geneset.resource_manager import (
+    describe_resource,
     fetch_resources,
     load_manifest,
     resource_status_rows,
@@ -110,17 +111,69 @@ def build_parser() -> argparse.ArgumentParser:
     res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
     p_res_list = res_sub.add_parser("list")
     p_res_list.add_argument("--manifest")
+    p_res_list.add_argument(
+        "--manifest_mode",
+        choices=["overlay", "replace"],
+        default="overlay",
+        help="When --manifest is provided, overlay merges with bundled manifest (default) or replace uses only provided manifest.",
+    )
+
+    p_res_describe = res_sub.add_parser("describe")
+    p_res_describe.add_argument("resource_id")
+    p_res_describe.add_argument("--manifest")
+    p_res_describe.add_argument(
+        "--manifest_mode",
+        choices=["overlay", "replace"],
+        default="overlay",
+        help="When --manifest is provided, overlay merges with bundled manifest (default) or replace uses only provided manifest.",
+    )
+    p_res_describe.add_argument("--resources_dir")
+    p_res_describe.add_argument("--verify", action="store_true", help="Compute checksum for local file when describing status")
 
     p_res_status = res_sub.add_parser("status")
     p_res_status.add_argument("--manifest")
+    p_res_status.add_argument(
+        "--manifest_mode",
+        choices=["overlay", "replace"],
+        default="overlay",
+        help="When --manifest is provided, overlay merges with bundled manifest (default) or replace uses only provided manifest.",
+    )
     p_res_status.add_argument("--resources_dir")
+    p_res_status.add_argument("--verify", action="store_true", help="Compute checksums for local files")
+    p_res_status.add_argument("--fast", action="store_true", help="Alias for default fast mode (existence + size; checksums optional)")
 
     p_res_fetch = res_sub.add_parser("fetch")
     p_res_fetch.add_argument("resource_ids", nargs="*")
     p_res_fetch.add_argument("--preset")
     p_res_fetch.add_argument("--manifest")
+    p_res_fetch.add_argument(
+        "--manifest_mode",
+        choices=["overlay", "replace"],
+        default="overlay",
+        help="When --manifest is provided, overlay merges with bundled manifest (default) or replace uses only provided manifest.",
+    )
     p_res_fetch.add_argument("--resources_dir")
     p_res_fetch.add_argument("--overwrite", action="store_true")
+    p_res_fetch.add_argument(
+        "--skip_missing_urls",
+        type=_parse_bool,
+        default=True,
+        help="Skip resources without URL as manual entries (default true).",
+    )
+
+    p_res_validate = res_sub.add_parser("manifest-validate")
+    p_res_validate.add_argument("--manifest")
+    p_res_validate.add_argument(
+        "--manifest_mode",
+        choices=["overlay", "replace"],
+        default="overlay",
+        help="When --manifest is provided, overlay merges with bundled manifest (default) or replace uses only provided manifest.",
+    )
+    p_res_validate.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat manifest warnings (e.g. download URL without sha256) as errors.",
+    )
 
     p_bulk = conv.add_parser("atac_bulk")
     p_bulk.add_argument("--peaks", required=True)
@@ -237,7 +290,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "resources":
-            manifest_path, resources, presets = load_manifest(args.manifest)
+            merge_with_bundled = bool(getattr(args, "manifest_mode", "overlay") == "overlay")
+            manifest_path, resources, presets, manifest_warnings = load_manifest(
+                args.manifest,
+                merge_with_bundled=merge_with_bundled,
+            )
+            for warning in manifest_warnings:
+                print(f"warning: {warning}", file=sys.stderr)
+
             if args.resources_command == "list":
                 for rid in sorted(resources):
                     entry = resources[rid]
@@ -248,16 +308,41 @@ def main(argv: list[str] | None = None) -> int:
                                 str(entry.get("genome_build", "")),
                                 str(entry.get("provider", "")),
                                 str(entry.get("filename", "")),
+                                ("download" if str(entry.get("url", "")).strip() else "manual"),
                             ]
                         )
                     )
                 print(f"# manifest={manifest_path}", file=sys.stderr)
                 return 0
 
+            if args.resources_command == "describe":
+                payload = describe_resource(
+                    resources=resources,
+                    resource_id=args.resource_id,
+                    resources_dir=args.resources_dir,
+                    verify=bool(args.verify),
+                )
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
+
             if args.resources_command == "status":
-                rows = resource_status_rows(resources, args.resources_dir)
+                if args.fast and args.verify:
+                    raise ValueError("status accepts either --fast or --verify, not both")
+                verify = bool(args.verify)
+                rows = resource_status_rows(resources, args.resources_dir, verify=verify)
                 for row in rows:
-                    print("\t".join([str(row["id"]), str(row["status"]), str(row["path"])]))
+                    print(
+                        "\t".join(
+                            [
+                                str(row["id"]),
+                                str(row["status"]),
+                                str(row["path"]),
+                                str(row.get("availability", "")),
+                                str(row.get("size_bytes", "")),
+                            ]
+                        )
+                    )
                 print(f"# manifest={manifest_path}", file=sys.stderr)
                 return 0
 
@@ -268,9 +353,37 @@ def main(argv: list[str] | None = None) -> int:
                     resource_ids=selected,
                     resources_dir=args.resources_dir,
                     overwrite=bool(args.overwrite),
+                    skip_missing_urls=bool(args.skip_missing_urls),
                 )
                 for row in results:
-                    print("\t".join([str(row["id"]), str(row["status"]), str(row["path"])]))
+                    print(
+                        "\t".join(
+                            [
+                                str(row["id"]),
+                                str(row["status"]),
+                                str(row["path"]),
+                                str(row.get("reason", "")),
+                            ]
+                        )
+                    )
+                manual = [row for row in results if str(row.get("status")) == "manual"]
+                if manual:
+                    ids = ",".join(sorted(str(row["id"]) for row in manual))
+                    print(
+                        "warning: some resources are manual (no url in manifest) and were skipped: "
+                        f"{ids}",
+                        file=sys.stderr,
+                    )
+                print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
+
+            if args.resources_command == "manifest-validate":
+                if manifest_warnings:
+                    for warning in manifest_warnings:
+                        print(f"warning: {warning}", file=sys.stderr)
+                if manifest_warnings and bool(args.strict):
+                    raise ValueError("manifest validation failed in strict mode due to warnings")
+                print("ok")
                 print(f"# manifest={manifest_path}", file=sys.stderr)
                 return 0
 

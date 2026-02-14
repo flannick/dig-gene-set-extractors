@@ -19,8 +19,10 @@ omics2geneset describe atac_bulk
 omics2geneset convert <converter_name> [flags]
 omics2geneset validate <output_dir>
 omics2geneset resources list
-omics2geneset resources status
+omics2geneset resources status --fast
+omics2geneset resources describe ccre_ubiquity_hg38
 omics2geneset resources fetch --preset atac_default_optional
+omics2geneset resources manifest-validate
 ```
 
 Resource catalog notes:
@@ -28,6 +30,8 @@ Resource catalog notes:
 - Bundled manifest: `src/omics2geneset/resources/manifest.json`
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
 - `resources fetch` supports individual ids and presets.
+- `resources fetch` skips resources with missing URL by default (status `manual`).
+- `--manifest_mode overlay` (default) merges a custom manifest with bundled entries; use `replace` to use only custom entries.
 
 ## Output Contract
 
@@ -56,6 +60,7 @@ GMT defaults favor cleaner symbols:
 - optional: `weight`, `gene_symbol`
 
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
+Default ATAC usage (`--program_preset default`) does not require resource downloads.
 
 ## Adding New Extractors or Modes
 
@@ -185,6 +190,11 @@ Resource-backed table formats:
 - `atlas_residual` resource table:
   - required: `gene_id`, `median_score`, `mad_score`
   - accepted aliases: `median`, `mad`
+
+Common resource IDs:
+
+- `ccre_ubiquity_hg38`, `ccre_ubiquity_mm10` for `ref_ubiquity_penalty`
+- `atac_reference_profiles_hg38`, `atac_reference_profiles_mm10` for `atlas_residual`
 
 ### Outputs
 
