@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -82,3 +83,69 @@ def test_cli_validate_grouped_root(tmp_path: Path):
     validate = _run("validate", str(out))
     assert validate.returncode == 0
     assert "n_groups=" in validate.stdout
+
+
+def test_cli_resources_list():
+    p = _run("resources", "list")
+    assert p.returncode == 0
+    assert "encode_ccre_hg38" in p.stdout
+
+
+def test_cli_resources_status(tmp_path: Path):
+    p = _run("resources", "status", "--resources_dir", str(tmp_path / "res_cache"))
+    assert p.returncode == 0
+    assert "missing" in p.stdout
+
+
+def test_cli_resources_fetch_local_manifest(tmp_path: Path):
+    src_file = tmp_path / "toy_resource.tsv"
+    src_file.write_text("gene\tvalue\nG1\t1\n", encoding="utf-8")
+    sha = hashlib.sha256(src_file.read_bytes()).hexdigest()
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "resources": [
+                    {
+                        "id": "toy_resource",
+                        "filename": "toy_resource.tsv",
+                        "url": src_file.resolve().as_uri(),
+                        "sha256": sha,
+                        "provider": "test",
+                        "genome_build": "na",
+                    }
+                ],
+                "presets": {"toy": ["toy_resource"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "fetched"
+    p = _run(
+        "resources",
+        "fetch",
+        "--manifest",
+        str(manifest),
+        "--resources_dir",
+        str(out_dir),
+        "--preset",
+        "toy",
+    )
+    assert p.returncode == 0
+    assert "toy_resource" in p.stdout
+    fetched = out_dir / "toy_resource.tsv"
+    assert fetched.exists()
+    assert fetched.read_text(encoding="utf-8") == src_file.read_text(encoding="utf-8")
+
+    status = _run(
+        "resources",
+        "status",
+        "--manifest",
+        str(manifest),
+        "--resources_dir",
+        str(out_dir),
+    )
+    assert status.returncode == 0
+    assert "toy_resource\tok\t" in status.stdout

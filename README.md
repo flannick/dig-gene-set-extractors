@@ -110,3 +110,15 @@ For compact programs, `within_set_l1` is the recommended default.
 
 - Package guide: `docs/omics2geneset.md`
 - Offline install guide: `docs/air_gapped_install.md`
+
+## Optional Resource Catalog
+
+For methods that need external references (for example cCRE ubiquity references), use:
+
+```bash
+omics2geneset resources list
+omics2geneset resources status
+omics2geneset resources fetch --preset atac_default_optional
+```
+
+Set `OMICS2GENESET_RESOURCES_DIR` to override the default cache location.

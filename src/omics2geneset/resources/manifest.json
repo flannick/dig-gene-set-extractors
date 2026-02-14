@@ -1,0 +1,47 @@
+{
+  "resources": [
+    {
+      "id": "encode_ccre_hg38",
+      "description": "ENCODE candidate cis-regulatory elements for hg38 (optional ubiquity reference)",
+      "provider": "encode_screen",
+      "stable_id": "encode-ccre-hg38-v1",
+      "genome_build": "hg38",
+      "filename": "encode_ccre_hg38.bed.gz",
+      "url": "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed.gz",
+      "sha256": "",
+      "license": "ENCODE data use policy"
+    },
+    {
+      "id": "encode_ccre_mm10",
+      "description": "ENCODE candidate cis-regulatory elements for mm10 (optional ubiquity reference)",
+      "provider": "encode_screen",
+      "stable_id": "encode-ccre-mm10-v1",
+      "genome_build": "mm10",
+      "filename": "encode_ccre_mm10.bed.gz",
+      "url": "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed.gz",
+      "sha256": "",
+      "license": "ENCODE data use policy"
+    },
+    {
+      "id": "atac_reference_profiles_hg38",
+      "description": "Optional precomputed ATAC gene-score reference profiles for residualization workflows",
+      "provider": "zenodo_placeholder",
+      "stable_id": "TODO",
+      "genome_build": "hg38",
+      "filename": "atac_reference_profiles_hg38.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    }
+  ],
+  "presets": {
+    "atac_default_optional": [
+      "encode_ccre_hg38",
+      "atac_reference_profiles_hg38"
+    ],
+    "atac_ccre_only": [
+      "encode_ccre_hg38",
+      "encode_ccre_mm10"
+    ]
+  }
+}

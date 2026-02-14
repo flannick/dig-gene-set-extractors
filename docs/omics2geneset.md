@@ -18,7 +18,16 @@ omics2geneset list
 omics2geneset describe atac_bulk
 omics2geneset convert <converter_name> [flags]
 omics2geneset validate <output_dir>
+omics2geneset resources list
+omics2geneset resources status
+omics2geneset resources fetch --preset atac_default_optional
 ```
+
+Resource catalog notes:
+
+- Bundled manifest: `src/omics2geneset/resources/manifest.json`
+- Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
+- `resources fetch` supports individual ids and presets.
 
 ## Output Contract
 

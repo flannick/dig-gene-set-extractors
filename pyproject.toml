@@ -33,4 +33,5 @@ where = ["src"]
 omics2geneset = [
   "schemas/*.json",
   "converters/specs/*.json",
+  "resources/*.json",
 ]

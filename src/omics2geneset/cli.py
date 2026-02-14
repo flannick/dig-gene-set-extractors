@@ -6,6 +6,12 @@ import sys
 from pathlib import Path
 
 from omics2geneset.core.validate import validate_output_dir
+from omics2geneset.resource_manager import (
+    fetch_resources,
+    load_manifest,
+    resource_status_rows,
+    resolve_requested_resource_ids,
+)
 from omics2geneset.registry import get_converter, get_converter_spec, list_converters
 
 
@@ -89,6 +95,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
+
+    p_resources = sub.add_parser("resources")
+    res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
+    p_res_list = res_sub.add_parser("list")
+    p_res_list.add_argument("--manifest")
+
+    p_res_status = res_sub.add_parser("status")
+    p_res_status.add_argument("--manifest")
+    p_res_status.add_argument("--resources_dir")
+
+    p_res_fetch = res_sub.add_parser("fetch")
+    p_res_fetch.add_argument("resource_ids", nargs="*")
+    p_res_fetch.add_argument("--preset")
+    p_res_fetch.add_argument("--manifest")
+    p_res_fetch.add_argument("--resources_dir")
+    p_res_fetch.add_argument("--overwrite", action="store_true")
 
     p_bulk = conv.add_parser("atac_bulk")
     p_bulk.add_argument("--peaks", required=True)
@@ -201,6 +223,44 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("ok")
             return 0
+
+        if args.command == "resources":
+            manifest_path, resources, presets = load_manifest(args.manifest)
+            if args.resources_command == "list":
+                for rid in sorted(resources):
+                    entry = resources[rid]
+                    print(
+                        "\t".join(
+                            [
+                                rid,
+                                str(entry.get("genome_build", "")),
+                                str(entry.get("provider", "")),
+                                str(entry.get("filename", "")),
+                            ]
+                        )
+                    )
+                print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
+
+            if args.resources_command == "status":
+                rows = resource_status_rows(resources, args.resources_dir)
+                for row in rows:
+                    print("\t".join([str(row["id"]), str(row["status"]), str(row["path"])]))
+                print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
+
+            if args.resources_command == "fetch":
+                selected = resolve_requested_resource_ids(resources, presets, list(args.resource_ids), args.preset)
+                results = fetch_resources(
+                    resources=resources,
+                    resource_ids=selected,
+                    resources_dir=args.resources_dir,
+                    overwrite=bool(args.overwrite),
+                )
+                for row in results:
+                    print("\t".join([str(row["id"]), str(row["status"]), str(row["path"])]))
+                print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
 
         if args.command == "convert":
             converter = get_converter(args.converter)
