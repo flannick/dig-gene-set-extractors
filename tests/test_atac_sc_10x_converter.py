@@ -3,6 +3,8 @@ import json
 import shutil
 import csv
 
+import pytest
+
 from omics2geneset.converters import atac_sc_10x
 from omics2geneset.core.validate import validate_output_dir
 
@@ -23,6 +25,8 @@ class Args:
     decay_length_bp = 50000
     max_genes_per_peak = 5
     normalize = "within_set_l1"
+    program_preset = "none"
+    program_methods = None
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -36,6 +40,7 @@ class Args:
     gmt_topk_list = "100,200,500"
     gmt_mass_list = "0.5,0.8,0.9"
     gmt_split_signed = False
+    region_gene_links_tsv = None
     contrast = None
     contrast_metric = "log2fc"
     contrast_pseudocount = None
@@ -124,6 +129,26 @@ def test_sc_converter_group_vs_rest_contrast_marks_expected_genes(tmp_path: Path
     assert float(contrast["pseudocount"]) == 1.0
 
 
+def test_sc_default_program_preset_emits_tfidf_distal_sets(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_program_families")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.program_preset = "default"
+    args.link_method = "promoter_overlap"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    combined_gmt = Path(args.out_dir) / "genesets.gmt"
+    text = combined_gmt.read_text(encoding="utf-8")
+    assert "__program=tfidf_distal__topk=3" in text
+    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "program_methods" in meta["program_extraction"]
+    assert "tfidf_distal" in meta["program_extraction"]["program_methods"]
+
+
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
     matrix_dir = tmp_path / "mtx_features"
     matrix_dir.mkdir(parents=True, exist_ok=True)
@@ -141,3 +166,31 @@ def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
     atac_sc_10x.run(args)
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
+
+
+def test_sc_external_requires_region_gene_links(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_external_missing")
+    args.link_method = "external"
+    args.groups_tsv = None
+    args.region_gene_links_tsv = None
+    with pytest.raises(ValueError, match="region_gene_links_tsv"):
+        atac_sc_10x.run(args)
+
+
+def test_sc_all_plus_external_writes_external_gmt(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_external_ok")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.link_method = "all,external"
+    args.region_gene_links_tsv = "tests/data/toy_region_gene_links.tsv"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    combined_gmt = Path(args.out_dir) / "genesets.gmt"
+    assert combined_gmt.exists()
+    text = combined_gmt.read_text(encoding="utf-8")
+    assert "__link_method=external__" in text

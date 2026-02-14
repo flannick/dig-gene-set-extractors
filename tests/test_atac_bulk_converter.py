@@ -3,6 +3,8 @@ import gzip
 import json
 from pathlib import Path
 
+import pytest
+
 from omics2geneset.converters import atac_bulk
 from omics2geneset.core.validate import validate_output_dir
 
@@ -23,6 +25,8 @@ class Args:
     max_genes_per_peak = 5
     peak_weight_transform = "abs"
     normalize = "within_set_l1"
+    program_preset = "none"
+    program_methods = None
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -36,6 +40,7 @@ class Args:
     gmt_topk_list = "100,200,500"
     gmt_mass_list = "0.5,0.8,0.9"
     gmt_split_signed = False
+    region_gene_links_tsv = None
     gtf_source = "toy"
 
 
@@ -110,6 +115,25 @@ def test_bulk_converter_writes_gmt(tmp_path: Path):
         assert set(genes.split(" ")) == {"G1", "G2"}
 
 
+def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_program_families")
+    args.program_preset = "default"
+    args.link_method = "promoter_overlap"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__program=promoter_activity__topk=3" in gmt_text
+    assert "__program=distal_activity__topk=3" in gmt_text
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "program_methods" in meta["program_extraction"]
+    assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
+
+
 def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "bulk_nearest")
@@ -128,6 +152,32 @@ def test_bulk_distance_decay_uses_method_default(tmp_path: Path):
     atac_bulk.run(args)
     payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert payload["converter"]["parameters"]["max_distance_bp"] == 500000
+
+
+def test_bulk_external_requires_region_gene_links(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_external_missing")
+    args.link_method = "external"
+    args.region_gene_links_tsv = None
+    with pytest.raises(ValueError, match="region_gene_links_tsv"):
+        atac_bulk.run(args)
+
+
+def test_bulk_all_plus_external_writes_external_gmt(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_external_ok")
+    args.link_method = "all,external"
+    args.region_gene_links_tsv = "tests/data/toy_region_gene_links.tsv"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_path = Path(args.out_dir) / "genesets.gmt"
+    assert gmt_path.exists()
+    lines = gmt_path.read_text(encoding="utf-8").splitlines()
+    assert any("__link_method=external__" in line for line in lines)
 
 
 def test_bulk_converter_accepts_gzipped_peaks(tmp_path: Path):

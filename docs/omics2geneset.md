@@ -37,6 +37,7 @@ GMT defaults favor cleaner symbols:
 - `--gmt_require_symbol true` drops rows whose symbol is missing or Ensembl-like.
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
 - `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
+- `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 
 `geneset.tsv` columns:
@@ -85,7 +86,12 @@ Optional peak weights:
   - `promoter_overlap`: promoter-proximal assignment
   - `nearest_tss`: nearest-gene assignment
   - `distance_decay`: multi-gene weighted assignment by distance
+  - `external`: user-provided region->gene linkage table (ABC/Hi-C-style)
+  - modes can be combined (for GMT) as comma-separated tokens, e.g. `all,external`
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
+- Program families:
+  - `--program_preset {none,default,all}` controls additional ATAC program families for GMT output.
+  - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
 - Program selection (`--select`): `top_k`, `quantile`, `threshold`, or `none`
 - Normalization (`--normalize`):
   - `within_set_l1` (default): normalize only selected genes
@@ -145,7 +151,16 @@ Optional:
 - Peak transform (`--peak_weight_transform`):
   - default `positive` for opening programs
   - use `negative` for closing programs
+- Program families:
+  - `--program_preset {none,default,all}` controls additional ATAC program families.
+  - `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
 - Gene program selection and normalization: same controls as `atac_bulk`
+
+External linkage TSV format:
+
+- required columns: `chrom`, `start`, `end`, `gene_id`, `link_weight`
+- 0-based half-open coordinates
+- `gene_id` is resolved against GTF IDs; unversioned Ensembl IDs are accepted
 
 ### Outputs
 

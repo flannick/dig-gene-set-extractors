@@ -42,6 +42,7 @@ For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 - `--emit_full true`
 - `--emit_gmt true`
 - `--link_method all`
+- `--program_preset default`
 - `--gmt_topk_list 100,200,500`
 - `--gmt_mass_list 0.5,0.8,0.9`
 - `--gmt_require_symbol true`
@@ -50,6 +51,10 @@ For `atac_bulk` and `atac_sc_10x`, defaults are tuned for program extraction:
 - `--gmt_max_genes 500`
 
 `within_set_l1` normalizes only selected genes, so `weight` sums to 1 inside the program.
+`program_preset=default` emits multiple ATAC program families in GMT:
+
+- bulk: `linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`
+- scATAC: same plus `tfidf_distal`
 
 ## Recommended scATAC Cluster Programs
 
@@ -67,6 +72,7 @@ omics2geneset convert atac_sc_10x \
   --contrast_metric log2fc \
   --peak_summary frac_cells_nonzero \
   --link_method promoter_overlap \
+  --program_preset default \
   --peak_weight_transform positive \
   --select top_k \
   --top_k 200 \
@@ -75,6 +81,17 @@ omics2geneset convert atac_sc_10x \
 
 Grouped runs write `group=<GROUP>/...` outputs plus `manifest.tsv`.  
 `omics2geneset validate <out_dir>` validates grouped roots via the manifest.
+
+External linkage (ABC/Hi-C style) is supported via:
+
+- `--link_method external` or combined modes such as `--link_method all,external`
+- `--region_gene_links_tsv <path>`
+
+Standardized external linkage TSV format:
+
+- required header columns: `chrom`, `start`, `end`, `gene_id`, `link_weight`
+- coordinates are 0-based half-open intervals
+- `gene_id` should match GTF gene IDs (versioned or unversioned Ensembl IDs are both accepted)
 
 ## Choosing 100-500 Genes
 

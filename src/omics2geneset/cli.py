@@ -19,7 +19,15 @@ def _parse_bool(value: str) -> bool:
 
 
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--link_method", choices=["all", "promoter_overlap", "nearest_tss", "distance_decay"], default="all")
+    parser.add_argument(
+        "--link_method",
+        default="all",
+        help=(
+            "Linking mode expression. Tokens: all,promoter_overlap,nearest_tss,distance_decay,external. "
+            "Use comma-separated tokens to combine methods, e.g. all,external."
+        ),
+    )
+    parser.add_argument("--region_gene_links_tsv", help="Standardized external linkage TSV with columns chrom,start,end,gene_id,link_weight")
     parser.add_argument("--promoter_upstream_bp", type=int, default=2000)
     parser.add_argument("--promoter_downstream_bp", type=int, default=500)
     parser.add_argument("--max_distance_bp", type=int)
@@ -28,6 +36,20 @@ def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_program_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--program_preset",
+        choices=["none", "default", "all"],
+        default="default",
+        help="Program family preset for GMT emission and metadata.",
+    )
+    parser.add_argument(
+        "--program_methods",
+        help=(
+            "Optional comma-separated program methods overriding preset. "
+            "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias. "
+            "scATAC adds tfidf_distal."
+        ),
+    )
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
     parser.add_argument("--top_k", type=int, default=200)
     parser.add_argument("--quantile", type=float, default=0.01)
@@ -121,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_chip.add_argument("--normalize", choices=["l1", "none"], default="l1")
     p_chip.add_argument("--gtf_source")
     _add_linking_flags(p_chip)
+    p_chip.set_defaults(link_method="promoter_overlap")
 
     p_meth = conv.add_parser("methylation_dmr")
     p_meth.add_argument("--dmr_tsv", required=True)

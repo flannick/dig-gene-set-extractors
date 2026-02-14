@@ -1,0 +1,5 @@
+chrom	start	end	gene_id	link_weight
+chr1	850	1200	GENE1	1.0
+chr1	1700	2000	GENE1	0.5
+chr1	1700	2000	GENE2	0.25
+chr1	5900	6200	GENE2	1.0

@@ -117,3 +117,41 @@ def link_distance_decay(
         candidates.sort(key=lambda x: (-float(x["link_weight"]), str(x["gene_id"])))
         links.extend(candidates[:max_genes_per_peak])
     return links
+
+
+def link_external_regions(
+    peaks: list[dict[str, object]],
+    region_gene_links: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    by_chrom: dict[str, list[tuple[int, int, str, float]]] = {}
+    for row in region_gene_links:
+        by_chrom.setdefault(str(row["chrom"]), []).append(
+            (int(row["start"]), int(row["end"]), str(row["gene_id"]), float(row["link_weight"]))
+        )
+
+    peaks_by_chrom: dict[str, list[tuple[int, int, int]]] = {}
+    for pi, p in enumerate(peaks):
+        peaks_by_chrom.setdefault(str(p["chrom"]), []).append((int(p["start"]), int(p["end"]), pi))
+
+    agg: dict[tuple[int, str], float] = {}
+    for chrom, peak_list in peaks_by_chrom.items():
+        intervals = sorted(by_chrom.get(chrom, []), key=lambda x: x[0])
+        if not intervals:
+            continue
+        peak_list_sorted = sorted(peak_list, key=lambda x: x[0])
+        active: list[tuple[int, int, str, float]] = []
+        interval_idx = 0
+        for p_start, p_end, pi in peak_list_sorted:
+            while interval_idx < len(intervals) and intervals[interval_idx][0] < p_end:
+                active.append(intervals[interval_idx])
+                interval_idx += 1
+            active = [it for it in active if it[1] > p_start]
+            for r_start, r_end, gene_id, link_weight in active:
+                if _overlap(p_start, p_end, r_start, r_end):
+                    key = (pi, gene_id)
+                    agg[key] = agg.get(key, 0.0) + float(link_weight)
+
+    links: list[dict[str, object]] = []
+    for (pi, gene_id), link_weight in sorted(agg.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        links.append({"peak_index": pi, "gene_id": gene_id, "distance": 0, "link_weight": link_weight})
+    return links
