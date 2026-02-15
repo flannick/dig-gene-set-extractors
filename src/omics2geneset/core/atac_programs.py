@@ -38,6 +38,11 @@ _BULK_PRESETS: dict[str, tuple[str, ...]] = {
         PROGRAM_DISTAL_ACTIVITY,
         PROGRAM_ENHANCER_BIAS,
     ),
+    "connectable": (
+        PROGRAM_LINKED_ACTIVITY,
+        PROGRAM_DISTAL_ACTIVITY,
+        PROGRAM_ENHANCER_BIAS,
+    ),
     "all": (
         PROGRAM_LINKED_ACTIVITY,
         PROGRAM_PROMOTER_ACTIVITY,
@@ -52,6 +57,12 @@ _SC_PRESETS: dict[str, tuple[str, ...]] = {
     "default": (
         PROGRAM_LINKED_ACTIVITY,
         PROGRAM_PROMOTER_ACTIVITY,
+        PROGRAM_DISTAL_ACTIVITY,
+        PROGRAM_ENHANCER_BIAS,
+        PROGRAM_TFIDF_DISTAL,
+    ),
+    "connectable": (
+        PROGRAM_LINKED_ACTIVITY,
         PROGRAM_DISTAL_ACTIVITY,
         PROGRAM_ENHANCER_BIAS,
         PROGRAM_TFIDF_DISTAL,

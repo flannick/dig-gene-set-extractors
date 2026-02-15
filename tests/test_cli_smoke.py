@@ -18,6 +18,7 @@ def test_cli_list():
     p = _run("list")
     assert p.returncode == 0
     assert "atac_bulk" in p.stdout
+    assert "atac_bulk_matrix" in p.stdout
 
 
 def test_cli_describe():
@@ -25,6 +26,13 @@ def test_cli_describe():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "atac_bulk"
+
+
+def test_cli_describe_bulk_matrix():
+    p = _run("describe", "atac_bulk_matrix")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "atac_bulk_matrix"
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
@@ -83,6 +91,43 @@ def test_cli_validate_grouped_root(tmp_path: Path):
     validate = _run("validate", str(out))
     assert validate.returncode == 0
     assert "n_groups=" in validate.stdout
+
+
+def test_cli_convert_bulk_matrix(tmp_path: Path):
+    out = tmp_path / "bulk_matrix_cli"
+    convert = _run(
+        "convert",
+        "atac_bulk_matrix",
+        "--peak_matrix_tsv",
+        "tests/data/toy_bulk_peak_matrix.tsv",
+        "--peak_bed",
+        "tests/data/toy_peaks.bed",
+        "--sample_metadata_tsv",
+        "tests/data/toy_bulk_sample_metadata.tsv",
+        "--gtf",
+        "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--condition_a",
+        "case",
+        "--condition_b",
+        "control",
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "10",
+        "--gmt_topk_list",
+        "3",
+        "--gmt_mass_list",
+        "",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
 
 
 def test_cli_resources_list():

@@ -327,7 +327,24 @@ with pseudocount $a>0$ (e.g., $a=10^{-3}$ for fractions, $a=1$ for counts).
 \subsubsection{M2.2: group\_vs\_rest\_close (optional)}
 Same as M2.1 but with $\alpha_p^{(k)} = \max(-x_p^{(k)},0)$ to capture peaks that are less accessible in the group than background.
 
-\subsubsection{M2.3: tfidf\_distal (scATAC default)}
+\subsubsection{M2.3: condition\_within\_group\_open / condition\_within\_group\_close}
+\paragraph{Motivation.} When cells have a semantic handle (perturbation, phenotype, time, genotype), the most connectable signal is often the within-cell-type contrast, not global accessibility.
+\paragraph{Setup.} For group $k$, split cells by condition labels $A$ and $B$ and compute per-peak summaries $\bar{x}^{(k,A)}_p$ and $\bar{x}^{(k,B)}_p$ (sum/mean/fraction nonzero).
+\paragraph{Peak statistic.}
+\[
+x_p^{(k,A\!:\!B)}=
+\log_2\left(\frac{\bar{x}^{(k,A)}_p+a}{\bar{x}^{(k,B)}_p+a}\right),
+\]
+or $x_p^{(k,A\!:\!B)}=\bar{x}^{(k,A)}_p-\bar{x}^{(k,B)}_p$ when using a difference metric.
+\paragraph{Direction-aware programs.}
+\[
+\alpha_{p,\mathrm{OPEN}}^{(k)}=\max(x_p^{(k,A\!:\!B)},0), \qquad
+\alpha_{p,\mathrm{CLOSE}}^{(k)}=\max(-x_p^{(k,A\!:\!B)},0).
+\]
+Project each direction to genes via Eq.\ \ref{eq:gene_score} and extract separate OPEN and CLOSE gene sets.
+\paragraph{Practical note.} Enforce a minimum number of cells per condition within each group to avoid unstable contrasts.
+
+\subsubsection{M2.4: tfidf\_distal (scATAC default)}
 \paragraph{Motivation.} Peaks that are accessible in many cells are less informative for defining cell identity.
 A TF-IDF style reweighting emphasizes more specific peaks.
 \paragraph{Definition.} Let $N=C$ be the number of cells in the dataset and define the document frequency:
@@ -347,7 +364,7 @@ idf_p = \log\left(\frac{N+1}{df_p+1}\right) + 1,
 \end{equation}
 \paragraph{Gene projection and sets.} Apply Eq.\ \ref{eq:gene_score} and top-$K$ selection. As with M2.1, both promoter-only and distal-only variants may be emitted.
 
-\subsubsection{M2.4: phenotype\_open / phenotype\_close (bulk or sc, optional)}
+\subsubsection{M2.5: phenotype\_open / phenotype\_close (bulk or sc, optional)}
 \paragraph{Motivation.} Many ATAC studies compare donors/conditions (case vs control, treatment, time, severity).
 \paragraph{Peak statistic.} Suppose we have per-sample peak measurements $x_{p,i}$ and a phenotype $y_i$.
 Fit a regression model per peak:
@@ -450,6 +467,15 @@ A recommended default preset emits:
 \item \textbf{scATAC (grouped):} linked\_activity, promoter\_activity, distal\_activity, enhancer\_bias, tfidf\_distal.
 \end{itemize}
 These methods require only the input peaks/matrix and a gene annotation (GTF).
+
+\subsection{Connectable preset (semantic-handle aware)}
+The \texttt{connectable} preset is designed for cross-modality interpretation when a condition/phenotype handle is present.
+\begin{itemize}[leftmargin=2em]
+\item \textbf{scATAC with condition metadata:} run condition\_within\_group OPEN/CLOSE programs and emit direction-labeled sets.
+\item \textbf{scATAC without condition metadata:} fall back to group\_vs\_rest behavior.
+\item \textbf{bulk differential matrix input:} emit OPEN/CLOSE programs from condition A vs B contrasts.
+\item \textbf{Program families:} prioritize linked\_activity + distal\_activity + enhancer\_bias (promoter\_activity optional).
+\end{itemize}
 
 \subsection{All-methods preset (resource-aware)}
 An ``all'' preset runs all requested methods for which required resources are available in the configured resources directory. Missing resources can be handled by:

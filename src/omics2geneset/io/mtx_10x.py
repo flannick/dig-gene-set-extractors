@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import csv
 import gzip
 from pathlib import Path
 import re
@@ -216,3 +217,99 @@ def make_group_indices(barcodes: list[str], groups: dict[str, str] | None) -> di
         if g is not None:
             by_group[g].append(i)
     return dict(by_group)
+
+
+def read_cell_metadata_tsv(path: str | Path) -> dict[str, dict[str, str]]:
+    rows: dict[str, dict[str, str]] = {}
+    with Path(path).open("r", encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames or "barcode" not in set(reader.fieldnames):
+            raise ValueError("cell_metadata_tsv must contain a barcode column")
+        for row in reader:
+            barcode = str(row.get("barcode", "")).strip()
+            if not barcode:
+                continue
+            clean: dict[str, str] = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                clean[key] = "" if value is None else str(value).strip()
+            rows[barcode] = clean
+    return rows
+
+
+def summarize_condition_within_group(
+    matrix_path: Path,
+    n_peaks: int,
+    group_indices: dict[str, list[int]],
+    cell_conditions: dict[int, str],
+    condition_a: str,
+    condition_b: str,
+    method: str,
+) -> tuple[dict[str, dict[str, list[float]]], dict[str, dict[str, int]]]:
+    group_names = list(group_indices)
+    group_of_cell: dict[int, str] = {}
+    for group_name in group_names:
+        for idx in group_indices[group_name]:
+            group_of_cell[idx] = group_name
+
+    counts: dict[str, dict[str, int]] = {
+        group_name: {condition_a: 0, condition_b: 0}
+        for group_name in group_names
+    }
+    for cell_idx, cond in cell_conditions.items():
+        group_name = group_of_cell.get(cell_idx)
+        if group_name is None:
+            continue
+        if cond not in {condition_a, condition_b}:
+            continue
+        counts[group_name][cond] += 1
+
+    sums: dict[str, dict[str, list[float]]] = {
+        group_name: {
+            condition_a: [0.0] * n_peaks,
+            condition_b: [0.0] * n_peaks,
+        }
+        for group_name in group_names
+    }
+    nonzero: dict[str, dict[str, list[int]]] = {
+        group_name: {
+            condition_a: [0] * n_peaks,
+            condition_b: [0] * n_peaks,
+        }
+        for group_name in group_names
+    }
+
+    for peak_i, cell_i, val in iter_mtx_entries(matrix_path):
+        group_name = group_of_cell.get(cell_i)
+        if group_name is None:
+            continue
+        cond = cell_conditions.get(cell_i)
+        if cond not in {condition_a, condition_b}:
+            continue
+        sums[group_name][cond][peak_i] += val
+        if val != 0:
+            nonzero[group_name][cond][peak_i] += 1
+
+    summary: dict[str, dict[str, list[float]]] = {}
+    for group_name in group_names:
+        n_a = max(counts[group_name][condition_a], 1)
+        n_b = max(counts[group_name][condition_b], 1)
+        if method == "sum_counts":
+            summary[group_name] = {
+                condition_a: sums[group_name][condition_a],
+                condition_b: sums[group_name][condition_b],
+            }
+        elif method == "mean_counts":
+            summary[group_name] = {
+                condition_a: [x / n_a for x in sums[group_name][condition_a]],
+                condition_b: [x / n_b for x in sums[group_name][condition_b]],
+            }
+        elif method == "frac_cells_nonzero":
+            summary[group_name] = {
+                condition_a: [x / n_a for x in nonzero[group_name][condition_a]],
+                condition_b: [x / n_b for x in nonzero[group_name][condition_b]],
+            }
+        else:
+            raise ValueError(f"Unsupported peak_summary: {method}")
+    return summary, counts

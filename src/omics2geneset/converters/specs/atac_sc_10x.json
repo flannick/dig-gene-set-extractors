@@ -4,12 +4,19 @@
   "inputs": [
     {"name": "matrix_dir", "type": "10x_mtx_dir", "description": "Directory with matrix.mtx(.gz), barcodes.tsv(.gz), peaks.bed or features.tsv(.gz)", "required": true},
     {"name": "gtf", "type": "gtf", "description": "Gene annotation with gene features", "required": true},
-    {"name": "groups_tsv", "type": "tsv_optional", "description": "Optional barcode->group mapping", "required": false}
+    {"name": "groups_tsv", "type": "tsv_optional", "description": "Optional barcode->group mapping", "required": false},
+    {"name": "cell_metadata_tsv", "type": "tsv_optional", "description": "Optional per-cell metadata with barcode column and condition fields", "required": false}
   ],
   "parameters": [
+    {"name": "dataset_label", "type": "string_or_none", "default": null, "help": "Optional dataset label included in GMT names and metadata"},
+    {"name": "cell_metadata_tsv", "type": "string_or_none", "default": null, "help": "Per-cell metadata TSV with barcode column"},
+    {"name": "condition_column", "type": "string_or_none", "default": null, "help": "Condition column in cell_metadata_tsv"},
+    {"name": "condition_a", "type": "string_or_none", "default": null, "help": "Condition A label for condition_within_group"},
+    {"name": "condition_b", "type": "string_or_none", "default": null, "help": "Condition B label for condition_within_group"},
+    {"name": "min_cells_per_condition", "type": "int", "default": 50, "help": "Minimum cells per condition within each group for condition_within_group"},
     {"name": "peak_summary", "type": "string", "default": "sum_counts", "enum": ["sum_counts", "mean_counts", "frac_cells_nonzero"], "help": "How to summarize per-peak accessibility within each group"},
     {"name": "peak_weight_transform", "type": "string", "default": "positive", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied after optional contrast statistic"},
-    {"name": "contrast", "type": "string_or_none", "default": null, "enum": ["none", "group_vs_rest"], "help": "Group contrast mode; default resolves to group_vs_rest when groups_tsv is provided"},
+    {"name": "contrast", "type": "string_or_none", "default": null, "enum": ["none", "group_vs_rest", "condition_within_group"], "help": "Contrast mode; default resolves from preset and available metadata"},
     {"name": "contrast_metric", "type": "string", "default": "log2fc", "enum": ["log2fc", "diff"], "help": "Peak contrast metric for group_vs_rest"},
     {"name": "contrast_pseudocount", "type": "float_or_none", "default": null, "help": "Pseudocount for log2fc; defaults depend on peak_summary"},
     {"name": "link_method", "type": "string", "default": "all", "help": "Comma-separated linking tokens: all,promoter_overlap,nearest_tss,distance_decay,external"},
@@ -19,7 +26,7 @@
     {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
     {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
     {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
-    {"name": "program_preset", "type": "string", "default": "default", "enum": ["none", "default", "all"], "help": "ATAC program family preset for additional GMT programs"},
+    {"name": "program_preset", "type": "string", "default": "default", "enum": ["none", "default", "connectable", "all"], "help": "ATAC program family preset for additional GMT programs"},
     {"name": "program_methods", "type": "string_csv_optional", "default": null, "help": "Optional explicit ATAC program methods overriding preset (linked_activity,promoter_activity,distal_activity,enhancer_bias,tfidf_distal,ref_ubiquity_penalty,atlas_residual)"},
     {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resources manifest path"},
     {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional resources cache directory"},

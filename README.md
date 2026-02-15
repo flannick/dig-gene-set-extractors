@@ -4,7 +4,7 @@ This repository is a framework for building and running gene set extractors acro
 
 - Repository goal: support multiple extractor families over time.
 - Current implemented family: `omics2geneset`.
-- First production extractors: ATAC-seq (`atac_bulk`, `atac_sc_10x`).
+- First production extractors: ATAC-seq (`atac_bulk`, `atac_bulk_matrix`, `atac_sc_10x`).
 
 ## Quick Start (Common Case)
 
@@ -64,6 +64,12 @@ Optional resource-backed methods:
 Enable them with `--program_preset all` or explicit `--program_methods ...`.
 Default preset runs (`--program_preset default`) do not require any external resource downloads.
 
+`program_preset=connectable` prioritizes direction-aware programs for semantic handles (condition/phenotype/time/genotype):
+
+- bulk/sc: keeps `linked_activity`, `distal_activity`, `enhancer_bias` (promoter-only program is excluded by default).
+- scATAC with `--cell_metadata_tsv` + `--condition_column`: auto-switches to `condition_within_group` and emits OPEN/CLOSE programs.
+- scATAC without condition metadata: falls back to `group_vs_rest`.
+
 ## Recommended scATAC Cluster Programs
 
 Use grouped differential extraction:
@@ -86,6 +92,60 @@ omics2geneset convert atac_sc_10x \
   --top_k 200 \
   --normalize within_set_l1
 ```
+
+## Connectable Contrast Programs
+
+### scATAC: condition-within-group OPEN/CLOSE
+
+Use this when you have cell metadata with condition labels:
+
+```bash
+omics2geneset convert atac_sc_10x \
+  --matrix_dir <10x_matrix_dir> \
+  --gtf <genes.gtf> \
+  --groups_tsv <barcode_to_cluster.tsv> \
+  --cell_metadata_tsv <cell_metadata.tsv> \
+  --condition_column condition \
+  --condition_a treated \
+  --condition_b control \
+  --min_cells_per_condition 50 \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build hg38 \
+  --program_preset connectable
+```
+
+Expected outputs:
+
+- `group=<GROUP>/geneset.tsv` (selected direction; OPEN by default, CLOSE if `--peak_weight_transform negative`)
+- `group=<GROUP>/genesets.gmt` with both `direction=OPEN` and `direction=CLOSE` sets
+- grouped root `genesets.gmt` and `manifest.tsv`
+
+### bulk ATAC across samples: OPEN/CLOSE differential programs
+
+Use `atac_bulk_matrix` when you have a peak-by-sample matrix plus sample metadata:
+
+```bash
+omics2geneset convert atac_bulk_matrix \
+  --peak_matrix_tsv <peak_by_sample.tsv> \
+  --peak_bed <peaks.bed> \
+  --sample_metadata_tsv <sample_metadata.tsv> \
+  --sample_id_column sample_id \
+  --condition_column condition \
+  --condition_a case \
+  --condition_b control \
+  --gtf <genes.gtf> \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build hg38 \
+  --program_preset connectable
+```
+
+Expected outputs:
+
+- `geneset.tsv` (selected direction)
+- `genesets.gmt` with both OPEN and CLOSE sets and contrast labels in set names
+- `geneset.meta.json` with `condition_a/b`, `n_samples_a/b`, contrast metric and pseudocount
 
 Grouped runs write `group=<GROUP>/...` outputs plus `manifest.tsv`.  
 `omics2geneset validate <out_dir>` validates grouped roots via the manifest.

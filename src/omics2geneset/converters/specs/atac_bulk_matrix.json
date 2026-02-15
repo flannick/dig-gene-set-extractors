@@ -1,28 +1,20 @@
 {
-  "name": "atac_bulk",
-  "description": "Bulk ATAC-seq peaks and per-peak weights mapped to compact gene programs",
+  "name": "atac_bulk_matrix",
+  "description": "Bulk ATAC peak-by-sample matrix differential converter producing OPEN/CLOSE gene programs",
   "inputs": [
-    {
-      "name": "peaks",
-      "type": "bed_or_narrowPeak_gz",
-      "description": "Peak intervals; may include score column for weights",
-      "required": true
-    },
-    {
-      "name": "gtf",
-      "type": "gtf",
-      "description": "Gene annotation with gene features",
-      "required": true
-    },
-    {
-      "name": "peak_weights_tsv",
-      "type": "tsv_optional",
-      "description": "Optional explicit (chrom,start,end,weight) override table",
-      "required": false
-    }
+    {"name": "peak_matrix_tsv", "type": "tsv", "description": "Peak-by-sample matrix with one row per peak and one numeric column per sample", "required": true},
+    {"name": "peak_bed", "type": "bed", "description": "Peak coordinates aligned row-wise with peak_matrix_tsv", "required": true},
+    {"name": "sample_metadata_tsv", "type": "tsv", "description": "Sample metadata table containing sample_id and condition columns", "required": true},
+    {"name": "gtf", "type": "gtf", "description": "Gene annotation with gene features", "required": true}
   ],
   "parameters": [
     {"name": "dataset_label", "type": "string_or_none", "default": null, "help": "Optional dataset label included in GMT names and metadata"},
+    {"name": "sample_id_column", "type": "string", "default": "sample_id", "help": "Column in sample_metadata_tsv containing sample identifiers matching matrix sample columns"},
+    {"name": "condition_column", "type": "string", "default": "condition", "help": "Condition column in sample_metadata_tsv"},
+    {"name": "condition_a", "type": "string_or_none", "default": null, "help": "Condition A label; if omitted and exactly two levels exist it is inferred"},
+    {"name": "condition_b", "type": "string_or_none", "default": null, "help": "Condition B label; if omitted and exactly two levels exist it is inferred"},
+    {"name": "contrast_metric", "type": "string", "default": "log2fc", "enum": ["log2fc", "diff"], "help": "Per-peak differential statistic between condition A and B"},
+    {"name": "contrast_pseudocount", "type": "float", "default": 1.0, "help": "Pseudocount used when contrast_metric=log2fc"},
     {"name": "link_method", "type": "string", "default": "all", "help": "Comma-separated linking tokens: all,promoter_overlap,nearest_tss,distance_decay,external"},
     {"name": "region_gene_links_tsv", "type": "tsv_optional", "default": null, "help": "Required when link_method includes external; columns chrom,start,end,gene_id,link_weight"},
     {"name": "promoter_upstream_bp", "type": "int", "default": 2000, "help": "Promoter upstream window for promoter_overlap"},
@@ -30,10 +22,9 @@
     {"name": "max_distance_bp", "type": "int_or_none", "default": null, "help": "Distance cap for nearest/distance modes; resolved default by link_method"},
     {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
     {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
-    {"name": "peaks_weight_column", "type": "int", "default": 5, "help": "1-based score column in peaks file"},
-    {"name": "peak_weight_transform", "type": "string", "default": "abs", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to peak weights prior to scoring"},
-    {"name": "program_preset", "type": "string", "default": "default", "enum": ["none", "default", "connectable", "all"], "help": "ATAC program family preset for additional GMT programs"},
-    {"name": "program_methods", "type": "string_csv_optional", "default": null, "help": "Optional explicit ATAC program methods overriding preset (linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual)"},
+    {"name": "peak_weight_transform", "type": "string", "default": "positive", "enum": ["signed", "abs", "positive", "negative"], "help": "Direction selected for geneset.tsv (positive=OPEN, negative=CLOSE)"},
+    {"name": "program_preset", "type": "string", "default": "connectable", "enum": ["none", "default", "connectable", "all"], "help": "ATAC program family preset for additional GMT programs"},
+    {"name": "program_methods", "type": "string_csv_optional", "default": null, "help": "Optional explicit ATAC program methods overriding preset"},
     {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resources manifest path"},
     {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional resources cache directory"},
     {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Behavior when a requested resource-backed method cannot load its resource"},
@@ -59,9 +50,9 @@
     {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"}
   ],
   "outputs": [
-    {"name": "geneset.tsv", "description": "Selected compact gene program with columns gene_id, score, rank, weight"},
-    {"name": "geneset.full.tsv", "description": "Optional full score table for all nonzero genes"},
-    {"name": "genesets.gmt", "description": "One or more exported gene sets in GMT format"},
+    {"name": "geneset.tsv", "description": "Selected compact OPEN/CLOSE program depending on peak_weight_transform"},
+    {"name": "geneset.full.tsv", "description": "Optional full score table for selected direction"},
+    {"name": "genesets.gmt", "description": "OPEN and CLOSE GMT gene sets across program families"},
     {"name": "geneset.meta.json", "description": "Run metadata and provenance validated against schema"}
   ]
 }

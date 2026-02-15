@@ -16,6 +16,7 @@ Core CLI:
 ```bash
 omics2geneset list
 omics2geneset describe atac_bulk
+omics2geneset describe atac_bulk_matrix
 omics2geneset convert <converter_name> [flags]
 omics2geneset validate <output_dir>
 omics2geneset resources list
@@ -51,6 +52,7 @@ GMT defaults favor cleaner symbols:
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
 - `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
 - `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
+- `--program_preset connectable` prioritizes contrast-ready programs (bulk/sc: linked+distal+enhancer-bias; sc can auto-switch to condition_within_group).
 - `--program_preset all` also attempts resource-backed methods (`ref_ubiquity_penalty`, `atlas_residual`).
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 
@@ -105,7 +107,7 @@ Optional peak weights:
   - modes can be combined (for GMT) as comma-separated tokens, e.g. `all,external`
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
 - Program families:
-  - `--program_preset {none,default,all}` controls additional ATAC program families for GMT output.
+- `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
   - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
@@ -156,21 +158,27 @@ omics2geneset convert atac_bulk \
 Optional:
 
 - `--groups_tsv` (`barcode`, `group`) for per-group programs
+- `--cell_metadata_tsv` (`barcode` plus metadata columns) to enable condition contrasts
 
 ### Extraction modes (concept + scientific intent)
 
 - Peak summary (`--peak_summary`): `sum_counts`, `mean_counts`, `frac_cells_nonzero`
 - Contrast (`--contrast`):
   - `group_vs_rest` (default when groups are provided) to capture group-specific accessibility
+  - `condition_within_group` for per-group condition A vs B contrasts with OPEN/CLOSE programs
   - `none` for non-differential summaries
 - Contrast metric (`--contrast_metric`): `log2fc` or `diff`
 - Pseudocount (`--contrast_pseudocount`):
   - auto defaults: `1e-3` for `frac_cells_nonzero`, `1.0` for count-based summaries
+- Condition metadata flags:
+  - `--condition_column <name>` in `cell_metadata_tsv`
+  - `--condition_a <label>` and `--condition_b <label>` (optional when exactly two levels are present)
+  - `--min_cells_per_condition <int>` minimum cells per condition within each group
 - Peak transform (`--peak_weight_transform`):
   - default `positive` for opening programs
   - use `negative` for closing programs
 - Program families:
-  - `--program_preset {none,default,all}` controls additional ATAC program families.
+  - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
   - `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
@@ -238,4 +246,66 @@ omics2geneset convert atac_sc_10x \
   --select top_k \
   --top_k 200 \
   --normalize within_set_l1
+```
+
+### Quickstart (connectable condition-within-group OPEN/CLOSE)
+
+```bash
+omics2geneset convert atac_sc_10x \
+  --matrix_dir tests/data/toy_10x_mtx \
+  --gtf tests/data/toy.gtf \
+  --groups_tsv tests/data/barcode_groups.tsv \
+  --cell_metadata_tsv tests/data/barcode_conditions.tsv \
+  --condition_column condition \
+  --condition_a treated \
+  --condition_b control \
+  --min_cells_per_condition 1 \
+  --out_dir tests/tmp/readme_sc_connectable \
+  --organism human \
+  --genome_build hg38 \
+  --program_preset connectable
+```
+
+## Extractor: atac_bulk_matrix
+
+Use this converter for condition contrasts across bulk ATAC samples using a peak-by-sample matrix.
+
+Required inputs:
+
+- `--peak_matrix_tsv`: rows are peaks, columns are samples (numeric values)
+- `--peak_bed`: row-aligned peak coordinates
+- `--sample_metadata_tsv`: includes `sample_id` + `condition` columns (or overrides)
+- `--gtf`, `--organism`, `--genome_build`, `--out_dir`
+
+Key contrast flags:
+
+- `--condition_a`, `--condition_b`
+- `--contrast_metric {log2fc,diff}`
+- `--contrast_pseudocount` (used for `log2fc`)
+
+This converter emits direction-aware outputs:
+
+- OPEN programs: peaks more accessible in condition A
+- CLOSE programs: peaks less accessible in condition A
+
+`genesets.gmt` includes both directions with semantic names (assay, dataset label, condition labels, direction, program method).
+
+Quickstart:
+
+```bash
+omics2geneset convert atac_bulk_matrix \
+  --peak_matrix_tsv tests/data/toy_bulk_peak_matrix.tsv \
+  --peak_bed tests/data/toy_peaks.bed \
+  --sample_metadata_tsv tests/data/toy_bulk_sample_metadata.tsv \
+  --condition_a case \
+  --condition_b control \
+  --gtf tests/data/toy.gtf \
+  --out_dir tests/tmp/readme_bulk_matrix \
+  --organism human \
+  --genome_build hg38 \
+  --program_preset connectable \
+  --gmt_min_genes 1 \
+  --gmt_max_genes 10 \
+  --gmt_topk_list 3 \
+  --gmt_mass_list ""
 ```

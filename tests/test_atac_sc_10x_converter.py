@@ -15,7 +15,13 @@ class Args:
     out_dir = "tests/tmp/sc"
     organism = "human"
     genome_build = "hg38"
+    dataset_label = None
     groups_tsv = None
+    cell_metadata_tsv = None
+    condition_column = None
+    condition_a = None
+    condition_b = None
+    min_cells_per_condition = 50
     peak_summary = "sum_counts"
     peak_weight_transform = "positive"
     link_method = "all"
@@ -134,6 +140,86 @@ def test_sc_converter_group_vs_rest_contrast_marks_expected_genes(tmp_path: Path
     assert contrast["mode"] == "group_vs_rest"
     assert contrast["metric"] == "log2fc"
     assert float(contrast["pseudocount"]) == 1.0
+
+
+def test_sc_condition_within_group_emits_open_close_gmt_and_metadata(tmp_path: Path):
+    args = Args()
+    args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
+    args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
+    args.cell_metadata_tsv = "tests/data/cell_metadata_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.min_cells_per_condition = 1
+    args.contrast = "condition_within_group"
+    args.out_dir = str(tmp_path / "sc_condition_groups")
+    args.link_method = "promoter_overlap"
+    args.top_k = 1
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    validate_output_dir(Path(args.out_dir), schema)
+
+    combined_gmt = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__contrast=condition_within_group" in combined_gmt
+    assert "__direction=OPEN" in combined_gmt
+    assert "__direction=CLOSE" in combined_gmt
+
+    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
+    contrast = meta["program_extraction"]["contrast"]
+    assert contrast["mode"] == "condition_within_group"
+    assert contrast["condition_column"] == "condition"
+    assert contrast["condition_a"] == "treated"
+    assert contrast["condition_b"] == "control"
+    assert contrast["n_cells_a"] == 1
+    assert contrast["n_cells_b"] == 1
+    assert contrast["directions_emitted"] == ["OPEN", "CLOSE"]
+
+
+def test_sc_connectable_preset_triggers_condition_within_group(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_connectable_condition")
+    args.groups_tsv = None
+    args.cell_metadata_tsv = "tests/data/barcode_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.min_cells_per_condition = 1
+    args.program_preset = "connectable"
+    args.contrast = None
+    args.link_method = "promoter_overlap"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["program_extraction"]["contrast"]["mode"] == "condition_within_group"
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__direction=OPEN" in gmt_text
+    assert "__direction=CLOSE" in gmt_text
+
+
+def test_sc_connectable_preset_falls_back_to_group_vs_rest_without_metadata(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_connectable_fallback")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.program_preset = "connectable"
+    args.contrast = None
+    args.link_method = "promoter_overlap"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["program_extraction"]["contrast"]["mode"] == "group_vs_rest"
 
 
 def test_sc_default_program_preset_emits_tfidf_distal_sets(tmp_path: Path):

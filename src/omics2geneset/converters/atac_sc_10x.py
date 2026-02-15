@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 
 from omics2geneset.core.gmt import (
     build_gmt_sets_from_rows,
@@ -50,8 +51,10 @@ from omics2geneset.io.gtf import read_genes_from_gtf
 from omics2geneset.io.mtx_10x import (
     iter_mtx_entries,
     make_group_indices,
+    read_cell_metadata_tsv,
     read_10x_matrix_dir,
     read_groups_tsv,
+    summarize_condition_within_group,
     summarize_group_vs_rest,
     summarize_peaks,
     summarize_peaks_by_group,
@@ -111,6 +114,9 @@ def _resolve_contrast(args) -> str:
     contrast = _arg(args, "contrast", None)
     if contrast is not None:
         return str(contrast)
+    if str(_arg(args, "program_preset", "default")) == "connectable":
+        if _arg(args, "cell_metadata_tsv", None) and _arg(args, "condition_column", None):
+            return "condition_within_group"
     if _arg(args, "groups_tsv", None):
         return "group_vs_rest"
     return "none"
@@ -123,6 +129,76 @@ def _resolve_pseudocount(args) -> float:
     if _arg(args, "peak_summary", "sum_counts") == "frac_cells_nonzero":
         return 1e-3
     return 1.0
+
+
+def _resolve_dataset_label(args) -> str:
+    label = _arg(args, "dataset_label", None)
+    if label is None:
+        return "dataset"
+    text = str(label).strip()
+    return text or "dataset"
+
+
+def _resolve_condition_pair(
+    args,
+    barcodes: list[str],
+    metadata_rows: dict[str, dict[str, str]],
+) -> tuple[str, str, dict[int, str]]:
+    condition_column = str(_arg(args, "condition_column", ""))
+    if not condition_column:
+        raise ValueError("condition_within_group requires --condition_column")
+    condition_by_cell: dict[int, str] = {}
+    for idx, barcode in enumerate(barcodes):
+        row = metadata_rows.get(barcode)
+        if not row:
+            continue
+        value = row.get(condition_column, "")
+        cond = "" if value is None else str(value).strip()
+        if not cond:
+            continue
+        condition_by_cell[idx] = cond
+
+    if not condition_by_cell:
+        raise ValueError(
+            f"No barcodes in cell_metadata_tsv had non-empty condition values for column: {condition_column}"
+        )
+
+    explicit_a = _arg(args, "condition_a", None)
+    explicit_b = _arg(args, "condition_b", None)
+    unique_conditions = sorted(set(condition_by_cell.values()))
+
+    if explicit_a and explicit_b:
+        condition_a = str(explicit_a)
+        condition_b = str(explicit_b)
+    else:
+        if explicit_a:
+            condition_a = str(explicit_a)
+            others = [x for x in unique_conditions if x != condition_a]
+            if len(others) != 1:
+                raise ValueError(
+                    f"Could not infer --condition_b from condition_column={condition_column}; "
+                    "provide both --condition_a and --condition_b"
+                )
+            condition_b = others[0]
+        elif explicit_b:
+            condition_b = str(explicit_b)
+            others = [x for x in unique_conditions if x != condition_b]
+            if len(others) != 1:
+                raise ValueError(
+                    f"Could not infer --condition_a from condition_column={condition_column}; "
+                    "provide both --condition_a and --condition_b"
+                )
+            condition_a = others[0]
+        else:
+            if len(unique_conditions) != 2:
+                raise ValueError(
+                    f"condition_within_group requires exactly two levels in {condition_column} "
+                    "(or explicit --condition_a/--condition_b); found: {unique_conditions}"
+                )
+            condition_a, condition_b = unique_conditions
+    if condition_a == condition_b:
+        raise ValueError("--condition_a and --condition_b must differ")
+    return condition_a, condition_b, condition_by_cell
 
 
 def _default_ref_ubiquity_resource_id(genome_build: str) -> str | None:
@@ -166,6 +242,7 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         else {method: _resolve_max_distance(args, method) for method in link_methods}
     )
     params: dict[str, object] = {
+        "dataset_label": _resolve_dataset_label(args),
         "link_method": _arg(args, "link_method", "all"),
         "link_methods_evaluated": link_methods,
         "primary_link_method": link_methods[0],
@@ -188,6 +265,11 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "contrast": contrast,
         "contrast_metric": _arg(args, "contrast_metric", "log2fc"),
         "contrast_pseudocount": _resolve_pseudocount(args),
+        "cell_metadata_tsv_provided": bool(_arg(args, "cell_metadata_tsv", None)),
+        "condition_column": _arg(args, "condition_column", None),
+        "condition_a": _arg(args, "condition_a", None),
+        "condition_b": _arg(args, "condition_b", None),
+        "min_cells_per_condition": int(_arg(args, "min_cells_per_condition", 50)),
         "selection_method": _arg(args, "select", "top_k"),
         "top_k": _arg(args, "top_k", 200),
         "quantile": _arg(args, "quantile", 0.01),
@@ -371,6 +453,7 @@ def run(args) -> dict[str, object]:
 
     peaks, barcodes, matrix_files = read_10x_matrix_dir(args.matrix_dir)
     genes = read_genes_from_gtf(args.gtf)
+    dataset_label = _resolve_dataset_label(args)
     groups_tsv = _arg(args, "groups_tsv", None)
     peak_summary = _arg(args, "peak_summary", "sum_counts")
     peak_weight_transform = _arg(args, "peak_weight_transform", "positive")
@@ -406,6 +489,8 @@ def run(args) -> dict[str, object]:
 
     groups = read_groups_tsv(groups_tsv) if groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
+    if not group_indices:
+        raise ValueError("No groups were constructed from provided barcodes/groups_tsv")
     link_methods = _resolve_link_methods(args)
     primary_link_method = link_methods[0]
 
@@ -506,6 +591,21 @@ def run(args) -> dict[str, object]:
 
     contrast = _resolve_contrast(args)
     pseudocount = _resolve_pseudocount(args)
+    condition_column = str(_arg(args, "condition_column", "")).strip()
+    condition_a = ""
+    condition_b = ""
+    condition_by_cell: dict[int, str] = {}
+    condition_counts_by_group: dict[str, dict[str, int]] = {}
+    min_cells_per_condition = max(1, int(_arg(args, "min_cells_per_condition", 50)))
+
+    if contrast == "group_vs_rest" and not groups_tsv:
+        raise ValueError("contrast=group_vs_rest requires --groups_tsv")
+    if contrast == "condition_within_group":
+        cell_metadata_tsv = _arg(args, "cell_metadata_tsv", None)
+        if not cell_metadata_tsv:
+            raise ValueError("contrast=condition_within_group requires --cell_metadata_tsv")
+        metadata_rows = read_cell_metadata_tsv(cell_metadata_tsv)
+        condition_a, condition_b, condition_by_cell = _resolve_condition_pair(args, barcodes, metadata_rows)
 
     files = [
         input_file_record(matrix_files["matrix"], "matrix"),
@@ -515,6 +615,8 @@ def run(args) -> dict[str, object]:
     ]
     if groups_tsv:
         files.append(input_file_record(groups_tsv, "groups_tsv"))
+    if contrast == "condition_within_group":
+        files.append(input_file_record(_arg(args, "cell_metadata_tsv", None), "cell_metadata_tsv"))
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     for r in resources_used:
@@ -524,9 +626,6 @@ def run(args) -> dict[str, object]:
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
     gene_biotype_by_id = {g.gene_id: g.gene_biotype for g in genes}
 
-    if contrast == "group_vs_rest" and not groups_tsv:
-        raise ValueError("contrast=group_vs_rest requires --groups_tsv")
-
     if contrast == "group_vs_rest":
         group_summary, rest_summary, group_sizes = summarize_group_vs_rest(
             Path(matrix_files["matrix"]),
@@ -535,33 +634,184 @@ def run(args) -> dict[str, object]:
             group_indices,
             peak_summary,
         )
+        contrast_peak_stats: dict[str, list[float]] = {
+            group_name: _contrast_peaks(
+                group_summary[group_name],
+                rest_summary[group_name],
+                contrast_metric,
+                pseudocount,
+            )
+            for group_name in group_indices
+        }
+        output_groups = list(group_indices.keys())
     else:
         group_sizes = {g: len(idxs) for g, idxs in group_indices.items()}
-        if groups_tsv:
-            group_summary = summarize_peaks_by_group(Path(matrix_files["matrix"]), len(peaks), group_indices, peak_summary)
+        if contrast == "condition_within_group":
+            condition_summary, condition_counts_by_group = summarize_condition_within_group(
+                Path(matrix_files["matrix"]),
+                len(peaks),
+                group_indices,
+                condition_by_cell,
+                condition_a,
+                condition_b,
+                peak_summary,
+            )
+            contrast_peak_stats = {}
+            output_groups = []
+            for group_name in group_indices:
+                counts = condition_counts_by_group[group_name]
+                if counts.get(condition_a, 0) < min_cells_per_condition or counts.get(condition_b, 0) < min_cells_per_condition:
+                    print(
+                        "warning: skipping group due to insufficient cells per condition: "
+                        f"group={group_name} {condition_a}={counts.get(condition_a, 0)} "
+                        f"{condition_b}={counts.get(condition_b, 0)} "
+                        f"(min_cells_per_condition={min_cells_per_condition})",
+                        file=sys.stderr,
+                    )
+                    continue
+                contrast_peak_stats[group_name] = _contrast_peaks(
+                    condition_summary[group_name][condition_a],
+                    condition_summary[group_name][condition_b],
+                    contrast_metric,
+                    pseudocount,
+                )
+                output_groups.append(group_name)
+            if not output_groups:
+                raise ValueError(
+                    "No groups passed min_cells_per_condition for condition_within_group contrast"
+                )
         else:
-            group_summary = {
-                "all": summarize_peaks(Path(matrix_files["matrix"]), len(peaks), group_indices["all"], peak_summary)
-            }
-        rest_summary = {}
+            if groups_tsv:
+                group_summary = summarize_peaks_by_group(
+                    Path(matrix_files["matrix"]),
+                    len(peaks),
+                    group_indices,
+                    peak_summary,
+                )
+            else:
+                group_summary = {
+                    "all": summarize_peaks(
+                        Path(matrix_files["matrix"]),
+                        len(peaks),
+                        group_indices["all"],
+                        peak_summary,
+                    )
+                }
+            contrast_peak_stats = {group_name: group_summary[group_name] for group_name in group_indices}
+            output_groups = list(group_indices.keys())
 
     unique_output_genes: set[str] = set()
     n_genes_per_group: list[int] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     combined_gmt_plans: list[dict[str, object]] = []
 
-    for group_name, cell_indices in group_indices.items():
-        if contrast == "group_vs_rest":
-            peak_stat = _contrast_peaks(group_summary[group_name], rest_summary[group_name], contrast_metric, pseudocount)
-        else:
-            peak_stat = group_summary[group_name]
+    selected_direction = "OPEN" if peak_weight_transform != "negative" else "CLOSE"
+    if contrast == "condition_within_group":
+        selected_transform = "positive" if selected_direction == "OPEN" else "negative"
+        directions_to_emit = ("OPEN", "CLOSE")
+        transform_by_direction = {"OPEN": "positive", "CLOSE": "negative"}
+    else:
+        selected_direction = "PRIMARY"
+        selected_transform = peak_weight_transform
+        directions_to_emit = ("PRIMARY",)
+        transform_by_direction = {"PRIMARY": peak_weight_transform}
 
-        full_scores_by_method: dict[str, dict[str, float]] = {}
-        for method in link_methods:
-            raw_scores = score_genes(peak_stat, links_by_method[method], peak_weight_transform)
-            full_scores_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
+    for group_name in output_groups:
+        cell_indices = group_indices[group_name]
+        peak_stat = contrast_peak_stats[group_name]
+        direction_scores_by_method: dict[str, dict[str, dict[str, float]]] = {}
+        full_rows_by_method_by_direction: dict[str, dict[str, list[dict[str, object]]]] = {}
+        additional_program_rows_by_direction: dict[str, dict[str, list[dict[str, object]]]] = {}
 
-        full_scores = full_scores_by_method[primary_link_method]
+        for direction in directions_to_emit:
+            transform_mode = transform_by_direction[direction]
+            full_scores_by_method: dict[str, dict[str, float]] = {}
+            for method in link_methods:
+                raw_scores = score_genes(peak_stat, links_by_method[method], transform_mode)
+                full_scores_by_method[method] = {
+                    g: float(s) for g, s in raw_scores.items() if float(s) != 0.0
+                }
+            direction_scores_by_method[direction] = full_scores_by_method
+
+            rows_for_direction: dict[str, list[dict[str, object]]] = {}
+            for method in link_methods:
+                rows_for_direction[method] = _rows_from_scores(
+                    full_scores_by_method[method],
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            full_rows_by_method_by_direction[direction] = rows_for_direction
+
+            program_rows: dict[str, list[dict[str, object]]] = {}
+            promoter_scores: dict[str, float] = {}
+            distal_scores: dict[str, float] = {}
+            if PROGRAM_PROMOTER_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
+                promoter_peak_stat = mask_peak_weights(peak_stat, include_indices=promoter_indices)
+                promoter_raw = score_genes(promoter_peak_stat, promoter_links, transform_mode)
+                promoter_scores = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
+                if PROGRAM_PROMOTER_ACTIVITY in program_methods:
+                    program_rows[PROGRAM_PROMOTER_ACTIVITY] = _rows_from_scores(
+                        promoter_scores,
+                        gene_symbol_by_id,
+                        gene_biotype_by_id,
+                    )
+            if PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
+                distal_peak_stat = mask_peak_weights(peak_stat, exclude_indices=promoter_indices)
+                distal_raw = score_genes(distal_peak_stat, distance_links, transform_mode)
+                distal_scores = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
+                if PROGRAM_DISTAL_ACTIVITY in program_methods:
+                    program_rows[PROGRAM_DISTAL_ACTIVITY] = _rows_from_scores(
+                        distal_scores,
+                        gene_symbol_by_id,
+                        gene_biotype_by_id,
+                    )
+            if PROGRAM_ENHANCER_BIAS in program_methods:
+                bias_scores = enhancer_bias_scores(promoter_scores, distal_scores)
+                bias_nonzero = {g: float(s) for g, s in bias_scores.items() if float(s) != 0.0}
+                program_rows[PROGRAM_ENHANCER_BIAS] = _rows_from_scores(
+                    bias_nonzero,
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            if PROGRAM_TFIDF_DISTAL in program_methods:
+                tfidf_peak_stat = [float(peak_stat[i]) * float(peak_idf[i]) for i in range(len(peak_stat))]
+                tfidf_distal_peak_stat = mask_peak_weights(tfidf_peak_stat, exclude_indices=promoter_indices)
+                tfidf_distal_raw = score_genes(tfidf_distal_peak_stat, distance_links, transform_mode)
+                tfidf_distal_scores = {g: float(s) for g, s in tfidf_distal_raw.items() if float(s) != 0.0}
+                program_rows[PROGRAM_TFIDF_DISTAL] = _rows_from_scores(
+                    tfidf_distal_scores,
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            if PROGRAM_REF_UBIQUITY_PENALTY in program_methods:
+                ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
+                ref_raw = score_genes(ref_peak_stat, links_by_method[primary_link_method], transform_mode)
+                ref_scores = {g: float(s) for g, s in ref_raw.items() if float(s) != 0.0}
+                program_rows[PROGRAM_REF_UBIQUITY_PENALTY] = _rows_from_scores(
+                    ref_scores,
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            if PROGRAM_ATLAS_RESIDUAL in program_methods:
+                atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
+                atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
+                atlas_scores = atlas_residual_scores(
+                    full_scores_by_method[primary_link_method],
+                    atlas_stats,
+                    atlas_metric,
+                    atlas_eps,
+                )
+                atlas_nonzero = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
+                program_rows[PROGRAM_ATLAS_RESIDUAL] = _rows_from_scores(
+                    atlas_nonzero,
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            additional_program_rows_by_direction[direction] = program_rows
+
+        full_scores = direction_scores_by_method[
+            selected_direction if selected_direction in direction_scores_by_method else "PRIMARY"
+        ][primary_link_method]
         selected_gene_ids = _select_gene_ids(full_scores, args)
         selected_weights = _selected_weights(full_scores, selected_gene_ids, normalize)
 
@@ -578,75 +828,9 @@ def run(args) -> dict[str, object]:
                 }
             )
 
-        full_rows_by_method: dict[str, list[dict[str, object]]] = {}
-        for method in link_methods:
-            full_rows_by_method[method] = _rows_from_scores(
-                full_scores_by_method[method],
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        full_rows = full_rows_by_method[primary_link_method]
-
-        additional_program_rows: dict[str, list[dict[str, object]]] = {}
-        promoter_scores: dict[str, float] = {}
-        distal_scores: dict[str, float] = {}
-        if PROGRAM_PROMOTER_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
-            promoter_peak_stat = mask_peak_weights(peak_stat, include_indices=promoter_indices)
-            promoter_raw = score_genes(promoter_peak_stat, promoter_links, peak_weight_transform)
-            promoter_scores = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
-            if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-                additional_program_rows[PROGRAM_PROMOTER_ACTIVITY] = _rows_from_scores(
-                    promoter_scores,
-                    gene_symbol_by_id,
-                    gene_biotype_by_id,
-                )
-        if PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
-            distal_peak_stat = mask_peak_weights(peak_stat, exclude_indices=promoter_indices)
-            distal_raw = score_genes(distal_peak_stat, distance_links, peak_weight_transform)
-            distal_scores = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
-            if PROGRAM_DISTAL_ACTIVITY in program_methods:
-                additional_program_rows[PROGRAM_DISTAL_ACTIVITY] = _rows_from_scores(
-                    distal_scores,
-                    gene_symbol_by_id,
-                    gene_biotype_by_id,
-                )
-        if PROGRAM_ENHANCER_BIAS in program_methods:
-            bias_scores = enhancer_bias_scores(promoter_scores, distal_scores)
-            bias_nonzero = {g: float(s) for g, s in bias_scores.items() if float(s) != 0.0}
-            additional_program_rows[PROGRAM_ENHANCER_BIAS] = _rows_from_scores(
-                bias_nonzero,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        if PROGRAM_TFIDF_DISTAL in program_methods:
-            tfidf_peak_stat = [float(peak_stat[i]) * float(peak_idf[i]) for i in range(len(peak_stat))]
-            tfidf_distal_peak_stat = mask_peak_weights(tfidf_peak_stat, exclude_indices=promoter_indices)
-            tfidf_distal_raw = score_genes(tfidf_distal_peak_stat, distance_links, peak_weight_transform)
-            tfidf_distal_scores = {g: float(s) for g, s in tfidf_distal_raw.items() if float(s) != 0.0}
-            additional_program_rows[PROGRAM_TFIDF_DISTAL] = _rows_from_scores(
-                tfidf_distal_scores,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        if PROGRAM_REF_UBIQUITY_PENALTY in program_methods:
-            ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
-            ref_raw = score_genes(ref_peak_stat, links_by_method[primary_link_method], peak_weight_transform)
-            ref_scores = {g: float(s) for g, s in ref_raw.items() if float(s) != 0.0}
-            additional_program_rows[PROGRAM_REF_UBIQUITY_PENALTY] = _rows_from_scores(
-                ref_scores,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        if PROGRAM_ATLAS_RESIDUAL in program_methods:
-            atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
-            atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
-            atlas_scores = atlas_residual_scores(full_scores, atlas_stats, atlas_metric, atlas_eps)
-            atlas_nonzero = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
-            additional_program_rows[PROGRAM_ATLAS_RESIDUAL] = _rows_from_scores(
-                atlas_nonzero,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
+        full_rows = full_rows_by_method_by_direction[
+            selected_direction if selected_direction in full_rows_by_method_by_direction else "PRIMARY"
+        ][primary_link_method]
 
         if groups_tsv:
             group_dir = out_dir / f"group={_safe_group_name(group_name)}"
@@ -662,11 +846,54 @@ def run(args) -> dict[str, object]:
         group_gmt_sets: list[tuple[str, list[str]]] = []
         group_gmt_plans: list[dict[str, object]] = []
         if emit_gmt:
-            if PROGRAM_LINKED_ACTIVITY in program_methods:
-                for method in link_methods:
+            for direction in directions_to_emit:
+                direction_suffix = (
+                    f"__direction={direction}"
+                    if contrast == "condition_within_group"
+                    else ""
+                )
+                contrast_suffix = f"__contrast={contrast}"
+                if contrast == "condition_within_group":
+                    contrast_suffix += (
+                        f"__condition_column={condition_column}"
+                        f"__condition_a={condition_a}"
+                        f"__condition_b={condition_b}"
+                    )
+                base_prefix = (
+                    f"atac_sc_10x__dataset={dataset_label}__group={group_name}"
+                    f"{contrast_suffix}{direction_suffix}"
+                )
+
+                if PROGRAM_LINKED_ACTIVITY in program_methods:
+                    for method in link_methods:
+                        method_sets, method_plans = build_gmt_sets_from_rows(
+                            rows=full_rows_by_method_by_direction[direction][method],
+                            base_name=(
+                                f"{base_prefix}__program={PROGRAM_LINKED_ACTIVITY}"
+                                f"__link_method={method}"
+                            ),
+                            prefer_symbol=gmt_prefer_symbol,
+                            min_genes=gmt_min_genes,
+                            max_genes=gmt_max_genes,
+                            topk_list=gmt_topk_list,
+                            mass_list=gmt_mass_list,
+                            split_signed=gmt_split_signed,
+                            require_symbol=gmt_require_symbol,
+                            allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                        )
+                        for plan in method_plans:
+                            params = dict(plan.get("parameters", {}))
+                            params["program_method"] = PROGRAM_LINKED_ACTIVITY
+                            params["link_method"] = method
+                            params["direction"] = direction
+                            plan["parameters"] = params
+                        group_gmt_sets.extend(method_sets)
+                        group_gmt_plans.extend(method_plans)
+
+                for program_method, rows in additional_program_rows_by_direction[direction].items():
                     method_sets, method_plans = build_gmt_sets_from_rows(
-                        rows=full_rows_by_method[method],
-                        base_name=f"atac_sc_10x__group={group_name}__program={PROGRAM_LINKED_ACTIVITY}__link_method={method}",
+                        rows=rows,
+                        base_name=f"{base_prefix}__program={program_method}",
                         prefer_symbol=gmt_prefer_symbol,
                         min_genes=gmt_min_genes,
                         max_genes=gmt_max_genes,
@@ -678,31 +905,11 @@ def run(args) -> dict[str, object]:
                     )
                     for plan in method_plans:
                         params = dict(plan.get("parameters", {}))
-                        params["program_method"] = PROGRAM_LINKED_ACTIVITY
-                        params["link_method"] = method
+                        params["program_method"] = program_method
+                        params["direction"] = direction
                         plan["parameters"] = params
                     group_gmt_sets.extend(method_sets)
                     group_gmt_plans.extend(method_plans)
-
-            for program_method, rows in additional_program_rows.items():
-                method_sets, method_plans = build_gmt_sets_from_rows(
-                    rows=rows,
-                    base_name=f"atac_sc_10x__group={group_name}__program={program_method}",
-                    prefer_symbol=gmt_prefer_symbol,
-                    min_genes=gmt_min_genes,
-                    max_genes=gmt_max_genes,
-                    topk_list=gmt_topk_list,
-                    mass_list=gmt_mass_list,
-                    split_signed=gmt_split_signed,
-                    require_symbol=gmt_require_symbol,
-                    allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
-                )
-                for plan in method_plans:
-                    params = dict(plan.get("parameters", {}))
-                    params["program_method"] = program_method
-                    plan["parameters"] = params
-                group_gmt_sets.extend(method_sets)
-                group_gmt_plans.extend(method_plans)
             write_gmt(group_gmt_sets, group_gmt_path)
             combined_gmt_sets.extend(group_gmt_sets)
             combined_gmt_plans.extend(group_gmt_plans)
@@ -730,10 +937,31 @@ def run(args) -> dict[str, object]:
                     "rest_size": len(barcodes) - group_sizes.get(group_name, len(cell_indices)),
                 }
             )
+        elif contrast == "condition_within_group":
+            contrast_meta.update(
+                {
+                    "contrast_type": "condition_within_group",
+                    "condition_column": condition_column,
+                    "condition_a": condition_a,
+                    "condition_b": condition_b,
+                    "metric": contrast_metric,
+                    "pseudocount": pseudocount,
+                    "n_cells": len(cell_indices),
+                    "n_cells_a": condition_counts_by_group.get(group_name, {}).get(condition_a, 0),
+                    "n_cells_b": condition_counts_by_group.get(group_name, {}).get(condition_b, 0),
+                    "directions_emitted": ["OPEN", "CLOSE"],
+                    "selected_direction": selected_direction,
+                }
+            )
 
         params = _resolved_parameters(args, group_name)
         params["program_methods_active"] = program_methods
         params["program_methods_skipped"] = program_methods_skipped
+        params["dataset_label"] = dataset_label
+        if contrast == "condition_within_group":
+            params["condition_column"] = condition_column
+            params["condition_a"] = condition_a
+            params["condition_b"] = condition_b
 
         meta = make_metadata(
             converter_name="atac_sc_10x",
@@ -821,7 +1049,7 @@ def run(args) -> dict[str, object]:
         if emit_gmt:
             write_gmt(combined_gmt_sets, root_gmt_path)
             root_payload = {
-                "groups": len(group_indices),
+                "groups": len(output_groups),
                 "program_methods_skipped": program_methods_skipped,
                 "gmt": {
                     "written": True,
@@ -853,7 +1081,7 @@ def run(args) -> dict[str, object]:
         return {
             "n_peaks": len(peaks),
             "out_dir": str(out_dir),
-            "n_groups": len(group_indices),
+            "n_groups": len(output_groups),
             "n_genes_unique": len(unique_output_genes),
             "n_genes_min": min(n_genes_per_group) if n_genes_per_group else 0,
             "n_genes_max": max(n_genes_per_group) if n_genes_per_group else 0,
