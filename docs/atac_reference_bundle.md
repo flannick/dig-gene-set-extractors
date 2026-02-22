@@ -1,6 +1,7 @@
 # ATAC Reference Bundle Setup
 
 This guide covers how to use a versioned ATAC reference bundle with `omics2geneset`.
+The primary workflow is direct bundle usage (no separate resource fetch step).
 
 ## 1) Download and unpack the bundle
 
@@ -23,36 +24,27 @@ After unpacking, your bundle root should be:
 
 `/tmp/dig-atac-refdata/bundle`
 
-## 2) Create a local resources manifest using Unix paths
+## 2) Create a local resources manifest (direct mode)
 
-This helper script writes a manifest where each resource `url` is a plain Unix file path (no URI required).
+This helper writes a manifest where `filename` points inside the extracted bundle tree.
+No additional downloads are required after this.
 
 ```bash
 python scripts/make_local_resources_manifest.py \
   --bundle-root /tmp/dig-atac-refdata/bundle \
+  --layout direct \
   --out /tmp/omics2geneset.local_resources.json
 ```
 
-## 3) Fetch resources from those local paths into cache
+## 3) Run directly against the extracted bundle directory
 
 ```bash
-omics2geneset resources fetch \
+omics2geneset resources status \
   --manifest /tmp/omics2geneset.local_resources.json \
   --manifest_mode replace \
-  --preset atac_default_optional
+  --resources_dir /tmp/dig-atac-refdata/bundle \
+  --fast
 ```
-
-Optional: specify an explicit cache directory.
-
-```bash
-omics2geneset resources fetch \
-  --manifest /tmp/omics2geneset.local_resources.json \
-  --manifest_mode replace \
-  --resources_dir /tmp/omics2geneset-resources \
-  --preset atac_default_optional
-```
-
-## 4) Use the manifest in conversion runs
 
 ```bash
 omics2geneset convert atac_bulk \
@@ -62,18 +54,36 @@ omics2geneset convert atac_bulk \
   --organism human \
   --genome_build hg38 \
   --program_methods ref_ubiquity_penalty \
-  --resources_manifest /tmp/omics2geneset.local_resources.json
+  --resources_manifest /tmp/omics2geneset.local_resources.json \
+  --resources_dir /tmp/dig-atac-refdata/bundle
+```
+
+Optional: set the resource root once via environment variable:
+
+```bash
+export OMICS2GENESET_RESOURCES_DIR=/tmp/dig-atac-refdata/bundle
+```
+
+Then you can omit `--resources_dir` in convert/status commands.
+
+## 4) Optional cache staging workflow
+
+If you prefer to copy resources into the standard cache, generate a cache-style manifest and fetch:
+
+```bash
+python scripts/make_local_resources_manifest.py \
+  --bundle-root /tmp/dig-atac-refdata/bundle \
+  --layout cache \
+  --out /tmp/omics2geneset.local_resources.cache.json
+
+omics2geneset resources fetch \
+  --manifest /tmp/omics2geneset.local_resources.cache.json \
+  --manifest_mode replace \
+  --preset atac_default_optional
 ```
 
 ## Notes
 
-- `resources fetch` accepts HTTP(S), `file://`, and plain Unix paths in the resource `url` field.
+- With direct mode, the only URL download is the initial bundle `.tar.gz`.
+- `resources fetch` accepts HTTP(S), `file://`, and plain Unix paths in manifest `url` fields.
 - `--manifest_mode replace` uses only your local manifest; `overlay` merges with bundled entries.
-- Verify local file availability with:
-
-```bash
-omics2geneset resources status \
-  --manifest /tmp/omics2geneset.local_resources.json \
-  --manifest_mode replace \
-  --fast
-```

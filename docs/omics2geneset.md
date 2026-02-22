@@ -31,6 +31,7 @@ Resource catalog notes:
 
 - Bundled manifest: `src/omics2geneset/resources/manifest.json`
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
+- Preferred bundle workflow: extract bundle, generate a local manifest with `--layout direct`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
 - `resources fetch` skips resources with missing URL by default (status `manual`).
 - Resource `url` fields can be HTTP(S), `file://`, or plain Unix filesystem paths.

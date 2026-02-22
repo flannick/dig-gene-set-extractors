@@ -49,6 +49,7 @@ Method notes and equations:
 ATAC reference bundle setup:
 
 - `docs/atac_reference_bundle.md`
+- primary workflow: download one tarball, extract, point `--resources_dir` at bundle root (no extra fetch step)
 
 ## Common Output Contract
 

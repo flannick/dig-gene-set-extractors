@@ -5,6 +5,15 @@ import hashlib
 import json
 from pathlib import Path
 
+_BUNDLE_RESOURCE_PATHS: dict[str, tuple[str, str | None]] = {
+    "ccre_ubiquity_hg38": ("atac/ccre/ccre_ubiquity_hg38.tsv.gz", "hg38"),
+    "ccre_ubiquity_mm10": ("atac/ccre/ccre_ubiquity_mm10.tsv.gz", "mm10"),
+    "encode_ccre_hg38": ("atac/ccre/encode_ccre_hg38.bed.gz", "hg38"),
+    "encode_ccre_mm10": ("atac/ccre/encode_ccre_mm10.bed.gz", "mm10"),
+    "atac_reference_profiles_hg38": ("atac/atlas/atac_reference_profiles_hg38.tsv.gz", "hg38"),
+    "atac_reference_profiles_mm10": ("atac/atlas/atac_reference_profiles_mm10.tsv.gz", "mm10"),
+}
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -41,15 +50,7 @@ def _bundle_checksums(bundle_root: Path) -> dict[str, str]:
 
 
 def _resolve_bundle_file(bundle_root: Path, resource_id: str) -> tuple[Path | None, str | None]:
-    mapping: dict[str, tuple[str, str | None]] = {
-        "ccre_ubiquity_hg38": ("atac/ccre/ccre_ubiquity_hg38.tsv.gz", "hg38"),
-        "ccre_ubiquity_mm10": ("atac/ccre/ccre_ubiquity_mm10.tsv.gz", "mm10"),
-        "encode_ccre_hg38": ("atac/ccre/encode_ccre_hg38.bed.gz", "hg38"),
-        "encode_ccre_mm10": ("atac/ccre/encode_ccre_mm10.bed.gz", "mm10"),
-        "atac_reference_profiles_hg38": ("atac/atlas/atac_reference_profiles_hg38.tsv.gz", "hg38"),
-        "atac_reference_profiles_mm10": ("atac/atlas/atac_reference_profiles_mm10.tsv.gz", "mm10"),
-    }
-    rel_and_build = mapping.get(resource_id)
+    rel_and_build = _BUNDLE_RESOURCE_PATHS.get(resource_id)
     if rel_and_build is None:
         return None, None
     rel, genome_build = rel_and_build
@@ -60,22 +61,34 @@ def _resolve_bundle_file(bundle_root: Path, resource_id: str) -> tuple[Path | No
 
 
 def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    default_base_manifest = repo_root / "src" / "omics2geneset" / "resources" / "manifest.json"
     ap = argparse.ArgumentParser(
         description=(
-            "Create a resource manifest that points omics2geneset resources to local bundle files "
-            "using Unix filesystem paths (no URI required)."
+            "Create a local resource manifest from an extracted ATAC reference bundle. "
+            "Default layout is direct mode (no fetch step required)."
         )
     )
     ap.add_argument("--bundle-root", required=True, help="Path to extracted bundle directory (contains atac/ and manifest.json)")
     ap.add_argument(
         "--base-manifest",
-        default="src/omics2geneset/resources/manifest.json",
+        default=str(default_base_manifest),
         help="Base resource manifest template to populate",
     )
     ap.add_argument(
         "--out",
         required=True,
         help="Output manifest path",
+    )
+    ap.add_argument(
+        "--layout",
+        choices=["direct", "cache"],
+        default="direct",
+        help=(
+            "direct: set filename to bundle-relative paths and read files directly using --resources_dir <bundle-root> "
+            "(no resources fetch step). "
+            "cache: keep cache-style filename entries and set url to absolute bundle paths for resources fetch."
+        ),
     )
     args = ap.parse_args()
 
@@ -104,14 +117,26 @@ def main() -> int:
         if not rid:
             continue
         path, gb = _resolve_bundle_file(bundle_root, rid)
+        rel: str | None = None
+        if path is not None:
+            rel = str(path.relative_to(bundle_root))
+        else:
+            mapping_path, _mapping_gb = _BUNDLE_RESOURCE_PATHS.get(rid, (None, None))
+            rel = mapping_path
+
+        if args.layout == "direct" and rel:
+            row["filename"] = rel
+
         if path is None:
             if gb in {"hg38", "mm10"}:
                 missing.append(rid)
-            row["url"] = ""
+            row["url"] = "" if args.layout == "direct" else str(row.get("url", ""))
             row["sha256"] = ""
             continue
-        rel = str(path.relative_to(bundle_root))
-        row["url"] = str(path)
+        if args.layout == "direct":
+            row["url"] = ""
+        else:
+            row["url"] = str(path)
         row["sha256"] = checksums.get(rel, _sha256_file(path))
         resolved.append(rid)
 
@@ -119,6 +144,11 @@ def main() -> int:
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(f"Wrote local resource manifest: {out_path}")
+    print(f"Layout: {args.layout}")
+    if args.layout == "direct":
+        print(f"Use this at runtime with --resources_manifest {out_path} --resources_dir {bundle_root}")
+    else:
+        print("Use this with `omics2geneset resources fetch` to stage files into cache.")
     if resolved:
         print("Resolved resource ids:")
         for rid in sorted(resolved):
