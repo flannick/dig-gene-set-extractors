@@ -2,6 +2,7 @@
 
 `omics2geneset` is the first extractor family implemented in this repository.  
 It converts assay-specific input signals into a common gene-program output contract.
+This guide is package-specific; repository-wide extractor framework guidance is in `README.md`.
 
 ## Install and Run
 
@@ -66,9 +67,9 @@ GMT defaults favor cleaner symbols:
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
 Default ATAC usage (`--program_preset default`) does not require resource downloads.
 
-## Adding New Extractors or Modes
+## Extending omics2geneset
 
-### Add a new extraction type (new converter)
+### Add a new converter in omics2geneset
 
 1. Add `src/omics2geneset/converters/<name>.py` with `run(args) -> dict`.
 2. Add CLI parser wiring in `src/omics2geneset/cli.py`.
@@ -77,7 +78,7 @@ Default ATAC usage (`--program_preset default`) does not require resource downlo
 5. Emit the contract files (`geneset.tsv`, `geneset.meta.json`, optional `geneset.full.tsv`).
 6. Add toy fixtures and tests in `tests/`.
 
-### Add a new extraction mode (existing converter)
+### Add a new mode to an existing omics2geneset converter
 
 1. Add CLI flags.
 2. Implement mode logic in converter/core modules.
