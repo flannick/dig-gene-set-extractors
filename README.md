@@ -186,6 +186,7 @@ For compact programs, `within_set_l1` is the recommended default.
 
 - Package guide: `docs/omics2geneset.md`
 - Offline install guide: `docs/air_gapped_install.md`
+- ATAC reference bundle guide: `docs/atac_reference_bundle.md`
 
 ## Optional Resource Catalog
 
@@ -221,3 +222,27 @@ Resource IDs currently referenced by ATAC methods:
 - `atac_reference_profiles_hg38`, `atac_reference_profiles_mm10`: used by `atlas_residual`
 
 Each resource entry tracks `provider`, `stable_id`, `version`, `license`, `filename`, optional `url`, and optional `sha256`.
+
+## ATAC Reference Bundle (Download + Local Usage)
+
+If you have the published bundle URL, see `docs/atac_reference_bundle.md` for the full workflow.
+
+If you built the bundle locally and do not have web hosting yet, you can use Unix paths directly:
+
+```bash
+# 1) Create a local manifest with absolute Unix paths in each resource "url" field.
+python scripts/make_local_resources_manifest.py \
+  --bundle-root /path/to/bundle \
+  --out /tmp/omics2geneset.local_resources.json
+
+# 2) Copy resources from those local paths into your resource cache.
+omics2geneset resources fetch \
+  --manifest /tmp/omics2geneset.local_resources.json \
+  --manifest_mode replace \
+  --preset atac_default_optional
+```
+
+Notes:
+
+- `resources fetch` accepts local Unix filesystem paths in `url` (no `file://` URI required).
+- You can then run converters with `--resources_manifest /tmp/omics2geneset.local_resources.json`.

@@ -32,7 +32,9 @@ Resource catalog notes:
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
 - `resources fetch` supports individual ids and presets.
 - `resources fetch` skips resources with missing URL by default (status `manual`).
+- Resource `url` fields can be HTTP(S), `file://`, or plain Unix filesystem paths.
 - `--manifest_mode overlay` (default) merges a custom manifest with bundled entries; use `replace` to use only custom entries.
+- Bundle setup instructions: `docs/atac_reference_bundle.md`.
 
 ## Output Contract
 
