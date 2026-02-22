@@ -53,10 +53,13 @@ omics2geneset convert atac_bulk \
   --out_dir <out_dir> \
   --organism human \
   --genome_build hg38 \
-  --program_methods ref_ubiquity_penalty \
+  --program_preset default \
   --resources_manifest /tmp/omics2geneset.local_resources.json \
   --resources_dir /tmp/dig-atac-refdata/bundle
 ```
+
+With `--use_reference_bundle true` (default), resource-backed methods are included automatically
+unless `--program_methods` is explicitly set.
 
 Optional: set the resource root once via environment variable:
 

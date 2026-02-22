@@ -19,9 +19,11 @@ from omics2geneset.core.atac_programs import (
     PROGRAM_PROMOTER_ACTIVITY,
     PROGRAM_REF_UBIQUITY_PENALTY,
     atlas_residual_scores,
+    ensure_reference_program_methods,
     enhancer_bias_scores,
     mask_peak_weights,
     promoter_peak_indices,
+    remove_reference_program_methods,
     resolve_program_methods,
 )
 from omics2geneset.core.reference_calibration import apply_peak_idf, peak_ref_idf_by_overlap
@@ -135,11 +137,18 @@ def _resolved_parameters(args) -> dict[str, object]:
     gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     link_methods = _resolve_link_methods(args)
+    explicit_program_methods = bool(str(_arg(args, "program_methods", "") or "").strip())
+    preset_name = str(_arg(args, "program_preset", "default") or "").strip() or "default"
+    use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
     program_methods = resolve_program_methods(
         "bulk",
         _arg(args, "program_preset", "default"),
         _arg(args, "program_methods", None),
     )
+    if not use_reference_bundle:
+        program_methods = remove_reference_program_methods(program_methods)
+    elif not explicit_program_methods and preset_name != "none":
+        program_methods = ensure_reference_program_methods(program_methods)
     ref_ubiquity_resource_id = _arg(args, "ref_ubiquity_resource_id", None) or _default_ref_ubiquity_resource_id(
         str(_arg(args, "genome_build", ""))
     )
@@ -158,6 +167,7 @@ def _resolved_parameters(args) -> dict[str, object]:
         "program_preset": _arg(args, "program_preset", "default"),
         "program_methods": _arg(args, "program_methods", None),
         "program_methods_evaluated": program_methods,
+        "use_reference_bundle": use_reference_bundle,
         "resource_policy": _arg(args, "resource_policy", "skip"),
         "ref_ubiquity_resource_id": ref_ubiquity_resource_id,
         "atlas_resource_id": atlas_resource_id,
@@ -325,11 +335,18 @@ def run(args) -> dict[str, object]:
     peaks = read_bed(args.peaks)
     genes = read_genes_from_gtf(args.gtf)
     peak_weights = _extract_peak_weights(peaks, args.peaks_weight_column, args.peak_weights_tsv)
+    explicit_program_methods = bool(str(_arg(args, "program_methods", "") or "").strip())
+    preset_name = str(_arg(args, "program_preset", "default") or "").strip() or "default"
+    use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
     program_methods = resolve_program_methods(
         "bulk",
         _arg(args, "program_preset", "default"),
         _arg(args, "program_methods", None),
     )
+    if not use_reference_bundle:
+        program_methods = remove_reference_program_methods(program_methods)
+    elif not explicit_program_methods and preset_name != "none":
+        program_methods = ensure_reference_program_methods(program_methods)
     program_methods_skipped: dict[str, str] = {}
     resources_used: list[dict[str, object]] = []
     resource_policy = str(_arg(args, "resource_policy", "skip"))

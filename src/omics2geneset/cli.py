@@ -67,6 +67,12 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
 def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--resources_manifest", help="Optional resources manifest path (defaults to bundled manifest)")
     parser.add_argument("--resources_dir", help="Optional resources cache directory (defaults to OMICS2GENESET_RESOURCES_DIR or ~/.cache)")
+    parser.add_argument(
+        "--use_reference_bundle",
+        type=_parse_bool,
+        default=True,
+        help="If true (default), include reference-backed ATAC program methods when program_methods is not explicitly set.",
+    )
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
     parser.add_argument("--ref_ubiquity_resource_id", help="Resource id for ref_ubiquity_penalty program")
     parser.add_argument("--atlas_resource_id", help="Resource id for atlas_residual program")

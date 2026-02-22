@@ -35,6 +35,7 @@ class Args:
     program_methods = None
     resources_manifest = None
     resources_dir = None
+    use_reference_bundle = True
     resource_policy = "skip"
     ref_ubiquity_resource_id = None
     atlas_resource_id = None

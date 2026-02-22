@@ -58,6 +58,8 @@ GMT defaults favor cleaner symbols:
 - `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
 - `--program_preset connectable` prioritizes contrast-ready programs (bulk/sc: linked+distal+enhancer-bias; sc can auto-switch to condition_within_group).
 - `--program_preset all` also attempts resource-backed methods (`ref_ubiquity_penalty`, `atlas_residual`).
+- `--use_reference_bundle true` (default) also adds resource-backed methods for presets (except `none`) when `--program_methods` is not explicitly set.
+- `--use_reference_bundle false` is the explicit opt-out.
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 
 `geneset.tsv` columns:
@@ -66,7 +68,8 @@ GMT defaults favor cleaner symbols:
 - optional: `weight`, `gene_symbol`
 
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
-Default ATAC usage (`--program_preset default`) does not require resource downloads.
+Default ATAC usage attempts reference-backed methods when bundle resources are available.
+If resources are missing, methods are skipped by default (`--resource_policy skip`).
 
 ## Extending omics2geneset
 
@@ -113,6 +116,7 @@ Optional peak weights:
 - Program families:
 - `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
   - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
@@ -184,6 +188,7 @@ Optional:
 - Program families:
   - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
   - `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
@@ -286,6 +291,7 @@ Key contrast flags:
 - `--condition_a`, `--condition_b`
 - `--contrast_metric {log2fc,diff}`
 - `--contrast_pseudocount` (used for `log2fc`)
+- `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
 
 This converter emits direction-aware outputs:
 

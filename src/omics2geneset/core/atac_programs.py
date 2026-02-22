@@ -10,6 +10,10 @@ PROGRAM_ENHANCER_BIAS = "enhancer_bias"
 PROGRAM_TFIDF_DISTAL = "tfidf_distal"
 PROGRAM_REF_UBIQUITY_PENALTY = "ref_ubiquity_penalty"
 PROGRAM_ATLAS_RESIDUAL = "atlas_residual"
+REFERENCE_PROGRAM_METHODS = (
+    PROGRAM_REF_UBIQUITY_PENALTY,
+    PROGRAM_ATLAS_RESIDUAL,
+)
 
 
 _BULK_ALLOWED = (
@@ -130,6 +134,21 @@ def resolve_program_methods(
     if PROGRAM_LINKED_ACTIVITY not in seen:
         out.insert(0, PROGRAM_LINKED_ACTIVITY)
     return out
+
+
+def ensure_reference_program_methods(program_methods: list[str]) -> list[str]:
+    out = list(program_methods)
+    seen = set(out)
+    for method in REFERENCE_PROGRAM_METHODS:
+        if method not in seen:
+            out.append(method)
+            seen.add(method)
+    return out
+
+
+def remove_reference_program_methods(program_methods: list[str]) -> list[str]:
+    blocked = set(REFERENCE_PROGRAM_METHODS)
+    return [method for method in program_methods if method not in blocked]
 
 
 def promoter_peak_indices(promoter_links: list[dict[str, object]]) -> set[int]:

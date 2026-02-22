@@ -29,6 +29,7 @@ class Args:
     program_methods = None
     resources_manifest = None
     resources_dir = None
+    use_reference_bundle = True
     resource_policy = "skip"
     ref_ubiquity_resource_id = None
     atlas_resource_id = None
@@ -139,6 +140,52 @@ def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "program_methods" in meta["program_extraction"]
     assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
+
+
+def test_bulk_default_uses_reference_bundle_when_available(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_default_refs")
+    args.program_preset = "default"
+    args.link_method = "promoter_overlap"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__program=ref_ubiquity_penalty__topk=3" in gmt_text
+    assert "__program=atlas_residual__topk=3" in gmt_text
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    methods = meta["program_extraction"]["program_methods"]
+    assert "ref_ubiquity_penalty" in methods
+    assert "atlas_residual" in methods
+
+
+def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_default_no_refs")
+    args.program_preset = "default"
+    args.link_method = "promoter_overlap"
+    args.use_reference_bundle = False
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__program=ref_ubiquity_penalty__topk=3" not in gmt_text
+    assert "__program=atlas_residual__topk=3" not in gmt_text
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    methods = meta["program_extraction"]["program_methods"]
+    assert "ref_ubiquity_penalty" not in methods
+    assert "atlas_residual" not in methods
+    assert meta["converter"]["parameters"]["use_reference_bundle"] is False
 
 
 def test_bulk_resource_backed_program_methods(tmp_path: Path):
