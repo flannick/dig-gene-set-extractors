@@ -688,4 +688,6 @@ def run(args) -> dict[str, object]:
         "n_peaks": len(peaks),
         "n_genes": len(selected_rows),
         "out_dir": str(out_dir),
+        "program_methods": program_methods,
+        "program_methods_skipped": program_methods_skipped,
     }

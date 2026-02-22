@@ -22,6 +22,7 @@ omics2geneset convert <converter_name> [flags]
 omics2geneset validate <output_dir>
 omics2geneset resources list
 omics2geneset resources status --fast
+omics2geneset resources status --check_schema --verify
 omics2geneset resources describe ccre_ubiquity_hg38
 omics2geneset resources fetch --preset atac_default_optional
 omics2geneset resources manifest-validate
@@ -34,6 +35,7 @@ Resource catalog notes:
 - Preferred bundle workflow: extract bundle, generate a local manifest with `--layout direct`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
 - `resources fetch` skips resources with missing URL by default (status `manual`).
+- `resources status --check_schema` validates known resource file schemas (beyond existence/checksum).
 - Resource `url` fields can be HTTP(S), `file://`, or plain Unix filesystem paths.
 - `--manifest_mode overlay` (default) merges a custom manifest with bundled entries; use `replace` to use only custom entries.
 - Bundle setup instructions: `docs/atac_reference_bundle.md`.
@@ -115,9 +117,9 @@ Optional peak weights:
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
 - Program families:
 - `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
-  - `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
+- `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
   - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
-  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
+  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
 - Program selection (`--select`): `top_k`, `quantile`, `threshold`, or `none`
@@ -187,9 +189,9 @@ Optional:
   - use `negative` for closing programs
 - Program families:
   - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
-  - `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
+- `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
   - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
-  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources.
+  - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
 - Gene program selection and normalization: same controls as `atac_bulk`
@@ -292,6 +294,7 @@ Key contrast flags:
 - `--contrast_metric {log2fc,diff}`
 - `--contrast_pseudocount` (used for `log2fc`)
 - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
+- `--resource_policy {skip,fail}` recommended as `fail` for production runs.
 
 This converter emits direction-aware outputs:
 

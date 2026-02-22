@@ -1102,5 +1102,14 @@ def run(args) -> dict[str, object]:
             "n_genes_unique": len(unique_output_genes),
             "n_genes_min": min(n_genes_per_group) if n_genes_per_group else 0,
             "n_genes_max": max(n_genes_per_group) if n_genes_per_group else 0,
+            "program_methods": program_methods,
+            "program_methods_skipped": program_methods_skipped,
         }
-    return {"n_peaks": len(peaks), "n_genes": n_genes_per_group[0] if n_genes_per_group else 0, "out_dir": str(out_dir), "n_groups": 1}
+    return {
+        "n_peaks": len(peaks),
+        "n_genes": n_genes_per_group[0] if n_genes_per_group else 0,
+        "out_dir": str(out_dir),
+        "n_groups": 1,
+        "program_methods": program_methods,
+        "program_methods_skipped": program_methods_skipped,
+    }

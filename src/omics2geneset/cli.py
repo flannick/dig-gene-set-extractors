@@ -147,6 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_res_status.add_argument("--resources_dir")
     p_res_status.add_argument("--verify", action="store_true", help="Compute checksums for local files")
     p_res_status.add_argument("--fast", action="store_true", help="Alias for default fast mode (existence + size; checksums optional)")
+    p_res_status.add_argument(
+        "--check_schema",
+        action="store_true",
+        help="Run schema checks for known resource ids (for example ccre_ubiquity_* and atac_reference_profiles_*)",
+    )
 
     p_res_fetch = res_sub.add_parser("fetch")
     p_res_fetch.add_argument("resource_ids", nargs="*")
@@ -366,8 +371,14 @@ def main(argv: list[str] | None = None) -> int:
                 if args.fast and args.verify:
                     raise ValueError("status accepts either --fast or --verify, not both")
                 verify = bool(args.verify)
-                rows = resource_status_rows(resources, args.resources_dir, verify=verify)
+                rows = resource_status_rows(
+                    resources,
+                    args.resources_dir,
+                    verify=verify,
+                    check_schema=bool(args.check_schema),
+                )
                 for row in rows:
+                    schema_error = str(row.get("schema_error", "") or "").replace("\t", " ").replace("\n", " ")
                     print(
                         "\t".join(
                             [
@@ -376,6 +387,10 @@ def main(argv: list[str] | None = None) -> int:
                                 str(row["path"]),
                                 str(row.get("availability", "")),
                                 str(row.get("size_bytes", "")),
+                                str(row.get("schema_status", "")),
+                                str(row.get("schema_kind", "")),
+                                str(row.get("schema_rows", "")),
+                                schema_error,
                             ]
                         )
                     )
@@ -441,6 +456,15 @@ def main(argv: list[str] | None = None) -> int:
                     f"converted peaks={result.get('n_peaks')} genes={result.get('n_genes')} out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
+            active_methods = result.get("program_methods")
+            if isinstance(active_methods, list) and active_methods:
+                print("program_methods_active=" + ",".join(str(x) for x in active_methods), file=sys.stderr)
+                skipped_methods = result.get("program_methods_skipped")
+                if isinstance(skipped_methods, dict):
+                    if skipped_methods:
+                        print("program_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_methods)), file=sys.stderr)
+                    else:
+                        print("program_methods_skipped=none", file=sys.stderr)
             return 0
     except Exception as exc:  # pragma: no cover
         print(f"error: {exc}", file=sys.stderr)

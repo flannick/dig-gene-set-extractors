@@ -61,6 +61,8 @@ def test_cli_validate_single_good_output(tmp_path: Path):
         "tests/data/toy_peak_weights.tsv",
     )
     assert convert.returncode == 0
+    assert "program_methods_active=" in convert.stderr
+    assert "program_methods_skipped=" in convert.stderr
     validate = _run("validate", str(out))
     assert validate.returncode == 0
     assert "ok" in validate.stdout
@@ -140,6 +142,27 @@ def test_cli_resources_status(tmp_path: Path):
     p = _run("resources", "status", "--resources_dir", str(tmp_path / "res_cache"))
     assert p.returncode == 0
     assert "manual_missing" in p.stdout
+
+
+def test_cli_resources_status_check_schema_known_ids():
+    p = _run(
+        "resources",
+        "status",
+        "--manifest",
+        "tests/data/toy_resources_manifest.json",
+        "--manifest_mode",
+        "replace",
+        "--resources_dir",
+        "tests/data",
+        "--check_schema",
+    )
+    assert p.returncode == 0
+    rows = {}
+    for line in p.stdout.splitlines():
+        cols = line.split("\t")
+        rows[cols[0]] = cols
+    assert rows["ccre_ubiquity_hg38"][5] == "ok"
+    assert rows["atac_reference_profiles_hg38"][5] == "ok"
 
 
 def test_cli_resources_describe(tmp_path: Path):

@@ -51,6 +51,7 @@ ATAC reference bundle setup:
 - `docs/atac_reference_bundle.md`
 - primary workflow: download one tarball, extract, point `--resources_dir` at bundle root (no extra fetch step)
 - `omics2geneset` defaults to `--use_reference_bundle true` (opt out with `--use_reference_bundle false`)
+- production guidance: run with `--resource_policy fail` after `resources status --check_schema`
 
 ## Common Output Contract
 

@@ -43,6 +43,7 @@ omics2geneset resources status \
   --manifest /tmp/omics2geneset.local_resources.json \
   --manifest_mode replace \
   --resources_dir /tmp/dig-atac-refdata/bundle \
+  --check_schema \
   --fast
 ```
 
@@ -54,6 +55,7 @@ omics2geneset convert atac_bulk \
   --organism human \
   --genome_build hg38 \
   --program_preset default \
+  --resource_policy fail \
   --resources_manifest /tmp/omics2geneset.local_resources.json \
   --resources_dir /tmp/dig-atac-refdata/bundle
 ```
@@ -90,3 +92,4 @@ omics2geneset resources fetch \
 - With direct mode, the only URL download is the initial bundle `.tar.gz`.
 - `resources fetch` accepts HTTP(S), `file://`, and plain Unix paths in manifest `url` fields.
 - `--manifest_mode replace` uses only your local manifest; `overlay` merges with bundled entries.
+- Recommended for production runs: `--resource_policy fail` after `resources status --check_schema` is clean.

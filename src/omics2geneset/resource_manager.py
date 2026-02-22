@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import gzip
 from urllib.parse import urlparse
 from urllib.request import url2pathname, urlopen
 
@@ -266,10 +267,60 @@ def resolve_requested_resource_ids(
     return out
 
 
+def _validate_resource_file_schema(
+    resource_id: str,
+    path: Path,
+) -> dict[str, object]:
+    rid = str(resource_id).strip()
+    if rid.startswith("ccre_ubiquity_"):
+        from omics2geneset.io.reference_tables import read_ref_ubiquity_tsv
+
+        rows = read_ref_ubiquity_tsv(path)
+        if not rows:
+            raise ValueError("no usable rows after parsing")
+        return {"schema_kind": "ref_ubiquity", "schema_rows": len(rows)}
+
+    if rid.startswith("atac_reference_profiles_"):
+        from omics2geneset.io.reference_tables import read_atlas_gene_stats_tsv
+
+        stats = read_atlas_gene_stats_tsv(path)
+        if not stats:
+            raise ValueError("no usable rows after parsing")
+        return {"schema_kind": "atlas_gene_stats", "schema_rows": len(stats)}
+
+    if rid.startswith("encode_ccre_"):
+        opener = gzip.open if path.suffix == ".gz" else open
+        valid = 0
+        with opener(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                text = line.strip()
+                if not text or text.startswith("#"):
+                    continue
+                cols = text.split("\t")
+                if len(cols) < 5:
+                    continue
+                try:
+                    int(cols[1])
+                    int(cols[2])
+                except ValueError:
+                    continue
+                if not cols[0].strip() or not cols[4].strip():
+                    continue
+                valid += 1
+                if valid >= 1:
+                    break
+        if valid == 0:
+            raise ValueError("BED did not contain a valid chrom/start/end/ccre_id row")
+        return {"schema_kind": "ccre_bed", "schema_rows": None}
+
+    return {"schema_kind": "not_supported", "schema_rows": None}
+
+
 def resource_status_rows(
     resources: dict[str, dict[str, object]],
     resources_dir: str | Path | None = None,
     verify: bool = False,
+    check_schema: bool = False,
 ) -> list[dict[str, object]]:
     root = default_resources_dir() if resources_dir is None else Path(resources_dir).expanduser()
     rows: list[dict[str, object]] = []
@@ -295,6 +346,26 @@ def resource_status_rows(
         else:
             status = "ok_fast"
 
+        schema_status = "not_checked"
+        schema_kind = None
+        schema_rows = None
+        schema_error = None
+        if check_schema:
+            if not exists:
+                schema_status = "missing"
+            else:
+                try:
+                    schema_result = _validate_resource_file_schema(rid, path)
+                    schema_kind = schema_result.get("schema_kind")
+                    schema_rows = schema_result.get("schema_rows")
+                    if schema_kind == "not_supported":
+                        schema_status = "not_supported"
+                    else:
+                        schema_status = "ok"
+                except Exception as exc:
+                    schema_status = "invalid"
+                    schema_error = str(exc)
+
         rows.append(
             {
                 "id": rid,
@@ -306,6 +377,10 @@ def resource_status_rows(
                 "expected_sha256": expected_sha or None,
                 "actual_sha256": actual_sha,
                 "url": url or None,
+                "schema_status": schema_status,
+                "schema_kind": schema_kind,
+                "schema_rows": schema_rows,
+                "schema_error": schema_error,
             }
         )
     return rows
