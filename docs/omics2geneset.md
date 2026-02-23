@@ -34,14 +34,14 @@ Resource catalog notes:
 
 - Bundled manifest: `src/omics2geneset/resources/manifest.json`
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
-- Preferred bundle workflow: extract bundle, generate a local manifest with `--layout direct`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
+- Preferred bundle workflow: extract a build-specific bundle (`hg19` or `hg38`), generate a local manifest with `--layout direct --genome-build <build>`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
 - Human build presets: `atac_default_optional_hg19`, `atac_default_optional_hg38`.
 - `resources fetch` skips resources with missing URL by default (status `manual`).
 - `resources status --check_schema` validates known resource file schemas (beyond existence/checksum).
 - Resource `url` fields can be HTTP(S), `file://`, or plain Unix filesystem paths.
 - `--manifest_mode overlay` (default) merges a custom manifest with bundled entries; use `replace` to use only custom entries.
-- Bundle setup instructions: `docs/atac_reference_bundle.md`.
+- Bundle setup instructions and split-bundle packaging: `docs/atac_reference_bundle.md`.
 
 ## Output Contract
 

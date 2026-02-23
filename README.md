@@ -49,8 +49,8 @@ Method notes and equations:
 ATAC reference bundle setup:
 
 - `docs/atac_reference_bundle.md`
-- primary workflow: download one tarball, extract, point `--resources_dir` at bundle root (no extra fetch step)
-- current bundle version: `v1.1.0`, with human builds `hg19` and `hg38` included
+- primary workflow: download one build-specific tarball (`hg19` or `hg38`), extract, and point `--resources_dir` at bundle root (no extra fetch step)
+- current bundle version: `v1.1.0` split outputs: `...-atac-refdata-hg19-v1.1.0.tar.gz` and `...-atac-refdata-hg38-v1.1.0.tar.gz`
 - converters auto-select build-matched resource IDs from `--genome_build`
 - `omics2geneset` defaults to `--use_reference_bundle true` (opt out with `--use_reference_bundle false`)
 - production guidance: run with `--resource_policy fail` after `resources status --check_schema`

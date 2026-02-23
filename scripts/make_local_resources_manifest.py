@@ -17,6 +17,20 @@ _BUNDLE_RESOURCE_PATHS: dict[str, tuple[str, str | None]] = {
     "atac_reference_profiles_mm10": ("atac/atlas/atac_reference_profiles_mm10.tsv.gz", "mm10"),
 }
 
+_GENOME_BUILD_ALIASES: dict[str, str] = {
+    "hg19": "hg19",
+    "grch37": "hg19",
+    "hg38": "hg38",
+    "grch38": "hg38",
+    "mm10": "mm10",
+    "grcm38": "mm10",
+}
+
+
+def _normalize_genome_build(genome_build: str | None) -> str:
+    value = str(genome_build or "").strip().lower()
+    return _GENOME_BUILD_ALIASES.get(value, value)
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -63,6 +77,14 @@ def _resolve_bundle_file(bundle_root: Path, resource_id: str) -> tuple[Path | No
     return path, genome_build
 
 
+def _resource_genome_build(resource_row: dict[str, object], resource_id: str) -> str:
+    mapped = _BUNDLE_RESOURCE_PATHS.get(resource_id)
+    if mapped is not None:
+        _rel, mapped_build = mapped
+        return _normalize_genome_build(mapped_build)
+    return _normalize_genome_build(str(resource_row.get("genome_build", "")))
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     default_base_manifest = repo_root / "src" / "omics2geneset" / "resources" / "manifest.json"
@@ -93,6 +115,14 @@ def main() -> int:
             "cache: keep cache-style filename entries and set url to absolute bundle paths for resources fetch."
         ),
     )
+    ap.add_argument(
+        "--genome-build",
+        "--genome_build",
+        dest="genome_build",
+        choices=["all", "hg19", "hg38", "mm10"],
+        default="all",
+        help="Filter resources/presets to a specific genome build (recommended for split bundles)",
+    )
     args = ap.parse_args()
 
     bundle_root = Path(args.bundle_root).expanduser().resolve()
@@ -104,20 +134,29 @@ def main() -> int:
     if not base_manifest.exists():
         raise FileNotFoundError(f"Base manifest not found: {base_manifest}")
 
+    target_build = _normalize_genome_build(args.genome_build)
+    if target_build == "all":
+        target_build = ""
+
     payload = _load_json(base_manifest)
-    resources = payload.get("resources", [])
-    if not isinstance(resources, list):
+    resources_in = payload.get("resources", [])
+    if not isinstance(resources_in, list):
         raise ValueError("Base manifest must contain a resources list")
     checksums = _bundle_checksums(bundle_root)
 
+    resources_out: list[dict[str, object]] = []
+    kept_ids: set[str] = set()
     missing: list[str] = []
     resolved: list[str] = []
 
-    for row in resources:
+    for row in resources_in:
         if not isinstance(row, dict):
             continue
         rid = str(row.get("id", "")).strip()
         if not rid:
+            continue
+        row_build = _resource_genome_build(row, rid)
+        if target_build and row_build and row_build != target_build:
             continue
         path, gb = _resolve_bundle_file(bundle_root, rid)
         rel: str | None = None
@@ -131,23 +170,45 @@ def main() -> int:
             row["filename"] = rel
 
         if path is None:
-            if gb in {"hg38", "mm10"}:
+            if gb is not None:
                 missing.append(rid)
             row["url"] = "" if args.layout == "direct" else str(row.get("url", ""))
             row["sha256"] = ""
-            continue
-        if args.layout == "direct":
-            row["url"] = ""
         else:
-            row["url"] = str(path)
-        row["sha256"] = checksums.get(rel, _sha256_file(path))
-        resolved.append(rid)
+            if args.layout == "direct":
+                row["url"] = ""
+            else:
+                row["url"] = str(path)
+            row["sha256"] = checksums.get(rel, _sha256_file(path))
+            resolved.append(rid)
+
+        resources_out.append(row)
+        kept_ids.add(rid)
+
+    payload["resources"] = resources_out
+
+    presets = payload.get("presets", {})
+    if not isinstance(presets, dict):
+        raise ValueError("Base manifest must contain a presets object")
+    filtered_presets: dict[str, list[str]] = {}
+    for key, value in presets.items():
+        if not isinstance(value, list):
+            continue
+        ids = [str(v).strip() for v in value if str(v).strip() and str(v).strip() in kept_ids]
+        if ids:
+            filtered_presets[str(key)] = ids
+    if target_build:
+        per_build_default = f"atac_default_optional_{target_build}"
+        if per_build_default in filtered_presets:
+            filtered_presets["atac_default_optional"] = list(filtered_presets[per_build_default])
+    payload["presets"] = filtered_presets
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(f"Wrote local resource manifest: {out_path}")
     print(f"Layout: {args.layout}")
+    print(f"Genome build filter: {target_build or 'all'}")
     if args.layout == "direct":
         print(f"Use this at runtime with --resources_manifest {out_path} --resources_dir {bundle_root}")
     else:
