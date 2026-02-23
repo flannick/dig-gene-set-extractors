@@ -90,6 +90,41 @@ w_g \;=\; \frac{s_g}{\sum_{h=1}^G s_h},
 \end{equation}
 This is a \emph{relative allocation} across genes, not a per-gene probability of activity. When the goal is compact programs (100--500 genes), global normalization can make weights appear numerically small and visually uniform if many genes receive nonzero score. Therefore, gene set extraction (Section \ref{sec:set_extraction}) is an explicit step, and within-program normalization is preferred for interpretability.
 
+\section{Conceptual extraction target and configurable axes}
+\label{sec:conceptual_axes}
+ATAC-seq measures accessibility at regulatory regions, but downstream interpretation is usually gene-centric (pathways, perturbation signatures, cross-modality comparison).
+The extraction target is therefore a \emph{gene-level regulatory program}:
+\begin{enumerate}[leftmargin=2em]
+\item represent locus-level evidence in a way aligned to the biological question,
+\item project region evidence to genes through an explicit linking model,
+\item derive one or more program views, and
+\item export compact gene sets for downstream analyses.
+\end{enumerate}
+
+In implementation terms, the gene sets are generated over three explicit, orthogonal axes:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Link axis} ($\ell$): how peaks are linked to genes, via $L_{pg}^{(\ell)}$.
+CLI: \texttt{--link\_method}. Output tag: \texttt{\_\_link\_method=...}
+\item \textbf{Contrast-method axis} ($r$): how raw accessibility is calibrated against baseline/reference context.
+CLI: \texttt{--contrast\_methods}. Output tag: \texttt{\_\_contrast\_method=...}
+\item \textbf{Program-family axis} ($m$): what biological program view is emitted from linked scores (linked/promoter/distal/enhancer-bias/TFIDF variants).
+CLI: \texttt{--program\_methods} or \texttt{--program\_preset}. Output tag: \texttt{\_\_program=...}
+\end{itemize}
+
+Given these axes, the shared projection is:
+\[
+s_g^{(r,\ell)} = \sum_p \alpha_p^{(r)} L_{pg}^{(\ell)},
+\]
+and each program family produces a gene score view
+\[
+u_g^{(m,r,\ell)} = \Psi_m\!\left(s^{(r,\ell)}, \alpha^{(r)}, L^{(\ell)}\right),
+\]
+followed by the set selection operators in Section \ref{sec:set_extraction}.
+
+\paragraph{Related but separate study-design contrast.}
+For scATAC and bulk-matrix differential workflows, an additional design-level contrast (\texttt{--contrast}, e.g. group-vs-rest or condition-within-group) defines how peak statistics $x_p$ are computed before the three axes above are applied.
+This appears in output naming as \texttt{\_\_contrast=...}.
+
 \section{Peak-to-gene linkage models}
 \label{sec:linkage_models}
 The linkage model encodes biological assumptions about cis-regulatory wiring. All linkage models can be combined with any definition of $x_p$ and any gene set extraction operator.
@@ -225,12 +260,13 @@ This section defines a catalog of program methods. Each method corresponds to a 
 (iv) what program instances are emitted (one per sample, per group, per direction, per module, etc.).
 
 \paragraph{Implementation axis decomposition.}
-In the CLI implementation, ATAC outputs are generated over two independent axes:
+In the CLI implementation, ATAC outputs are generated over three independent axes:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{link\_method}: region-to-gene linkage model (promoter overlap, nearest TSS, distance decay, external).
 \item \texttt{contrast\_methods}: calibration/contrast choice (\texttt{none}, \texttt{ref\_ubiquity\_penalty}, \texttt{atlas\_residual}).
+\item \texttt{program\_methods}: program-family view (\texttt{linked\_activity}, \texttt{promoter\_activity}, \texttt{distal\_activity}, \texttt{enhancer\_bias}, and \texttt{tfidf\_distal} where applicable).
 \end{itemize}
-Each active contrast is evaluated for each selected linkage model, then downstream program-family transforms are applied to that linked score space.
+Each active contrast method is evaluated for each selected linkage model, and each resulting linked score space is then emitted through requested program families.
 
 \subsection{Summary table}
 Table \ref{tab:methods_summary} summarizes the most important methods, their typical use cases, and resource requirements.
