@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import gzip
 from pathlib import Path
 
 from omics2geneset.core.models import Gene
+
+
+def _open_text(path: Path):
+    if path.suffix.lower() == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8")
+    with path.open("rb") as fh:
+        magic = fh.read(2)
+    if magic == b"\x1f\x8b":
+        return gzip.open(path, "rt", encoding="utf-8")
+    return path.open("r", encoding="utf-8")
 
 
 def _parse_attrs(attr_field: str) -> dict[str, str]:
@@ -20,7 +31,7 @@ def _parse_attrs(attr_field: str) -> dict[str, str]:
 
 def read_genes_from_gtf(path: str | Path, gene_id_field: str = "gene_id") -> list[Gene]:
     genes: list[Gene] = []
-    with Path(path).open("r", encoding="utf-8") as fh:
+    with _open_text(Path(path)) as fh:
         for line in fh:
             if not line.strip() or line.startswith("#"):
                 continue

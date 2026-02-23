@@ -40,6 +40,13 @@ def _median(values: list[float]) -> float:
 def _infer_ccre_bed_path(ubiquity_path: Path) -> Path:
     stem = ubiquity_path.name.lower()
     candidates: list[Path] = []
+    if "hg19" in stem or "grch37" in stem:
+        candidates.extend(
+            [
+                ubiquity_path.with_name("encode_ccre_hg19.bed.gz"),
+                ubiquity_path.with_name("encode_ccre_hg19.bed"),
+            ]
+        )
     if "hg38" in stem or "grch38" in stem:
         candidates.extend(
             [
@@ -65,7 +72,7 @@ def _infer_ccre_bed_path(ubiquity_path: Path) -> Path:
             return path
     raise ValueError(
         "ref ubiquity ccre_id schema requires a sibling cCRE BED file "
-        "(expected encode_ccre_hg38.bed.gz or encode_ccre_mm10.bed.gz)"
+        "(expected encode_ccre_hg19.bed.gz, encode_ccre_hg38.bed.gz, or encode_ccre_mm10.bed.gz)"
     )
 
 

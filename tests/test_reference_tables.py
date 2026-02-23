@@ -43,6 +43,37 @@ def test_read_ref_ubiquity_accepts_bundle_ccre_schema(tmp_path: Path):
     assert rows[1] == {"chrom": "chr2", "start": 300, "end": 450, "idf_ref": 1.5}
 
 
+def test_read_ref_ubiquity_accepts_bundle_ccre_schema_hg19(tmp_path: Path):
+    bed_path = tmp_path / "encode_ccre_hg19.bed.gz"
+    _write_gz(
+        bed_path,
+        "\n".join(
+            [
+                "chr1\t100\t200\tEH38D1\tEH38E1\tpELS",
+                "chr2\t300\t450\tEH38D2\tEH38E2\tCA",
+                "",
+            ]
+        ),
+    )
+    ubiq_path = tmp_path / "ccre_ubiquity_hg19.tsv.gz"
+    _write_gz(
+        ubiq_path,
+        "\n".join(
+            [
+                "ccre_id\tdf\tN\tidf\tidf_norm",
+                "EH38E1\t10\t100\t2.5\t0.5",
+                "EH38E2\t20\t100\t1.5\t0.3",
+                "",
+            ]
+        ),
+    )
+
+    rows = read_ref_ubiquity_tsv(ubiq_path)
+    assert len(rows) == 2
+    assert rows[0] == {"chrom": "chr1", "start": 100, "end": 200, "idf_ref": 2.5}
+    assert rows[1] == {"chrom": "chr2", "start": 300, "end": 450, "idf_ref": 1.5}
+
+
 def test_read_ref_ubiquity_rejects_placeholder_na_table(tmp_path: Path):
     bed_path = tmp_path / "encode_ccre_mm10.bed.gz"
     _write_gz(
