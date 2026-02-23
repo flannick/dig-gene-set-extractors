@@ -110,6 +110,7 @@ CLI: \texttt{--contrast\_methods}. Output tag: \texttt{\_\_contrast\_method=...}
 \item \textbf{Program-family axis} ($m$): what biological program view is emitted from linked scores (linked/promoter/distal/enhancer-bias/TFIDF variants).
 CLI: \texttt{--program\_methods} or \texttt{--program\_preset}. Output tag: \texttt{\_\_program=...}
 \end{itemize}
+Program families are not merely aliases for link choices: they can apply additional operations (for example promoter/distal peak masking or distal-vs-promoter combination) before/after projection, and are then evaluated for each selected link model.
 
 Given these axes, the shared projection is:
 \[

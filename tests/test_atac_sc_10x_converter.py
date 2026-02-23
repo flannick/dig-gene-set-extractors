@@ -315,6 +315,36 @@ def test_sc_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: Pat
             ) in text
 
 
+def test_sc_program_family_cross_product_for_link_methods(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_program_link_cross")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.link_method = "all"
+    args.program_preset = "default"
+    args.contrast_methods = "none"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
+        assert (
+            "__group=g1__contrast=group_vs_rest__program=promoter_activity"
+            f"__contrast_method=none__link_method={link_method}__topk=3"
+        ) in text
+    for link_method in ("nearest_tss", "distance_decay"):
+        assert (
+            "__group=g1__contrast=group_vs_rest__program=distal_activity"
+            f"__contrast_method=none__link_method={link_method}__topk=3"
+        ) in text
+        assert (
+            "__group=g1__contrast=group_vs_rest__program=tfidf_distal"
+            f"__contrast_method=none__link_method={link_method}__topk=3"
+        ) in text
+
+
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
     matrix_dir = tmp_path / "mtx_features"
     matrix_dir.mkdir(parents=True, exist_ok=True)

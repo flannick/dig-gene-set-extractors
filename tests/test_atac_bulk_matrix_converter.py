@@ -104,3 +104,40 @@ def test_bulk_matrix_use_reference_bundle_false_warns_skipped_contrasts(tmp_path
     contrast_methods = meta["program_extraction"]["contrast_methods"]
     assert "ref_ubiquity_penalty" not in contrast_methods
     assert "atlas_residual" not in contrast_methods
+
+
+def test_bulk_matrix_program_family_cross_product_for_link_methods(tmp_path: Path):
+    matrix_path = tmp_path / "toy_bulk_peak_matrix_distal_signal.tsv"
+    matrix_path.write_text(
+        "\n".join(
+            [
+                "peak_id\tcase1\tcase2\tcontrol1\tcontrol2",
+                "p1\t10\t8\t1\t1",
+                "p2\t8\t7\t1\t1",
+                "p3\t1\t1\t8\t9",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_matrix_program_link_cross")
+    args.peak_matrix_tsv = str(matrix_path)
+    args.link_method = "all"
+    args.program_preset = "none"
+    args.program_methods = "linked_activity,promoter_activity,distal_activity,enhancer_bias"
+    args.contrast_methods = "none"
+    atac_bulk_matrix.run(args)
+
+    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
+        assert (
+            "__program=promoter_activity__contrast_method=none"
+            f"__link_method={link_method}__topk=3"
+        ) in text
+    for link_method in ("nearest_tss", "distance_decay"):
+        assert (
+            "__program=distal_activity__contrast_method=none"
+            f"__link_method={link_method}__topk=3"
+        ) in text

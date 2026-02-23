@@ -54,7 +54,8 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Optional comma-separated program methods overriding preset. "
             "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias. "
-            "scATAC adds tfidf_distal. Legacy reference methods in this list are still accepted."
+            "scATAC adds tfidf_distal. Program methods are evaluated per selected link_method. "
+            "Legacy reference methods in this list are still accepted."
         ),
     )
     parser.add_argument(

@@ -135,8 +135,7 @@ def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
     atac_bulk.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=promoter_activity__contrast_method=none__topk=3" in gmt_text
-    assert "__program=distal_activity__contrast_method=none__topk=3" in gmt_text
+    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "program_methods" in meta["program_extraction"]
     assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
@@ -260,6 +259,26 @@ def test_bulk_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: P
                 f"__program=linked_activity__contrast_method={contrast_method}__link_method={link_method}__topk=3"
                 in gmt_text
             )
+
+
+def test_bulk_program_family_cross_product_for_link_methods(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_program_link_cross")
+    args.link_method = "all"
+    args.program_preset = "default"
+    args.contrast_methods = "none"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
+        assert f"__program=promoter_activity__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
+    for link_method in ("nearest_tss", "distance_decay"):
+        assert f"__program=distal_activity__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
+        assert f"__program=enhancer_bias__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
 
 
 def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path, capsys):

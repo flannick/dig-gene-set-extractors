@@ -27,7 +27,7 @@
     {"name": "decay_length_bp", "type": "int", "default": 50000, "help": "Exponential decay length for distance_decay"},
     {"name": "max_genes_per_peak", "type": "int", "default": 5, "help": "Maximum linked genes per peak for distance_decay"},
     {"name": "program_preset", "type": "string", "default": "default", "enum": ["none", "default", "connectable", "all"], "help": "ATAC program family preset for additional GMT programs"},
-    {"name": "program_methods", "type": "string_csv_optional", "default": null, "help": "Optional explicit ATAC program families overriding preset (linked_activity,promoter_activity,distal_activity,enhancer_bias,tfidf_distal). Legacy ref/atlas entries are accepted for backward compatibility."},
+    {"name": "program_methods", "type": "string_csv_optional", "default": null, "help": "Optional explicit ATAC program families overriding preset (linked_activity,promoter_activity,distal_activity,enhancer_bias,tfidf_distal). Program families are evaluated per selected link_method. Legacy ref/atlas entries are accepted for backward compatibility."},
     {"name": "contrast_methods", "type": "string_csv", "default": "all", "help": "Comma-separated contrast methods applied independently of link_method: all,none,ref_ubiquity_penalty,atlas_residual"},
     {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resources manifest path"},
     {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional resources cache directory"},

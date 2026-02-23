@@ -559,7 +559,9 @@ def run(args) -> dict[str, object]:
     if emit_full:
         _write_rows(out_dir / "geneset.full.tsv", full_rows)
 
-    additional_program_rows_by_contrast: dict[str, dict[str, list[dict[str, object]]]] = {}
+    additional_program_rows_by_contrast_by_method: dict[
+        str, dict[str, dict[str, list[dict[str, object]]]]
+    ] = {}
     need_promoter = (
         PROGRAM_PROMOTER_ACTIVITY in program_methods
         or PROGRAM_DISTAL_ACTIVITY in program_methods
@@ -571,86 +573,104 @@ def run(args) -> dict[str, object]:
         if need_promoter and "promoter_overlap" in links_by_method
         else (_link(peaks, genes, args, "promoter_overlap") if need_promoter else [])
     )
-    distance_links = (
-        links_by_method["distance_decay"]
-        if need_distal and "distance_decay" in links_by_method
-        else (_link(peaks, genes, args, "distance_decay") if need_distal else [])
-    )
     promoter_indices = promoter_peak_indices(promoter_links) if promoter_links else set()
 
-    family_scores_none: dict[str, dict[str, float]] = {}
-    if need_promoter or need_distal:
+    family_scores_none_by_method: dict[str, dict[str, dict[str, float]]] = {}
+    for method in link_methods:
+        family_scores_none_by_method[method] = {}
+        if not (need_promoter or need_distal):
+            continue
         promoter_scores_none: dict[str, float] = {}
         distal_scores_none: dict[str, float] = {}
         if need_promoter:
             promoter_peak_weights = mask_peak_weights(peak_weights, include_indices=promoter_indices)
-            promoter_raw = score_genes(promoter_peak_weights, promoter_links, peak_weight_transform)
+            promoter_raw = score_genes(promoter_peak_weights, links_by_method[method], peak_weight_transform)
             promoter_scores_none = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
         if need_distal:
             distal_peak_weights = mask_peak_weights(peak_weights, exclude_indices=promoter_indices)
-            distal_raw = score_genes(distal_peak_weights, distance_links, peak_weight_transform)
+            distal_raw = score_genes(distal_peak_weights, links_by_method[method], peak_weight_transform)
             distal_scores_none = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
         if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-            family_scores_none[PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_none
+            family_scores_none_by_method[method][PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_none
         if PROGRAM_DISTAL_ACTIVITY in program_methods:
-            family_scores_none[PROGRAM_DISTAL_ACTIVITY] = distal_scores_none
+            family_scores_none_by_method[method][PROGRAM_DISTAL_ACTIVITY] = distal_scores_none
         if PROGRAM_ENHANCER_BIAS in program_methods:
             bias_scores = enhancer_bias_scores(promoter_scores_none, distal_scores_none)
-            family_scores_none[PROGRAM_ENHANCER_BIAS] = {
+            family_scores_none_by_method[method][PROGRAM_ENHANCER_BIAS] = {
                 g: float(s) for g, s in bias_scores.items() if float(s) != 0.0
             }
 
-    family_scores_by_contrast: dict[str, dict[str, dict[str, float]]] = {}
+    family_scores_by_contrast_by_method: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
     if CONTRAST_METHOD_NONE in contrast_methods:
-        family_scores_by_contrast[CONTRAST_METHOD_NONE] = family_scores_none
+        family_scores_by_contrast_by_method[CONTRAST_METHOD_NONE] = family_scores_none_by_method
 
     if PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods and ref_peak_weights is not None:
-        ref_family_scores: dict[str, dict[str, float]] = {}
-        if need_promoter or need_distal:
+        ref_family_scores_by_method: dict[str, dict[str, dict[str, float]]] = {}
+        for method in link_methods:
+            ref_family_scores_by_method[method] = {}
+            if not (need_promoter or need_distal):
+                continue
             promoter_scores_ref: dict[str, float] = {}
             distal_scores_ref: dict[str, float] = {}
             if need_promoter:
                 promoter_peak_weights_ref = mask_peak_weights(ref_peak_weights, include_indices=promoter_indices)
-                promoter_raw_ref = score_genes(promoter_peak_weights_ref, promoter_links, peak_weight_transform)
+                promoter_raw_ref = score_genes(
+                    promoter_peak_weights_ref,
+                    links_by_method[method],
+                    peak_weight_transform,
+                )
                 promoter_scores_ref = {g: float(s) for g, s in promoter_raw_ref.items() if float(s) != 0.0}
             if need_distal:
                 distal_peak_weights_ref = mask_peak_weights(ref_peak_weights, exclude_indices=promoter_indices)
-                distal_raw_ref = score_genes(distal_peak_weights_ref, distance_links, peak_weight_transform)
+                distal_raw_ref = score_genes(
+                    distal_peak_weights_ref,
+                    links_by_method[method],
+                    peak_weight_transform,
+                )
                 distal_scores_ref = {g: float(s) for g, s in distal_raw_ref.items() if float(s) != 0.0}
             if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-                ref_family_scores[PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_ref
+                ref_family_scores_by_method[method][PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_ref
             if PROGRAM_DISTAL_ACTIVITY in program_methods:
-                ref_family_scores[PROGRAM_DISTAL_ACTIVITY] = distal_scores_ref
+                ref_family_scores_by_method[method][PROGRAM_DISTAL_ACTIVITY] = distal_scores_ref
             if PROGRAM_ENHANCER_BIAS in program_methods:
                 bias_scores_ref = enhancer_bias_scores(promoter_scores_ref, distal_scores_ref)
-                ref_family_scores[PROGRAM_ENHANCER_BIAS] = {
+                ref_family_scores_by_method[method][PROGRAM_ENHANCER_BIAS] = {
                     g: float(s) for g, s in bias_scores_ref.items() if float(s) != 0.0
                 }
-        family_scores_by_contrast[PROGRAM_REF_UBIQUITY_PENALTY] = ref_family_scores
+        family_scores_by_contrast_by_method[PROGRAM_REF_UBIQUITY_PENALTY] = ref_family_scores_by_method
 
     if PROGRAM_ATLAS_RESIDUAL in contrast_methods:
         atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
         atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
-        atlas_family_scores: dict[str, dict[str, float]] = {}
-        for program_method, base_scores in family_scores_none.items():
-            residual_scores = atlas_residual_scores(base_scores, atlas_stats, atlas_metric, atlas_eps)
-            atlas_family_scores[program_method] = {
-                g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
-            }
-        family_scores_by_contrast[PROGRAM_ATLAS_RESIDUAL] = atlas_family_scores
+        atlas_family_scores_by_method: dict[str, dict[str, dict[str, float]]] = {}
+        for method in link_methods:
+            atlas_family_scores_by_method[method] = {}
+            for program_method, base_scores in family_scores_none_by_method.get(method, {}).items():
+                residual_scores = atlas_residual_scores(base_scores, atlas_stats, atlas_metric, atlas_eps)
+                atlas_family_scores_by_method[method][program_method] = {
+                    g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
+                }
+        family_scores_by_contrast_by_method[PROGRAM_ATLAS_RESIDUAL] = atlas_family_scores_by_method
 
     for contrast_method in contrast_methods:
-        program_rows: dict[str, list[dict[str, object]]] = {}
-        for program_method in program_methods:
-            if program_method == PROGRAM_LINKED_ACTIVITY:
-                continue
-            scores = family_scores_by_contrast.get(contrast_method, {}).get(program_method, {})
-            program_rows[program_method] = _rows_from_scores(
-                scores,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        additional_program_rows_by_contrast[contrast_method] = program_rows
+        rows_by_method: dict[str, dict[str, list[dict[str, object]]]] = {}
+        for method in link_methods:
+            program_rows: dict[str, list[dict[str, object]]] = {}
+            for program_method in program_methods:
+                if program_method == PROGRAM_LINKED_ACTIVITY:
+                    continue
+                scores = (
+                    family_scores_by_contrast_by_method.get(contrast_method, {})
+                    .get(method, {})
+                    .get(program_method, {})
+                )
+                program_rows[program_method] = _rows_from_scores(
+                    scores,
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+            rows_by_method[method] = program_rows
+        additional_program_rows_by_contrast_by_method[contrast_method] = rows_by_method
 
     gmt_path = resolve_gmt_out_path(out_dir, gmt_out)
     gmt_sets: list[tuple[str, list[str]]] = []
@@ -684,30 +704,33 @@ def run(args) -> dict[str, object]:
                     gmt_sets.extend(method_sets)
                     gmt_plans.extend(method_plans)
 
-        for contrast_method, rows_by_program in additional_program_rows_by_contrast.items():
-            for program_method, rows in rows_by_program.items():
-                method_sets, method_plans = build_gmt_sets_from_rows(
-                    rows=rows,
-                    base_name=(
-                        f"atac_bulk__program={program_method}"
-                        f"__contrast_method={contrast_method}"
-                    ),
-                    prefer_symbol=gmt_prefer_symbol,
-                    min_genes=gmt_min_genes,
-                    max_genes=gmt_max_genes,
-                    topk_list=gmt_topk_list,
-                    mass_list=gmt_mass_list,
-                    split_signed=gmt_split_signed,
-                    require_symbol=gmt_require_symbol,
-                    allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
-                )
-                for plan in method_plans:
-                    params = dict(plan.get("parameters", {}))
-                    params["program_method"] = program_method
-                    params["contrast_method"] = contrast_method
-                    plan["parameters"] = params
-                gmt_sets.extend(method_sets)
-                gmt_plans.extend(method_plans)
+        for contrast_method, rows_by_method in additional_program_rows_by_contrast_by_method.items():
+            for method, rows_by_program in rows_by_method.items():
+                for program_method, rows in rows_by_program.items():
+                    method_sets, method_plans = build_gmt_sets_from_rows(
+                        rows=rows,
+                        base_name=(
+                            f"atac_bulk__program={program_method}"
+                            f"__contrast_method={contrast_method}"
+                            f"__link_method={method}"
+                        ),
+                        prefer_symbol=gmt_prefer_symbol,
+                        min_genes=gmt_min_genes,
+                        max_genes=gmt_max_genes,
+                        topk_list=gmt_topk_list,
+                        mass_list=gmt_mass_list,
+                        split_signed=gmt_split_signed,
+                        require_symbol=gmt_require_symbol,
+                        allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                    )
+                    for plan in method_plans:
+                        params = dict(plan.get("parameters", {}))
+                        params["program_method"] = program_method
+                        params["contrast_method"] = contrast_method
+                        params["link_method"] = method
+                        plan["parameters"] = params
+                    gmt_sets.extend(method_sets)
+                    gmt_plans.extend(method_plans)
         write_gmt(gmt_sets, gmt_path)
 
     assigned_peaks = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})

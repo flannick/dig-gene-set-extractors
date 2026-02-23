@@ -102,12 +102,13 @@ If resources are missing, methods are skipped by default (`--resource_policy ski
 
 ## Extractor: atac_bulk
 
-ATAC program generation follows two independent axes:
+ATAC program generation follows three independent axes:
 
 - linkage axis (`--link_method`): how peaks are linked to genes
 - contrast axis (`--contrast_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
+- program-family axis (`--program_methods` / `--program_preset`): how linked scores are turned into biologically motivated program views (`linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`, and `tfidf_distal` for scATAC)
 
-By default, converters run `--contrast_methods all` and evaluate each active contrast for every selected link method.
+By default, converters run `--contrast_methods all` and evaluate each active contrast for every selected link method. Program families are then emitted for each link method as well (full cross-product across active axes).
 
 ### Required inputs
 
@@ -134,6 +135,7 @@ Optional peak weights:
 - Program families:
 - `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
 - `--program_methods` allows explicit family override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
+- program families are evaluated per selected `--link_method` (for example, `distal_activity` with `nearest_tss` and `distance_decay` each produce separate outputs).
 - Contrast methods:
   - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
   - evaluated independently across each selected `--link_method`
@@ -209,6 +211,7 @@ Optional:
 - Program families:
   - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
 - `--program_methods` overrides with explicit families; scATAC supports `tfidf_distal` in addition to bulk methods.
+  - program families are evaluated per selected `--link_method` (for example, `tfidf_distal` with `nearest_tss` and `distance_decay` each produce separate outputs).
 - Contrast methods:
   - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
   - evaluated independently across each selected `--link_method`
