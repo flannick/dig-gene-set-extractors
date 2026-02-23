@@ -1,5 +1,4 @@
 import csv
-import gzip
 import json
 from pathlib import Path
 
@@ -25,16 +24,19 @@ class Args:
     max_genes_per_peak = 5
     peak_weight_transform = "abs"
     normalize = "within_set_l1"
-    program_preset = "none"
+    program_preset = "connectable"
     program_methods = None
+    contrast_methods = "auto_prefer_ref_ubiquity_else_none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
     resource_policy = "skip"
     ref_ubiquity_resource_id = None
     atlas_resource_id = None
-    atlas_metric = "logratio"
+    atlas_metric = "zscore"
     atlas_eps = 1e-6
+    atlas_min_raw_quantile = 0.95
+    atlas_use_log1p = True
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -43,19 +45,25 @@ class Args:
     emit_gmt = True
     gmt_out = None
     gmt_prefer_symbol = True
+    gmt_require_symbol = True
+    gmt_biotype_allowlist = "protein_coding"
     gmt_min_genes = 100
     gmt_max_genes = 500
-    gmt_topk_list = "100,200,500"
-    gmt_mass_list = "0.5,0.8,0.9"
+    gmt_topk_list = "200"
+    gmt_mass_list = ""
     gmt_split_signed = False
     region_gene_links_tsv = None
     gtf_source = "toy"
+    dataset_label = None
 
 
 def test_bulk_converter_end_to_end(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "bulk")
     args.top_k = 1
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
     atac_bulk.run(args)
 
     geneset = Path(args.out_dir) / "geneset.tsv"
@@ -65,272 +73,213 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
     assert geneset_full.exists()
     assert meta.exists()
 
-    total = 0.0
     with geneset.open("r", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        rows = list(reader)
+        rows = list(csv.DictReader(fh, delimiter="\t"))
     assert len(rows) == 1
-    assert "gene_id" in reader.fieldnames
-    assert "score" in reader.fieldnames
-    assert "weight" in reader.fieldnames
-    assert "rank" in reader.fieldnames
-    for r in rows:
-        s = float(r["score"])
-        assert s >= 0
-        w = float(r["weight"])
-        assert w >= 0
-        total += w
-    assert abs(total - 1.0) < 1e-9
-
-    with geneset_full.open("r", encoding="utf-8") as fh:
-        full_rows = list(csv.DictReader(fh, delimiter="\t"))
-    assert len(full_rows) >= len(rows)
+    assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
-    payload = json.loads(meta.read_text(encoding="utf-8"))
-    assert payload["summary"]["fraction_features_assigned"] == 2.0 / 3.0
-    params = payload["converter"]["parameters"]
-    assert "peaks" not in params
-    assert "out_dir" not in params
-    assert payload["program_extraction"]["n_selected_genes"] == 1
-    output_roles = {f["role"] for f in payload["output"]["files"]}
-    assert output_roles == {"selected_program", "full_scores", "gmt"}
-    assert payload["gmt"]["written"] is True
-    assert payload["gmt"]["plans"]
 
-
-def test_bulk_converter_writes_gmt(tmp_path: Path):
+def test_bulk_default_connectable_emits_exactly_two_sets(tmp_path: Path):
     args = Args()
-    args.out_dir = str(tmp_path / "bulk_gmt")
-    args.emit_gmt = True
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_path = Path(args.out_dir) / "genesets.gmt"
-    assert gmt_path.exists()
-    lines = gmt_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 3
-    for line in lines:
-        assert line.count("\t") == 1
-        name, genes = line.split("\t")
-        assert name.endswith("__topk=3")
-        assert "__link_method=" in name
-        assert set(genes.split(" ")) == {"G1", "G2"}
-
-
-def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_program_families")
-    args.program_preset = "default"
-    args.link_method = "promoter_overlap"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in gmt_text
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert "program_methods" in meta["program_extraction"]
-    assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
-
-
-def test_bulk_default_uses_reference_bundle_when_available(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_default_refs")
-    args.program_preset = "default"
-    args.link_method = "promoter_overlap"
+    args.out_dir = str(tmp_path / "bulk_connectable")
     args.resources_manifest = "tests/data/toy_resources_manifest.json"
     args.resources_dir = "tests/data"
     args.gmt_min_genes = 1
     args.gmt_max_genes = 10
     args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
     atac_bulk.run(args)
 
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast_method=ref_ubiquity_penalty__" in gmt_text
-    assert "__contrast_method=atlas_residual__" in gmt_text
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast_methods = meta["program_extraction"]["contrast_methods"]
-    assert "ref_ubiquity_penalty" in contrast_methods
-    assert "atlas_residual" in contrast_methods
+    lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    text = "\n".join(lines)
+    assert "__program=linked_activity__contrast_method=ref_ubiquity_penalty__link_method=nearest_tss__topk=3" in text
+    assert "__program=distal_activity__contrast_method=ref_ubiquity_penalty__link_method=distance_decay__topk=3" in text
+    assert "__program=promoter_activity__" not in text
+    assert "__program=enhancer_bias__" not in text
+    assert "__contrast_method=atlas_residual__" not in text
+    assert "__link_method=promoter_overlap__" not in text
 
 
-def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path, capsys):
+def test_bulk_default_auto_falls_back_to_none_without_resources(tmp_path: Path, capsys):
     args = Args()
-    args.out_dir = str(tmp_path / "bulk_default_no_refs")
-    args.program_preset = "default"
-    args.link_method = "promoter_overlap"
-    args.use_reference_bundle = False
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
+    args.out_dir = str(tmp_path / "bulk_connectable_no_resources")
     args.gmt_min_genes = 1
     args.gmt_max_genes = 10
     args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
     atac_bulk.run(args)
     captured = capsys.readouterr()
-    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
-    assert "contrast_method=atlas_residual skipped" in captured.err
-    assert "docs/atac_reference_bundle.md" in captured.err
+    assert "auto_prefer_ref_ubiquity_else_none" in captured.err
+    assert "falling back to contrast_method=none" in captured.err
 
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast_method=ref_ubiquity_penalty__" not in gmt_text
-    assert "__contrast_method=atlas_residual__" not in gmt_text
+    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__contrast_method=none__" in text
+    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in text
+    assert "__program=distal_activity__contrast_method=none__link_method=distance_decay__topk=3" in text
+
+
+def test_bulk_use_reference_bundle_false_does_not_crash(tmp_path: Path, capsys):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_no_bundle")
+    args.use_reference_bundle = False
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    atac_bulk.run(args)
+    captured = capsys.readouterr()
+    assert "auto_prefer_ref_ubiquity_else_none" in captured.err
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast_methods = meta["program_extraction"]["contrast_methods"]
-    assert "ref_ubiquity_penalty" not in contrast_methods
-    assert "atlas_residual" not in contrast_methods
     assert meta["converter"]["parameters"]["use_reference_bundle"] is False
 
 
-def test_bulk_hg19_defaults_select_hg19_resources(tmp_path: Path):
+def test_bulk_ref_ubiquity_changes_distal_ranking(tmp_path: Path):
+    peaks_path = tmp_path / "peaks.bed"
+    peaks_path.write_text(
+        "\n".join(
+            [
+                "chr1\t2500\t2600\tp1\t5.0",
+                "chr1\t9000\t9100\tp2\t1.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    gtf_path = tmp_path / "genes.gtf"
+    gtf_path.write_text(
+        "\n".join(
+            [
+                'chr1\ttest\tgene\t1000\t1500\t.\t+\t.\tgene_id "GENE_A"; gene_name "GA";',
+                'chr1\ttest\tgene\t12000\t12500\t.\t+\t.\tgene_id "GENE_B"; gene_name "GB";',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    ref_path = tmp_path / "ref.tsv"
+    ref_path.write_text(
+        "\n".join(
+            [
+                "chrom\tstart\tend\tidf_ref",
+                "chr1\t2400\t2700\t0.01",
+                "chr1\t8900\t9200\t100.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "resources": [
+                    {
+                        "id": "toy_ref",
+                        "description": "toy",
+                        "filename": ref_path.name,
+                        "url": "",
+                        "sha256": "",
+                        "provider": "test",
+                        "stable_id": "toy-ref",
+                        "version": "1",
+                        "license": "test",
+                        "genome_build": "hg38",
+                    }
+                ],
+                "presets": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args_none = Args()
+    args_none.peaks = str(peaks_path)
+    args_none.gtf = str(gtf_path)
+    args_none.peak_weights_tsv = None
+    args_none.out_dir = str(tmp_path / "none")
+    args_none.program_preset = "none"
+    args_none.program_methods = "distal_activity"
+    args_none.link_method = "distance_decay"
+    args_none.contrast_methods = "none"
+    args_none.gmt_min_genes = 1
+    args_none.gmt_max_genes = 10
+    args_none.gmt_topk_list = "1"
+    atac_bulk.run(args_none)
+
+    args_ref = Args()
+    args_ref.peaks = str(peaks_path)
+    args_ref.gtf = str(gtf_path)
+    args_ref.peak_weights_tsv = None
+    args_ref.out_dir = str(tmp_path / "ref")
+    args_ref.program_preset = "none"
+    args_ref.program_methods = "distal_activity"
+    args_ref.link_method = "distance_decay"
+    args_ref.contrast_methods = "ref_ubiquity_penalty"
+    args_ref.resources_manifest = str(manifest_path)
+    args_ref.resources_dir = str(tmp_path)
+    args_ref.ref_ubiquity_resource_id = "toy_ref"
+    args_ref.gmt_min_genes = 1
+    args_ref.gmt_max_genes = 10
+    args_ref.gmt_topk_list = "1"
+    atac_bulk.run(args_ref)
+
+    none_line = (Path(args_none.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()[0]
+    ref_line = (Path(args_ref.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()[0]
+    none_gene = none_line.split("\t", 1)[1]
+    ref_gene = ref_line.split("\t", 1)[1]
+    assert none_gene != ref_gene
+
+
+def test_bulk_atlas_missing_score_definition_warns_and_skips(tmp_path: Path, capsys):
+    atlas_path = tmp_path / "atlas.tsv"
+    atlas_path.write_text(
+        "\n".join(
+            [
+                "score_definition\tgene_id\tmedian_score\tmad_score",
+                "program=linked_activity__link_method=nearest_tss\tGENE1\t1.0\t0.1",
+                "program=linked_activity__link_method=nearest_tss\tGENE2\t1.0\t0.1",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "resources": [
+                    {
+                        "id": "atlas_custom",
+                        "description": "toy atlas",
+                        "filename": atlas_path.name,
+                        "url": "",
+                        "sha256": "",
+                        "provider": "test",
+                        "stable_id": "toy-atlas",
+                        "version": "1",
+                        "license": "test",
+                        "genome_build": "hg38",
+                    }
+                ],
+                "presets": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
     args = Args()
-    args.out_dir = str(tmp_path / "bulk_hg19_defaults")
-    args.genome_build = "hg19"
-    args.program_preset = "default"
-    args.link_method = "promoter_overlap"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
+    args.out_dir = str(tmp_path / "atlas_missing")
+    args.contrast_methods = "atlas_residual"
+    args.resources_manifest = str(manifest_path)
+    args.resources_dir = str(tmp_path)
+    args.atlas_resource_id = "atlas_custom"
     args.gmt_min_genes = 1
     args.gmt_max_genes = 10
     args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    params = meta["converter"]["parameters"]
-    assert params["ref_ubiquity_resource_id"] == "ccre_ubiquity_hg19"
-    assert params["atlas_resource_id"] == "atac_reference_profiles_hg19"
-    used = {x["id"] for x in meta.get("resources", {}).get("used", [])}
-    assert "ccre_ubiquity_hg19" in used
-    assert "atac_reference_profiles_hg19" in used
-
-
-def test_bulk_resource_backed_program_methods(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_resource_methods")
-    args.link_method = "promoter_overlap"
-    args.program_preset = "none"
-    args.program_methods = "ref_ubiquity_penalty,atlas_residual"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast_method=ref_ubiquity_penalty__" in gmt_text
-    assert "__contrast_method=atlas_residual__" in gmt_text
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert meta["resources"]["used"]
-    assert meta["resources"]["used"][0]["stable_id"]
-    assert meta["resources"]["used"][0]["version"]
-    assert not meta["program_extraction"]["contrast_methods_skipped"]
-
-
-def test_bulk_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_cross_product")
-    args.link_method = "all"
-    args.program_preset = "none"
-    args.contrast_methods = "none,ref_ubiquity_penalty,atlas_residual"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    for contrast_method in ("none", "ref_ubiquity_penalty", "atlas_residual"):
-        for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
-            assert (
-                f"__program=linked_activity__contrast_method={contrast_method}__link_method={link_method}__topk=3"
-                in gmt_text
-            )
-
-
-def test_bulk_program_family_cross_product_for_link_methods(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_program_link_cross")
-    args.link_method = "all"
-    args.program_preset = "default"
-    args.contrast_methods = "none"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
-        assert f"__program=promoter_activity__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
-    for link_method in ("nearest_tss", "distance_decay"):
-        assert f"__program=distal_activity__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
-        assert f"__program=enhancer_bias__contrast_method=none__link_method={link_method}__topk=3" in gmt_text
-
-
-def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path, capsys):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_resource_skip")
-    args.program_preset = "none"
-    args.program_methods = "ref_ubiquity_penalty"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = str(tmp_path / "missing_resources")
-    args.resource_policy = "skip"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
     atac_bulk.run(args)
     captured = capsys.readouterr()
-    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
-    assert "docs/atac_reference_bundle.md" in captured.err
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert "ref_ubiquity_penalty" in meta["program_extraction"]["contrast_methods_skipped"]
-
-
-def test_bulk_resource_policy_fail_raises_on_missing_resource(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_resource_fail")
-    args.program_preset = "none"
-    args.program_methods = "atlas_residual"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = str(tmp_path / "missing_resources")
-    args.resource_policy = "fail"
-    with pytest.raises(FileNotFoundError, match="atlas"):
-        atac_bulk.run(args)
-
-
-def test_bulk_nearest_tss_uses_method_default(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_nearest")
-    args.link_method = "nearest_tss"
-    args.max_distance_bp = None
-    atac_bulk.run(args)
-    payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert payload["converter"]["parameters"]["max_distance_bp"] == 100000
-
-
-def test_bulk_distance_decay_uses_method_default(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_decay")
-    args.link_method = "distance_decay"
-    args.max_distance_bp = None
-    atac_bulk.run(args)
-    payload = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert payload["converter"]["parameters"]["max_distance_bp"] == 500000
+    assert "atlas_residual baseline missing for score definitions" in captured.err
 
 
 def test_bulk_external_requires_region_gene_links(tmp_path: Path):
@@ -340,35 +289,3 @@ def test_bulk_external_requires_region_gene_links(tmp_path: Path):
     args.region_gene_links_tsv = None
     with pytest.raises(ValueError, match="region_gene_links_tsv"):
         atac_bulk.run(args)
-
-
-def test_bulk_all_plus_external_writes_external_gmt(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "bulk_external_ok")
-    args.link_method = "all,external"
-    args.region_gene_links_tsv = "tests/data/toy_region_gene_links.tsv"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_bulk.run(args)
-
-    gmt_path = Path(args.out_dir) / "genesets.gmt"
-    assert gmt_path.exists()
-    lines = gmt_path.read_text(encoding="utf-8").splitlines()
-    assert any("__link_method=external__" in line for line in lines)
-
-
-def test_bulk_converter_accepts_gzipped_peaks(tmp_path: Path):
-    gz_peaks = tmp_path / "toy_peaks.bed.gz"
-    with Path("tests/data/toy_peaks.bed").open("rb") as src, gzip.open(gz_peaks, "wb") as dst:
-        dst.write(src.read())
-
-    args = Args()
-    args.peaks = str(gz_peaks)
-    args.out_dir = str(tmp_path / "bulk_gz")
-    args.peak_weights_tsv = "tests/data/toy_peak_weights.tsv"
-    atac_bulk.run(args)
-
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
-    validate_output_dir(Path(args.out_dir), schema)

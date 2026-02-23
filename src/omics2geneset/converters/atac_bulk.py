@@ -13,21 +13,30 @@ from omics2geneset.core.gmt import (
     write_gmt,
 )
 from omics2geneset.core.atac_programs import (
+    CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY,
     CONTRAST_METHOD_NONE,
     PROGRAM_ATLAS_RESIDUAL,
     PROGRAM_DISTAL_ACTIVITY,
     PROGRAM_ENHANCER_BIAS,
     PROGRAM_LINKED_ACTIVITY,
+    PROGRAM_PRESET_CONNECTABLE,
     PROGRAM_PROMOTER_ACTIVITY,
     PROGRAM_REF_UBIQUITY_PENALTY,
     atlas_residual_scores,
+    atlas_stats_for_score_definition,
     contrast_method_enablement_hint,
+    default_link_methods_for_preset,
     enhancer_bias_scores,
+    link_methods_for_program,
     mask_peak_weights,
+    normalize_program_preset,
+    peak_values_for_contrast,
     promoter_peak_indices,
     remove_reference_program_methods,
+    resolve_auto_contrast_methods,
     resolve_contrast_methods,
     resolve_program_methods,
+    score_definition_key,
 )
 from omics2geneset.core.reference_calibration import apply_peak_idf, peak_ref_idf_by_overlap
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
@@ -48,7 +57,10 @@ from omics2geneset.core.selection import (
 )
 from omics2geneset.io.bed import read_bed, read_peak_weights_tsv
 from omics2geneset.io.gtf import read_genes_from_gtf
-from omics2geneset.io.reference_tables import read_atlas_gene_stats_tsv, read_ref_ubiquity_tsv
+from omics2geneset.io.reference_tables import (
+    read_atlas_gene_stats_by_score_definition_tsv,
+    read_ref_ubiquity_tsv,
+)
 from omics2geneset.io.region_gene_links import read_region_gene_links_tsv
 from omics2geneset.resource_manager import default_resources_dir, load_manifest, resource_metadata_record
 
@@ -85,8 +97,11 @@ def _extract_peak_weights(peaks: list[dict[str, object]], peaks_weight_column: i
 
 def _resolve_link_methods(args) -> list[str]:
     link_expr = str(_arg(args, "link_method", "all")).strip()
+    preset = normalize_program_preset(_arg(args, "program_preset", PROGRAM_PRESET_CONNECTABLE))
     if not link_expr:
         link_expr = "all"
+    if link_expr == "all":
+        return [m for m in default_link_methods_for_preset(preset) if m in _LINK_METHODS]
     tokens = [tok.strip() for tok in link_expr.split(",") if tok.strip()]
     if not tokens:
         tokens = ["all"]
@@ -140,14 +155,15 @@ def _default_atlas_resource_id(genome_build: str) -> str | None:
 
 
 def _resolved_parameters(args) -> dict[str, object]:
-    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "100,200,500")))
-    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     link_methods = _resolve_link_methods(args)
     use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
+    program_preset = normalize_program_preset(_arg(args, "program_preset", PROGRAM_PRESET_CONNECTABLE))
     program_methods = resolve_program_methods(
         "bulk",
-        _arg(args, "program_preset", "default"),
+        program_preset,
         _arg(args, "program_methods", None),
     )
     program_methods = remove_reference_program_methods(program_methods)
@@ -174,15 +190,17 @@ def _resolved_parameters(args) -> dict[str, object]:
         "contrast_methods": _arg(args, "contrast_methods", None),
         "contrast_methods_evaluated": contrast_methods,
         "primary_contrast_method": contrast_methods[0],
-        "program_preset": _arg(args, "program_preset", "default"),
+        "program_preset": program_preset,
         "program_methods": _arg(args, "program_methods", None),
         "program_methods_evaluated": program_methods,
         "use_reference_bundle": use_reference_bundle,
         "resource_policy": _arg(args, "resource_policy", "skip"),
         "ref_ubiquity_resource_id": ref_ubiquity_resource_id,
         "atlas_resource_id": atlas_resource_id,
-        "atlas_metric": _arg(args, "atlas_metric", "logratio"),
+        "atlas_metric": _arg(args, "atlas_metric", "zscore"),
         "atlas_eps": _arg(args, "atlas_eps", 1e-6),
+        "atlas_min_raw_quantile": _arg(args, "atlas_min_raw_quantile", 0.95),
+        "atlas_use_log1p": bool(_arg(args, "atlas_use_log1p", True)),
         "promoter_upstream_bp": _arg(args, "promoter_upstream_bp", 2000),
         "promoter_downstream_bp": _arg(args, "promoter_downstream_bp", 500),
         "max_distance_bp": max_distance,
@@ -228,6 +246,16 @@ def _warn_skipped_contrast_methods(
     if resource_policy == "skip":
         print(
             "warning: run with --resource_policy fail to require all requested contrast methods.",
+            file=sys.stderr,
+        )
+
+
+def _warn_skipped_program_methods(program_methods_skipped: dict[str, str]) -> None:
+    if not program_methods_skipped:
+        return
+    for method in sorted(program_methods_skipped):
+        print(
+            f"warning: program_method={method} skipped: {program_methods_skipped[method]}",
             file=sys.stderr,
         )
 
@@ -369,9 +397,10 @@ def run(args) -> dict[str, object]:
     genes = read_genes_from_gtf(args.gtf)
     peak_weights = _extract_peak_weights(peaks, args.peaks_weight_column, args.peak_weights_tsv)
     use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
+    program_preset = normalize_program_preset(_arg(args, "program_preset", PROGRAM_PRESET_CONNECTABLE))
     program_methods = resolve_program_methods(
         "bulk",
-        _arg(args, "program_preset", "default"),
+        program_preset,
         _arg(args, "program_methods", None),
     )
     program_methods = remove_reference_program_methods(program_methods)
@@ -399,7 +428,6 @@ def run(args) -> dict[str, object]:
 
     link_methods = _resolve_link_methods(args)
     primary_link_method = link_methods[0]
-    primary_contrast_method = contrast_methods[0]
 
     external_links_unresolved = 0
     if _EXTERNAL_LINK_METHOD in link_methods:
@@ -416,8 +444,8 @@ def run(args) -> dict[str, object]:
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     gmt_min_genes = int(_arg(args, "gmt_min_genes", 100))
     gmt_max_genes = int(_arg(args, "gmt_max_genes", 500))
-    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "100,200,500")))
-    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
+    gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
+    gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
     gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
     gmt_out = _arg(args, "gmt_out", None)
     resources_manifest = _arg(args, "resources_manifest", None)
@@ -430,13 +458,16 @@ def run(args) -> dict[str, object]:
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
     gene_biotype_by_id = {g.gene_id: g.gene_biotype for g in genes}
 
-    needs_ref_ubiquity = PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods
+    needs_ref_ubiquity = (
+        PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods
+        or CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY in contrast_methods
+    )
     needs_atlas = PROGRAM_ATLAS_RESIDUAL in contrast_methods
     manifest_resources: dict[str, dict[str, object]] = {}
     manifest_label = "bundled"
     manifest_warnings: list[str] = []
     ref_peak_weights: list[float] | None = None
-    atlas_stats: dict[str, tuple[float, float]] = {}
+    atlas_stats_by_definition: dict[str, dict[str, tuple[float, float]]] = {}
     if needs_ref_ubiquity or needs_atlas:
         manifest_label, manifest_resources, _presets, manifest_warnings = load_manifest(resources_manifest)
 
@@ -479,7 +510,7 @@ def run(args) -> dict[str, object]:
             atlas_path = resources_dir / str(atlas_entry["filename"])
             if not atlas_path.exists():
                 raise FileNotFoundError(f"Missing atlas resource file: {atlas_path}")
-            atlas_stats = read_atlas_gene_stats_tsv(atlas_path)
+            atlas_stats_by_definition = read_atlas_gene_stats_by_score_definition_tsv(atlas_path)
             resources_used.append(
                 resource_metadata_record(
                     resource_id=atlas_resource_id,
@@ -494,6 +525,12 @@ def run(args) -> dict[str, object]:
             contrast_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
             contrast_methods = [m for m in contrast_methods if m != PROGRAM_ATLAS_RESIDUAL]
 
+    contrast_methods, auto_reason = resolve_auto_contrast_methods(
+        contrast_methods,
+        ref_ubiquity_ready=(ref_peak_weights is not None),
+    )
+    if auto_reason:
+        contrast_methods_skipped[CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY] = auto_reason
     if not contrast_methods:
         contrast_methods = [CONTRAST_METHOD_NONE]
     primary_contrast_method = contrast_methods[0]
@@ -503,30 +540,134 @@ def run(args) -> dict[str, object]:
         resource_policy,
     )
 
-    linked_scores_none_by_method: dict[str, dict[str, float]] = {}
-    for method in link_methods:
-        raw_scores = score_genes(peak_weights, links_by_method[method], peak_weight_transform)
-        linked_scores_none_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
+    atlas_metric = str(_arg(args, "atlas_metric", "zscore"))
+    atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
+    atlas_min_raw_quantile = float(_arg(args, "atlas_min_raw_quantile", 0.95))
+    atlas_use_log1p = bool(_arg(args, "atlas_use_log1p", True))
 
+    need_promoter = (
+        PROGRAM_PROMOTER_ACTIVITY in program_methods
+        or PROGRAM_DISTAL_ACTIVITY in program_methods
+        or PROGRAM_ENHANCER_BIAS in program_methods
+    )
+    need_distal = PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods
+    promoter_links = (
+        links_by_method["promoter_overlap"]
+        if need_promoter and "promoter_overlap" in links_by_method
+        else (_link(peaks, genes, args, "promoter_overlap") if need_promoter else [])
+    )
+    promoter_indices = promoter_peak_indices(promoter_links) if promoter_links else set()
+
+    def _linked_scores_for_peak_values(cur_peak_values: list[float]) -> dict[str, dict[str, float]]:
+        out: dict[str, dict[str, float]] = {}
+        for method in link_methods:
+            raw_scores = score_genes(cur_peak_values, links_by_method[method], peak_weight_transform)
+            out[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
+        return out
+
+    def _family_scores_for_peak_values(cur_peak_values: list[float]) -> dict[str, dict[str, dict[str, float]]]:
+        out: dict[str, dict[str, dict[str, float]]] = {}
+        for method in link_methods:
+            out[method] = {}
+            if not (need_promoter or need_distal):
+                continue
+            promoter_scores: dict[str, float] = {}
+            distal_scores: dict[str, float] = {}
+            if need_promoter:
+                promoter_peak_values = mask_peak_weights(cur_peak_values, include_indices=promoter_indices)
+                promoter_raw = score_genes(promoter_peak_values, links_by_method[method], peak_weight_transform)
+                promoter_scores = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
+            if need_distal:
+                distal_peak_values = mask_peak_weights(cur_peak_values, exclude_indices=promoter_indices)
+                distal_raw = score_genes(distal_peak_values, links_by_method[method], peak_weight_transform)
+                distal_scores = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
+            if PROGRAM_PROMOTER_ACTIVITY in program_methods:
+                out[method][PROGRAM_PROMOTER_ACTIVITY] = promoter_scores
+            if PROGRAM_DISTAL_ACTIVITY in program_methods:
+                out[method][PROGRAM_DISTAL_ACTIVITY] = distal_scores
+            if PROGRAM_ENHANCER_BIAS in program_methods:
+                bias_scores = enhancer_bias_scores(promoter_scores, distal_scores)
+                out[method][PROGRAM_ENHANCER_BIAS] = {g: float(s) for g, s in bias_scores.items() if float(s) != 0.0}
+        return out
+
+    linked_scores_none_by_method = _linked_scores_for_peak_values(peak_weights)
+    family_scores_none_by_method = _family_scores_for_peak_values(peak_weights)
     linked_scores_by_contrast_by_method: dict[str, dict[str, dict[str, float]]] = {}
-    if CONTRAST_METHOD_NONE in contrast_methods:
-        linked_scores_by_contrast_by_method[CONTRAST_METHOD_NONE] = linked_scores_none_by_method
+    family_scores_by_contrast_by_method: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    atlas_missing_score_definitions: set[str] = set()
 
-    if PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods and ref_peak_weights is not None:
-        ref_scores_by_method: dict[str, dict[str, float]] = {}
-        for method in link_methods:
-            raw_scores = score_genes(ref_peak_weights, links_by_method[method], peak_weight_transform)
-            ref_scores_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
-        linked_scores_by_contrast_by_method[PROGRAM_REF_UBIQUITY_PENALTY] = ref_scores_by_method
+    for contrast_method in contrast_methods:
+        if contrast_method == PROGRAM_ATLAS_RESIDUAL:
+            linked_scores_by_contrast_by_method[contrast_method] = {}
+            family_scores_by_contrast_by_method[contrast_method] = {}
+            for method in link_methods:
+                linked_key = score_definition_key(PROGRAM_LINKED_ACTIVITY, method)
+                linked_stats = atlas_stats_for_score_definition(atlas_stats_by_definition, linked_key)
+                if linked_stats is None:
+                    if resource_policy == "fail":
+                        raise ValueError(
+                            "Missing atlas baseline for score_definition="
+                            f"{linked_key}. Provide matching score definitions in atlas resource."
+                        )
+                    atlas_missing_score_definitions.add(linked_key)
+                    linked_scores_by_contrast_by_method[contrast_method][method] = {}
+                else:
+                    residual_scores = atlas_residual_scores(
+                        linked_scores_none_by_method[method],
+                        linked_stats,
+                        atlas_metric,
+                        atlas_eps,
+                        min_raw_quantile=atlas_min_raw_quantile,
+                        use_log1p=atlas_use_log1p,
+                    )
+                    linked_scores_by_contrast_by_method[contrast_method][method] = {
+                        g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
+                    }
+                family_scores_by_contrast_by_method[contrast_method][method] = {}
+                for program_method, base_scores in family_scores_none_by_method.get(method, {}).items():
+                    score_key = score_definition_key(program_method, method)
+                    score_stats = atlas_stats_for_score_definition(atlas_stats_by_definition, score_key)
+                    if score_stats is None:
+                        if resource_policy == "fail":
+                            raise ValueError(
+                                "Missing atlas baseline for score_definition="
+                                f"{score_key}. Provide matching score definitions in atlas resource."
+                            )
+                        atlas_missing_score_definitions.add(score_key)
+                        family_scores_by_contrast_by_method[contrast_method][method][program_method] = {}
+                        continue
+                    residual_scores = atlas_residual_scores(
+                        base_scores,
+                        score_stats,
+                        atlas_metric,
+                        atlas_eps,
+                        min_raw_quantile=atlas_min_raw_quantile,
+                        use_log1p=atlas_use_log1p,
+                    )
+                    family_scores_by_contrast_by_method[contrast_method][method][program_method] = {
+                        g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
+                    }
+            continue
 
-    if PROGRAM_ATLAS_RESIDUAL in contrast_methods:
-        atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
-        atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
-        atlas_scores_by_method: dict[str, dict[str, float]] = {}
-        for method in link_methods:
-            atlas_scores = atlas_residual_scores(linked_scores_none_by_method[method], atlas_stats, atlas_metric, atlas_eps)
-            atlas_scores_by_method[method] = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
-        linked_scores_by_contrast_by_method[PROGRAM_ATLAS_RESIDUAL] = atlas_scores_by_method
+        contrast_peak_values = peak_values_for_contrast(
+            peak_weights,
+            contrast_method,
+            ref_peak_weights,
+        )
+        linked_scores_by_contrast_by_method[contrast_method] = _linked_scores_for_peak_values(contrast_peak_values)
+        family_scores_by_contrast_by_method[contrast_method] = _family_scores_for_peak_values(contrast_peak_values)
+
+    if atlas_missing_score_definitions:
+        msg = (
+            "atlas_residual baseline missing for score definitions: "
+            + ", ".join(sorted(atlas_missing_score_definitions))
+        )
+        contrast_methods_skipped.setdefault(PROGRAM_ATLAS_RESIDUAL, msg)
+        print(f"warning: {msg}", file=sys.stderr)
+        print(
+            "warning: provide per-score-definition atlas baselines or run with --contrast_methods none/ref_ubiquity_penalty.",
+            file=sys.stderr,
+        )
 
     full_scores = linked_scores_by_contrast_by_method[primary_contrast_method][primary_link_method]
     selected_gene_ids = _select_gene_ids(full_scores, args)
@@ -551,7 +692,7 @@ def run(args) -> dict[str, object]:
         full_rows_by_contrast_by_method[contrast_method] = {}
         for method in link_methods:
             full_rows_by_contrast_by_method[contrast_method][method] = _rows_from_scores(
-                scores_by_method[method],
+                scores_by_method.get(method, {}),
                 gene_symbol_by_id,
                 gene_biotype_by_id,
             )
@@ -562,96 +703,6 @@ def run(args) -> dict[str, object]:
     additional_program_rows_by_contrast_by_method: dict[
         str, dict[str, dict[str, list[dict[str, object]]]]
     ] = {}
-    need_promoter = (
-        PROGRAM_PROMOTER_ACTIVITY in program_methods
-        or PROGRAM_DISTAL_ACTIVITY in program_methods
-        or PROGRAM_ENHANCER_BIAS in program_methods
-    )
-    need_distal = PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods
-    promoter_links = (
-        links_by_method["promoter_overlap"]
-        if need_promoter and "promoter_overlap" in links_by_method
-        else (_link(peaks, genes, args, "promoter_overlap") if need_promoter else [])
-    )
-    promoter_indices = promoter_peak_indices(promoter_links) if promoter_links else set()
-
-    family_scores_none_by_method: dict[str, dict[str, dict[str, float]]] = {}
-    for method in link_methods:
-        family_scores_none_by_method[method] = {}
-        if not (need_promoter or need_distal):
-            continue
-        promoter_scores_none: dict[str, float] = {}
-        distal_scores_none: dict[str, float] = {}
-        if need_promoter:
-            promoter_peak_weights = mask_peak_weights(peak_weights, include_indices=promoter_indices)
-            promoter_raw = score_genes(promoter_peak_weights, links_by_method[method], peak_weight_transform)
-            promoter_scores_none = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
-        if need_distal:
-            distal_peak_weights = mask_peak_weights(peak_weights, exclude_indices=promoter_indices)
-            distal_raw = score_genes(distal_peak_weights, links_by_method[method], peak_weight_transform)
-            distal_scores_none = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
-        if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-            family_scores_none_by_method[method][PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_none
-        if PROGRAM_DISTAL_ACTIVITY in program_methods:
-            family_scores_none_by_method[method][PROGRAM_DISTAL_ACTIVITY] = distal_scores_none
-        if PROGRAM_ENHANCER_BIAS in program_methods:
-            bias_scores = enhancer_bias_scores(promoter_scores_none, distal_scores_none)
-            family_scores_none_by_method[method][PROGRAM_ENHANCER_BIAS] = {
-                g: float(s) for g, s in bias_scores.items() if float(s) != 0.0
-            }
-
-    family_scores_by_contrast_by_method: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
-    if CONTRAST_METHOD_NONE in contrast_methods:
-        family_scores_by_contrast_by_method[CONTRAST_METHOD_NONE] = family_scores_none_by_method
-
-    if PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods and ref_peak_weights is not None:
-        ref_family_scores_by_method: dict[str, dict[str, dict[str, float]]] = {}
-        for method in link_methods:
-            ref_family_scores_by_method[method] = {}
-            if not (need_promoter or need_distal):
-                continue
-            promoter_scores_ref: dict[str, float] = {}
-            distal_scores_ref: dict[str, float] = {}
-            if need_promoter:
-                promoter_peak_weights_ref = mask_peak_weights(ref_peak_weights, include_indices=promoter_indices)
-                promoter_raw_ref = score_genes(
-                    promoter_peak_weights_ref,
-                    links_by_method[method],
-                    peak_weight_transform,
-                )
-                promoter_scores_ref = {g: float(s) for g, s in promoter_raw_ref.items() if float(s) != 0.0}
-            if need_distal:
-                distal_peak_weights_ref = mask_peak_weights(ref_peak_weights, exclude_indices=promoter_indices)
-                distal_raw_ref = score_genes(
-                    distal_peak_weights_ref,
-                    links_by_method[method],
-                    peak_weight_transform,
-                )
-                distal_scores_ref = {g: float(s) for g, s in distal_raw_ref.items() if float(s) != 0.0}
-            if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-                ref_family_scores_by_method[method][PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_ref
-            if PROGRAM_DISTAL_ACTIVITY in program_methods:
-                ref_family_scores_by_method[method][PROGRAM_DISTAL_ACTIVITY] = distal_scores_ref
-            if PROGRAM_ENHANCER_BIAS in program_methods:
-                bias_scores_ref = enhancer_bias_scores(promoter_scores_ref, distal_scores_ref)
-                ref_family_scores_by_method[method][PROGRAM_ENHANCER_BIAS] = {
-                    g: float(s) for g, s in bias_scores_ref.items() if float(s) != 0.0
-                }
-        family_scores_by_contrast_by_method[PROGRAM_REF_UBIQUITY_PENALTY] = ref_family_scores_by_method
-
-    if PROGRAM_ATLAS_RESIDUAL in contrast_methods:
-        atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
-        atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
-        atlas_family_scores_by_method: dict[str, dict[str, dict[str, float]]] = {}
-        for method in link_methods:
-            atlas_family_scores_by_method[method] = {}
-            for program_method, base_scores in family_scores_none_by_method.get(method, {}).items():
-                residual_scores = atlas_residual_scores(base_scores, atlas_stats, atlas_metric, atlas_eps)
-                atlas_family_scores_by_method[method][program_method] = {
-                    g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
-                }
-        family_scores_by_contrast_by_method[PROGRAM_ATLAS_RESIDUAL] = atlas_family_scores_by_method
-
     for contrast_method in contrast_methods:
         rows_by_method: dict[str, dict[str, list[dict[str, object]]]] = {}
         for method in link_methods:
@@ -675,10 +726,15 @@ def run(args) -> dict[str, object]:
     gmt_path = resolve_gmt_out_path(out_dir, gmt_out)
     gmt_sets: list[tuple[str, list[str]]] = []
     gmt_plans: list[dict[str, object]] = []
+    linked_output_methods = link_methods_for_program(program_preset, PROGRAM_LINKED_ACTIVITY, link_methods)
+    if PROGRAM_LINKED_ACTIVITY in program_methods and not linked_output_methods:
+        program_methods_skipped[PROGRAM_LINKED_ACTIVITY] = (
+            "no compatible link_method selected for preset; expected nearest_tss for connectable/default"
+        )
     if emit_gmt:
         if PROGRAM_LINKED_ACTIVITY in program_methods:
             for contrast_method in contrast_methods:
-                for method in link_methods:
+                for method in linked_output_methods:
                     method_sets, method_plans = build_gmt_sets_from_rows(
                         rows=full_rows_by_contrast_by_method[contrast_method][method],
                         base_name=(
@@ -707,6 +763,9 @@ def run(args) -> dict[str, object]:
         for contrast_method, rows_by_method in additional_program_rows_by_contrast_by_method.items():
             for method, rows_by_program in rows_by_method.items():
                 for program_method, rows in rows_by_program.items():
+                    allowed_methods = link_methods_for_program(program_preset, program_method, link_methods)
+                    if method not in allowed_methods:
+                        continue
                     method_sets, method_plans = build_gmt_sets_from_rows(
                         rows=rows,
                         base_name=(
@@ -731,7 +790,16 @@ def run(args) -> dict[str, object]:
                         plan["parameters"] = params
                     gmt_sets.extend(method_sets)
                     gmt_plans.extend(method_plans)
+        for program_method in program_methods:
+            if program_method == PROGRAM_LINKED_ACTIVITY:
+                continue
+            allowed_methods = link_methods_for_program(program_preset, program_method, link_methods)
+            if allowed_methods:
+                continue
+            if program_method not in program_methods_skipped:
+                program_methods_skipped[program_method] = "no compatible link_method selected for active preset"
         write_gmt(gmt_sets, gmt_path)
+    _warn_skipped_program_methods(program_methods_skipped)
 
     assigned_peaks = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})
     files = [input_file_record(args.peaks, "peaks"), input_file_record(args.gtf, "gtf")]

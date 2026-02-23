@@ -59,19 +59,25 @@ GMT defaults favor cleaner symbols:
 
 - `--gmt_require_symbol true` drops rows whose symbol is missing or Ensembl-like.
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
-- `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
-- `--contrast_methods all` (default) runs all available contrast options independently of `--link_method`:
-  - `none`
-  - `ref_ubiquity_penalty` (when resource is available)
-  - `atlas_residual` (when resource is available)
-- `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
-- `--program_preset connectable` prioritizes contrast-ready programs (bulk/sc: linked+distal+enhancer-bias; sc can auto-switch to condition_within_group).
-- `--program_preset all` enables all supported program families.
+- default ATAC preset is `--program_preset connectable` (alias: `default`) and emits only two recommended outputs:
+  - `linked_activity` with `nearest_tss`
+  - `distal_activity` with `distance_decay`
+- default contrast policy is `--contrast_methods auto_prefer_ref_ubiquity_else_none`:
+  - uses `ref_ubiquity_penalty` when resource data is available
+  - otherwise falls back to `none`
+- `--program_preset qc`, `--program_preset experimental`, and `--program_preset all` are opt-in for broader/non-recommended outputs.
 - `--program_methods` controls only program families (link-level and family-level scoring), not contrast options.
 - `--use_reference_bundle true` (default) allows reference-backed contrasts; `false` forces contrast behavior to `none`.
 - `--use_reference_bundle false` is the explicit opt-out.
-- `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
+- default GMT selection plans are compact: `--gmt_topk_list 200` and `--gmt_mass_list ""`.
 - Human builds currently supported out of the box: `hg19` (`GRCh37`) and `hg38` (`GRCh38`).
+
+Not recommended by default:
+
+- `promoter_activity` (broad/open-chromatin bias)
+- `enhancer_bias` (experimental exploratory signal)
+- `atlas_residual` (resource-backed and sensitive to score-definition matching)
+- `promoter_overlap` linkage as a primary discovery output
 
 `geneset.tsv` columns:
 
@@ -108,7 +114,13 @@ ATAC program generation follows three independent axes:
 - contrast axis (`--contrast_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
 - program-family axis (`--program_methods` / `--program_preset`): how linked scores are turned into biologically motivated program views (`linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`, and `tfidf_distal` for scATAC)
 
-By default, converters run `--contrast_methods all` and evaluate each active contrast for every selected link method. Program families are then emitted for each link method as well (full cross-product across active axes).
+Recommended default (`--program_preset connectable`) is intentionally not a full cross-product. It emits:
+
+- `linked_activity` at `link_method=nearest_tss`
+- `distal_activity` at `link_method=distance_decay`
+- one contrast outcome per pair via `auto_prefer_ref_ubiquity_else_none`
+
+Use `--program_preset all` for full method-development cross-product behavior.
 
 ### Required inputs
 
@@ -133,16 +145,18 @@ Optional peak weights:
   - modes can be combined (for GMT) as comma-separated tokens, e.g. `all,external`
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
 - Program families:
-- `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
+- `--program_preset {none,default,connectable,qc,experimental,all}` controls ATAC program families.
 - `--program_methods` allows explicit family override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
-- program families are evaluated per selected `--link_method` (for example, `distal_activity` with `nearest_tss` and `distance_decay` each produce separate outputs).
+- in `connectable/default`, only recommended pairs are emitted (linked+nearest, distal+distance).
+- use `all` for full cross-product.
 - Contrast methods:
-  - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
+  - `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
+  - default is `auto_prefer_ref_ubiquity_else_none`
   - evaluated independently across each selected `--link_method`
   - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
-  - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
+  - `--atlas_metric {logratio,zscore}` (default `zscore`) plus `--atlas_min_raw_quantile` (default `0.95`) and `--atlas_use_log1p` stabilize atlas residual scoring.
 - Program selection (`--select`): `top_k`, `quantile`, `threshold`, or `none`
 - Normalization (`--normalize`):
   - `within_set_l1` (default): normalize only selected genes
@@ -166,8 +180,8 @@ omics2geneset convert atac_bulk \
   --organism human \
   --genome_build hg38 \
   --peak_weights_tsv tests/data/toy_peak_weights.tsv \
-  --link_method promoter_overlap \
-  --peak_weight_transform positive \
+  --program_preset connectable \
+  --contrast_methods auto_prefer_ref_ubiquity_else_none \
   --select top_k \
   --top_k 200 \
   --normalize within_set_l1
@@ -209,16 +223,18 @@ Optional:
   - default `positive` for opening programs
   - use `negative` for closing programs
 - Program families:
-  - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
+  - `--program_preset {none,default,connectable,qc,experimental,all}` controls ATAC program families.
 - `--program_methods` overrides with explicit families; scATAC supports `tfidf_distal` in addition to bulk methods.
-  - program families are evaluated per selected `--link_method` (for example, `tfidf_distal` with `nearest_tss` and `distance_decay` each produce separate outputs).
+  - in `connectable/default`, only recommended pairs are emitted (linked+nearest, distal+distance).
+  - use `all` for full cross-product.
 - Contrast methods:
-  - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
+  - `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
+  - default is `auto_prefer_ref_ubiquity_else_none`
   - evaluated independently across each selected `--link_method`
   - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
-  - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
+  - `--atlas_metric {logratio,zscore}` (default `zscore`) plus `--atlas_min_raw_quantile` (default `0.95`) and `--atlas_use_log1p` stabilize atlas residual scoring.
 - Gene program selection and normalization: same controls as `atac_bulk`
 
 External linkage TSV format:
@@ -275,11 +291,8 @@ omics2geneset convert atac_sc_10x \
   --out_dir tests/tmp/readme_sc \
   --organism human \
   --genome_build hg38 \
+  --program_preset connectable \
   --contrast group_vs_rest \
-  --contrast_metric log2fc \
-  --peak_summary frac_cells_nonzero \
-  --link_method promoter_overlap \
-  --peak_weight_transform positive \
   --select top_k \
   --top_k 200 \
   --normalize within_set_l1
@@ -319,7 +332,7 @@ Key contrast flags:
 - `--condition_a`, `--condition_b`
 - `--contrast_metric {log2fc,diff}`
 - `--contrast_pseudocount` (used for `log2fc`)
-- `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (default `all`)
+- `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}` (default `auto_prefer_ref_ubiquity_else_none`)
 - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force reference-backed contrasts off.
 - `--resource_policy {skip,fail}` recommended as `fail` for production runs.
 

@@ -110,7 +110,7 @@ CLI: \texttt{--contrast\_methods}. Output tag: \texttt{\_\_contrast\_method=...}
 \item \textbf{Program-family axis} ($m$): what biological program view is emitted from linked scores (linked/promoter/distal/enhancer-bias/TFIDF variants).
 CLI: \texttt{--program\_methods} or \texttt{--program\_preset}. Output tag: \texttt{\_\_program=...}
 \end{itemize}
-Program families are not merely aliases for link choices: they can apply additional operations (for example promoter/distal peak masking or distal-vs-promoter combination) before/after projection, and are then evaluated for each selected link model.
+Program families are not merely aliases for link choices: they can apply additional operations (for example promoter/distal peak masking or distal-vs-promoter combination) before/after projection. In the \texttt{all} preset they are evaluated across selected link models; in recommended presets, execution is intentionally constrained to high-value program/link pairs.
 
 Given these axes, the shared projection is:
 \[
@@ -194,63 +194,44 @@ S_{pg} = A_p K_{pg}, \qquad L_{pg} = \frac{S_{pg}}{\sum_h S_{ph}+\epsilon}.
 \]
 \paragraph{Heuristics.} If no contact map is available, approximate $K_{pg}$ by a distance kernel (exponential or power-law), and record the approximation.
 
-\section{From gene scores to gene sets}
-\label{sec:set_extraction}
-This section specifies how a gene-score vector (or distribution) is converted into one or more gene sets of size 100--500.
+\section{Contrast-method axis}
+\label{sec:contrast_axis}
+The contrast-method axis ($r$) defines how peak or gene signals are calibrated before extracting gene sets.
+Conceptually, this axis answers: ``contrast against what baseline, and at what stage (peak-level or gene-level)?''
 
-\subsection{Selection operators}
-Let $\mathbf{s} = (s_1,\dots,s_G)$ be gene scores for a program instance. The default operator is fixed-size top-$K$.
+\subsection{Contrast method options}
+\begin{itemize}[leftmargin=2em]
+\item \texttt{none}: no external calibration; use raw within-dataset peak statistics.
+\item \texttt{ref\_ubiquity\_penalty}: reweight peaks by reference ubiquity (peak-level calibration) before projection.
+\item \texttt{atlas\_residual}: calibrate projected gene scores against reference atlas statistics (gene-level calibration).
+\end{itemize}
 
-\paragraph{S1: top-$K$ selection (default).}
-Sort genes by decreasing score $s_{(1)} \ge \dots \ge s_{(G)}$ with genes $g_{(1)},\dots,g_{(G)}$, tie-breaking deterministically by gene ID.
-Define:
-\[
-\widehat{\mathcal{G}}_{K} = \{ g_{(1)},\dots,g_{(K)} \},
-\qquad K \in [100,500].
-\]
-Within-program weights (optional) are:
-\begin{equation}
-\tilde{w}_g =
-\begin{cases}
-\dfrac{\max(s_g,0)}{\sum_{h \in \widehat{\mathcal{G}}_K} \max(s_h,0)}, & g \in \widehat{\mathcal{G}}_K \\
-0, & \text{otherwise.}
-\end{cases}
-\label{eq:within_program_l1}
-\end{equation}
-If the denominator is zero, fall back to uniform weights within $\widehat{\mathcal{G}}_K$.
+\subsection{Related study-design contrasts (upstream of this axis)}
+Before contrast-method calibration, users may define a study-design contrast to produce peak statistics $x_p$:
+\begin{itemize}[leftmargin=2em]
+\item group-vs-rest (scATAC),
+\item condition-within-group (scATAC),
+\item condition A vs B across samples (bulk matrix),
+\item phenotype association (optional regression-based workflows).
+\end{itemize}
+These design-level contrasts define the signed peak statistics that are then transformed to OPEN/CLOSE peak weights and passed through the contrast-method axis.
 
-\paragraph{S2: HPD mass set.}
-If scores are converted to a nonnegative distribution $w_g$ (Eq.\ \ref{eq:l1_all_genes}), an HPD mass set for target mass $\tau \in (0,1)$ is:
-\[
-K^*(\tau) = \min\left\{K : \sum_{i=1}^K w_{(i)} \ge \tau \right\},
-\qquad \widehat{\mathcal{G}}_{\tau} = \{ g_{(1)},\dots,g_{(K^*(\tau))} \}.
-\]
-To enforce 100--500 genes, clamp $K$ to $[K_{\min},K_{\max}]$ and use $\widehat{\mathcal{G}}_K$.
+\section{Program-family axis}
+\label{sec:program_axis}
+The program-family axis ($m$) defines which biological view is emitted from a given linked score space.
+This axis answers: ``what kind of gene program do we want to report from the same underlying contrast and linkage choice?''
 
-\paragraph{S3: multi-resolution gene sets.}
-For a fixed score vector, optionally emit multiple nested sets (e.g., $K \in \{100,200,500\}$) and/or disjoint tiers (e.g., ranks 1--100, 101--200, etc.) for sensitivity analysis.
+\subsection{Program-family options}
+\begin{itemize}[leftmargin=2em]
+\item \texttt{linked\_activity}: direct projection of linked scores.
+\item \texttt{promoter\_activity}: promoter-only view.
+\item \texttt{distal\_activity}: distal-only view.
+\item \texttt{enhancer\_bias}: distal-vs-promoter residualized view.
+\item \texttt{tfidf\_distal} (scATAC): specificity-weighted distal view.
+\end{itemize}
 
-\subsection{Signed programs}
-If a program produces signed gene scores, define nonnegative components:
-\[
-s_g^{+} = \max(s_g,0), \qquad s_g^{-} = \max(-s_g,0),
-\]
-and apply selection operators separately to obtain two gene sets (e.g., opening vs closing).
-
-\section{GMT export}
-\label{sec:gmt_export}
-We export gene sets as \texttt{.gmt} files using a simplified one-tab, space-delimited convention:
-\[
-\texttt{<gene\_set\_name>\textbackslash t<gene1> <gene2> ... <geneN>}.
-\]
-Gene tokens are gene symbols when available and non-empty; otherwise stable gene IDs. Within a set, duplicates are removed while preserving order.
-
-\paragraph{Gene set names.}
-A robust default concatenates provenance fields, for example:
-\[
-\texttt{<dataset\_id>\_\_<converter>\_\_<group>\_\_<program\_method>\_\_<link>\_\_<select>}.
-\]
-Names are sanitized to remove whitespace and path separators.
+Program families are independent of link and contrast-method choices, and are evaluated for each active $(r,\ell)$ combination.
+The ``method families'' in Section \ref{sec:program_catalog} are practical bundles of axis choices for common biological questions; they are not additional axes.
 
 \section{ATAC program methods catalog}
 \label{sec:program_catalog}
@@ -261,13 +242,14 @@ This section defines a catalog of program methods. Each method corresponds to a 
 (iv) what program instances are emitted (one per sample, per group, per direction, per module, etc.).
 
 \paragraph{Implementation axis decomposition.}
-In the CLI implementation, ATAC outputs are generated over three independent axes:
+As defined in Sections \ref{sec:conceptual_axes}, \ref{sec:contrast_axis}, and \ref{sec:program_axis}, CLI outputs are generated over three independent axes:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{link\_method}: region-to-gene linkage model (promoter overlap, nearest TSS, distance decay, external).
 \item \texttt{contrast\_methods}: calibration/contrast choice (\texttt{none}, \texttt{ref\_ubiquity\_penalty}, \texttt{atlas\_residual}).
 \item \texttt{program\_methods}: program-family view (\texttt{linked\_activity}, \texttt{promoter\_activity}, \texttt{distal\_activity}, \texttt{enhancer\_bias}, and \texttt{tfidf\_distal} where applicable).
 \end{itemize}
 Each active contrast method is evaluated for each selected linkage model, and each resulting linked score space is then emitted through requested program families.
+The method families below are integrative templates built from these three axes.
 
 \subsection{Summary table}
 Table \ref{tab:methods_summary} summarizes the most important methods, their typical use cases, and resource requirements.
@@ -283,12 +265,12 @@ Method ID & What it captures & Requires & Default? \\
 Method ID & What it captures & Requires & Default? \\
 \midrule
 \endhead
-promoter\_activity & Broad promoter accessibility (QC / global activity) & Peaks + GTF & Yes \\
+promoter\_activity & Broad promoter accessibility (QC / global activity) & Peaks + GTF & QC only \\
 distal\_activity & Enhancer-driven accessibility (more tissue-specific) & Peaks + GTF & Yes \\
-enhancer\_bias & Distal vs promoter residual (enhancer emphasis) & Peaks + GTF & Yes \\
+enhancer\_bias & Distal vs promoter residual (enhancer emphasis) & Peaks + GTF & Experimental \\
 group\_vs\_rest\_open & Cluster-specific opening (scATAC) & scATAC + groups & Yes \\
 group\_vs\_rest\_close & Cluster-specific closing (scATAC) & scATAC + groups & Optional \\
-tfidf\_distal & TF-IDF specificity-weighted distal cluster program & scATAC matrix & Yes (sc) \\
+tfidf\_distal & TF-IDF specificity-weighted distal cluster program & scATAC matrix & Experimental \\
 ref\_ubiquity\_penalty & Penalize elements open in many tissues/cells & Reference cCRE/atlas & Optional \\
 atlas\_residual & Sample-specific vs atlas baseline & Reference atlas & Optional \\
 motif\_regulons & TF driver programs via motif hits & Motifs + genome/hits & Optional \\
@@ -501,25 +483,89 @@ Select top-$K$ genes per topic to obtain topic gene sets.
 with $w_v=1$ if unweighted.
 Project to genes by Eq.\ \ref{eq:gene_score} using a distal-aware linkage (Link C/F/G). Select top-$K$ genes to obtain a variant-anchored gene program.
 
+\section{From gene scores to gene sets}
+\label{sec:set_extraction}
+After the three axes and program catalog determine a gene-score vector for each program instance, this section specifies how scores are converted to one or more gene sets of size 100--500.
+
+\subsection{Selection operators}
+Let $\mathbf{s} = (s_1,\dots,s_G)$ be gene scores for a program instance. The default operator is fixed-size top-$K$.
+
+\paragraph{S1: top-$K$ selection (default).}
+Sort genes by decreasing score $s_{(1)} \ge \dots \ge s_{(G)}$ with genes $g_{(1)},\dots,g_{(G)}$, tie-breaking deterministically by gene ID.
+Define:
+\[
+\widehat{\mathcal{G}}_{K} = \{ g_{(1)},\dots,g_{(K)} \},
+\qquad K \in [100,500].
+\]
+Within-program weights (optional) are:
+\begin{equation}
+\tilde{w}_g =
+\begin{cases}
+\dfrac{\max(s_g,0)}{\sum_{h \in \widehat{\mathcal{G}}_K} \max(s_h,0)}, & g \in \widehat{\mathcal{G}}_K \\
+0, & \text{otherwise.}
+\end{cases}
+\label{eq:within_program_l1}
+\end{equation}
+If the denominator is zero, fall back to uniform weights within $\widehat{\mathcal{G}}_K$.
+
+\paragraph{S2: HPD mass set.}
+If scores are converted to a nonnegative distribution $w_g$ (Eq.\ \ref{eq:l1_all_genes}), an HPD mass set for target mass $\tau \in (0,1)$ is:
+\[
+K^*(\tau) = \min\left\{K : \sum_{i=1}^K w_{(i)} \ge \tau \right\},
+\qquad \widehat{\mathcal{G}}_{\tau} = \{ g_{(1)},\dots,g_{(K^*(\tau))} \}.
+\]
+To enforce 100--500 genes, clamp $K$ to $[K_{\min},K_{\max}]$ and use $\widehat{\mathcal{G}}_K$.
+
+\paragraph{S3: multi-resolution gene sets.}
+For a fixed score vector, optionally emit multiple nested sets (e.g., $K \in \{100,200,500\}$) and/or disjoint tiers (e.g., ranks 1--100, 101--200, etc.) for sensitivity analysis.
+
+\subsection{Signed programs}
+If a program produces signed gene scores, define nonnegative components:
+\[
+s_g^{+} = \max(s_g,0), \qquad s_g^{-} = \max(-s_g,0),
+\]
+and apply selection operators separately to obtain two gene sets (e.g., opening vs closing).
+
+\section{GMT export}
+\label{sec:gmt_export}
+We export gene sets as \texttt{.gmt} files using a simplified one-tab, space-delimited convention:
+\[
+\texttt{<gene\_set\_name>\textbackslash t<gene1> <gene2> ... <geneN>}.
+\]
+Gene tokens are gene symbols when available and non-empty; otherwise stable gene IDs. Within a set, duplicates are removed while preserving order.
+
+\paragraph{Gene set names.}
+A robust default concatenates provenance fields, for example:
+\[
+\texttt{<dataset\_id>\_\_<converter>\_\_<group>\_\_<program\_method>\_\_<link>\_\_<select>}.
+\]
+Names are sanitized to remove whitespace and path separators.
+
 \section{Program presets and execution policy}
 \label{sec:presets}
 To balance usability and flexibility, program methods are grouped into presets.
 
-\subsection{Default preset (high-value, low-dependency)}
-A recommended default preset emits:
+\subsection{Default/connectable preset (high-value, low-dependency)}
+The recommended default preset (\texttt{program\_preset=connectable}, with \texttt{default} as alias) emits:
 \begin{itemize}[leftmargin=2em]
-\item \textbf{bulk:} linked\_activity, promoter\_activity, distal\_activity, enhancer\_bias.
-\item \textbf{scATAC (grouped):} linked\_activity, promoter\_activity, distal\_activity, enhancer\_bias, tfidf\_distal.
+\item \textbf{linked\_activity} with \texttt{link\_method=nearest\_tss}.
+\item \textbf{distal\_activity} with \texttt{link\_method=distance\_decay}.
+\item a single contrast outcome per pair using \texttt{contrast\_methods=auto\_prefer\_ref\_ubiquity\_else\_none} (prefer reference ubiquity calibration, otherwise fallback to \texttt{none}).
 \end{itemize}
-These methods require only the input peaks/matrix and a gene annotation (GTF).
+This avoids broad, low-specificity outputs in the common case while keeping dependencies minimal.
 
-\subsection{Connectable preset (semantic-handle aware)}
-The \texttt{connectable} preset is designed for cross-modality interpretation when a condition/phenotype handle is present.
+\paragraph{Not recommended by default.}
 \begin{itemize}[leftmargin=2em]
-\item \textbf{scATAC with condition metadata:} run condition\_within\_group OPEN/CLOSE programs and emit direction-labeled sets.
-\item \textbf{scATAC without condition metadata:} fall back to group\_vs\_rest behavior.
-\item \textbf{bulk differential matrix input:} emit OPEN/CLOSE programs from condition A vs B contrasts.
-\item \textbf{Program families:} prioritize linked\_activity + distal\_activity + enhancer\_bias (promoter\_activity optional).
+\item promoter\_activity and promoter-overlap linkage outputs for primary discovery (use mainly for QC).
+\item enhancer\_bias and tfidf\_distal as routine defaults (use in exploratory/experimental settings).
+\item atlas\_residual without score-definition-matched baselines.
+\end{itemize}
+
+\subsection{QC and experimental presets}
+\texttt{program\_preset=qc} and \texttt{program\_preset=experimental} are explicit opt-ins:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{qc:} promoter-focused diagnostics (promoter\_activity with promoter-overlap linkage).
+\item \textbf{experimental:} broader exploratory outputs (for example enhancer\_bias and atlas\_residual workflows with stabilization controls).
 \end{itemize}
 
 \subsection{All-methods preset (resource-aware)}
@@ -544,8 +590,9 @@ Resource entries without URLs are treated as manual resources; the fetch command
 \paragraph{Current resource-backed hooks (implemented).}
 Two optional methods are wired in the ATAC converters:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{ref\_ubiquity\_penalty}: applies a peak-level multiplier from an overlap table with required columns \texttt{chrom,start,end} and either \texttt{idf\_ref} or \texttt{df\_ref,n\_ref}.
-\item \texttt{atlas\_residual}: transforms projected gene scores using an atlas table with required columns \texttt{gene\_id,median\_score,mad\_score} (aliases: \texttt{median,mad}).
+\item \texttt{ref\_ubiquity\_penalty}: a \emph{peak-weight transform}. For each peak, an IDF-like multiplier from reference overlap is applied ($\alpha_p'=\alpha_p\cdot\mathrm{idf}_p$), then all program families are recomputed from $\alpha'$.
+\item \texttt{atlas\_residual}: a \emph{gene-level residual} computed per score definition (\texttt{program} + \texttt{link\_method}) against atlas baselines. Atlas rows can be global or keyed by \texttt{score\_definition}.
+\item Atlas residual stabilization includes (i) raw-score quantile floor filtering and (ii) optional log1p transform before \texttt{logratio}/\texttt{zscore}.
 \end{itemize}
 Execution policy is configurable per run (\texttt{resource\_policy=skip|fail}).
 

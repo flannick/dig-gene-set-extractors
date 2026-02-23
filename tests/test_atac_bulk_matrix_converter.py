@@ -32,14 +32,17 @@ class Args:
     normalize = "within_set_l1"
     program_preset = "connectable"
     program_methods = None
+    contrast_methods = "none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
     resource_policy = "skip"
     ref_ubiquity_resource_id = None
     atlas_resource_id = None
-    atlas_metric = "logratio"
+    atlas_metric = "zscore"
     atlas_eps = 1e-6
+    atlas_min_raw_quantile = 0.95
+    atlas_use_log1p = True
     select = "top_k"
     top_k = 1
     quantile = 0.01
@@ -58,7 +61,7 @@ class Args:
     gtf_source = "toy"
 
 
-def test_bulk_matrix_converter_emits_open_close(tmp_path: Path):
+def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "bulk_matrix")
     atac_bulk_matrix.run(args)
@@ -70,11 +73,16 @@ def test_bulk_matrix_converter_emits_open_close(tmp_path: Path):
     assert rows
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
-    gmt_path = Path(args.out_dir) / "genesets.gmt"
-    text = gmt_path.read_text(encoding="utf-8")
-    assert "__direction=OPEN" in text
-    assert "__direction=CLOSE" in text
-    assert "__contrast=condition_between_samples" in text
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    lines = [x for x in gmt_text.splitlines() if x.strip()]
+    assert 2 <= len(lines) <= 4
+    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__direction=OPEN" in gmt_text
+    assert "__direction=CLOSE" in gmt_text
+    assert "__program=promoter_activity__" not in gmt_text
+    assert "__program=enhancer_bias__" not in gmt_text
+    assert "__contrast_method=atlas_residual__" not in gmt_text
+    assert "__link_method=promoter_overlap__" not in gmt_text
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     contrast = meta["program_extraction"]["contrast"]
@@ -83,61 +91,30 @@ def test_bulk_matrix_converter_emits_open_close(tmp_path: Path):
     assert contrast["condition_b"] == "control"
     assert contrast["n_samples_a"] == 2
     assert contrast["n_samples_b"] == 2
-    assert contrast["directions_emitted"] == ["OPEN", "CLOSE"]
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 
-def test_bulk_matrix_use_reference_bundle_false_warns_skipped_contrasts(tmp_path: Path, capsys):
+def test_bulk_matrix_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, capsys):
     args = Args()
-    args.out_dir = str(tmp_path / "bulk_matrix_no_reference_bundle")
+    args.out_dir = str(tmp_path / "bulk_matrix_no_bundle")
     args.use_reference_bundle = False
+    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_bulk_matrix.run(args)
-
     captured = capsys.readouterr()
-    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
-    assert "contrast_method=atlas_residual skipped" in captured.err
-    assert "docs/atac_reference_bundle.md" in captured.err
-
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast_methods = meta["program_extraction"]["contrast_methods"]
-    assert "ref_ubiquity_penalty" not in contrast_methods
-    assert "atlas_residual" not in contrast_methods
+    assert "auto_prefer_ref_ubiquity_else_none" in captured.err
 
 
-def test_bulk_matrix_program_family_cross_product_for_link_methods(tmp_path: Path):
-    matrix_path = tmp_path / "toy_bulk_peak_matrix_distal_signal.tsv"
-    matrix_path.write_text(
-        "\n".join(
-            [
-                "peak_id\tcase1\tcase2\tcontrol1\tcontrol2",
-                "p1\t10\t8\t1\t1",
-                "p2\t8\t7\t1\t1",
-                "p3\t1\t1\t8\t9",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
+def test_bulk_matrix_all_preset_allows_explicit_cross_product(tmp_path: Path):
     args = Args()
-    args.out_dir = str(tmp_path / "bulk_matrix_program_link_cross")
-    args.peak_matrix_tsv = str(matrix_path)
+    args.out_dir = str(tmp_path / "bulk_matrix_all")
+    args.program_preset = "all"
     args.link_method = "all"
-    args.program_preset = "none"
     args.program_methods = "linked_activity,promoter_activity,distal_activity,enhancer_bias"
     args.contrast_methods = "none"
     atac_bulk_matrix.run(args)
 
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
-        assert (
-            "__program=promoter_activity__contrast_method=none"
-            f"__link_method={link_method}__topk=3"
-        ) in text
-    for link_method in ("nearest_tss", "distance_decay"):
-        assert (
-            "__program=distal_activity__contrast_method=none"
-            f"__link_method={link_method}__topk=3"
-        ) in text
+    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in text
+    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in text

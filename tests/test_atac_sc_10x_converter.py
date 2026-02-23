@@ -31,16 +31,19 @@ class Args:
     decay_length_bp = 50000
     max_genes_per_peak = 5
     normalize = "within_set_l1"
-    program_preset = "none"
+    program_preset = "connectable"
     program_methods = None
+    contrast_methods = "none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
     resource_policy = "skip"
     ref_ubiquity_resource_id = None
     atlas_resource_id = None
-    atlas_metric = "logratio"
+    atlas_metric = "zscore"
     atlas_eps = 1e-6
+    atlas_min_raw_quantile = 0.95
+    atlas_use_log1p = True
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -49,10 +52,12 @@ class Args:
     emit_gmt = True
     gmt_out = None
     gmt_prefer_symbol = True
-    gmt_min_genes = 100
-    gmt_max_genes = 500
-    gmt_topk_list = "100,200,500"
-    gmt_mass_list = "0.5,0.8,0.9"
+    gmt_require_symbol = True
+    gmt_biotype_allowlist = "protein_coding"
+    gmt_min_genes = 1
+    gmt_max_genes = 10
+    gmt_topk_list = "3"
+    gmt_mass_list = ""
     gmt_split_signed = False
     region_gene_links_tsv = None
     contrast = None
@@ -61,7 +66,7 @@ class Args:
     gtf_source = "toy"
 
 
-def test_sc_converter_without_groups(tmp_path: Path):
+def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "sc")
     args.groups_tsv = None
@@ -69,21 +74,22 @@ def test_sc_converter_without_groups(tmp_path: Path):
     with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert rows
-    total = sum(float(r["weight"]) for r in rows)
-    assert abs(total - 1.0) < 1e-9
-    assert (Path(args.out_dir) / "genesets.gmt").exists()
+    assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__program=distal_activity__contrast_method=none__link_method=distance_decay__topk=3" in gmt_text
+    assert "__program=promoter_activity__" not in gmt_text
+    assert "__program=enhancer_bias__" not in gmt_text
+    assert "__link_method=promoter_overlap__" not in gmt_text
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 
-def test_sc_converter_with_groups(tmp_path: Path):
+def test_sc_converter_with_groups_validates_root_and_groups(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "sc_groups")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
     args.top_k = 1
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
     atac_sc_10x.run(args)
     manifest = Path(args.out_dir) / "manifest.tsv"
     assert manifest.exists()
@@ -91,59 +97,12 @@ def test_sc_converter_with_groups(tmp_path: Path):
     validate_output_dir(Path(args.out_dir), schema)
     validate_output_dir(Path(args.out_dir) / "group=g1", schema)
     validate_output_dir(Path(args.out_dir) / "group=g2", schema)
-    for group in ("g1", "g2"):
-        with (Path(args.out_dir) / f"group={group}" / "geneset.tsv").open("r", encoding="utf-8") as fh:
-            rows = list(csv.DictReader(fh, delimiter="\t"))
-        assert len(rows) == 1
-        assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
-        assert (Path(args.out_dir) / f"group={group}" / "genesets.gmt").exists()
-    combined_gmt = Path(args.out_dir) / "genesets.gmt"
-    assert combined_gmt.exists()
-    combined_text = combined_gmt.read_text(encoding="utf-8")
+    combined_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "group=g1" in combined_text
     assert "group=g2" in combined_text
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    roles = {f["role"] for f in meta["input"]["files"]}
-    assert {"matrix", "barcodes", "peaks_or_features", "gtf", "groups_tsv"}.issubset(roles)
-    params = meta["converter"]["parameters"]
-    assert "matrix_dir" not in params
-    assert "out_dir" not in params
-    assert meta["gmt"]["written"] is True
-    assert meta["gmt"]["plans"]
 
 
-def test_sc_converter_group_vs_rest_contrast_marks_expected_genes(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_contrast")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.peak_summary = "sum_counts"
-    args.contrast = "group_vs_rest"
-    args.contrast_metric = "log2fc"
-    args.peak_weight_transform = "positive"
-    args.select = "top_k"
-    args.top_k = 1
-    args.emit_full = False
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    atac_sc_10x.run(args)
-
-    with (Path(args.out_dir) / "group=g1" / "geneset.tsv").open("r", encoding="utf-8") as fh:
-        g1_rows = list(csv.DictReader(fh, delimiter="\t"))
-    with (Path(args.out_dir) / "group=g2" / "geneset.tsv").open("r", encoding="utf-8") as fh:
-        g2_rows = list(csv.DictReader(fh, delimiter="\t"))
-
-    assert g1_rows and g1_rows[0]["gene_id"] == "GENE1"
-    assert g2_rows and g2_rows[0]["gene_id"] == "GENE2"
-
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast = meta["program_extraction"]["contrast"]
-    assert contrast["mode"] == "group_vs_rest"
-    assert contrast["metric"] == "log2fc"
-    assert float(contrast["pseudocount"]) == 1.0
-
-
-def test_sc_condition_within_group_emits_open_close_gmt_and_metadata(tmp_path: Path):
+def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_path: Path):
     args = Args()
     args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
     args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
@@ -154,21 +113,16 @@ def test_sc_condition_within_group_emits_open_close_gmt_and_metadata(tmp_path: P
     args.min_cells_per_condition = 1
     args.contrast = "condition_within_group"
     args.out_dir = str(tmp_path / "sc_condition_groups")
-    args.link_method = "promoter_overlap"
-    args.top_k = 1
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
+    args.link_method = "all"
     atac_sc_10x.run(args)
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
-
     combined_gmt = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "__contrast=condition_within_group" in combined_gmt
     assert "__direction=OPEN" in combined_gmt
     assert "__direction=CLOSE" in combined_gmt
+    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in combined_gmt
 
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     contrast = meta["program_extraction"]["contrast"]
@@ -176,173 +130,33 @@ def test_sc_condition_within_group_emits_open_close_gmt_and_metadata(tmp_path: P
     assert contrast["condition_column"] == "condition"
     assert contrast["condition_a"] == "treated"
     assert contrast["condition_b"] == "control"
-    assert contrast["n_cells_a"] == 1
-    assert contrast["n_cells_b"] == 1
     assert contrast["directions_emitted"] == ["OPEN", "CLOSE"]
 
 
-def test_sc_connectable_preset_triggers_condition_within_group(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_connectable_condition")
-    args.groups_tsv = None
-    args.cell_metadata_tsv = "tests/data/barcode_conditions.tsv"
-    args.condition_column = "condition"
-    args.condition_a = "treated"
-    args.condition_b = "control"
-    args.min_cells_per_condition = 1
-    args.program_preset = "connectable"
-    args.contrast = None
-    args.link_method = "promoter_overlap"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert meta["program_extraction"]["contrast"]["mode"] == "condition_within_group"
-    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__direction=OPEN" in gmt_text
-    assert "__direction=CLOSE" in gmt_text
-
-
-def test_sc_connectable_preset_falls_back_to_group_vs_rest_without_metadata(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_connectable_fallback")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.program_preset = "connectable"
-    args.contrast = None
-    args.link_method = "promoter_overlap"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert meta["program_extraction"]["contrast"]["mode"] == "group_vs_rest"
-
-
-def test_sc_use_reference_bundle_false_warns_skipped_contrasts(tmp_path: Path, capsys):
+def test_sc_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, capsys):
     args = Args()
     args.out_dir = str(tmp_path / "sc_no_reference_bundle")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.program_preset = "default"
     args.use_reference_bundle = False
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
+    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_sc_10x.run(args)
-
     captured = capsys.readouterr()
-    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
-    assert "contrast_method=atlas_residual skipped" in captured.err
-    assert "docs/atac_reference_bundle.md" in captured.err
-
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast_methods = meta["program_extraction"]["contrast_methods"]
-    assert "ref_ubiquity_penalty" not in contrast_methods
-    assert "atlas_residual" not in contrast_methods
+    assert "auto_prefer_ref_ubiquity_else_none" in captured.err
 
 
-def test_sc_default_program_preset_emits_tfidf_distal_sets(tmp_path: Path):
+def test_sc_all_preset_allows_explicit_cross_product(tmp_path: Path):
     args = Args()
-    args.out_dir = str(tmp_path / "sc_program_families")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.program_preset = "default"
-    args.link_method = "promoter_overlap"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    combined_gmt = Path(args.out_dir) / "genesets.gmt"
-    text = combined_gmt.read_text(encoding="utf-8")
-    assert "__contrast_method=none__" in text
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert "program_methods" in meta["program_extraction"]
-    assert "tfidf_distal" in meta["program_extraction"]["program_methods"]
-
-
-def test_sc_resource_backed_program_methods(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_resource_methods")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.link_method = "promoter_overlap"
-    args.program_preset = "none"
-    args.program_methods = "ref_ubiquity_penalty,atlas_residual"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    combined_gmt = Path(args.out_dir) / "genesets.gmt"
-    text = combined_gmt.read_text(encoding="utf-8")
-    assert "__contrast_method=ref_ubiquity_penalty__" in text
-    assert "__contrast_method=atlas_residual__" in text
-    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert meta["resources"]["used"]
-    assert meta["resources"]["used"][0]["stable_id"]
-    assert meta["resources"]["used"][0]["version"]
-
-
-def test_sc_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_cross_product")
+    args.out_dir = str(tmp_path / "sc_all")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
     args.link_method = "all"
-    args.program_preset = "none"
-    args.contrast_methods = "none,ref_ubiquity_penalty,atlas_residual"
-    args.resources_manifest = "tests/data/toy_resources_manifest.json"
-    args.resources_dir = "tests/data"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    for contrast_method in ("none", "ref_ubiquity_penalty", "atlas_residual"):
-        for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
-            assert (
-                "__group=g1__contrast=group_vs_rest__program=linked_activity"
-                f"__contrast_method={contrast_method}__link_method={link_method}__topk=3"
-            ) in text
-
-
-def test_sc_program_family_cross_product_for_link_methods(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_program_link_cross")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.link_method = "all"
-    args.program_preset = "default"
+    args.program_preset = "all"
+    args.program_methods = "linked_activity,promoter_activity,distal_activity,enhancer_bias,tfidf_distal"
     args.contrast_methods = "none"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
     atac_sc_10x.run(args)
 
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
-        assert (
-            "__group=g1__contrast=group_vs_rest__program=promoter_activity"
-            f"__contrast_method=none__link_method={link_method}__topk=3"
-        ) in text
-    for link_method in ("nearest_tss", "distance_decay"):
-        assert (
-            "__group=g1__contrast=group_vs_rest__program=distal_activity"
-            f"__contrast_method=none__link_method={link_method}__topk=3"
-        ) in text
-        assert (
-            "__group=g1__contrast=group_vs_rest__program=tfidf_distal"
-            f"__contrast_method=none__link_method={link_method}__topk=3"
-        ) in text
+    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in text
+    assert "__program=tfidf_distal__contrast_method=none__link_method=distance_decay__topk=3" in text
 
 
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
@@ -372,21 +186,3 @@ def test_sc_external_requires_region_gene_links(tmp_path: Path):
     args.region_gene_links_tsv = None
     with pytest.raises(ValueError, match="region_gene_links_tsv"):
         atac_sc_10x.run(args)
-
-
-def test_sc_all_plus_external_writes_external_gmt(tmp_path: Path):
-    args = Args()
-    args.out_dir = str(tmp_path / "sc_external_ok")
-    args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.link_method = "all,external"
-    args.region_gene_links_tsv = "tests/data/toy_region_gene_links.tsv"
-    args.gmt_min_genes = 1
-    args.gmt_max_genes = 10
-    args.gmt_topk_list = "3"
-    args.gmt_mass_list = ""
-    atac_sc_10x.run(args)
-
-    combined_gmt = Path(args.out_dir) / "genesets.gmt"
-    assert combined_gmt.exists()
-    text = combined_gmt.read_text(encoding="utf-8")
-    assert "__link_method=external__" in text

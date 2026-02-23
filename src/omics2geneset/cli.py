@@ -45,9 +45,12 @@ def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
 def _add_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--program_preset",
-        choices=["none", "default", "connectable", "all"],
-        default="default",
-        help="Program family preset for GMT emission and metadata.",
+        choices=["none", "default", "connectable", "qc", "experimental", "all"],
+        default="connectable",
+        help=(
+            "Program family preset for GMT emission and metadata. "
+            "connectable/default emit recommended high-value sets; qc/experimental/all are opt-in."
+        ),
     )
     parser.add_argument(
         "--program_methods",
@@ -60,11 +63,11 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--contrast_methods",
-        default="all",
+        default="auto_prefer_ref_ubiquity_else_none",
         help=(
             "Comma-separated contrast methods applied independently of link_method. "
-            "Tokens: all,none,ref_ubiquity_penalty,atlas_residual. "
-            "Default all."
+            "Tokens: all,auto_prefer_ref_ubiquity_else_none,none,ref_ubiquity_penalty,atlas_residual. "
+            "Default auto_prefer_ref_ubiquity_else_none."
         ),
     )
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
@@ -86,8 +89,20 @@ def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
     parser.add_argument("--ref_ubiquity_resource_id", help="Resource id used by contrast_method=ref_ubiquity_penalty")
     parser.add_argument("--atlas_resource_id", help="Resource id used by contrast_method=atlas_residual")
-    parser.add_argument("--atlas_metric", choices=["logratio", "zscore"], default="logratio")
+    parser.add_argument("--atlas_metric", choices=["logratio", "zscore"], default="zscore")
     parser.add_argument("--atlas_eps", type=float, default=1e-6)
+    parser.add_argument(
+        "--atlas_min_raw_quantile",
+        type=float,
+        default=0.95,
+        help="When atlas_residual is active, drop genes below this raw-score quantile before residual ranking.",
+    )
+    parser.add_argument(
+        "--atlas_use_log1p",
+        type=_parse_bool,
+        default=True,
+        help="When atlas_residual is active, apply log1p stabilization before computing residuals.",
+    )
 
 
 def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
@@ -98,8 +113,8 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_biotype_allowlist", default="protein_coding")
     parser.add_argument("--gmt_min_genes", type=int, default=100)
     parser.add_argument("--gmt_max_genes", type=int, default=500)
-    parser.add_argument("--gmt_topk_list", default="100,200,500")
-    parser.add_argument("--gmt_mass_list", default="0.5,0.8,0.9")
+    parser.add_argument("--gmt_topk_list", default="200")
+    parser.add_argument("--gmt_mass_list", default="")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
 
 

@@ -6,6 +6,8 @@ import math
 from pathlib import Path
 from collections import defaultdict
 
+from omics2geneset.core.atac_programs import ATLAS_SCORE_DEFINITION_DEFAULT
+
 
 def _open_text(path: Path):
     if path.suffix == ".gz":
@@ -187,9 +189,22 @@ def read_ref_ubiquity_tsv(path: str | Path) -> list[dict[str, object]]:
 
 
 def read_atlas_gene_stats_tsv(path: str | Path) -> dict[str, tuple[float, float]]:
+    by_score_definition = read_atlas_gene_stats_by_score_definition_tsv(path)
+    if ATLAS_SCORE_DEFINITION_DEFAULT in by_score_definition:
+        return by_score_definition[ATLAS_SCORE_DEFINITION_DEFAULT]
+    if len(by_score_definition) == 1:
+        only_key = next(iter(by_score_definition.keys()))
+        return by_score_definition[only_key]
+    raise ValueError(
+        "atlas stats table contains multiple score_definition values; "
+        "use read_atlas_gene_stats_by_score_definition_tsv()"
+    )
+
+
+def read_atlas_gene_stats_by_score_definition_tsv(path: str | Path) -> dict[str, dict[str, tuple[float, float]]]:
     p = Path(path)
-    out: dict[str, tuple[float, float]] = {}
-    per_gene_scores: dict[str, list[float]] = defaultdict(list)
+    out: dict[str, dict[str, tuple[float, float]]] = {}
+    per_key_gene_scores: dict[tuple[str, str], list[float]] = defaultdict(list)
     with _open_text(p) as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         if not reader.fieldnames:
@@ -197,6 +212,7 @@ def read_atlas_gene_stats_tsv(path: str | Path) -> dict[str, tuple[float, float]
         fields = {f.strip().lower(): f.strip() for f in reader.fieldnames if f and f.strip()}
         if "gene_id" not in fields:
             raise ValueError("atlas gene stats table must include gene_id")
+        score_def_col = fields.get("score_definition") or fields.get("score_def")
         median_col = fields.get("median_score") or fields.get("median")
         mad_col = fields.get("mad_score") or fields.get("mad")
         if median_col and mad_col:
@@ -208,7 +224,14 @@ def read_atlas_gene_stats_tsv(path: str | Path) -> dict[str, tuple[float, float]
                 mad = _as_float(row.get(mad_col, ""))
                 if median is None or mad is None:
                     continue
-                out[gene_id] = (float(median), float(mad))
+                score_def = (
+                    str(row.get(score_def_col, "")).strip()
+                    if score_def_col
+                    else ATLAS_SCORE_DEFINITION_DEFAULT
+                )
+                if not score_def:
+                    score_def = ATLAS_SCORE_DEFINITION_DEFAULT
+                out.setdefault(score_def, {})[gene_id] = (float(median), float(mad))
             if not out:
                 raise ValueError("atlas gene stats table had median/mad schema but no usable rows")
             return out
@@ -222,12 +245,19 @@ def read_atlas_gene_stats_tsv(path: str | Path) -> dict[str, tuple[float, float]
                 score = _as_float(row.get(score_col, ""))
                 if score is None:
                     continue
-                per_gene_scores[gene_id].append(float(score))
-            for gene_id, values in per_gene_scores.items():
+                score_def = (
+                    str(row.get(score_def_col, "")).strip()
+                    if score_def_col
+                    else ATLAS_SCORE_DEFINITION_DEFAULT
+                )
+                if not score_def:
+                    score_def = ATLAS_SCORE_DEFINITION_DEFAULT
+                per_key_gene_scores[(score_def, gene_id)].append(float(score))
+            for (score_def, gene_id), values in per_key_gene_scores.items():
                 median = _median(values)
                 deviations = [abs(v - median) for v in values]
                 mad = _median(deviations)
-                out[gene_id] = (float(median), float(mad))
+                out.setdefault(score_def, {})[gene_id] = (float(median), float(mad))
             if not out:
                 raise ValueError("atlas reference profile table had score schema but no usable rows")
             return out
