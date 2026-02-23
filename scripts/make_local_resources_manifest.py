@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 
 _BUNDLE_RESOURCE_PATHS: dict[str, tuple[str, str | None]] = {
+    "ccre_ubiquity_hg19": ("atac/ccre/ccre_ubiquity_hg19.tsv.gz", "hg19"),
     "ccre_ubiquity_hg38": ("atac/ccre/ccre_ubiquity_hg38.tsv.gz", "hg38"),
     "ccre_ubiquity_mm10": ("atac/ccre/ccre_ubiquity_mm10.tsv.gz", "mm10"),
+    "encode_ccre_hg19": ("atac/ccre/encode_ccre_hg19.bed.gz", "hg19"),
     "encode_ccre_hg38": ("atac/ccre/encode_ccre_hg38.bed.gz", "hg38"),
     "encode_ccre_mm10": ("atac/ccre/encode_ccre_mm10.bed.gz", "mm10"),
+    "atac_reference_profiles_hg19": ("atac/atlas/atac_reference_profiles_hg19.tsv.gz", "hg19"),
     "atac_reference_profiles_hg38": ("atac/atlas/atac_reference_profiles_hg38.tsv.gz", "hg38"),
     "atac_reference_profiles_mm10": ("atac/atlas/atac_reference_profiles_mm10.tsv.gz", "mm10"),
 }

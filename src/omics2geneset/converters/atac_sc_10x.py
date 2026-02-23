@@ -205,6 +205,8 @@ def _resolve_condition_pair(
 
 def _default_ref_ubiquity_resource_id(genome_build: str) -> str | None:
     gb = genome_build.strip().lower()
+    if gb in {"hg19", "grch37"}:
+        return "ccre_ubiquity_hg19"
     if gb in {"hg38", "grch38"}:
         return "ccre_ubiquity_hg38"
     if gb in {"mm10", "grcm38"}:
@@ -214,6 +216,8 @@ def _default_ref_ubiquity_resource_id(genome_build: str) -> str | None:
 
 def _default_atlas_resource_id(genome_build: str) -> str | None:
     gb = genome_build.strip().lower()
+    if gb in {"hg19", "grch37"}:
+        return "atac_reference_profiles_hg19"
     if gb in {"hg38", "grch38"}:
         return "atac_reference_profiles_hg38"
     if gb in {"mm10", "grcm38"}:

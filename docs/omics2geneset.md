@@ -23,8 +23,10 @@ omics2geneset validate <output_dir>
 omics2geneset resources list
 omics2geneset resources status --fast
 omics2geneset resources status --check_schema --verify
+omics2geneset resources describe ccre_ubiquity_hg19
 omics2geneset resources describe ccre_ubiquity_hg38
-omics2geneset resources fetch --preset atac_default_optional
+omics2geneset resources fetch --preset atac_default_optional_hg19
+omics2geneset resources fetch --preset atac_default_optional_hg38
 omics2geneset resources manifest-validate
 ```
 
@@ -34,6 +36,7 @@ Resource catalog notes:
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
 - Preferred bundle workflow: extract bundle, generate a local manifest with `--layout direct`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
+- Human build presets: `atac_default_optional_hg19`, `atac_default_optional_hg38`.
 - `resources fetch` skips resources with missing URL by default (status `manual`).
 - `resources status --check_schema` validates known resource file schemas (beyond existence/checksum).
 - Resource `url` fields can be HTTP(S), `file://`, or plain Unix filesystem paths.
@@ -63,6 +66,7 @@ GMT defaults favor cleaner symbols:
 - `--use_reference_bundle true` (default) also adds resource-backed methods for presets (except `none`) when `--program_methods` is not explicitly set.
 - `--use_reference_bundle false` is the explicit opt-out.
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
+- Human builds currently supported out of the box: `hg19` (`GRCh37`) and `hg38` (`GRCh38`).
 
 `geneset.tsv` columns:
 
@@ -212,8 +216,9 @@ Resource-backed table formats:
 
 Common resource IDs:
 
-- `ccre_ubiquity_hg38`, `ccre_ubiquity_mm10` for `ref_ubiquity_penalty`
-- `atac_reference_profiles_hg38`, `atac_reference_profiles_mm10` for `atlas_residual`
+- `ccre_ubiquity_hg19`, `ccre_ubiquity_hg38` for `ref_ubiquity_penalty` (human)
+- `atac_reference_profiles_hg19`, `atac_reference_profiles_hg38` for `atlas_residual` (human)
+- `ccre_ubiquity_mm10`, `atac_reference_profiles_mm10` remain optional legacy entries
 
 ### Outputs
 
