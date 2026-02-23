@@ -60,10 +60,15 @@ GMT defaults favor cleaner symbols:
 - `--gmt_require_symbol true` drops rows whose symbol is missing or Ensembl-like.
 - `--gmt_biotype_allowlist protein_coding` keeps only protein-coding genes by default (when available).
 - `--link_method all` runs promoter/nearest/distance linkage models for GMT generation by default.
+- `--contrast_methods all` (default) runs all available contrast options independently of `--link_method`:
+  - `none`
+  - `ref_ubiquity_penalty` (when resource is available)
+  - `atlas_residual` (when resource is available)
 - `--program_preset default` emits additional ATAC program families (promoter/distal/enhancer-bias; scATAC adds tfidf_distal).
 - `--program_preset connectable` prioritizes contrast-ready programs (bulk/sc: linked+distal+enhancer-bias; sc can auto-switch to condition_within_group).
-- `--program_preset all` also attempts resource-backed methods (`ref_ubiquity_penalty`, `atlas_residual`).
-- `--use_reference_bundle true` (default) also adds resource-backed methods for presets (except `none`) when `--program_methods` is not explicitly set.
+- `--program_preset all` enables all supported program families.
+- `--program_methods` controls only program families (link-level and family-level scoring), not contrast options.
+- `--use_reference_bundle true` (default) allows reference-backed contrasts; `false` forces contrast behavior to `none`.
 - `--use_reference_bundle false` is the explicit opt-out.
 - `--gmt_topk_list 100,200,500` and `--gmt_mass_list 0.5,0.8,0.9` emit six GMT sets per linkage model.
 - Human builds currently supported out of the box: `hg19` (`GRCh37`) and `hg38` (`GRCh38`).
@@ -97,6 +102,13 @@ If resources are missing, methods are skipped by default (`--resource_policy ski
 
 ## Extractor: atac_bulk
 
+ATAC program generation follows two independent axes:
+
+- linkage axis (`--link_method`): how peaks are linked to genes
+- contrast axis (`--contrast_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
+
+By default, converters run `--contrast_methods all` and evaluate each active contrast for every selected link method.
+
 ### Required inputs
 
 - `--peaks`: BED/narrowPeak-like intervals (`.gz` supported)
@@ -121,8 +133,11 @@ Optional peak weights:
 - Peak transform (`--peak_weight_transform`): `signed`, `abs`, `positive`, `negative`
 - Program families:
 - `--program_preset {none,default,connectable,all}` controls additional ATAC program families for GMT output.
-- `--program_methods` allows explicit override (`linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual`).
-  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
+- `--program_methods` allows explicit family override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
+- Contrast methods:
+  - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
+  - evaluated independently across each selected `--link_method`
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
@@ -193,8 +208,11 @@ Optional:
   - use `negative` for closing programs
 - Program families:
   - `--program_preset {none,default,connectable,all}` controls additional ATAC program families.
-- `--program_methods` overrides with explicit methods; scATAC supports `tfidf_distal` in addition to bulk methods.
-  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
+- `--program_methods` overrides with explicit families; scATAC supports `tfidf_distal` in addition to bulk methods.
+- Contrast methods:
+  - `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (comma-separated; default `all`)
+  - evaluated independently across each selected `--link_method`
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` controls atlas residual scoring.
@@ -298,7 +316,8 @@ Key contrast flags:
 - `--condition_a`, `--condition_b`
 - `--contrast_metric {log2fc,diff}`
 - `--contrast_pseudocount` (used for `log2fc`)
-- `--use_reference_bundle {true,false}` defaults to `true`; set `false` to disable automatic reference-backed methods.
+- `--contrast_methods {all,none,ref_ubiquity_penalty,atlas_residual}` (default `all`)
+- `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force reference-backed contrasts off.
 - `--resource_policy {skip,fail}` recommended as `fail` for production runs.
 
 This converter emits direction-aware outputs:

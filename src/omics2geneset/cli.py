@@ -53,8 +53,17 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
         "--program_methods",
         help=(
             "Optional comma-separated program methods overriding preset. "
-            "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias,ref_ubiquity_penalty,atlas_residual. "
-            "scATAC adds tfidf_distal."
+            "Bulk: linked_activity,promoter_activity,distal_activity,enhancer_bias. "
+            "scATAC adds tfidf_distal. Legacy reference methods in this list are still accepted."
+        ),
+    )
+    parser.add_argument(
+        "--contrast_methods",
+        default="all",
+        help=(
+            "Comma-separated contrast methods applied independently of link_method. "
+            "Tokens: all,none,ref_ubiquity_penalty,atlas_residual. "
+            "Default all."
         ),
     )
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
@@ -71,11 +80,11 @@ def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
         "--use_reference_bundle",
         type=_parse_bool,
         default=True,
-        help="If true (default), include reference-backed ATAC program methods when program_methods is not explicitly set.",
+        help="If true (default), allow reference-backed contrast methods; if false, contrast behavior is forced to none.",
     )
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
-    parser.add_argument("--ref_ubiquity_resource_id", help="Resource id for ref_ubiquity_penalty program")
-    parser.add_argument("--atlas_resource_id", help="Resource id for atlas_residual program")
+    parser.add_argument("--ref_ubiquity_resource_id", help="Resource id used by contrast_method=ref_ubiquity_penalty")
+    parser.add_argument("--atlas_resource_id", help="Resource id used by contrast_method=atlas_residual")
     parser.add_argument("--atlas_metric", choices=["logratio", "zscore"], default="logratio")
     parser.add_argument("--atlas_eps", type=float, default=1e-6)
 

@@ -224,6 +224,14 @@ This section defines a catalog of program methods. Each method corresponds to a 
 (iii) which linkage model $L_{pg}$ is used, and
 (iv) what program instances are emitted (one per sample, per group, per direction, per module, etc.).
 
+\paragraph{Implementation axis decomposition.}
+In the CLI implementation, ATAC outputs are generated over two independent axes:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{link\_method}: region-to-gene linkage model (promoter overlap, nearest TSS, distance decay, external).
+\item \texttt{contrast\_methods}: calibration/contrast choice (\texttt{none}, \texttt{ref\_ubiquity\_penalty}, \texttt{atlas\_residual}).
+\end{itemize}
+Each active contrast is evaluated for each selected linkage model, then downstream program-family transforms are applied to that linked score space.
+
 \subsection{Summary table}
 Table \ref{tab:methods_summary} summarizes the most important methods, their typical use cases, and resource requirements.
 

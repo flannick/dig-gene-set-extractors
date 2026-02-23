@@ -237,7 +237,7 @@ def test_sc_default_program_preset_emits_tfidf_distal_sets(tmp_path: Path):
 
     combined_gmt = Path(args.out_dir) / "genesets.gmt"
     text = combined_gmt.read_text(encoding="utf-8")
-    assert "__program=tfidf_distal__topk=3" in text
+    assert "__contrast_method=none__" in text
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "program_methods" in meta["program_extraction"]
     assert "tfidf_distal" in meta["program_extraction"]["program_methods"]
@@ -260,12 +260,36 @@ def test_sc_resource_backed_program_methods(tmp_path: Path):
 
     combined_gmt = Path(args.out_dir) / "genesets.gmt"
     text = combined_gmt.read_text(encoding="utf-8")
-    assert "__program=ref_ubiquity_penalty__topk=3" in text
-    assert "__program=atlas_residual__topk=3" in text
+    assert "__contrast_method=ref_ubiquity_penalty__" in text
+    assert "__contrast_method=atlas_residual__" in text
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["resources"]["used"]
     assert meta["resources"]["used"][0]["stable_id"]
     assert meta["resources"]["used"][0]["version"]
+
+
+def test_sc_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_cross_product")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.link_method = "all"
+    args.program_preset = "none"
+    args.contrast_methods = "none,ref_ubiquity_penalty,atlas_residual"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    for contrast_method in ("none", "ref_ubiquity_penalty", "atlas_residual"):
+        for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
+            assert (
+                "__group=g1__contrast=group_vs_rest__program=linked_activity"
+                f"__contrast_method={contrast_method}__link_method={link_method}__topk=3"
+            ) in text
 
 
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):

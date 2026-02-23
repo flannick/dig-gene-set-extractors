@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 
 from omics2geneset.core.atac_programs import (
+    CONTRAST_METHOD_NONE,
     PROGRAM_ATLAS_RESIDUAL,
     PROGRAM_DISTAL_ACTIVITY,
     PROGRAM_ENHANCER_BIAS,
@@ -12,11 +13,11 @@ from omics2geneset.core.atac_programs import (
     PROGRAM_PROMOTER_ACTIVITY,
     PROGRAM_REF_UBIQUITY_PENALTY,
     atlas_residual_scores,
-    ensure_reference_program_methods,
     enhancer_bias_scores,
     mask_peak_weights,
     promoter_peak_indices,
     remove_reference_program_methods,
+    resolve_contrast_methods,
     resolve_program_methods,
 )
 from omics2geneset.core.gmt import (
@@ -132,18 +133,18 @@ def _resolved_parameters(
     gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "0.5,0.8,0.9")))
     gmt_biotype_allowlist = parse_str_list_csv(str(_arg(args, "gmt_biotype_allowlist", "protein_coding")))
     link_methods = _resolve_link_methods(args)
-    explicit_program_methods = bool(str(_arg(args, "program_methods", "") or "").strip())
-    preset_name = str(_arg(args, "program_preset", "connectable") or "").strip() or "connectable"
     use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
     program_methods = resolve_program_methods(
         "bulk",
         _arg(args, "program_preset", "connectable"),
         _arg(args, "program_methods", None),
     )
-    if not use_reference_bundle:
-        program_methods = remove_reference_program_methods(program_methods)
-    elif not explicit_program_methods and preset_name != "none":
-        program_methods = ensure_reference_program_methods(program_methods)
+    program_methods = remove_reference_program_methods(program_methods)
+    contrast_methods = resolve_contrast_methods(
+        _arg(args, "contrast_methods", None),
+        _arg(args, "program_methods", None),
+        use_reference_bundle=use_reference_bundle,
+    )
     ref_ubiquity_resource_id = _arg(args, "ref_ubiquity_resource_id", None) or _default_ref_ubiquity_resource_id(
         str(_arg(args, "genome_build", ""))
     )
@@ -160,6 +161,9 @@ def _resolved_parameters(
         "link_method": _arg(args, "link_method", "all"),
         "link_methods_evaluated": link_methods,
         "primary_link_method": link_methods[0],
+        "contrast_methods": _arg(args, "contrast_methods", None),
+        "contrast_methods_evaluated": contrast_methods,
+        "primary_contrast_method": contrast_methods[0],
         "program_preset": _arg(args, "program_preset", "connectable"),
         "program_methods": _arg(args, "program_methods", None),
         "program_methods_evaluated": program_methods,
@@ -480,19 +484,20 @@ def run(args) -> dict[str, object]:
     resource_policy = str(_arg(args, "resource_policy", "skip"))
     if resource_policy not in {"skip", "fail"}:
         raise ValueError(f"Unsupported resource_policy: {resource_policy}")
-    explicit_program_methods = bool(str(_arg(args, "program_methods", "") or "").strip())
-    preset_name = str(_arg(args, "program_preset", "connectable") or "").strip() or "connectable"
     use_reference_bundle = bool(_arg(args, "use_reference_bundle", True))
     program_methods = resolve_program_methods(
         "bulk",
         _arg(args, "program_preset", "connectable"),
         _arg(args, "program_methods", None),
     )
-    if not use_reference_bundle:
-        program_methods = remove_reference_program_methods(program_methods)
-    elif not explicit_program_methods and preset_name != "none":
-        program_methods = ensure_reference_program_methods(program_methods)
+    program_methods = remove_reference_program_methods(program_methods)
+    contrast_methods = resolve_contrast_methods(
+        _arg(args, "contrast_methods", None),
+        _arg(args, "program_methods", None),
+        use_reference_bundle=use_reference_bundle,
+    )
     program_methods_skipped: dict[str, str] = {}
+    contrast_methods_skipped: dict[str, str] = {}
     resources_used: list[dict[str, object]] = []
 
     link_methods = _resolve_link_methods(args)
@@ -522,8 +527,8 @@ def run(args) -> dict[str, object]:
     )
     promoter_indices = promoter_peak_indices(promoter_links) if promoter_links else set()
 
-    needs_ref_ubiquity = PROGRAM_REF_UBIQUITY_PENALTY in program_methods
-    needs_atlas = PROGRAM_ATLAS_RESIDUAL in program_methods
+    needs_ref_ubiquity = PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods
+    needs_atlas = PROGRAM_ATLAS_RESIDUAL in contrast_methods
     manifest_resources: dict[str, dict[str, object]] = {}
     manifest_label = "bundled"
     manifest_warnings: list[str] = []
@@ -561,8 +566,8 @@ def run(args) -> dict[str, object]:
         except Exception as exc:
             if resource_policy == "fail":
                 raise
-            program_methods_skipped[PROGRAM_REF_UBIQUITY_PENALTY] = str(exc)
-            program_methods = [m for m in program_methods if m != PROGRAM_REF_UBIQUITY_PENALTY]
+            contrast_methods_skipped[PROGRAM_REF_UBIQUITY_PENALTY] = str(exc)
+            contrast_methods = [m for m in contrast_methods if m != PROGRAM_REF_UBIQUITY_PENALTY]
 
     if needs_atlas:
         atlas_resource_id = _arg(args, "atlas_resource_id", None) or _default_atlas_resource_id(str(args.genome_build))
@@ -592,91 +597,134 @@ def run(args) -> dict[str, object]:
         except Exception as exc:
             if resource_policy == "fail":
                 raise
-            program_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
-            program_methods = [m for m in program_methods if m != PROGRAM_ATLAS_RESIDUAL]
+            contrast_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
+            contrast_methods = [m for m in contrast_methods if m != PROGRAM_ATLAS_RESIDUAL]
+    if not contrast_methods:
+        contrast_methods = [CONTRAST_METHOD_NONE]
+    primary_contrast_method = contrast_methods[0]
 
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}
     gene_biotype_by_id = {g.gene_id: g.gene_biotype for g in genes}
 
     transforms_by_direction = {"OPEN": "positive", "CLOSE": "negative"}
-    full_rows_by_method_by_direction: dict[str, dict[str, list[dict[str, object]]]] = {}
-    full_scores_by_method_by_direction: dict[str, dict[str, dict[str, float]]] = {}
-    additional_program_rows_by_direction: dict[str, dict[str, list[dict[str, object]]]] = {}
+    full_rows_by_contrast_by_method_by_direction: dict[str, dict[str, dict[str, list[dict[str, object]]]]] = {}
+    full_scores_by_contrast_by_method_by_direction: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    additional_program_rows_by_contrast_by_direction: dict[str, dict[str, dict[str, list[dict[str, object]]]]] = {}
     for direction, transform_mode in transforms_by_direction.items():
-        full_scores_by_method: dict[str, dict[str, float]] = {}
+        full_scores_none_by_method: dict[str, dict[str, float]] = {}
         for method in link_methods:
             raw_scores = score_genes(peak_stat, links_by_method[method], transform_mode)
-            full_scores_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
-        full_scores_by_method_by_direction[direction] = full_scores_by_method
+            full_scores_none_by_method[method] = {g: float(s) for g, s in raw_scores.items() if float(s) != 0.0}
 
-        rows_for_direction: dict[str, list[dict[str, object]]] = {}
-        for method in link_methods:
-            rows_for_direction[method] = _rows_from_scores(
-                full_scores_by_method[method],
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        full_rows_by_method_by_direction[direction] = rows_for_direction
+        full_scores_by_contrast_by_method: dict[str, dict[str, dict[str, float]]] = {}
+        if CONTRAST_METHOD_NONE in contrast_methods:
+            full_scores_by_contrast_by_method[CONTRAST_METHOD_NONE] = full_scores_none_by_method
+        if PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods:
+            ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
+            ref_scores_by_method: dict[str, dict[str, float]] = {}
+            for method in link_methods:
+                ref_raw = score_genes(ref_peak_stat, links_by_method[method], transform_mode)
+                ref_scores_by_method[method] = {g: float(s) for g, s in ref_raw.items() if float(s) != 0.0}
+            full_scores_by_contrast_by_method[PROGRAM_REF_UBIQUITY_PENALTY] = ref_scores_by_method
+        if PROGRAM_ATLAS_RESIDUAL in contrast_methods:
+            atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
+            atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
+            atlas_scores_by_method: dict[str, dict[str, float]] = {}
+            for method in link_methods:
+                atlas_scores = atlas_residual_scores(
+                    full_scores_none_by_method[method],
+                    atlas_stats,
+                    atlas_metric,
+                    atlas_eps,
+                )
+                atlas_scores_by_method[method] = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
+            full_scores_by_contrast_by_method[PROGRAM_ATLAS_RESIDUAL] = atlas_scores_by_method
+        full_scores_by_contrast_by_method_by_direction[direction] = full_scores_by_contrast_by_method
 
-        program_rows: dict[str, list[dict[str, object]]] = {}
-        promoter_scores: dict[str, float] = {}
-        distal_scores: dict[str, float] = {}
+        rows_for_direction: dict[str, dict[str, list[dict[str, object]]]] = {}
+        for contrast_method in contrast_methods:
+            rows_for_direction[contrast_method] = {}
+            for method in link_methods:
+                rows_for_direction[contrast_method][method] = _rows_from_scores(
+                    full_scores_by_contrast_by_method[contrast_method][method],
+                    gene_symbol_by_id,
+                    gene_biotype_by_id,
+                )
+        full_rows_by_contrast_by_method_by_direction[direction] = rows_for_direction
+
+        family_scores_none: dict[str, dict[str, float]] = {}
+        promoter_scores_none: dict[str, float] = {}
+        distal_scores_none: dict[str, float] = {}
         if PROGRAM_PROMOTER_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
             promoter_peak_stat = mask_peak_weights(peak_stat, include_indices=promoter_indices)
             promoter_raw = score_genes(promoter_peak_stat, promoter_links, transform_mode)
-            promoter_scores = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
+            promoter_scores_none = {g: float(s) for g, s in promoter_raw.items() if float(s) != 0.0}
             if PROGRAM_PROMOTER_ACTIVITY in program_methods:
-                program_rows[PROGRAM_PROMOTER_ACTIVITY] = _rows_from_scores(
-                    promoter_scores,
-                    gene_symbol_by_id,
-                    gene_biotype_by_id,
-                )
+                family_scores_none[PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_none
         if PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
             distal_peak_stat = mask_peak_weights(peak_stat, exclude_indices=promoter_indices)
             distal_raw = score_genes(distal_peak_stat, distance_links, transform_mode)
-            distal_scores = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
+            distal_scores_none = {g: float(s) for g, s in distal_raw.items() if float(s) != 0.0}
             if PROGRAM_DISTAL_ACTIVITY in program_methods:
-                program_rows[PROGRAM_DISTAL_ACTIVITY] = _rows_from_scores(
-                    distal_scores,
+                family_scores_none[PROGRAM_DISTAL_ACTIVITY] = distal_scores_none
+        if PROGRAM_ENHANCER_BIAS in program_methods:
+            bias_scores = enhancer_bias_scores(promoter_scores_none, distal_scores_none)
+            family_scores_none[PROGRAM_ENHANCER_BIAS] = {
+                g: float(s) for g, s in bias_scores.items() if float(s) != 0.0
+            }
+
+        family_scores_by_contrast: dict[str, dict[str, dict[str, float]]] = {}
+        if CONTRAST_METHOD_NONE in contrast_methods:
+            family_scores_by_contrast[CONTRAST_METHOD_NONE] = family_scores_none
+        if PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods:
+            ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
+            ref_family_scores: dict[str, dict[str, float]] = {}
+            promoter_scores_ref: dict[str, float] = {}
+            distal_scores_ref: dict[str, float] = {}
+            if PROGRAM_PROMOTER_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
+                promoter_peak_stat_ref = mask_peak_weights(ref_peak_stat, include_indices=promoter_indices)
+                promoter_raw_ref = score_genes(promoter_peak_stat_ref, promoter_links, transform_mode)
+                promoter_scores_ref = {g: float(s) for g, s in promoter_raw_ref.items() if float(s) != 0.0}
+                if PROGRAM_PROMOTER_ACTIVITY in program_methods:
+                    ref_family_scores[PROGRAM_PROMOTER_ACTIVITY] = promoter_scores_ref
+            if PROGRAM_DISTAL_ACTIVITY in program_methods or PROGRAM_ENHANCER_BIAS in program_methods:
+                distal_peak_stat_ref = mask_peak_weights(ref_peak_stat, exclude_indices=promoter_indices)
+                distal_raw_ref = score_genes(distal_peak_stat_ref, distance_links, transform_mode)
+                distal_scores_ref = {g: float(s) for g, s in distal_raw_ref.items() if float(s) != 0.0}
+                if PROGRAM_DISTAL_ACTIVITY in program_methods:
+                    ref_family_scores[PROGRAM_DISTAL_ACTIVITY] = distal_scores_ref
+            if PROGRAM_ENHANCER_BIAS in program_methods:
+                bias_scores_ref = enhancer_bias_scores(promoter_scores_ref, distal_scores_ref)
+                ref_family_scores[PROGRAM_ENHANCER_BIAS] = {
+                    g: float(s) for g, s in bias_scores_ref.items() if float(s) != 0.0
+                }
+            family_scores_by_contrast[PROGRAM_REF_UBIQUITY_PENALTY] = ref_family_scores
+        if PROGRAM_ATLAS_RESIDUAL in contrast_methods:
+            atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
+            atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
+            atlas_family_scores: dict[str, dict[str, float]] = {}
+            for program_method, base_scores in family_scores_none.items():
+                residual_scores = atlas_residual_scores(base_scores, atlas_stats, atlas_metric, atlas_eps)
+                atlas_family_scores[program_method] = {
+                    g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
+                }
+            family_scores_by_contrast[PROGRAM_ATLAS_RESIDUAL] = atlas_family_scores
+
+        program_rows_by_contrast: dict[str, dict[str, list[dict[str, object]]]] = {}
+        for contrast_method in contrast_methods:
+            rows_by_program: dict[str, list[dict[str, object]]] = {}
+            for program_method in program_methods:
+                if program_method == PROGRAM_LINKED_ACTIVITY:
+                    continue
+                rows_by_program[program_method] = _rows_from_scores(
+                    family_scores_by_contrast.get(contrast_method, {}).get(program_method, {}),
                     gene_symbol_by_id,
                     gene_biotype_by_id,
                 )
-        if PROGRAM_ENHANCER_BIAS in program_methods:
-            bias_scores = enhancer_bias_scores(promoter_scores, distal_scores)
-            bias_nonzero = {g: float(s) for g, s in bias_scores.items() if float(s) != 0.0}
-            program_rows[PROGRAM_ENHANCER_BIAS] = _rows_from_scores(
-                bias_nonzero,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        if PROGRAM_REF_UBIQUITY_PENALTY in program_methods:
-            ref_peak_stat = apply_peak_idf(peak_stat, ref_peak_idf)
-            ref_raw = score_genes(ref_peak_stat, links_by_method[primary_link_method], transform_mode)
-            ref_scores = {g: float(s) for g, s in ref_raw.items() if float(s) != 0.0}
-            program_rows[PROGRAM_REF_UBIQUITY_PENALTY] = _rows_from_scores(
-                ref_scores,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        if PROGRAM_ATLAS_RESIDUAL in program_methods:
-            atlas_metric = str(_arg(args, "atlas_metric", "logratio"))
-            atlas_eps = float(_arg(args, "atlas_eps", 1e-6))
-            atlas_scores = atlas_residual_scores(
-                full_scores_by_method[primary_link_method],
-                atlas_stats,
-                atlas_metric,
-                atlas_eps,
-            )
-            atlas_nonzero = {g: float(s) for g, s in atlas_scores.items() if float(s) != 0.0}
-            program_rows[PROGRAM_ATLAS_RESIDUAL] = _rows_from_scores(
-                atlas_nonzero,
-                gene_symbol_by_id,
-                gene_biotype_by_id,
-            )
-        additional_program_rows_by_direction[direction] = program_rows
+            program_rows_by_contrast[contrast_method] = rows_by_program
+        additional_program_rows_by_contrast_by_direction[direction] = program_rows_by_contrast
 
-    selected_scores = score_genes(peak_stat, links_by_method[primary_link_method], selected_transform)
-    selected_scores = {g: float(s) for g, s in selected_scores.items() if float(s) != 0.0}
+    selected_scores = full_scores_by_contrast_by_method_by_direction[selected_direction][primary_contrast_method][primary_link_method]
     selected_gene_ids = _select_gene_ids(selected_scores, args)
     selected_weights = _selected_weights(selected_scores, selected_gene_ids, normalize)
 
@@ -694,7 +742,7 @@ def run(args) -> dict[str, object]:
         )
     _write_rows(out_dir / "geneset.tsv", selected_rows)
 
-    full_rows = full_rows_by_method_by_direction[selected_direction][primary_link_method]
+    full_rows = full_rows_by_contrast_by_method_by_direction[selected_direction][primary_contrast_method][primary_link_method]
     if emit_full:
         _write_rows(out_dir / "geneset.full.tsv", full_rows)
 
@@ -712,10 +760,42 @@ def run(args) -> dict[str, object]:
                 f"__direction={direction}"
             )
             if PROGRAM_LINKED_ACTIVITY in program_methods:
-                for method in link_methods:
+                for contrast_method in contrast_methods:
+                    for method in link_methods:
+                        method_sets, method_plans = build_gmt_sets_from_rows(
+                            rows=full_rows_by_contrast_by_method_by_direction[direction][contrast_method][method],
+                            base_name=(
+                                f"{base_prefix}__program={PROGRAM_LINKED_ACTIVITY}"
+                                f"__contrast_method={contrast_method}"
+                                f"__link_method={method}"
+                            ),
+                            prefer_symbol=gmt_prefer_symbol,
+                            min_genes=gmt_min_genes,
+                            max_genes=gmt_max_genes,
+                            topk_list=gmt_topk_list,
+                            mass_list=gmt_mass_list,
+                            split_signed=gmt_split_signed,
+                            require_symbol=gmt_require_symbol,
+                            allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                        )
+                        for plan in method_plans:
+                            params = dict(plan.get("parameters", {}))
+                            params["program_method"] = PROGRAM_LINKED_ACTIVITY
+                            params["contrast_method"] = contrast_method
+                            params["link_method"] = method
+                            params["direction"] = direction
+                            plan["parameters"] = params
+                        gmt_sets.extend(method_sets)
+                        gmt_plans.extend(method_plans)
+
+            for contrast_method, rows_by_program in additional_program_rows_by_contrast_by_direction[direction].items():
+                for program_method, rows in rows_by_program.items():
                     method_sets, method_plans = build_gmt_sets_from_rows(
-                        rows=full_rows_by_method_by_direction[direction][method],
-                        base_name=f"{base_prefix}__program={PROGRAM_LINKED_ACTIVITY}__link_method={method}",
+                        rows=rows,
+                        base_name=(
+                            f"{base_prefix}__program={program_method}"
+                            f"__contrast_method={contrast_method}"
+                        ),
                         prefer_symbol=gmt_prefer_symbol,
                         min_genes=gmt_min_genes,
                         max_genes=gmt_max_genes,
@@ -727,33 +807,12 @@ def run(args) -> dict[str, object]:
                     )
                     for plan in method_plans:
                         params = dict(plan.get("parameters", {}))
-                        params["program_method"] = PROGRAM_LINKED_ACTIVITY
-                        params["link_method"] = method
+                        params["program_method"] = program_method
+                        params["contrast_method"] = contrast_method
                         params["direction"] = direction
                         plan["parameters"] = params
                     gmt_sets.extend(method_sets)
                     gmt_plans.extend(method_plans)
-
-            for program_method, rows in additional_program_rows_by_direction[direction].items():
-                method_sets, method_plans = build_gmt_sets_from_rows(
-                    rows=rows,
-                    base_name=f"{base_prefix}__program={program_method}",
-                    prefer_symbol=gmt_prefer_symbol,
-                    min_genes=gmt_min_genes,
-                    max_genes=gmt_max_genes,
-                    topk_list=gmt_topk_list,
-                    mass_list=gmt_mass_list,
-                    split_signed=gmt_split_signed,
-                    require_symbol=gmt_require_symbol,
-                    allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
-                )
-                for plan in method_plans:
-                    params = dict(plan.get("parameters", {}))
-                    params["program_method"] = program_method
-                    params["direction"] = direction
-                    plan["parameters"] = params
-                gmt_sets.extend(method_sets)
-                gmt_plans.extend(method_plans)
         write_gmt(gmt_sets, gmt_path)
 
     resources_dir = (
@@ -781,6 +840,9 @@ def run(args) -> dict[str, object]:
     params = _resolved_parameters(args, condition_a, condition_b)
     params["program_methods_active"] = program_methods
     params["program_methods_skipped"] = program_methods_skipped
+    params["contrast_methods_active"] = contrast_methods
+    params["contrast_methods_skipped"] = contrast_methods_skipped
+    params["primary_contrast_method"] = primary_contrast_method
     params["selected_direction"] = selected_direction
     meta = make_metadata(
         converter_name="atac_bulk_matrix",
@@ -815,7 +877,8 @@ def run(args) -> dict[str, object]:
             ),
             "n_external_links_unresolved_gene_id": external_links_unresolved,
             "n_program_methods": len(program_methods),
-            "n_resource_methods_skipped": len(program_methods_skipped),
+            "n_contrast_methods": len(contrast_methods),
+            "n_contrast_methods_skipped": len(contrast_methods_skipped),
             "n_resource_manifest_warnings": len(manifest_warnings),
             "n_samples": len(sample_ids),
             "n_samples_a": len(a_indices),
@@ -845,6 +908,9 @@ def run(args) -> dict[str, object]:
                 "directions_emitted": ["OPEN", "CLOSE"],
                 "selected_direction": selected_direction,
             },
+            "contrast_methods": contrast_methods,
+            "contrast_methods_skipped": contrast_methods_skipped,
+            "primary_contrast_method": primary_contrast_method,
             "program_methods": program_methods,
             "program_methods_skipped": program_methods_skipped,
             "primary_program_method": PROGRAM_LINKED_ACTIVITY,
@@ -878,4 +944,6 @@ def run(args) -> dict[str, object]:
         "out_dir": str(out_dir),
         "program_methods": program_methods,
         "program_methods_skipped": program_methods_skipped,
+        "contrast_methods": contrast_methods,
+        "contrast_methods_skipped": contrast_methods_skipped,
     }

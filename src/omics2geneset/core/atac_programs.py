@@ -14,6 +14,12 @@ REFERENCE_PROGRAM_METHODS = (
     PROGRAM_REF_UBIQUITY_PENALTY,
     PROGRAM_ATLAS_RESIDUAL,
 )
+CONTRAST_METHOD_NONE = "none"
+ALLOWED_CONTRAST_METHODS = (
+    CONTRAST_METHOD_NONE,
+    PROGRAM_REF_UBIQUITY_PENALTY,
+    PROGRAM_ATLAS_RESIDUAL,
+)
 
 
 _BULK_ALLOWED = (
@@ -151,6 +157,46 @@ def remove_reference_program_methods(program_methods: list[str]) -> list[str]:
     return [method for method in program_methods if method not in blocked]
 
 
+def resolve_contrast_methods(
+    contrast_methods_csv: str | None,
+    legacy_program_methods_csv: str | None,
+    use_reference_bundle: bool,
+) -> list[str]:
+    requested = parse_csv_tokens(contrast_methods_csv)
+    legacy = parse_csv_tokens(legacy_program_methods_csv)
+    legacy_ref = [tok for tok in legacy if tok in REFERENCE_PROGRAM_METHODS]
+
+    expanded: list[str] = []
+    if requested:
+        for tok in requested:
+            if tok == "all":
+                expanded.extend(ALLOWED_CONTRAST_METHODS)
+            else:
+                expanded.append(tok)
+    elif legacy_ref:
+        expanded.append(CONTRAST_METHOD_NONE)
+        expanded.extend(legacy_ref)
+    else:
+        expanded.extend(ALLOWED_CONTRAST_METHODS)
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for method in expanded:
+        if method not in ALLOWED_CONTRAST_METHODS:
+            raise ValueError(f"Unsupported contrast method: {method}")
+        if method in seen:
+            continue
+        out.append(method)
+        seen.add(method)
+
+    if not use_reference_bundle:
+        out = [method for method in out if method == CONTRAST_METHOD_NONE]
+
+    if not out:
+        return [CONTRAST_METHOD_NONE]
+    return out
+
+
 def promoter_peak_indices(promoter_links: list[dict[str, object]]) -> set[int]:
     return {int(link["peak_index"]) for link in promoter_links}
 
@@ -215,7 +261,11 @@ def atlas_residual_scores(
         median, mad = gene_stats[gene_id]
         s = float(score)
         if metric == "logratio":
-            out[gene_id] = math.log((s + tiny) / (float(median) + tiny))
+            numerator = s + tiny
+            denominator = float(median) + tiny
+            if numerator <= 0.0 or denominator <= 0.0:
+                continue
+            out[gene_id] = math.log(numerator / denominator)
             continue
         if metric == "zscore":
             out[gene_id] = (s - float(median)) / (float(mad) + tiny)

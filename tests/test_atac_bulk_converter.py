@@ -135,8 +135,8 @@ def test_bulk_default_program_preset_emits_program_family_sets(tmp_path: Path):
     atac_bulk.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=promoter_activity__topk=3" in gmt_text
-    assert "__program=distal_activity__topk=3" in gmt_text
+    assert "__program=promoter_activity__contrast_method=none__topk=3" in gmt_text
+    assert "__program=distal_activity__contrast_method=none__topk=3" in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "program_methods" in meta["program_extraction"]
     assert "enhancer_bias" in meta["program_extraction"]["program_methods"]
@@ -156,12 +156,12 @@ def test_bulk_default_uses_reference_bundle_when_available(tmp_path: Path):
     atac_bulk.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=ref_ubiquity_penalty__topk=3" in gmt_text
-    assert "__program=atlas_residual__topk=3" in gmt_text
+    assert "__contrast_method=ref_ubiquity_penalty__" in gmt_text
+    assert "__contrast_method=atlas_residual__" in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    methods = meta["program_extraction"]["program_methods"]
-    assert "ref_ubiquity_penalty" in methods
-    assert "atlas_residual" in methods
+    contrast_methods = meta["program_extraction"]["contrast_methods"]
+    assert "ref_ubiquity_penalty" in contrast_methods
+    assert "atlas_residual" in contrast_methods
 
 
 def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path):
@@ -179,12 +179,12 @@ def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path):
     atac_bulk.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=ref_ubiquity_penalty__topk=3" not in gmt_text
-    assert "__program=atlas_residual__topk=3" not in gmt_text
+    assert "__contrast_method=ref_ubiquity_penalty__" not in gmt_text
+    assert "__contrast_method=atlas_residual__" not in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    methods = meta["program_extraction"]["program_methods"]
-    assert "ref_ubiquity_penalty" not in methods
-    assert "atlas_residual" not in methods
+    contrast_methods = meta["program_extraction"]["contrast_methods"]
+    assert "ref_ubiquity_penalty" not in contrast_methods
+    assert "atlas_residual" not in contrast_methods
     assert meta["converter"]["parameters"]["use_reference_bundle"] is False
 
 
@@ -226,13 +226,36 @@ def test_bulk_resource_backed_program_methods(tmp_path: Path):
     atac_bulk.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=ref_ubiquity_penalty__topk=3" in gmt_text
-    assert "__program=atlas_residual__topk=3" in gmt_text
+    assert "__contrast_method=ref_ubiquity_penalty__" in gmt_text
+    assert "__contrast_method=atlas_residual__" in gmt_text
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["resources"]["used"]
     assert meta["resources"]["used"][0]["stable_id"]
     assert meta["resources"]["used"][0]["version"]
-    assert not meta["program_extraction"]["program_methods_skipped"]
+    assert not meta["program_extraction"]["contrast_methods_skipped"]
+
+
+def test_bulk_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_cross_product")
+    args.link_method = "all"
+    args.program_preset = "none"
+    args.contrast_methods = "none,ref_ubiquity_penalty,atlas_residual"
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_bulk.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    for contrast_method in ("none", "ref_ubiquity_penalty", "atlas_residual"):
+        for link_method in ("promoter_overlap", "nearest_tss", "distance_decay"):
+            assert (
+                f"__program=linked_activity__contrast_method={contrast_method}__link_method={link_method}__topk=3"
+                in gmt_text
+            )
 
 
 def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path):
@@ -249,7 +272,7 @@ def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path):
     args.gmt_mass_list = ""
     atac_bulk.run(args)
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    assert "ref_ubiquity_penalty" in meta["program_extraction"]["program_methods_skipped"]
+    assert "ref_ubiquity_penalty" in meta["program_extraction"]["contrast_methods_skipped"]
 
 
 def test_bulk_resource_policy_fail_raises_on_missing_resource(tmp_path: Path):
