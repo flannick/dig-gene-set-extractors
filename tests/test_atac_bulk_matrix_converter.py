@@ -87,3 +87,20 @@ def test_bulk_matrix_converter_emits_open_close(tmp_path: Path):
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
+
+
+def test_bulk_matrix_use_reference_bundle_false_warns_skipped_contrasts(tmp_path: Path, capsys):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_matrix_no_reference_bundle")
+    args.use_reference_bundle = False
+    atac_bulk_matrix.run(args)
+
+    captured = capsys.readouterr()
+    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
+    assert "contrast_method=atlas_residual skipped" in captured.err
+    assert "docs/atac_reference_bundle.md" in captured.err
+
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    contrast_methods = meta["program_extraction"]["contrast_methods"]
+    assert "ref_ubiquity_penalty" not in contrast_methods
+    assert "atlas_residual" not in contrast_methods

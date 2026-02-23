@@ -26,6 +26,7 @@ from omics2geneset.core.atac_programs import (
     PROGRAM_TFIDF_DISTAL,
     compute_peak_idf,
     atlas_residual_scores,
+    contrast_method_enablement_hint,
     enhancer_bias_scores,
     mask_peak_weights,
     promoter_peak_indices,
@@ -309,6 +310,29 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
     return params
 
 
+def _warn_skipped_contrast_methods(
+    contrast_methods_skipped: dict[str, str],
+    genome_build: str,
+    resource_policy: str,
+) -> None:
+    if not contrast_methods_skipped:
+        return
+    print("warning: some contrast methods were skipped; continuing with available methods.", file=sys.stderr)
+    for method in sorted(contrast_methods_skipped):
+        print(
+            f"warning: contrast_method={method} skipped: {contrast_methods_skipped[method]}",
+            file=sys.stderr,
+        )
+        hint = contrast_method_enablement_hint(method, genome_build)
+        if hint:
+            print(f"warning:   {hint}", file=sys.stderr)
+    if resource_policy == "skip":
+        print(
+            "warning: run with --resource_policy fail to require all requested contrast methods.",
+            file=sys.stderr,
+        )
+
+
 def _link(peaks: list[dict[str, object]], genes, args, link_method: str):
     if link_method == _EXTERNAL_LINK_METHOD:
         region_gene_links = _arg(args, "_region_gene_links_resolved", None)
@@ -504,14 +528,24 @@ def run(args) -> dict[str, object]:
         _arg(args, "program_methods", None),
     )
     program_methods = remove_reference_program_methods(program_methods)
-    contrast_methods = resolve_contrast_methods(
+    contrast_methods_requested = resolve_contrast_methods(
         _arg(args, "contrast_methods", None),
         _arg(args, "program_methods", None),
-        use_reference_bundle=use_reference_bundle,
+        use_reference_bundle=True,
     )
+    contrast_methods = list(contrast_methods_requested)
     program_methods_skipped: dict[str, str] = {}
     contrast_methods_skipped: dict[str, str] = {}
     resources_used: list[dict[str, object]] = []
+    if not use_reference_bundle:
+        for method in contrast_methods_requested:
+            if method == CONTRAST_METHOD_NONE:
+                continue
+            contrast_methods_skipped.setdefault(
+                method,
+                "disabled because --use_reference_bundle=false",
+            )
+        contrast_methods = [m for m in contrast_methods if m == CONTRAST_METHOD_NONE]
 
     groups = read_groups_tsv(groups_tsv) if groups_tsv else None
     group_indices = make_group_indices(barcodes, groups)
@@ -617,6 +651,11 @@ def run(args) -> dict[str, object]:
     if not contrast_methods:
         contrast_methods = [CONTRAST_METHOD_NONE]
     primary_contrast_method = contrast_methods[0]
+    _warn_skipped_contrast_methods(
+        contrast_methods_skipped,
+        str(args.genome_build),
+        resource_policy,
+    )
 
     contrast = _resolve_contrast(args)
     pseudocount = _resolve_pseudocount(args)

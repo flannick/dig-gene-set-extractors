@@ -80,7 +80,7 @@ GMT defaults favor cleaner symbols:
 
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
 Default ATAC usage attempts reference-backed methods when bundle resources are available.
-If resources are missing, methods are skipped by default (`--resource_policy skip`).
+If resources are missing, methods are skipped by default (`--resource_policy skip`), and converters print runtime warnings for each skipped contrast with hints on how to enable it.
 
 ## Extending omics2geneset
 

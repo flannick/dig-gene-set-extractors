@@ -164,7 +164,7 @@ def test_bulk_default_uses_reference_bundle_when_available(tmp_path: Path):
     assert "atlas_residual" in contrast_methods
 
 
-def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path):
+def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path, capsys):
     args = Args()
     args.out_dir = str(tmp_path / "bulk_default_no_refs")
     args.program_preset = "default"
@@ -177,6 +177,10 @@ def test_bulk_use_reference_bundle_false_opts_out(tmp_path: Path):
     args.gmt_topk_list = "3"
     args.gmt_mass_list = ""
     atac_bulk.run(args)
+    captured = capsys.readouterr()
+    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
+    assert "contrast_method=atlas_residual skipped" in captured.err
+    assert "docs/atac_reference_bundle.md" in captured.err
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "__contrast_method=ref_ubiquity_penalty__" not in gmt_text
@@ -258,7 +262,7 @@ def test_bulk_linkage_and_contrast_cross_product_for_linked_activity(tmp_path: P
             )
 
 
-def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path):
+def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path, capsys):
     args = Args()
     args.out_dir = str(tmp_path / "bulk_resource_skip")
     args.program_preset = "none"
@@ -271,6 +275,9 @@ def test_bulk_resource_policy_skip_skips_missing_method(tmp_path: Path):
     args.gmt_topk_list = "3"
     args.gmt_mass_list = ""
     atac_bulk.run(args)
+    captured = capsys.readouterr()
+    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
+    assert "docs/atac_reference_bundle.md" in captured.err
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "ref_ubiquity_penalty" in meta["program_extraction"]["contrast_methods_skipped"]
 

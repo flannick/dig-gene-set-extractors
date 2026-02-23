@@ -53,6 +53,7 @@ ATAC reference bundle setup:
 - current bundle version: `v1.1.0` split outputs: `...-atac-refdata-hg19-v1.1.0.tar.gz` and `...-atac-refdata-hg38-v1.1.0.tar.gz`
 - converters auto-select build-matched resource IDs from `--genome_build`
 - `omics2geneset` defaults to `--use_reference_bundle true` (opt out with `--use_reference_bundle false`)
+- when default contrast methods cannot run (missing resource data), converters warn and continue with available methods by default
 - production guidance: run with `--resource_policy fail` after `resources status --check_schema`
 
 ## Common Output Contract

@@ -197,6 +197,28 @@ def resolve_contrast_methods(
     return out
 
 
+def contrast_method_enablement_hint(method: str, genome_build: str) -> str | None:
+    if method not in REFERENCE_PROGRAM_METHODS:
+        return None
+    gb = genome_build.strip().lower()
+    if gb in {"hg19", "grch37"}:
+        preset = "atac_default_optional_hg19"
+    elif gb in {"hg38", "grch38"}:
+        preset = "atac_default_optional_hg38"
+    else:
+        preset = ""
+    if preset:
+        return (
+            "Enable by providing a reference bundle via --resources_dir <bundle_root> "
+            "(see docs/atac_reference_bundle.md), or fetch resources with "
+            f"`omics2geneset resources fetch --preset {preset}`."
+        )
+    return (
+        "Enable by providing a compatible reference bundle via --resources_dir <bundle_root> "
+        "(see docs/atac_reference_bundle.md)."
+    )
+
+
 def promoter_peak_indices(promoter_links: list[dict[str, object]]) -> set[int]:
     return {int(link["peak_index"]) for link in promoter_links}
 

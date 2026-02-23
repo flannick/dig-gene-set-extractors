@@ -223,6 +223,29 @@ def test_sc_connectable_preset_falls_back_to_group_vs_rest_without_metadata(tmp_
     assert meta["program_extraction"]["contrast"]["mode"] == "group_vs_rest"
 
 
+def test_sc_use_reference_bundle_false_warns_skipped_contrasts(tmp_path: Path, capsys):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_no_reference_bundle")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.program_preset = "default"
+    args.use_reference_bundle = False
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.gmt_mass_list = ""
+    atac_sc_10x.run(args)
+
+    captured = capsys.readouterr()
+    assert "contrast_method=ref_ubiquity_penalty skipped" in captured.err
+    assert "contrast_method=atlas_residual skipped" in captured.err
+    assert "docs/atac_reference_bundle.md" in captured.err
+
+    meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
+    contrast_methods = meta["program_extraction"]["contrast_methods"]
+    assert "ref_ubiquity_penalty" not in contrast_methods
+    assert "atlas_residual" not in contrast_methods
+
+
 def test_sc_default_program_preset_emits_tfidf_distal_sets(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "sc_program_families")
