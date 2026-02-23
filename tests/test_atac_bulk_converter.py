@@ -231,6 +231,87 @@ def test_bulk_ref_ubiquity_changes_distal_ranking(tmp_path: Path):
     assert none_gene != ref_gene
 
 
+def test_bulk_ref_ubiquity_applies_idf_once(tmp_path: Path):
+    peaks_path = tmp_path / "peaks.bed"
+    peaks_path.write_text(
+        "\n".join(
+            [
+                "chr1\t1000\t1100\tp1\t2.0",
+                "chr1\t2000\t2100\tp2\t3.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    gtf_path = tmp_path / "genes.gtf"
+    gtf_path.write_text(
+        "\n".join(
+            [
+                'chr1\ttest\tgene\t1450\t1550\t.\t+\t.\tgene_id "GENE1"; gene_name "G1";',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    ref_path = tmp_path / "ref.tsv"
+    ref_path.write_text(
+        "\n".join(
+            [
+                "chrom\tstart\tend\tidf_ref",
+                "chr1\t900\t1200\t10.0",
+                "chr1\t1900\t2200\t1.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "resources": [
+                    {
+                        "id": "toy_ref",
+                        "description": "toy",
+                        "filename": ref_path.name,
+                        "url": "",
+                        "sha256": "",
+                        "provider": "test",
+                        "stable_id": "toy-ref",
+                        "version": "1",
+                        "license": "test",
+                        "genome_build": "hg38",
+                    }
+                ],
+                "presets": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.peaks = str(peaks_path)
+    args.gtf = str(gtf_path)
+    args.peak_weights_tsv = None
+    args.out_dir = str(tmp_path / "ref_once")
+    args.program_preset = "none"
+    args.program_methods = "linked_activity"
+    args.link_method = "nearest_tss"
+    args.contrast_methods = "ref_ubiquity_penalty"
+    args.resources_manifest = str(manifest_path)
+    args.resources_dir = str(tmp_path)
+    args.ref_ubiquity_resource_id = "toy_ref"
+    args.top_k = 1
+    args.emit_gmt = False
+    atac_bulk.run(args)
+
+    with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert len(rows) == 1
+    assert rows[0]["gene_id"] == "GENE1"
+    assert float(rows[0]["score"]) == pytest.approx(23.0, rel=0.0, abs=1e-9)
+
+
 def test_bulk_atlas_missing_score_definition_warns_and_skips(tmp_path: Path, capsys):
     atlas_path = tmp_path / "atlas.tsv"
     atlas_path.write_text(

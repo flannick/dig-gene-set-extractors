@@ -38,7 +38,7 @@ from omics2geneset.core.atac_programs import (
     resolve_program_methods,
     score_definition_key,
 )
-from omics2geneset.core.reference_calibration import apply_peak_idf, peak_ref_idf_by_overlap
+from omics2geneset.core.reference_calibration import peak_ref_idf_by_overlap
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
 from omics2geneset.core.peak_to_gene import (
     link_distance_decay,
@@ -466,7 +466,7 @@ def run(args) -> dict[str, object]:
     manifest_resources: dict[str, dict[str, object]] = {}
     manifest_label = "bundled"
     manifest_warnings: list[str] = []
-    ref_peak_weights: list[float] | None = None
+    ref_peak_idf: list[float] | None = None
     atlas_stats_by_definition: dict[str, dict[str, tuple[float, float]]] = {}
     if needs_ref_ubiquity or needs_atlas:
         manifest_label, manifest_resources, _presets, manifest_warnings = load_manifest(resources_manifest)
@@ -483,8 +483,7 @@ def run(args) -> dict[str, object]:
             if not ref_path.exists():
                 raise FileNotFoundError(f"Missing ref ubiquity resource file: {ref_path}")
             ref_rows = read_ref_ubiquity_tsv(ref_path)
-            peak_idf = peak_ref_idf_by_overlap(peaks, ref_rows, default_idf=1.0)
-            ref_peak_weights = apply_peak_idf(peak_weights, peak_idf)
+            ref_peak_idf = peak_ref_idf_by_overlap(peaks, ref_rows, default_idf=1.0)
             resources_used.append(
                 resource_metadata_record(
                     resource_id=ref_resource_id,
@@ -527,7 +526,7 @@ def run(args) -> dict[str, object]:
 
     contrast_methods, auto_reason = resolve_auto_contrast_methods(
         contrast_methods,
-        ref_ubiquity_ready=(ref_peak_weights is not None),
+        ref_ubiquity_ready=(ref_peak_idf is not None),
     )
     if auto_reason:
         contrast_methods_skipped[CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY] = auto_reason
@@ -652,7 +651,7 @@ def run(args) -> dict[str, object]:
         contrast_peak_values = peak_values_for_contrast(
             peak_weights,
             contrast_method,
-            ref_peak_weights,
+            ref_peak_idf,
         )
         linked_scores_by_contrast_by_method[contrast_method] = _linked_scores_for_peak_values(contrast_peak_values)
         family_scores_by_contrast_by_method[contrast_method] = _family_scores_for_peak_values(contrast_peak_values)
