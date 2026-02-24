@@ -12,22 +12,6 @@ python -m pip install -e ".[dev]"
 omics2geneset list
 ```
 
-First run (common bulk ATAC flow, 3 commands):
-
-```bash
-# Optional but recommended when using reference-backed contrasts:
-omics2geneset resources fetch --preset atac_default_optional_hg38
-
-omics2geneset convert atac_bulk \
-  --peaks /path/to/my.bed \
-  --gtf /path/to/gencode.gtf.gz \
-  --out_dir /path/to/out \
-  --organism human \
-  --genome_build hg38
-
-omics2geneset validate /path/to/out
-```
-
 Core CLI:
 
 ```bash
@@ -44,6 +28,23 @@ omics2geneset resources describe ccre_ubiquity_hg38
 omics2geneset resources fetch --preset atac_default_optional_hg19
 omics2geneset resources fetch --preset atac_default_optional_hg38
 omics2geneset resources manifest-validate
+```
+
+Quickstart (baseline bulk BED):
+
+```bash
+# Optional reference resources:
+omics2geneset resources fetch --preset atac_default_optional_hg38
+# omics2geneset resources fetch --preset atac_default_optional_hg19
+
+omics2geneset convert atac_bulk \
+  --peaks <peaks.bed.gz> \
+  --gtf <genes.gtf.gz> \
+  --organism human \
+  --genome_build hg38 \
+  --out_dir <out>
+
+omics2geneset validate <out>
 ```
 
 Resource catalog notes:
@@ -91,10 +92,9 @@ GMT defaults favor cleaner symbols:
 
 Not recommended by default:
 
-- `promoter_activity` (broad/open-chromatin bias)
-- `enhancer_bias` (experimental exploratory signal)
+- `promoter_activity` and promoter-overlap linkage outputs for primary discovery (use mainly for QC)
+- `enhancer_bias` and `tfidf_distal` as routine defaults (use in exploratory/experimental settings)
 - `atlas_residual` (resource-backed and sensitive to score-definition matching)
-- `promoter_overlap` linkage as a primary discovery output
 
 `geneset.tsv` columns:
 
@@ -104,6 +104,37 @@ Not recommended by default:
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
 Default ATAC usage attempts reference-backed methods when bundle resources are available.
 If resources are missing, methods are skipped by default (`--resource_policy skip`), and converters print runtime warnings for each skipped contrast with hints on how to enable it.
+
+## Conceptual model and mapping to methods.tex
+
+Shared ATAC pipeline stages:
+
+1. Define a peak statistic `x_p` from input peaks/matrices.
+2. Transform to nonnegative peak weights `alpha_p = phi(x_p)`.
+3. Apply optional external calibration (`--contrast_methods`) after `x_p` is defined.
+4. Link peaks to genes with `L_pg` (`--link_method`) and compute gene scores `s_g = sum_p alpha_p * L_pg`.
+5. Apply program-family views (`--program_preset` / `--program_methods`).
+6. Select compact gene sets (`--select`, `--top_k`) and optional normalized weights (`--normalize`), then export GMT.
+
+Important distinction:
+
+- `--contrast` is the study-design contrast that defines `x_p` (for example, `group_vs_rest`, `condition_within_group`, or baseline/no contrast).
+- `--contrast_methods` is external calibration applied after `x_p` is defined (`none`, `ref_ubiquity_penalty`, `atlas_residual`).
+
+CLI to theory crosswalk:
+
+| CLI flags (guide) | Model object (methods) | Defined in this note |
+|---|---|---|
+| `--peaks`, `--peak_matrix_tsv`, `--matrix_dir` | Peak coordinates and peak statistic `x_p` | Methods: Mental model (`sec:atac_mental_model`), Peak weights (`sec:peak_weights`) |
+| `--gtf`, `--organism`, `--genome_build` | Gene coordinates (TSS/promoter/locus) | Methods: Linkage models (`sec:linkage_models`) |
+| `--contrast` and related condition flags | Study-design contrast defining `x_p` | Methods: Study-design contrasts (`sec:study_design_contrast`) |
+| `--peak_weight_transform` | Transform `alpha_p = phi(x_p)` | Methods: Peak weights (`sec:peak_weights`) |
+| `--contrast_methods` | External calibration (peak-level or gene-level) | Methods: Contrast-method axis (`sec:contrast_axis`), `eq:ref_idf`, `eq:atlas_logratio`, `eq:atlas_z` |
+| `--ref_ubiquity_resource_id`, `--atlas_resource_id`, `--atlas_metric`, `--atlas_min_raw_quantile`, `--atlas_use_log1p` | Reference resources and stabilization choices | Methods: Resources (`sec:resources`), M3.1/M3.2 |
+| `--link_method` | Linkage model `L_pg` | Methods: Linkage models (`sec:linkage_models`) |
+| `--program_preset`, `--program_methods` | Program-family view `Psi_m` | Methods: Program-family axis (`sec:program_axis`), catalog (`sec:program_catalog`) |
+| `--select`, `--top_k`, `--normalize` | Gene set extraction operator and normalization | Methods: Set extraction (`sec:set_extraction`), `eq:within_program_l1` |
+| `--emit_gmt`, `--gmt_topk_list`, `--gmt_min_genes`, `--gmt_max_genes` | GMT export of selected gene sets | Methods: GMT export (`sec:gmt_export`) |
 
 ## Extending omics2geneset
 
@@ -131,6 +162,14 @@ ATAC program generation follows three independent axes:
 - contrast axis (`--contrast_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
 - program-family axis (`--program_methods` / `--program_preset`): how linked scores are turned into biologically motivated program views (`linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`, and `tfidf_distal` for scATAC)
 
+### Theory cross-reference
+
+- Methods: Peak weights (`sec:peak_weights`)
+- Methods: Linkage models (`sec:linkage_models`)
+- Methods: Calibration contrast-methods (`sec:contrast_axis`)
+- Methods: Program-family axis and catalog (`sec:program_axis`, `sec:program_catalog`)
+- Methods: Set extraction and GMT export (`sec:set_extraction`, `sec:gmt_export`)
+
 Recommended default (`--program_preset connectable`) is intentionally not a full cross-product. It emits:
 
 - `linked_activity` at `link_method=nearest_tss`
@@ -151,8 +190,6 @@ Optional peak weights:
 
 - `--peaks_weight_column` (default `5`; 1-based indexing where column 1 is `chrom`), or
 - `--peak_weights_tsv` with `chrom,start,end,weight`
-
-Theory cross-link: `docs/methods.tex` Sections 4-6 (link axis, contrast-method axis, and program-family axis) plus Section 7 (catalog).
 
 ### Extraction modes (concept + scientific intent)
 
@@ -209,12 +246,13 @@ omics2geneset convert atac_bulk \
   --normalize within_set_l1
 ```
 
-If results look generic (quick checklist):
+### Common pitfalls
 
-1. Confirm build consistency (`--genome_build`, `--gtf`, and reference bundle build must match).
-2. Confirm `--peaks_weight_column` points to a quantitative accessibility signal.
-3. Inspect `run_summary.txt` for link assignment and reference-contrast details.
-4. Re-run with `--contrast_methods none` to compare against reference-calibrated output.
+- Genome build mismatch between peaks, `--gtf`, and reference resources.
+- Wrong `--peaks_weight_column` (for example selecting rank/length instead of accessibility signal).
+- Missing resources causing `--contrast_methods` to fall back under `--resource_policy skip`.
+- Promoter-heavy outputs are often generic for baseline single-sample data; prefer distal programs for discovery.
+- Check `run_summary.txt` to confirm which methods ran versus skipped.
 
 ## Extractor: atac_sc_10x
 
@@ -234,7 +272,13 @@ Optional:
 - `--groups_tsv` (`barcode`, `group`) for per-group programs
 - `--cell_metadata_tsv` (`barcode` plus metadata columns) to enable condition contrasts
 
-Theory cross-link: `docs/methods.tex` Sections 2-3 (framework), Section 7 (scATAC contrast families), and Sections 8-9 (set extraction/GMT).
+### Theory cross-reference
+
+- Methods: Study-design contrasts (`sec:study_design_contrast`)
+- Methods: scATAC peak summaries (`sec:sc_peak_summaries`)
+- Methods: TF-IDF equation (`eq:tfidf`)
+- Methods: Linkage/program/calibration axes (`sec:linkage_models`, `sec:contrast_axis`, `sec:program_axis`)
+- Methods: Set extraction and GMT export (`sec:set_extraction`, `sec:gmt_export`)
 
 ### Extraction modes (concept + scientific intent)
 
@@ -355,7 +399,13 @@ omics2geneset convert atac_sc_10x \
 
 Use this converter for condition contrasts across bulk ATAC samples using a peak-by-sample matrix.
 
-Theory cross-link: `docs/methods.tex` Sections 6-7 (contrast-method axis and method catalog), plus Section 12 (recommended defaults).
+### Theory cross-reference
+
+- Methods: Study-design contrasts (`sec:study_design_contrast`)
+- Methods: Peak weights and transforms (`sec:peak_weights`)
+- Methods: Linkage and calibration axes (`sec:linkage_models`, `sec:contrast_axis`)
+- Methods: Program catalog and defaults (`sec:program_catalog`, `sec:presets`)
+- Methods: Set extraction and GMT export (`sec:set_extraction`, `sec:gmt_export`)
 
 Required inputs:
 

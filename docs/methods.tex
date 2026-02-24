@@ -41,6 +41,58 @@ The implementation supports two usage modes:
 
 This note is organized to match that workflow: we define a unified scoring framework and then describe a catalog of program methods, grouped by motivation and data requirements, including the auxiliary resources needed for each method.
 
+\section{Mental model of ATAC-seq for gene program extraction}
+\label{sec:atac_mental_model}
+
+ATAC-seq measures chromatin accessibility at genomic loci. The primary measured objects are regions (peaks) with coordinates and a locus-level signal. Many downstream biological questions, however, are gene-centric (pathways, processes, mechanisms), so we require an explicit model that projects locus-level evidence to genes.
+
+\paragraph{Promoters vs enhancers.}
+Promoter accessibility is often broadly shared across cell types and can be dominated by global effects (coverage, cell cycle, stress, housekeeping). Distal enhancer accessibility is typically more informative for cell type and cell state identity. For this reason, the default program preset emphasizes distal programs and uses reference calibration when available.
+
+\paragraph{Baseline vs contrast.}
+A single-sample peak list (baseline accessibility) often yields generic programs unless we (i) emphasize distal enhancers and/or (ii) calibrate against reference accessibility. Stronger specificity is usually obtained from within-study contrasts (for example, cluster-vs-rest in scATAC or condition A vs B across donors). This note distinguishes:
+(i) study-design contrasts that define the peak statistic $x_p$ and
+(ii) calibration methods (\texttt{contrast\_methods}) that adjust peak/gene signals relative to external baselines.
+
+\paragraph{What a contributor typically has.}
+ATAC-seq contributors commonly provide one of:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Bulk peak intervals} (BED/narrowPeak) with an optional signal column (converter: \texttt{atac\_bulk}).
+\item \textbf{scATAC peak-by-cell matrix} (counts) plus group labels (converter: \texttt{atac\_sc\_10x}).
+\item \textbf{Bulk peak-by-sample matrix} plus sample metadata defining a contrast (converter: \texttt{atac\_bulk\_matrix}).
+\end{itemize}
+
+\paragraph{Pipeline summary.}
+Across these inputs, the core pipeline is:
+(1) define a peak statistic $x_p$,
+(2) transform to a nonnegative peak weight $\alpha_p=\phi(x_p)$,
+(3) optionally calibrate peaks/genes against references (contrast-method axis),
+(4) project to genes via a linkage model $L_{pg}$ to obtain gene scores $s_g$,
+(5) apply a program-family view (linked/promoter/distal/etc.),
+and (6) convert gene scores to one or more gene sets.
+
+\section{How to map CLI arguments to the model in this note}
+\label{sec:doc_map}
+
+This supplementary note provides the biological rationale and mathematical definitions for the components exposed as command line arguments in \texttt{omics2geneset}. Practical usage examples and full flag listings are in \texttt{docs/omics2geneset.md}. The two documents are designed to be read in either order.
+
+\begin{longtable}{p{0.28\textwidth} p{0.26\textwidth} p{0.38\textwidth}}
+\toprule
+CLI flags (guide) & Model object (this note) & Defined in this note \\
+\midrule
+\texttt{--peaks}, \texttt{--peak\_matrix\_tsv}, \texttt{--matrix\_dir} & Peak coordinates and peak statistic $x_p$ & Sections \ref{sec:atac_mental_model}, \ref{sec:peak_weights} \\
+\texttt{--gtf}, \texttt{--organism}, \texttt{--genome\_build} & Gene coordinates (TSS/promoter/locus) & Section \ref{sec:linkage_models} \\
+\texttt{--contrast} and related condition flags & Study-design contrast defining $x_p$ & Section \ref{sec:study_design_contrast} \\
+\texttt{--peak\_weight\_transform} & Transform $\alpha_p=\phi(x_p)$ & Section \ref{sec:peak_weights} \\
+\texttt{--contrast\_methods} & External calibration (peak-level or gene-level) & Section \ref{sec:contrast_axis}, Eqs. \ref{eq:ref_idf}, \ref{eq:atlas_logratio}, \ref{eq:atlas_z} \\
+\texttt{--ref\_ubiquity\_resource\_id}, \texttt{--atlas\_resource\_id}, \texttt{--atlas\_metric}, \texttt{--atlas\_min\_raw\_quantile}, \texttt{--atlas\_use\_log1p} & Reference resources and stabilization choices & Section \ref{sec:resources}, Subsections M3.1 and M3.2 \\
+\texttt{--link\_method} & Linkage model $L_{pg}$ & Section \ref{sec:linkage_models} \\
+\texttt{--program\_preset}, \texttt{--program\_methods} & Program-family view $\Psi_m$ & Sections \ref{sec:program_axis}, \ref{sec:program_catalog} \\
+\texttt{--select}, \texttt{--top\_k}, \texttt{--normalize} & Gene set extraction operator and normalization & Section \ref{sec:set_extraction}, Eq. \ref{eq:within_program_l1} \\
+\texttt{--emit\_gmt}, \texttt{--gmt\_topk\_list}, \texttt{--gmt\_min\_genes}, \texttt{--gmt\_max\_genes} & GMT export of selected gene sets & Section \ref{sec:gmt_export} \\
+\bottomrule
+\end{longtable}
+
 \section{Notation}
 \begin{itemize}[leftmargin=2em]
 \item Peaks (regions) indexed by $p \in \{1,\dots,P\}$ with coordinates $(c_p,s_p,e_p)$ and midpoint $m_p=(s_p+e_p)/2$.
@@ -69,6 +121,7 @@ Common transforms:
 \phi_{\mathrm{neg}}(x) &= \max(-x, 0).
 \end{align*}
 For directional programs (opening vs closing), apply $\phi_{\mathrm{pos}}$ and $\phi_{\mathrm{neg}}$ separately to obtain two nonnegative peak-weight vectors.
+CLI: \texttt{--peak\_weight\_transform} selects $\phi$; study-design contrasts provide $x_p$ (Section \ref{sec:study_design_contrast}).
 
 \subsection{Peak-to-gene projection}
 \label{sec:projection}
@@ -121,27 +174,6 @@ and each program family produces a gene score view
 u_g^{(m,r,\ell)} = \Psi_m\!\left(s^{(r,\ell)}, \alpha^{(r)}, L^{(\ell)}\right),
 \]
 followed by the set selection operators in Section \ref{sec:set_extraction}.
-
-\paragraph{Related but separate study-design contrast.}
-For scATAC and bulk-matrix differential workflows, an additional design-level contrast (\texttt{--contrast}, e.g. group-vs-rest or condition-within-group) defines how peak statistics $x_p$ are computed before the three axes above are applied.
-This appears in output naming as \texttt{\_\_contrast=...}.
-
-\subsection{CLI-to-model crosswalk}
-\label{sec:cli_crosswalk}
-\begin{center}
-\begin{tabular}{@{}p{3.2cm}p{4.7cm}p{6.5cm}@{}}
-\toprule
-CLI flag & Mathematical object & Practical meaning \\
-\midrule
-\texttt{--link\_method} & $L_{pg}^{(\ell)}$ & Region-to-gene linkage model on the link axis ($\ell$). \\
-\texttt{--contrast} & $x_p$ construction & Study-design contrast used to compute peak statistics before calibration (group-vs-rest, condition-within-group, etc.). \\
-\texttt{--contrast\_methods} & $\alpha_p^{(r)}$ or $u_g^{(m,r,\ell)}$ calibration & Contrast-method axis ($r$): peak-level calibration (\texttt{ref\_ubiquity\_penalty}) or gene-level calibration (\texttt{atlas\_residual}). \\
-\texttt{--program\_preset}, \texttt{--program\_methods} & $\Psi_m(\cdot)$ & Program-family axis ($m$): linked/promoter/distal/enhancer-bias/TFIDF views. \\
-\texttt{--select}, \texttt{--top\_k}, \texttt{--quantile}, \texttt{--min\_score} & $\mathcal{S}$ selection operator & Conversion from full gene-score distribution to compact program set (Section \ref{sec:set_extraction}). \\
-\texttt{--normalize} & within-set weights $w_g$ & Weight normalization in selected genes (\texttt{within\_set\_l1} preferred for compact programs). \\
-\bottomrule
-\end{tabular}
-\end{center}
 
 \section{Peak-to-gene linkage models}
 \label{sec:linkage_models}
@@ -211,6 +243,21 @@ S_{pg} = A_p K_{pg}, \qquad L_{pg} = \frac{S_{pg}}{\sum_h S_{ph}+\epsilon}.
 \]
 \paragraph{Heuristics.} If no contact map is available, approximate $K_{pg}$ by a distance kernel (exponential or power-law), and record the approximation.
 
+\section{Study-design contrasts (defining the peak statistic $x_p$)}
+\label{sec:study_design_contrast}
+Before calibration by \texttt{--contrast\_methods}, users define a study-design contrast that produces peak statistics $x_p$:
+\begin{itemize}[leftmargin=2em]
+\item baseline accessibility (no within-study contrast),
+\item group-vs-rest (scATAC),
+\item condition-within-group (scATAC),
+\item condition A vs B across samples (bulk matrix),
+\item phenotype association (optional regression-based workflows).
+\end{itemize}
+These design-level contrasts define the signed or unsigned peak statistics that are then transformed to peak weights and passed through the rest of the pipeline.
+In output naming this study-design stage appears as \texttt{\_\_contrast=...}.
+
+Study-design contrast defines $x_p$ first. The calibration contrast-method axis (\texttt{--contrast\_methods}) is applied after $x_p$ is defined, and adjusts peak or gene signals relative to external references.
+
 \section{Contrast-method axis}
 \label{sec:contrast_axis}
 The contrast-method axis ($r$) defines how peak or gene signals are calibrated before extracting gene sets.
@@ -222,16 +269,6 @@ Conceptually, this axis answers: ``contrast against what baseline, and at what s
 \item \texttt{ref\_ubiquity\_penalty}: reweight peaks by reference ubiquity (peak-level calibration) before projection.
 \item \texttt{atlas\_residual}: calibrate projected gene scores against reference atlas statistics (gene-level calibration).
 \end{itemize}
-
-\subsection{Related study-design contrasts (upstream of this axis)}
-Before contrast-method calibration, users may define a study-design contrast to produce peak statistics $x_p$:
-\begin{itemize}[leftmargin=2em]
-\item group-vs-rest (scATAC),
-\item condition-within-group (scATAC),
-\item condition A vs B across samples (bulk matrix),
-\item phenotype association (optional regression-based workflows).
-\end{itemize}
-These design-level contrasts define the signed peak statistics that are then transformed to OPEN/CLOSE peak weights and passed through the contrast-method axis.
 
 \section{Program-family axis}
 \label{sec:program_axis}
@@ -391,6 +428,7 @@ Project each direction to genes via Eq.\ \ref{eq:gene_score} and extract separat
 \subsubsection{M2.4: tfidf\_distal (scATAC optional / experimental)}
 \paragraph{Motivation.} Peaks that are accessible in many cells are less informative for defining cell identity.
 A TF-IDF style reweighting emphasizes more specific peaks.
+This family is not part of the connectable/default preset; enable it with \texttt{--program\_preset experimental}, \texttt{--program\_preset all}, or explicit \texttt{--program\_methods tfidf\_distal}.
 \paragraph{Definition.} Let $N=C$ be the number of cells in the dataset and define the document frequency:
 \[
 df_p = \sum_{c=1}^C \mathbf{1}\{X_{pc}>0\}.
@@ -450,9 +488,12 @@ Define either:
 r_g &= \log\left(\frac{s_g+\epsilon}{m_g+\epsilon}\right), \label{eq:atlas_logratio}\\
 z_g &= \frac{s_g - m_g}{d_g + \epsilon}. \label{eq:atlas_z}
 \end{align}
+\paragraph{Heuristics and safeguards.}
+Atlas baselines should be computed with the same score definition (program family, link method, and related scoring choices) as the run being calibrated; otherwise the residual is not valid and should be skipped or treated as an error. To reduce near-zero denominator artifacts, apply a raw-score floor (for example, keep genes above a raw-score quantile before ranking residuals) and/or compute residuals on log1p scores. In the CLI these controls are exposed by \texttt{--atlas\_min\_raw\_quantile} and \texttt{--atlas\_use\_log1p}; \texttt{--atlas\_metric} chooses \texttt{logratio} versus \texttt{zscore}.
 \paragraph{Gene sets.} Select top-$K$ genes by $r_g$ or $z_g$ to obtain a reference-calibrated specificity program.
 
 \subsection{Method family 4: regulator-centric programs (optional resources)}
+\paragraph{Implementation status.} Described as a forward-looking extension; not enabled by default and may not be implemented in the current release.
 \subsubsection{M4.1: motif\_regulons}
 \paragraph{Motivation.} A common ATAC question is ``which TFs are driving the regulatory program?'' Motif-linked programs provide a gene-level readout of TF activity hypotheses.
 \paragraph{Inputs.} A motif database and motif occurrences in peaks (computed or precomputed).
@@ -465,6 +506,7 @@ s_{g}^{(m)} = \sum_{p \in \mathcal{P}(m)} \alpha_p \, L_{pg}.
 \paragraph{Program selection.} To avoid producing hundreds of sets, restrict to motifs with high total mass $\sum_g s_g^{(m)}$ or motifs enriched among top peaks. Emit top-$K$ genes per selected motif.
 
 \subsection{Method family 5: module discovery (optional, heavier compute)}
+\paragraph{Implementation status.} Described as a forward-looking extension; not enabled by default and may not be implemented in the current release.
 These methods produce \emph{multiple} programs per dataset by discovering regulatory modules in peak space and projecting them to genes.
 
 \subsubsection{M5.1: coaccess\_modules}
@@ -504,6 +546,7 @@ Project to genes by Eq.\ \ref{eq:gene_score} using a distal-aware linkage (Link 
 \section{From gene scores to gene sets}
 \label{sec:set_extraction}
 After the three axes and program catalog determine a gene-score vector for each program instance, this section specifies how scores are converted to one or more gene sets of size 100--500.
+CLI: \texttt{--select}/\texttt{--top\_k} define the selection operator; \texttt{--normalize} defines within-set normalization; \texttt{--emit\_gmt} controls GMT export.
 
 \subsection{Selection operators}
 Let $\mathbf{s} = (s_1,\dots,s_G)$ be gene scores for a program instance. The default operator is fixed-size top-$K$.
@@ -564,11 +607,11 @@ Names are sanitized to remove whitespace and path separators.
 To balance usability and flexibility, program methods are grouped into presets.
 
 \subsection{Default/connectable preset (high-value, low-dependency)}
-The recommended default preset (\texttt{program\_preset=connectable}, with \texttt{default} as alias) emits:
+The recommended default preset (\texttt{--program\_preset connectable}, with \texttt{default} as alias) emits:
 \begin{itemize}[leftmargin=2em]
 \item \textbf{linked\_activity} with \texttt{link\_method=nearest\_tss}.
 \item \textbf{distal\_activity} with \texttt{link\_method=distance\_decay}.
-\item a single contrast outcome per pair using \texttt{contrast\_methods=auto\_prefer\_ref\_ubiquity\_else\_none} (prefer reference ubiquity calibration, otherwise fallback to \texttt{none}).
+\item a single contrast outcome per pair using \texttt{--contrast\_methods auto\_prefer\_ref\_ubiquity\_else\_none} (prefer reference ubiquity calibration, otherwise fallback to \texttt{none}).
 \end{itemize}
 This avoids broad, low-specificity outputs in the common case while keeping dependencies minimal.
 
