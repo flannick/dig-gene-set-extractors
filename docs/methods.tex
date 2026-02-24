@@ -126,6 +126,23 @@ followed by the set selection operators in Section \ref{sec:set_extraction}.
 For scATAC and bulk-matrix differential workflows, an additional design-level contrast (\texttt{--contrast}, e.g. group-vs-rest or condition-within-group) defines how peak statistics $x_p$ are computed before the three axes above are applied.
 This appears in output naming as \texttt{\_\_contrast=...}.
 
+\subsection{CLI-to-model crosswalk}
+\label{sec:cli_crosswalk}
+\begin{center}
+\begin{tabular}{@{}p{3.2cm}p{4.7cm}p{6.5cm}@{}}
+\toprule
+CLI flag & Mathematical object & Practical meaning \\
+\midrule
+\texttt{--link\_method} & $L_{pg}^{(\ell)}$ & Region-to-gene linkage model on the link axis ($\ell$). \\
+\texttt{--contrast} & $x_p$ construction & Study-design contrast used to compute peak statistics before calibration (group-vs-rest, condition-within-group, etc.). \\
+\texttt{--contrast\_methods} & $\alpha_p^{(r)}$ or $u_g^{(m,r,\ell)}$ calibration & Contrast-method axis ($r$): peak-level calibration (\texttt{ref\_ubiquity\_penalty}) or gene-level calibration (\texttt{atlas\_residual}). \\
+\texttt{--program\_preset}, \texttt{--program\_methods} & $\Psi_m(\cdot)$ & Program-family axis ($m$): linked/promoter/distal/enhancer-bias/TFIDF views. \\
+\texttt{--select}, \texttt{--top\_k}, \texttt{--quantile}, \texttt{--min\_score} & $\mathcal{S}$ selection operator & Conversion from full gene-score distribution to compact program set (Section \ref{sec:set_extraction}). \\
+\texttt{--normalize} & within-set weights $w_g$ & Weight normalization in selected genes (\texttt{within\_set\_l1} preferred for compact programs). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
 \section{Peak-to-gene linkage models}
 \label{sec:linkage_models}
 The linkage model encodes biological assumptions about cis-regulatory wiring. All linkage models can be combined with any definition of $x_p$ and any gene set extraction operator.
@@ -371,7 +388,7 @@ or $x_p^{(k,A\!:\!B)}=\bar{x}^{(k,A)}_p-\bar{x}^{(k,B)}_p$ when using a differen
 Project each direction to genes via Eq.\ \ref{eq:gene_score} and extract separate OPEN and CLOSE gene sets.
 \paragraph{Practical note.} Enforce a minimum number of cells per condition within each group to avoid unstable contrasts.
 
-\subsubsection{M2.4: tfidf\_distal (scATAC default)}
+\subsubsection{M2.4: tfidf\_distal (scATAC optional / experimental)}
 \paragraph{Motivation.} Peaks that are accessible in many cells are less informative for defining cell identity.
 A TF-IDF style reweighting emphasizes more specific peaks.
 \paragraph{Definition.} Let $N=C$ be the number of cells in the dataset and define the document frequency:
@@ -390,6 +407,7 @@ idf_p = \log\left(\frac{N+1}{df_p+1}\right) + 1,
 \label{eq:tfidf}
 \end{equation}
 \paragraph{Gene projection and sets.} Apply Eq.\ \ref{eq:gene_score} and top-$K$ selection. As with M2.1, both promoter-only and distal-only variants may be emitted.
+\paragraph{Status.} In current CLI defaults (\texttt{program\_preset=connectable/default}), this family is not emitted by default; enable it via \texttt{program\_preset=experimental} or explicit \texttt{--program\_methods tfidf\_distal}.
 
 \subsubsection{M2.5: phenotype\_open / phenotype\_close (bulk or sc, optional)}
 \paragraph{Motivation.} Many ATAC studies compare donors/conditions (case vs control, treatment, time, severity).

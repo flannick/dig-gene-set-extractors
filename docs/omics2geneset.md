@@ -12,6 +12,22 @@ python -m pip install -e ".[dev]"
 omics2geneset list
 ```
 
+First run (common bulk ATAC flow, 3 commands):
+
+```bash
+# Optional but recommended when using reference-backed contrasts:
+omics2geneset resources fetch --preset atac_default_optional_hg38
+
+omics2geneset convert atac_bulk \
+  --peaks /path/to/my.bed \
+  --gtf /path/to/gencode.gtf.gz \
+  --out_dir /path/to/out \
+  --organism human \
+  --genome_build hg38
+
+omics2geneset validate /path/to/out
+```
+
 Core CLI:
 
 ```bash
@@ -54,6 +70,7 @@ Optional:
 
 3. `geneset.full.tsv` (full nonzero score table when `--emit_full true`)
 4. `genesets.gmt` (one or more exported gene sets when `--emit_gmt true`)
+5. `run_summary.json` and `run_summary.txt` (execution/QC summary)
 
 GMT defaults favor cleaner symbols:
 
@@ -132,8 +149,10 @@ Use `--program_preset all` for full method-development cross-product behavior.
 
 Optional peak weights:
 
-- `--peaks_weight_column` (default `5`), or
+- `--peaks_weight_column` (default `5`; 1-based indexing where column 1 is `chrom`), or
 - `--peak_weights_tsv` with `chrom,start,end,weight`
+
+Theory cross-link: `docs/methods.tex` Sections 4-6 (link axis, contrast-method axis, and program-family axis) plus Section 7 (catalog).
 
 ### Extraction modes (concept + scientific intent)
 
@@ -162,6 +181,8 @@ Optional peak weights:
   - `within_set_l1` (default): normalize only selected genes
   - `l1`: legacy global normalization
   - `none`: raw selected scores as weights
+- Optional marker QC:
+  - `--qc_marker_genes_tsv <path>` loads marker symbols/IDs and records top-rank hit counts in metadata/run summary.
 
 ### Outputs
 
@@ -169,6 +190,7 @@ Optional peak weights:
 - `out_dir/geneset.full.tsv` (optional full nonzero table)
 - `out_dir/genesets.gmt` (optional GMT export; default on)
 - `out_dir/geneset.meta.json`
+- `out_dir/run_summary.json` and `out_dir/run_summary.txt`
 
 ### Quickstart
 
@@ -187,6 +209,13 @@ omics2geneset convert atac_bulk \
   --normalize within_set_l1
 ```
 
+If results look generic (quick checklist):
+
+1. Confirm build consistency (`--genome_build`, `--gtf`, and reference bundle build must match).
+2. Confirm `--peaks_weight_column` points to a quantitative accessibility signal.
+3. Inspect `run_summary.txt` for link assignment and reference-contrast details.
+4. Re-run with `--contrast_methods none` to compare against reference-calibrated output.
+
 ## Extractor: atac_sc_10x
 
 ### Required inputs
@@ -204,6 +233,8 @@ Optional:
 
 - `--groups_tsv` (`barcode`, `group`) for per-group programs
 - `--cell_metadata_tsv` (`barcode` plus metadata columns) to enable condition contrasts
+
+Theory cross-link: `docs/methods.tex` Sections 2-3 (framework), Section 7 (scATAC contrast families), and Sections 8-9 (set extraction/GMT).
 
 ### Extraction modes (concept + scientific intent)
 
@@ -265,6 +296,8 @@ Without groups:
 - `out_dir/geneset.full.tsv` (optional)
 - `out_dir/genesets.gmt` (optional; default on)
 - `out_dir/geneset.meta.json`
+- `out_dir/run_summary.json`
+- `out_dir/run_summary.txt`
 
 With groups:
 
@@ -272,6 +305,8 @@ With groups:
 - `out_dir/group=<GROUP>/geneset.full.tsv` (optional)
 - `out_dir/group=<GROUP>/genesets.gmt` (optional; default on)
 - `out_dir/group=<GROUP>/geneset.meta.json`
+- `out_dir/group=<GROUP>/run_summary.json`
+- `out_dir/group=<GROUP>/run_summary.txt`
 - `out_dir/genesets.gmt` (combined all-group GMT file)
 - `out_dir/manifest.tsv`
 
@@ -320,6 +355,8 @@ omics2geneset convert atac_sc_10x \
 
 Use this converter for condition contrasts across bulk ATAC samples using a peak-by-sample matrix.
 
+Theory cross-link: `docs/methods.tex` Sections 6-7 (contrast-method axis and method catalog), plus Section 12 (recommended defaults).
+
 Required inputs:
 
 - `--peak_matrix_tsv`: rows are peaks, columns are samples (numeric values)
@@ -342,6 +379,8 @@ This converter emits direction-aware outputs:
 - CLOSE programs: peaks less accessible in condition A
 
 `genesets.gmt` includes both directions with semantic names (assay, dataset label, condition labels, direction, program method).
+
+Output directory also includes `run_summary.json` and `run_summary.txt` with link/contrast execution details and optional marker QC.
 
 Quickstart:
 

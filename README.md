@@ -79,6 +79,7 @@ Optional artifacts (extractor-specific):
 
 - `geneset.full.tsv`
 - `genesets.gmt`
+- `run_summary.json` / `run_summary.txt`
 - grouped outputs with `manifest.tsv`
 
 At minimum, output metadata should record:

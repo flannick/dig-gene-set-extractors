@@ -58,6 +58,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = False
+    qc_marker_genes_tsv = None
     gtf_source = "toy"
 
 
@@ -68,6 +69,8 @@ def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: P
 
     geneset = Path(args.out_dir) / "geneset.tsv"
     assert geneset.exists()
+    assert (Path(args.out_dir) / "run_summary.json").exists()
+    assert (Path(args.out_dir) / "run_summary.txt").exists()
     with geneset.open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert rows

@@ -75,6 +75,13 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--quantile", type=float, default=0.01)
     parser.add_argument("--min_score", type=float, default=0.0)
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    parser.add_argument(
+        "--qc_marker_genes_tsv",
+        help=(
+            "Optional marker list for QC hit counting (one gene symbol/id per line or first column TSV). "
+            "When provided, marker hit counts are written to run_summary and metadata."
+        ),
+    )
 
 
 def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
@@ -490,6 +497,18 @@ def main(argv: list[str] | None = None) -> int:
                         print("program_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_methods)), file=sys.stderr)
                     else:
                         print("program_methods_skipped=none", file=sys.stderr)
+            active_contrasts = result.get("contrast_methods")
+            if isinstance(active_contrasts, list) and active_contrasts:
+                print("contrast_methods_active=" + ",".join(str(x) for x in active_contrasts), file=sys.stderr)
+                skipped_contrasts = result.get("contrast_methods_skipped")
+                if isinstance(skipped_contrasts, dict):
+                    if skipped_contrasts:
+                        print(
+                            "contrast_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_contrasts)),
+                            file=sys.stderr,
+                        )
+                    else:
+                        print("contrast_methods_skipped=none", file=sys.stderr)
             return 0
     except Exception as exc:  # pragma: no cover
         print(f"error: {exc}", file=sys.stderr)

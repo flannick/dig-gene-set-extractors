@@ -52,6 +52,7 @@ class Args:
     gmt_topk_list = "200"
     gmt_mass_list = ""
     gmt_split_signed = False
+    qc_marker_genes_tsv = None
     region_gene_links_tsv = None
     gtf_source = "toy"
     dataset_label = None
@@ -69,9 +70,13 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
     geneset = Path(args.out_dir) / "geneset.tsv"
     geneset_full = Path(args.out_dir) / "geneset.full.tsv"
     meta = Path(args.out_dir) / "geneset.meta.json"
+    run_summary_json = Path(args.out_dir) / "run_summary.json"
+    run_summary_txt = Path(args.out_dir) / "run_summary.txt"
     assert geneset.exists()
     assert geneset_full.exists()
     assert meta.exists()
+    assert run_summary_json.exists()
+    assert run_summary_txt.exists()
 
     with geneset.open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
@@ -80,6 +85,27 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
+
+
+def test_bulk_optional_marker_qc_written(tmp_path: Path):
+    markers_path = tmp_path / "markers.tsv"
+    markers_path.write_text("gene_symbol\nGENE1\nGENE2\n", encoding="utf-8")
+
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_marker_qc")
+    args.top_k = 2
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.qc_marker_genes_tsv = str(markers_path)
+    atac_bulk.run(args)
+
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "marker_qc" in meta["summary"]
+    assert meta["summary"]["marker_qc"]["n_markers_provided"] == 2
+
+    run_summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert "marker_qc" in run_summary
 
 
 def test_bulk_default_connectable_emits_exactly_two_sets(tmp_path: Path):

@@ -40,13 +40,20 @@ from omics2geneset.core.gmt import (
     write_gmt,
 )
 from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
+from omics2geneset.core.qc import (
+    collect_emitted_method_combinations,
+    load_marker_genes,
+    marker_hit_summary,
+    summarize_numeric,
+    write_run_summary_files,
+)
 from omics2geneset.core.peak_to_gene import (
     link_distance_decay,
     link_external_regions,
     link_nearest_tss,
     link_promoter_overlap,
 )
-from omics2geneset.core.reference_calibration import peak_ref_idf_by_overlap
+from omics2geneset.core.reference_calibration import peak_overlap_mask, peak_ref_idf_by_overlap
 from omics2geneset.core.scoring import score_genes
 from omics2geneset.core.selection import (
     global_l1_weights,
@@ -221,6 +228,7 @@ def _resolved_parameters(
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,
         "gmt_split_signed": bool(_arg(args, "gmt_split_signed", False)),
+        "marker_qc_enabled": bool(_arg(args, "qc_marker_genes_tsv", None)),
     }
 
 
@@ -519,6 +527,7 @@ def run(args) -> dict[str, object]:
     peak_weight_transform = str(_arg(args, "peak_weight_transform", "positive"))
     selected_direction = "OPEN" if peak_weight_transform != "negative" else "CLOSE"
     selected_transform = "positive" if selected_direction == "OPEN" else "negative"
+    marker_genes = load_marker_genes(_arg(args, "qc_marker_genes_tsv", None))
 
     normalize = _arg(args, "normalize", "within_set_l1")
     emit_full = bool(_arg(args, "emit_full", True))
@@ -595,6 +604,7 @@ def run(args) -> dict[str, object]:
     manifest_label = "bundled"
     manifest_warnings: list[str] = []
     ref_peak_idf: list[float] = []
+    ref_overlap_count = 0
     atlas_stats_by_definition: dict[str, dict[str, tuple[float, float]]] = {}
     if needs_ref_ubiquity or needs_atlas:
         manifest_label, manifest_resources, _presets, manifest_warnings = load_manifest(_arg(args, "resources_manifest", None))
@@ -617,6 +627,7 @@ def run(args) -> dict[str, object]:
                 raise FileNotFoundError(f"Missing ref ubiquity resource file: {ref_path}")
             ref_rows = read_ref_ubiquity_tsv(ref_path)
             ref_peak_idf = peak_ref_idf_by_overlap(peaks, ref_rows, default_idf=1.0)
+            ref_overlap_count = sum(1 for x in peak_overlap_mask(peaks, ref_rows) if x)
             resources_used.append(
                 resource_metadata_record(
                     resource_id=ref_resource_id,
@@ -952,16 +963,70 @@ def run(args) -> dict[str, object]:
         input_file_record(args.sample_metadata_tsv, "sample_metadata_tsv"),
         input_file_record(args.gtf, "gtf"),
     ]
+    if _arg(args, "qc_marker_genes_tsv", None):
+        files.append(input_file_record(_arg(args, "qc_marker_genes_tsv", None), "qc_marker_genes_tsv"))
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     for r in resources_used:
         files.append(input_file_record(str(r["path"]), f"resource:{r['id']}"))
+
+    assigned_primary = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})
+    link_assignment: dict[str, dict[str, float]] = {}
+    for method in link_methods:
+        assigned = len({int(link["peak_index"]) for link in links_by_method[method]})
+        link_assignment[method] = {
+            "n_features_assigned": int(assigned),
+            "fraction_features_assigned": float(assigned / len(peaks) if peaks else 0.0),
+        }
+    marker_qc = marker_hit_summary(selected_rows, marker_genes)
+    emitted_combinations = collect_emitted_method_combinations(gmt_plans)
+    if not emitted_combinations:
+        emitted_combinations = [
+            {
+                "program_method": PROGRAM_LINKED_ACTIVITY,
+                "contrast_method": primary_contrast_method,
+                "link_method": primary_link_method,
+                "direction": selected_direction,
+            }
+        ]
+    ref_summary: dict[str, object] | None = None
+    if ref_peak_idf:
+        adjusted = [float(w) * float(i) for w, i in zip(peak_stat, ref_peak_idf)]
+        ref_summary = {
+            "n_overlapping_peaks": ref_overlap_count,
+            "fraction_overlapping_peaks": (ref_overlap_count / len(peaks) if peaks else 0.0),
+            "idf_stats": summarize_numeric([float(x) for x in ref_peak_idf]),
+            "adjusted_peak_weight_stats": summarize_numeric(adjusted),
+        }
 
     output_files = [{"path": str(out_dir / "geneset.tsv"), "role": "selected_program"}]
     if emit_full:
         output_files.append({"path": str(out_dir / "geneset.full.tsv"), "role": "full_scores"})
     if emit_gmt:
         output_files.append({"path": str(gmt_path), "role": "gmt"})
+    run_summary_payload: dict[str, object] = {
+        "converter": "atac_bulk_matrix",
+        "dataset_label": dataset_label,
+        "program_preset": program_preset,
+        "primary_program_method": PROGRAM_LINKED_ACTIVITY,
+        "primary_link_method": primary_link_method,
+        "primary_contrast_method": primary_contrast_method,
+        "selected_direction": selected_direction,
+        "n_input_peaks": len(peaks),
+        "link_assignment": link_assignment,
+        "promoter_peak_count": len(promoter_indices),
+        "distal_peak_count": len(peaks) - len(promoter_indices),
+        "emitted_method_combinations": emitted_combinations,
+        "program_methods_skipped": program_methods_skipped,
+        "contrast_methods_skipped": contrast_methods_skipped,
+    }
+    if marker_qc is not None:
+        run_summary_payload["marker_qc"] = marker_qc
+    if ref_summary is not None:
+        run_summary_payload["ref_ubiquity"] = ref_summary
+    run_summary_json_path, run_summary_txt_path = write_run_summary_files(out_dir, run_summary_payload)
+    output_files.append({"path": str(run_summary_json_path), "role": "run_summary_json"})
+    output_files.append({"path": str(run_summary_txt_path), "role": "run_summary_text"})
 
     params = _resolved_parameters(args, condition_a, condition_b)
     params["program_methods_active"] = program_methods
@@ -970,6 +1035,22 @@ def run(args) -> dict[str, object]:
     params["contrast_methods_skipped"] = contrast_methods_skipped
     params["primary_contrast_method"] = primary_contrast_method
     params["selected_direction"] = selected_direction
+    summary_payload: dict[str, object] = {
+        "n_input_features": len(peaks),
+        "n_genes": len(selected_rows),
+        "n_features_assigned": assigned_primary,
+        "fraction_features_assigned": (assigned_primary / len(peaks) if peaks else 0.0),
+        "n_external_links_unresolved_gene_id": external_links_unresolved,
+        "n_program_methods": len(program_methods),
+        "n_contrast_methods": len(contrast_methods),
+        "n_contrast_methods_skipped": len(contrast_methods_skipped),
+        "n_resource_manifest_warnings": len(manifest_warnings),
+        "n_samples": len(sample_ids),
+        "n_samples_a": len(a_indices),
+        "n_samples_b": len(b_indices),
+    }
+    if marker_qc is not None:
+        summary_payload["marker_qc"] = marker_qc
     meta = make_metadata(
         converter_name="atac_bulk_matrix",
         parameters=params,
@@ -992,24 +1073,7 @@ def run(args) -> dict[str, object]:
             },
             "aggregation": "sum",
         },
-        summary={
-            "n_input_features": len(peaks),
-            "n_genes": len(selected_rows),
-            "n_features_assigned": len({int(link["peak_index"]) for link in links_by_method[primary_link_method]}),
-            "fraction_features_assigned": (
-                len({int(link["peak_index"]) for link in links_by_method[primary_link_method]}) / len(peaks)
-                if peaks
-                else 0.0
-            ),
-            "n_external_links_unresolved_gene_id": external_links_unresolved,
-            "n_program_methods": len(program_methods),
-            "n_contrast_methods": len(contrast_methods),
-            "n_contrast_methods_skipped": len(contrast_methods_skipped),
-            "n_resource_manifest_warnings": len(manifest_warnings),
-            "n_samples": len(sample_ids),
-            "n_samples_a": len(a_indices),
-            "n_samples_b": len(b_indices),
-        },
+        summary=summary_payload,
         program_extraction={
             "selection_method": _arg(args, "select", "top_k"),
             "selection_params": {

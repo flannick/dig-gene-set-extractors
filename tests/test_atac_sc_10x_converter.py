@@ -59,6 +59,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = False
+    qc_marker_genes_tsv = None
     region_gene_links_tsv = None
     contrast = None
     contrast_metric = "log2fc"
@@ -81,6 +82,8 @@ def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     assert "__program=promoter_activity__" not in gmt_text
     assert "__program=enhancer_bias__" not in gmt_text
     assert "__link_method=promoter_overlap__" not in gmt_text
+    assert (Path(args.out_dir) / "run_summary.json").exists()
+    assert (Path(args.out_dir) / "run_summary.txt").exists()
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
@@ -97,6 +100,8 @@ def test_sc_converter_with_groups_validates_root_and_groups(tmp_path: Path):
     validate_output_dir(Path(args.out_dir), schema)
     validate_output_dir(Path(args.out_dir) / "group=g1", schema)
     validate_output_dir(Path(args.out_dir) / "group=g2", schema)
+    assert (Path(args.out_dir) / "group=g1" / "run_summary.json").exists()
+    assert (Path(args.out_dir) / "group=g2" / "run_summary.json").exists()
     combined_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "group=g1" in combined_text
     assert "group=g2" in combined_text

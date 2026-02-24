@@ -54,16 +54,21 @@
     {"name": "gmt_max_genes", "type": "int", "default": 500, "help": "Maximum genes per emitted GMT set"},
     {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "200", "help": "Comma-separated top-K plans for GMT emission"},
     {"name": "gmt_mass_list", "type": "string_csv_floats", "default": "", "help": "Comma-separated HPD mass thresholds for GMT emission"},
-    {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"}
+    {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"},
+    {"name": "qc_marker_genes_tsv", "type": "tsv_optional", "default": null, "help": "Optional marker list (one symbol/id per line or first TSV column) used for top-rank marker hit QC summaries"}
   ],
   "outputs": [
     {"name": "geneset.tsv", "description": "Selected compact program for each output directory"},
     {"name": "geneset.full.tsv", "description": "Optional full score table for all nonzero genes"},
     {"name": "genesets.gmt", "description": "Combined grouped GMT file at root or single-output GMT file"},
+    {"name": "run_summary.json", "description": "Structured per-output run summary with linkage/contrast execution and optional marker QC"},
+    {"name": "run_summary.txt", "description": "Human-readable per-output run summary"},
     {"name": "geneset.meta.json", "description": "Metadata for each selected program"},
     {"name": "group=<GROUP>/geneset.tsv", "description": "Per-group program when groups_tsv is provided"},
     {"name": "group=<GROUP>/geneset.full.tsv", "description": "Optional per-group full score table"},
     {"name": "group=<GROUP>/genesets.gmt", "description": "Per-group exported GMT gene sets"},
+    {"name": "group=<GROUP>/run_summary.json", "description": "Per-group structured run summary"},
+    {"name": "group=<GROUP>/run_summary.txt", "description": "Per-group human-readable run summary"},
     {"name": "group=<GROUP>/geneset.meta.json", "description": "Per-group metadata when groups_tsv is provided"},
     {"name": "manifest.tsv", "description": "Group-to-output-path mapping for grouped runs"}
   ]

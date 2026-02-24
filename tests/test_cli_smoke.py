@@ -63,6 +63,8 @@ def test_cli_validate_single_good_output(tmp_path: Path):
     assert convert.returncode == 0
     assert "program_methods_active=" in convert.stderr
     assert "program_methods_skipped=" in convert.stderr
+    assert "contrast_methods_active=" in convert.stderr
+    assert "contrast_methods_skipped=" in convert.stderr
     validate = _run("validate", str(out))
     assert validate.returncode == 0
     assert "ok" in validate.stdout

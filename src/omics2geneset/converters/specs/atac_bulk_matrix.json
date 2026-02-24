@@ -51,12 +51,15 @@
     {"name": "gmt_max_genes", "type": "int", "default": 500, "help": "Maximum genes per emitted GMT set"},
     {"name": "gmt_topk_list", "type": "string_csv_ints", "default": "200", "help": "Comma-separated top-K plans for GMT emission"},
     {"name": "gmt_mass_list", "type": "string_csv_floats", "default": "", "help": "Comma-separated HPD mass thresholds for GMT emission"},
-    {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"}
+    {"name": "gmt_split_signed", "type": "bool", "default": false, "help": "Split signed scores into positive/negative GMT plans when negatives are present"},
+    {"name": "qc_marker_genes_tsv", "type": "tsv_optional", "default": null, "help": "Optional marker list (one symbol/id per line or first TSV column) used for top-rank marker hit QC summaries"}
   ],
   "outputs": [
     {"name": "geneset.tsv", "description": "Selected compact OPEN/CLOSE program depending on peak_weight_transform"},
     {"name": "geneset.full.tsv", "description": "Optional full score table for selected direction"},
     {"name": "genesets.gmt", "description": "OPEN and CLOSE GMT gene sets across program families"},
+    {"name": "run_summary.json", "description": "Structured run summary with linkage/contrast execution and optional marker QC"},
+    {"name": "run_summary.txt", "description": "Human-readable run summary"},
     {"name": "geneset.meta.json", "description": "Run metadata and provenance validated against schema"}
   ]
 }
