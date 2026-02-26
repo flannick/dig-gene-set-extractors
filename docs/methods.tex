@@ -550,6 +550,16 @@ CLI: \texttt{--select}/\texttt{--top\_k} define the selection operator; \texttt{
 \paragraph{Practical default.}
 The default target size is 100--500 genes (\texttt{--gmt\_min\_genes=100}, \texttt{--gmt\_max\_genes=500}). If a program instance has too few positive genes after filtering, that GMT entry is skipped by default and a warning is emitted. Users can opt in to writing smaller sets with \texttt{--emit\_small\_gene\_sets true}.
 
+\paragraph{Conceptual eligibility criterion (theory).}
+For a program instance $(m,r,\ell)$, define an informative-support size
+\[
+I^{(m,r,\ell)} = \left| \left\{ g : s_g^{(m,r,\ell)} > 0 \right\} \right|.
+\]
+If $I^{(m,r,\ell)}$ is well below the target set size range, the resulting set is dominated by boundary effects and is generally less stable for downstream enrichment. The default behavior therefore treats low-support program instances as \emph{non-emittable by default}, rather than emitting very small high-variance sets.
+
+\paragraph{Grouped-contrast support (theory).}
+For grouped scATAC contrasts, stability also depends on sample size in each stratum. Let $n_k$ be group size and, for within-group condition contrasts, $n_{k,A}, n_{k,B}$ the per-condition counts within group $k$. Program instances are conceptually valid for default emission only when group-level support is adequate (sufficient $n_k$, and sufficient $n_{k,A},n_{k,B}$ when applicable). Exact operational thresholds are implementation details documented in \texttt{docs/omics2geneset.md}.
+
 \subsection{Selection operators}
 Let $\mathbf{s} = (s_1,\dots,s_G)$ be gene scores for a program instance. The default operator is fixed-size top-$K$.
 

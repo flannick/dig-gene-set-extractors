@@ -112,6 +112,28 @@ If resources are missing, methods are skipped by default (`--resource_policy ski
 - Small or weak scATAC groups are skipped when they fail `--min_cells_per_group` (default `100`) or `--min_cells_per_condition` (for `condition_within_group`).
 - Use `--emit_small_gene_sets true` only when you intentionally want small sets for debugging or toy runs.
 
+### Implementation details: exact skip decision flow
+
+For all ATAC converters (`atac_bulk`, `atac_bulk_matrix`, `atac_sc_10x`), GMT emission uses the same shared decision logic:
+
+1. Filter candidate genes by optional `--gmt_biotype_allowlist`.
+2. For each output variant (primary, or `pos/neg` when signed splitting is enabled), keep only rows with `score > 0`.
+3. Build unique gene tokens using `--gmt_prefer_symbol` / `--gmt_require_symbol` (duplicates are dropped while preserving order).
+4. If no positive-token genes remain, skip and warn.
+5. If positive-token count is `< --gmt_min_genes`:
+   - skip and warn when `--emit_small_gene_sets false` (default)
+   - emit and warn when `--emit_small_gene_sets true`
+6. If positive-token count is between `--gmt_min_genes` and `--gmt_min_genes + 50`, emit a marginal-signal warning.
+7. For each plan in `--gmt_topk_list` / `--gmt_mass_list`, create a set from the positive-score rows only.
+8. After token de-duplication, if the resulting set falls below `--gmt_min_genes`, apply the same skip/emit rule from step 5.
+
+All decisions are written to metadata:
+
+- `gmt.requested_outputs`
+- `gmt.emitted_outputs`
+- `gmt.skipped_outputs`
+- `gmt.diagnostics`
+
 ## Conceptual model and mapping to methods.tex
 
 Shared ATAC pipeline stages:
@@ -322,6 +344,18 @@ Optional:
 - GMT guardrails:
   - by default, sets with fewer than `--gmt_min_genes` are skipped with warnings
   - set `--emit_small_gene_sets true` to allow emitting small sets
+
+### Group/contrast skip behavior (implementation)
+
+For `atac_sc_10x`, group-level gating is applied before GMT extraction:
+
+1. Any group with `n_cells < --min_cells_per_group` is skipped with a warning.
+2. For `--contrast condition_within_group`, groups that pass step 1 are additionally skipped when either condition has `< --min_cells_per_condition` cells.
+3. If no groups remain after filtering, conversion exits with an error.
+4. If `condition_within_group` is selected implicitly by preset (not explicitly set by `--contrast`) but condition metadata is missing or unusable, the converter warns and falls back to:
+   - `group_vs_rest` when groups are available
+   - `none` when groups are not available
+5. If `--contrast condition_within_group` is explicitly requested and required condition metadata is missing/unusable, conversion errors instead of falling back.
 
 External linkage TSV format:
 
