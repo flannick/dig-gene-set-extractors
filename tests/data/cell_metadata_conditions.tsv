@@ -1,5 +1,5 @@
-barcode	condition
-c1	treated
-c2	control
-c3	treated
-c4	control
+barcode	condition	donor
+c1	treated	d1
+c2	control	d2
+c3	treated	d3
+c4	control	d4

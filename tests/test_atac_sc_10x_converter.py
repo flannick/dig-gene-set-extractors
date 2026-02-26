@@ -19,6 +19,11 @@ class Args:
     groups_tsv = None
     cell_metadata_tsv = None
     condition_column = None
+    donor_column = "donor"
+    min_donors_per_condition = 1
+    min_total_donors_per_condition = 1
+    cell_imbalance_warn_ratio = 5.0
+    baseline_carry_through_corr_warn = 0.9
     condition_a = None
     condition_b = None
     min_cells_per_group = 1
@@ -137,7 +142,29 @@ def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_pat
     assert contrast["condition_column"] == "condition"
     assert contrast["condition_a"] == "treated"
     assert contrast["condition_b"] == "control"
+    assert contrast["donor_column"] == "donor"
+    assert contrast["n_donors_a"] == 1
+    assert contrast["n_donors_b"] == 1
     assert contrast["directions_emitted"] == ["OPEN", "CLOSE"]
+
+
+def test_sc_condition_within_group_defaults_to_none_contrast_method(tmp_path: Path):
+    args = Args()
+    args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
+    args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
+    args.cell_metadata_tsv = "tests/data/cell_metadata_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.contrast = "condition_within_group"
+    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
+    args.min_cells_per_condition = 1
+    args.min_cells_per_group = 1
+    args.out_dir = str(tmp_path / "sc_condition_none_default")
+    atac_sc_10x.run(args)
+    text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__contrast_method=none__" in text
+    assert "__contrast_method=ref_ubiquity_penalty__" not in text
 
 
 def test_sc_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, capsys):
@@ -209,6 +236,13 @@ def test_sc_groups_below_min_cells_per_group_are_skipped(tmp_path: Path, capsys)
     args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
     args.out_dir = str(tmp_path / "sc_group_size_guard")
     args.groups_tsv = str(groups_path)
+    args.cell_metadata_tsv = "tests/data/cell_metadata_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.contrast = "condition_within_group"
+    args.min_donors_per_condition = 1
+    args.min_total_donors_per_condition = 1
     args.min_cells_per_group = 2
     args.min_cells_per_condition = 1
     args.gmt_min_genes = 1
@@ -220,3 +254,55 @@ def test_sc_groups_below_min_cells_per_group_are_skipped(tmp_path: Path, capsys)
     assert "group=g2" in captured.err
     assert (Path(args.out_dir) / "group=g1" / "geneset.tsv").exists()
     assert not (Path(args.out_dir) / "group=g2" / "geneset.tsv").exists()
+
+
+def test_sc_condition_group_skipped_when_donor_support_low(tmp_path: Path, capsys):
+    args = Args()
+    args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
+    args.out_dir = str(tmp_path / "sc_donor_gate")
+    args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
+    args.cell_metadata_tsv = "tests/data/cell_metadata_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.contrast = "condition_within_group"
+    args.min_cells_per_group = 1
+    args.min_cells_per_condition = 1
+    args.min_donors_per_condition = 2
+    args.min_total_donors_per_condition = 1
+    with pytest.raises(ValueError, match="No groups passed condition_within_group QC gates"):
+        atac_sc_10x.run(args)
+    captured = capsys.readouterr()
+    assert "donor support is too low for condition contrast" in captured.err
+
+
+def test_sc_condition_dataset_donor_gate_blocks_explicit_contrast(tmp_path: Path):
+    args = Args()
+    args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
+    args.out_dir = str(tmp_path / "sc_donor_total_gate")
+    args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
+    args.cell_metadata_tsv = "tests/data/cell_metadata_conditions.tsv"
+    args.condition_column = "condition"
+    args.condition_a = "treated"
+    args.condition_b = "control"
+    args.contrast = "condition_within_group"
+    args.min_cells_per_group = 1
+    args.min_cells_per_condition = 1
+    args.min_donors_per_condition = 1
+    args.min_total_donors_per_condition = 5
+    with pytest.raises(ValueError, match="donor gate failed at dataset level"):
+        atac_sc_10x.run(args)
+
+
+def test_sc_group_vs_rest_not_filtered_by_condition_donor_gates(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "sc_group_vs_rest_unchanged")
+    args.groups_tsv = "tests/data/barcode_groups.tsv"
+    args.contrast = "group_vs_rest"
+    args.min_cells_per_group = 100
+    args.min_cells_per_condition = 100
+    args.min_donors_per_condition = 100
+    args.min_total_donors_per_condition = 100
+    atac_sc_10x.run(args)
+    assert (Path(args.out_dir) / "group=g1" / "geneset.tsv").exists()
+    assert (Path(args.out_dir) / "group=g2" / "geneset.tsv").exists()

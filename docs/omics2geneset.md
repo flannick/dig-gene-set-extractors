@@ -109,7 +109,7 @@ If resources are missing, methods are skipped by default (`--resource_policy ski
 ### Why you might see fewer gene sets now
 
 - `omics2geneset` now skips GMT entries smaller than `--gmt_min_genes` by default.
-- Small or weak scATAC groups are skipped when they fail `--min_cells_per_group` (default `100`) or `--min_cells_per_condition` (for `condition_within_group`).
+- For `condition_within_group`, groups are skipped when they fail cell and donor support gates (`--min_cells_per_group`, `--min_cells_per_condition`, `--min_donors_per_condition`) or dataset-level donor coverage (`--min_total_donors_per_condition`).
 - Use `--emit_small_gene_sets true` only when you intentionally want small sets for debugging or toy runs.
 
 ### Implementation details: exact skip decision flow
@@ -321,9 +321,14 @@ Optional:
   - auto defaults: `1e-3` for `frac_cells_nonzero`, `1.0` for count-based summaries
 - Condition metadata flags:
   - `--condition_column <name>` in `cell_metadata_tsv`
+  - `--donor_column <name>` in `cell_metadata_tsv` (default `donor`)
   - `--condition_a <label>` and `--condition_b <label>` (optional when exactly two levels are present)
   - `--min_cells_per_group <int>` minimum cells required for a group to emit outputs (default `100`)
   - `--min_cells_per_condition <int>` minimum cells per condition within each group
+  - `--min_donors_per_condition <int>` minimum donors per condition within each group (default `3`)
+  - `--min_total_donors_per_condition <int>` minimum donors per condition overall (default `3`)
+  - `--cell_imbalance_warn_ratio <float>` warn on extreme case/control cell imbalance (default `5.0`)
+  - `--baseline_carry_through_corr_warn <float>` warn when condition contrast tracks baseline too strongly (default `0.9`)
 - Peak transform (`--peak_weight_transform`):
   - default `positive` for opening programs
   - use `negative` for closing programs
@@ -335,6 +340,7 @@ Optional:
 - Contrast methods:
   - `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
   - default is `auto_prefer_ref_ubiquity_else_none`
+  - for `--contrast condition_within_group`, default/auto policy is forced to `none`; to run reference calibration explicitly, pass `--contrast_methods ref_ubiquity_penalty` (or another explicit non-auto choice)
   - evaluated independently across each selected `--link_method`
   - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
@@ -349,13 +355,20 @@ Optional:
 
 For `atac_sc_10x`, group-level gating is applied before GMT extraction:
 
-1. Any group with `n_cells < --min_cells_per_group` is skipped with a warning.
-2. For `--contrast condition_within_group`, groups that pass step 1 are additionally skipped when either condition has `< --min_cells_per_condition` cells.
-3. If no groups remain after filtering, conversion exits with an error.
-4. If `condition_within_group` is selected implicitly by preset (not explicitly set by `--contrast`) but condition metadata is missing or unusable, the converter warns and falls back to:
+1. For `--contrast condition_within_group`, if `--contrast_methods` is auto/default, runtime forces `contrast_methods=none` unless you explicitly request a non-auto method.
+2. For `--contrast condition_within_group`, if condition metadata is present:
+   - print per-group case/control cell and donor counts
+   - skip groups with `n_cells < --min_cells_per_group`
+   - skip groups when either condition has `< --min_cells_per_condition` cells
+   - skip groups when either condition has `< --min_donors_per_condition` donors
+   - warn when case/control cell imbalance exceeds `--cell_imbalance_warn_ratio`
+   - optionally warn on high baseline carry-through using `--baseline_carry_through_corr_warn`
+3. For `--contrast condition_within_group`, if overall donor coverage is too low (`--min_total_donors_per_condition`), explicit runs fail; implicit preset-selected runs fall back.
+4. If no groups remain after condition QC filtering, conversion exits with an error.
+5. If `condition_within_group` is selected implicitly by preset (not explicitly set by `--contrast`) but condition metadata is missing or unusable, the converter warns and falls back to:
    - `group_vs_rest` when groups are available
    - `none` when groups are not available
-5. If `--contrast condition_within_group` is explicitly requested and required condition metadata is missing/unusable, conversion errors instead of falling back.
+6. If `--contrast condition_within_group` is explicitly requested and required condition metadata is missing/unusable, conversion errors instead of falling back.
 
 External linkage TSV format:
 

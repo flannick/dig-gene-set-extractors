@@ -227,6 +227,69 @@ def _resolve_condition_pair(
     return condition_a, condition_b, condition_by_cell
 
 
+def _resolve_donor_labels(
+    args,
+    barcodes: list[str],
+    metadata_rows: dict[str, dict[str, str]],
+) -> tuple[str, dict[int, str]]:
+    donor_column = str(_arg(args, "donor_column", "donor")).strip()
+    if not donor_column:
+        raise ValueError("condition_within_group requires --donor_column")
+    donor_by_cell: dict[int, str] = {}
+    for idx, barcode in enumerate(barcodes):
+        row = metadata_rows.get(barcode)
+        if not row:
+            continue
+        value = row.get(donor_column, "")
+        donor = "" if value is None else str(value).strip()
+        if donor:
+            donor_by_cell[idx] = donor
+    if not donor_by_cell:
+        raise ValueError(
+            f"No barcodes in cell_metadata_tsv had non-empty donor values for column: {donor_column}"
+        )
+    return donor_column, donor_by_cell
+
+
+def _donor_counts_by_condition(
+    condition_by_cell: dict[int, str],
+    donor_by_cell: dict[int, str],
+    condition_a: str,
+    condition_b: str,
+) -> dict[str, int]:
+    donors_a: set[str] = set()
+    donors_b: set[str] = set()
+    for idx, cond in condition_by_cell.items():
+        donor = donor_by_cell.get(idx)
+        if not donor:
+            continue
+        if cond == condition_a:
+            donors_a.add(donor)
+        elif cond == condition_b:
+            donors_b.add(donor)
+    return {condition_a: len(donors_a), condition_b: len(donors_b)}
+
+
+def _pearson_corr(xs: list[float], ys: list[float]) -> float | None:
+    if len(xs) != len(ys) or not xs:
+        return None
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    vx = 0.0
+    vy = 0.0
+    cov = 0.0
+    for x, y in zip(xs, ys):
+        dx = float(x) - mx
+        dy = float(y) - my
+        vx += dx * dx
+        vy += dy * dy
+        cov += dx * dy
+    if vx <= 0.0 or vy <= 0.0:
+        return None
+    return cov / math.sqrt(vx * vy)
+
+
 def _default_ref_ubiquity_resource_id(genome_build: str) -> str | None:
     gb = genome_build.strip().lower()
     if gb in {"hg19", "grch37"}:
@@ -311,10 +374,15 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "contrast_pseudocount": _resolve_pseudocount(args),
         "cell_metadata_tsv_provided": bool(_arg(args, "cell_metadata_tsv", None)),
         "condition_column": _arg(args, "condition_column", None),
+        "donor_column": _arg(args, "donor_column", "donor"),
         "condition_a": _arg(args, "condition_a", None),
         "condition_b": _arg(args, "condition_b", None),
         "min_cells_per_group": int(_arg(args, "min_cells_per_group", 100)),
         "min_cells_per_condition": int(_arg(args, "min_cells_per_condition", 50)),
+        "min_donors_per_condition": int(_arg(args, "min_donors_per_condition", 3)),
+        "min_total_donors_per_condition": int(_arg(args, "min_total_donors_per_condition", 3)),
+        "cell_imbalance_warn_ratio": float(_arg(args, "cell_imbalance_warn_ratio", 5.0)),
+        "baseline_carry_through_corr_warn": float(_arg(args, "baseline_carry_through_corr_warn", 0.9)),
         "selection_method": _arg(args, "select", "top_k"),
         "top_k": _arg(args, "top_k", 200),
         "quantile": _arg(args, "quantile", 0.01),
@@ -747,27 +815,30 @@ def run(args) -> dict[str, object]:
     if not contrast_methods:
         contrast_methods = [CONTRAST_METHOD_NONE]
     primary_contrast_method = contrast_methods[0]
-    _warn_skipped_contrast_methods(
-        contrast_methods_skipped,
-        str(args.genome_build),
-        resource_policy,
-    )
 
     contrast = _resolve_contrast(args)
     pseudocount = _resolve_pseudocount(args)
     condition_column = str(_arg(args, "condition_column", "")).strip()
+    donor_column = str(_arg(args, "donor_column", "donor")).strip()
     condition_a = ""
     condition_b = ""
     condition_by_cell: dict[int, str] = {}
+    donor_by_cell: dict[int, str] = {}
     condition_counts_by_group: dict[str, dict[str, int]] = {}
+    donor_counts_by_group: dict[str, dict[str, int]] = {}
+    donor_counts_total: dict[str, int] = {}
     min_cells_per_group = max(1, int(_arg(args, "min_cells_per_group", 100)))
     min_cells_per_condition = max(1, int(_arg(args, "min_cells_per_condition", 50)))
+    min_donors_per_condition = max(1, int(_arg(args, "min_donors_per_condition", 3)))
+    min_total_donors_per_condition = max(1, int(_arg(args, "min_total_donors_per_condition", 3)))
+    cell_imbalance_warn_ratio = max(1.0, float(_arg(args, "cell_imbalance_warn_ratio", 5.0)))
+    baseline_carry_through_corr_warn = float(_arg(args, "baseline_carry_through_corr_warn", 0.9))
 
     if contrast == "group_vs_rest" and not groups_tsv:
         raise ValueError("contrast=group_vs_rest requires --groups_tsv")
+    explicit_contrast = _arg(args, "contrast", None) is not None
     if contrast == "condition_within_group":
         cell_metadata_tsv = _arg(args, "cell_metadata_tsv", None)
-        explicit_contrast = _arg(args, "contrast", None) is not None
         if not cell_metadata_tsv:
             if explicit_contrast:
                 raise ValueError("contrast=condition_within_group requires --cell_metadata_tsv")
@@ -781,6 +852,7 @@ def run(args) -> dict[str, object]:
             metadata_rows = read_cell_metadata_tsv(cell_metadata_tsv)
             try:
                 condition_a, condition_b, condition_by_cell = _resolve_condition_pair(args, barcodes, metadata_rows)
+                donor_column, donor_by_cell = _resolve_donor_labels(args, barcodes, metadata_rows)
             except ValueError as exc:
                 if explicit_contrast:
                     raise
@@ -790,6 +862,61 @@ def run(args) -> dict[str, object]:
                     file=sys.stderr,
                 )
                 contrast = "group_vs_rest" if groups_tsv else "none"
+            else:
+                donor_counts_total = _donor_counts_by_condition(
+                    condition_by_cell,
+                    donor_by_cell,
+                    condition_a,
+                    condition_b,
+                )
+                print(
+                    "warning: condition_within_group overall donor counts: "
+                    f"{condition_a}={donor_counts_total.get(condition_a, 0)} "
+                    f"{condition_b}={donor_counts_total.get(condition_b, 0)} "
+                    f"(min_total_donors_per_condition={min_total_donors_per_condition})",
+                    file=sys.stderr,
+                )
+                if (
+                    donor_counts_total.get(condition_a, 0) < min_total_donors_per_condition
+                    or donor_counts_total.get(condition_b, 0) < min_total_donors_per_condition
+                ):
+                    msg = (
+                        "condition_within_group donor gate failed at dataset level: "
+                        f"{condition_a} donors={donor_counts_total.get(condition_a, 0)} "
+                        f"{condition_b} donors={donor_counts_total.get(condition_b, 0)} "
+                        f"(min_total_donors_per_condition={min_total_donors_per_condition})"
+                    )
+                    if explicit_contrast:
+                        raise ValueError(msg)
+                    print(
+                        f"warning: {msg}; falling back to group_vs_rest/none.",
+                        file=sys.stderr,
+                    )
+                    contrast = "group_vs_rest" if groups_tsv else "none"
+
+    contrast_methods_arg = _arg(args, "contrast_methods", None)
+    if contrast == "condition_within_group":
+        if (
+            contrast_methods_arg is None
+            or str(contrast_methods_arg).strip() == CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY
+        ):
+            if any(m != CONTRAST_METHOD_NONE for m in contrast_methods):
+                contrast_methods_skipped[CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY] = (
+                    "condition_within_group defaults to contrast_methods=none; "
+                    "pass --contrast_methods ref_ubiquity_penalty to override."
+                )
+            contrast_methods = [CONTRAST_METHOD_NONE]
+            primary_contrast_method = CONTRAST_METHOD_NONE
+            contrast_methods_skipped.pop(PROGRAM_REF_UBIQUITY_PENALTY, None)
+            contrast_methods_skipped.pop(PROGRAM_ATLAS_RESIDUAL, None)
+    if not contrast_methods:
+        contrast_methods = [CONTRAST_METHOD_NONE]
+    primary_contrast_method = contrast_methods[0]
+    _warn_skipped_contrast_methods(
+        contrast_methods_skipped,
+        str(args.genome_build),
+        resource_policy,
+    )
 
     files = [
         input_file_record(matrix_files["matrix"], "matrix"),
@@ -829,18 +956,7 @@ def run(args) -> dict[str, object]:
             )
             for group_name in group_indices
         }
-        output_groups = []
-        for group_name in group_indices:
-            group_n = group_sizes.get(group_name, len(group_indices[group_name]))
-            if group_n < min_cells_per_group:
-                print(
-                    "warning: skipping group due to insufficient cells for stable output: "
-                    f"group={group_name} n_cells={group_n} "
-                    f"(min_cells_per_group={min_cells_per_group})",
-                    file=sys.stderr,
-                )
-                continue
-            output_groups.append(group_name)
+        output_groups = list(group_indices.keys())
     else:
         group_sizes = {g: len(idxs) for g, idxs in group_indices.items()}
         if contrast == "condition_within_group":
@@ -857,6 +973,30 @@ def run(args) -> dict[str, object]:
             output_groups = []
             for group_name in group_indices:
                 group_n = group_sizes.get(group_name, len(group_indices[group_name]))
+                counts = condition_counts_by_group[group_name]
+                donors_a: set[str] = set()
+                donors_b: set[str] = set()
+                for idx in group_indices[group_name]:
+                    donor = donor_by_cell.get(idx)
+                    cond = condition_by_cell.get(idx, "")
+                    if donor and cond == condition_a:
+                        donors_a.add(donor)
+                    elif donor and cond == condition_b:
+                        donors_b.add(donor)
+                donor_counts = {
+                    condition_a: len(donors_a),
+                    condition_b: len(donors_b),
+                }
+                donor_counts_by_group[group_name] = donor_counts
+                print(
+                    "warning: condition_within_group group stats: "
+                    f"group={group_name} "
+                    f"cells_{condition_a}={counts.get(condition_a, 0)} "
+                    f"cells_{condition_b}={counts.get(condition_b, 0)} "
+                    f"donors_{condition_a}={donor_counts.get(condition_a, 0)} "
+                    f"donors_{condition_b}={donor_counts.get(condition_b, 0)}",
+                    file=sys.stderr,
+                )
                 if group_n < min_cells_per_group:
                     print(
                         "warning: skipping group due to insufficient cells for stable output: "
@@ -865,7 +1005,6 @@ def run(args) -> dict[str, object]:
                         file=sys.stderr,
                     )
                     continue
-                counts = condition_counts_by_group[group_name]
                 if counts.get(condition_a, 0) < min_cells_per_condition or counts.get(condition_b, 0) < min_cells_per_condition:
                     print(
                         "warning: skipping group because condition labels are too sparse within group: "
@@ -875,16 +1014,62 @@ def run(args) -> dict[str, object]:
                         file=sys.stderr,
                     )
                     continue
-                contrast_peak_stats[group_name] = _contrast_peaks(
+                if (
+                    donor_counts.get(condition_a, 0) < min_donors_per_condition
+                    or donor_counts.get(condition_b, 0) < min_donors_per_condition
+                ):
+                    print(
+                        "warning: skipping group because donor support is too low for condition contrast: "
+                        f"group={group_name} "
+                        f"donors_{condition_a}={donor_counts.get(condition_a, 0)} "
+                        f"donors_{condition_b}={donor_counts.get(condition_b, 0)} "
+                        f"(min_donors_per_condition={min_donors_per_condition})",
+                        file=sys.stderr,
+                    )
+                    continue
+                low_cells = min(counts.get(condition_a, 0), counts.get(condition_b, 0))
+                high_cells = max(counts.get(condition_a, 0), counts.get(condition_b, 0))
+                if low_cells > 0:
+                    cell_ratio = float(high_cells) / float(low_cells)
+                    if cell_ratio >= cell_imbalance_warn_ratio:
+                        print(
+                            "warning: extreme condition cell imbalance for group; "
+                            f"group={group_name} ratio={cell_ratio:.3f} "
+                            f"threshold={cell_imbalance_warn_ratio:.3f}",
+                            file=sys.stderr,
+                        )
+                group_peak_stat = _contrast_peaks(
                     condition_summary[group_name][condition_a],
                     condition_summary[group_name][condition_b],
                     contrast_metric,
                     pseudocount,
                 )
+                if baseline_carry_through_corr_warn > 0:
+                    baseline_vals = [
+                        0.5
+                        * (
+                            float(condition_summary[group_name][condition_a][i])
+                            + float(condition_summary[group_name][condition_b][i])
+                        )
+                        for i in range(len(condition_summary[group_name][condition_a]))
+                    ]
+                    carry_corr = _pearson_corr(
+                        [abs(float(x)) for x in group_peak_stat],
+                        baseline_vals,
+                    )
+                    if carry_corr is not None and carry_corr >= baseline_carry_through_corr_warn:
+                        print(
+                            "warning: high baseline carry-through in condition contrast; "
+                            f"group={group_name} corr={carry_corr:.3f} "
+                            f"threshold={baseline_carry_through_corr_warn:.3f}",
+                            file=sys.stderr,
+                        )
+                contrast_peak_stats[group_name] = group_peak_stat
                 output_groups.append(group_name)
             if not output_groups:
                 raise ValueError(
-                    "No groups passed min_cells_per_group/min_cells_per_condition for condition_within_group contrast"
+                    "No groups passed condition_within_group QC gates "
+                    "(min_cells_per_group/min_cells_per_condition/min_donors_per_condition)."
                 )
         else:
             if groups_tsv:
@@ -904,24 +1089,10 @@ def run(args) -> dict[str, object]:
                     )
                 }
             contrast_peak_stats = {group_name: group_summary[group_name] for group_name in group_indices}
-            output_groups = []
-            for group_name in group_indices:
-                group_n = group_sizes.get(group_name, len(group_indices[group_name]))
-                if group_n < min_cells_per_group:
-                    print(
-                        "warning: skipping group due to insufficient cells for stable output: "
-                        f"group={group_name} n_cells={group_n} "
-                        f"(min_cells_per_group={min_cells_per_group})",
-                        file=sys.stderr,
-                    )
-                    continue
-                output_groups.append(group_name)
+            output_groups = list(group_indices.keys())
 
     if not output_groups:
-        raise ValueError(
-            f"No groups passed min_cells_per_group={min_cells_per_group}; "
-            "lower --min_cells_per_group to allow small groups."
-        )
+        raise ValueError("No output groups available after contrast resolution.")
 
     unique_output_genes: set[str] = set()
     n_genes_per_group: list[int] = []
@@ -1321,6 +1492,7 @@ def run(args) -> dict[str, object]:
                 {
                     "contrast_type": "condition_within_group",
                     "condition_column": condition_column,
+                    "donor_column": donor_column,
                     "condition_a": condition_a,
                     "condition_b": condition_b,
                     "metric": contrast_metric,
@@ -1328,6 +1500,14 @@ def run(args) -> dict[str, object]:
                     "n_cells": len(cell_indices),
                     "n_cells_a": condition_counts_by_group.get(group_name, {}).get(condition_a, 0),
                     "n_cells_b": condition_counts_by_group.get(group_name, {}).get(condition_b, 0),
+                    "n_donors_a": donor_counts_by_group.get(group_name, {}).get(condition_a, 0),
+                    "n_donors_b": donor_counts_by_group.get(group_name, {}).get(condition_b, 0),
+                    "n_donors_total_a": donor_counts_total.get(condition_a, 0),
+                    "n_donors_total_b": donor_counts_total.get(condition_b, 0),
+                    "min_cells_per_group": min_cells_per_group,
+                    "min_cells_per_condition": min_cells_per_condition,
+                    "min_donors_per_condition": min_donors_per_condition,
+                    "min_total_donors_per_condition": min_total_donors_per_condition,
                     "directions_emitted": ["OPEN", "CLOSE"],
                     "selected_direction": selected_direction,
                 }
@@ -1353,6 +1533,17 @@ def run(args) -> dict[str, object]:
             "program_methods_skipped": program_methods_skipped,
             "contrast_methods_skipped": contrast_methods_skipped,
         }
+        if contrast == "condition_within_group":
+            run_summary_payload["condition_within_group_counts"] = {
+                "condition_a": condition_a,
+                "condition_b": condition_b,
+                "cells_a": condition_counts_by_group.get(group_name, {}).get(condition_a, 0),
+                "cells_b": condition_counts_by_group.get(group_name, {}).get(condition_b, 0),
+                "donors_a": donor_counts_by_group.get(group_name, {}).get(condition_a, 0),
+                "donors_b": donor_counts_by_group.get(group_name, {}).get(condition_b, 0),
+                "donor_total_a": donor_counts_total.get(condition_a, 0),
+                "donor_total_b": donor_counts_total.get(condition_b, 0),
+            }
         if marker_qc is not None:
             run_summary_payload["marker_qc"] = marker_qc
         if ref_summary is not None:
@@ -1370,8 +1561,11 @@ def run(args) -> dict[str, object]:
         params["dataset_label"] = dataset_label
         if contrast == "condition_within_group":
             params["condition_column"] = condition_column
+            params["donor_column"] = donor_column
             params["condition_a"] = condition_a
             params["condition_b"] = condition_b
+            params["min_donors_per_condition"] = min_donors_per_condition
+            params["min_total_donors_per_condition"] = min_total_donors_per_condition
 
         summary_payload: dict[str, object] = {
             "n_input_features": len(peaks),
@@ -1384,6 +1578,9 @@ def run(args) -> dict[str, object]:
             "n_contrast_methods_skipped": len(contrast_methods_skipped),
             "n_resource_manifest_warnings": len(manifest_warnings),
         }
+        if contrast == "condition_within_group":
+            summary_payload["n_donors_total_a"] = donor_counts_total.get(condition_a, 0)
+            summary_payload["n_donors_total_b"] = donor_counts_total.get(condition_b, 0)
         if marker_qc is not None:
             summary_payload["marker_qc"] = marker_qc
 

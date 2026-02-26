@@ -423,7 +423,7 @@ or $x_p^{(k,A\!:\!B)}=\bar{x}^{(k,A)}_p-\bar{x}^{(k,B)}_p$ when using a differen
 \alpha_{p,\mathrm{CLOSE}}^{(k)}=\max(-x_p^{(k,A\!:\!B)},0).
 \]
 Project each direction to genes via Eq.\ \ref{eq:gene_score} and extract separate OPEN and CLOSE gene sets.
-\paragraph{Practical note.} Enforce a minimum number of cells per condition within each group to avoid unstable contrasts.
+\paragraph{Practical note.} Stable condition-within-group programs require both cell-level and donor-level support. In practice, enforce minimum cells per group, minimum cells per condition within group, minimum donors per condition within group, and minimum overall donors per condition in the dataset. When these support conditions fail, treat the corresponding group-level condition program as non-emittable by default.
 
 \subsubsection{M2.4: tfidf\_distal (scATAC optional / experimental)}
 \paragraph{Motivation.} Peaks that are accessible in many cells are less informative for defining cell identity.
