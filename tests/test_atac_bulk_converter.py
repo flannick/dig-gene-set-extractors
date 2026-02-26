@@ -52,6 +52,7 @@ class Args:
     gmt_topk_list = "200"
     gmt_mass_list = ""
     gmt_split_signed = False
+    emit_small_gene_sets = False
     qc_marker_genes_tsv = None
     region_gene_links_tsv = None
     gtf_source = "toy"
@@ -396,3 +397,37 @@ def test_bulk_external_requires_region_gene_links(tmp_path: Path):
     args.region_gene_links_tsv = None
     with pytest.raises(ValueError, match="region_gene_links_tsv"):
         atac_bulk.run(args)
+
+
+def test_bulk_skips_small_gmt_sets_by_default(tmp_path: Path, capsys):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_small_skipped")
+    args.peak_weights_tsv = None
+    args.gmt_min_genes = 5
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "5"
+    args.contrast_methods = "none"
+    atac_bulk.run(args)
+    captured = capsys.readouterr()
+    assert "skipped GMT output" in captured.err
+    gmt_path = Path(args.out_dir) / "genesets.gmt"
+    assert gmt_path.exists()
+    assert gmt_path.read_text(encoding="utf-8").strip() == ""
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["gmt"]["skipped_outputs"]
+
+
+def test_bulk_emit_small_gene_sets_override(tmp_path: Path, capsys):
+    args = Args()
+    args.out_dir = str(tmp_path / "bulk_small_emitted")
+    args.peak_weights_tsv = None
+    args.gmt_min_genes = 5
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "5"
+    args.emit_small_gene_sets = True
+    args.contrast_methods = "none"
+    atac_bulk.run(args)
+    captured = capsys.readouterr()
+    assert "emitted small GMT output" in captured.err
+    lines = [x for x in (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert lines

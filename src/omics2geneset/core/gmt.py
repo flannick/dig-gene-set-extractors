@@ -167,6 +167,9 @@ def build_gmt_sets_from_rows(
     split_signed: bool,
     require_symbol: bool = False,
     allowed_biotypes: set[str] | None = None,
+    emit_small_gene_sets: bool = False,
+    diagnostics: list[dict[str, object]] | None = None,
+    context: dict[str, object] | None = None,
 ) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
     if min_genes <= 0 or max_genes <= 0:
         raise ValueError("gmt_min_genes and gmt_max_genes must be positive")
@@ -191,15 +194,92 @@ def build_gmt_sets_from_rows(
     sets: list[tuple[str, list[str]]] = []
     plans: list[dict[str, object]] = []
     seen_names: set[str] = set()
+    context_payload = context or {}
+
+    def _record_diag(event: dict[str, object]) -> None:
+        if diagnostics is None:
+            return
+        diagnostics.append({**context_payload, **event})
 
     for sign_suffix, variant_rows in variants:
+        positive_rows = [r for r in variant_rows if float(r.get("score", 0.0)) > 0.0]
+        positive_gene_tokens = choose_gene_tokens(
+            positive_rows,
+            prefer_symbol,
+            require_symbol=require_symbol,
+        )
+        n_positive_genes = len(positive_gene_tokens)
+        variant_label = sign_suffix.lstrip("_") or "primary"
+        if n_positive_genes == 0:
+            _record_diag(
+                {
+                    "level": "warning",
+                    "code": "no_positive_genes",
+                    "base_name": base_name,
+                    "variant": variant_label,
+                    "n_genes": 0,
+                    "reason": "no genes with positive score after filtering",
+                }
+            )
+            continue
+        if n_positive_genes < min_genes and not emit_small_gene_sets:
+            _record_diag(
+                {
+                    "level": "warning",
+                    "code": "small_gene_set_skipped",
+                    "base_name": base_name,
+                    "variant": variant_label,
+                    "n_genes": n_positive_genes,
+                    "min_genes": min_genes,
+                    "reason": "too few positive genes for default minimum",
+                    "suggestion": (
+                        "likely tiny group or weak contrast; try lowering --gmt_min_genes "
+                        "or using a stronger contrast"
+                    ),
+                }
+            )
+            continue
+        if n_positive_genes < (min_genes + 50):
+            _record_diag(
+                {
+                    "level": "warning",
+                    "code": "marginal_gene_count",
+                    "base_name": base_name,
+                    "variant": variant_label,
+                    "n_genes": n_positive_genes,
+                    "min_genes": min_genes,
+                    "reason": "marginal positive-gene count; results may be unstable",
+                }
+            )
+
         for requested_k in topk_list:
             k = _clamp_k(int(requested_k), min_genes, max_genes)
-            selected_rows = _topk_plan_rows(variant_rows, k)
+            selected_rows = _topk_plan_rows(positive_rows, k)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
             if set_name in seen_names or not genes:
                 continue
+            if len(genes) < min_genes:
+                code = "small_gene_set_emitted" if emit_small_gene_sets else "small_gene_set_skipped"
+                _record_diag(
+                    {
+                        "level": "warning",
+                        "code": code,
+                        "base_name": base_name,
+                        "name": set_name,
+                        "variant": variant_label,
+                        "n_genes": len(genes),
+                        "min_genes": min_genes,
+                        "method": "topk",
+                        "reason": "set smaller than gmt_min_genes after filtering",
+                        "suggestion": (
+                            "likely tiny group or weak contrast; try lowering --gmt_min_genes "
+                            "or using a stronger contrast"
+                        ),
+                    }
+                )
+                if not emit_small_gene_sets:
+                    continue
             seen_names.add(set_name)
             sets.append((set_name, genes))
             plans.append(
@@ -219,12 +299,33 @@ def build_gmt_sets_from_rows(
             )
 
         for tau in mass_list:
-            selected_rows, k = _mass_plan_rows(variant_rows, float(tau), min_genes, max_genes)
+            selected_rows, k = _mass_plan_rows(positive_rows, float(tau), min_genes, max_genes)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             tau_str = format(float(tau), ".6g")
             set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
             if set_name in seen_names or not genes:
                 continue
+            if len(genes) < min_genes:
+                code = "small_gene_set_emitted" if emit_small_gene_sets else "small_gene_set_skipped"
+                _record_diag(
+                    {
+                        "level": "warning",
+                        "code": code,
+                        "base_name": base_name,
+                        "name": set_name,
+                        "variant": variant_label,
+                        "n_genes": len(genes),
+                        "min_genes": min_genes,
+                        "method": "hpd_mass",
+                        "reason": "set smaller than gmt_min_genes after filtering",
+                        "suggestion": (
+                            "likely tiny group or weak contrast; try lowering --gmt_min_genes "
+                            "or using a stronger contrast"
+                        ),
+                    }
+                )
+                if not emit_small_gene_sets:
+                    continue
             seen_names.add(set_name)
             sets.append((set_name, genes))
             plans.append(

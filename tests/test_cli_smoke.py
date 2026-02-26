@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from omics2geneset.cli import build_parser
+
 
 def _run(*args: str):
     return subprocess.run(
@@ -87,6 +89,8 @@ def test_cli_validate_grouped_root(tmp_path: Path):
         "hg38",
         "--groups_tsv",
         "tests/data/barcode_groups.tsv",
+        "--min_cells_per_group",
+        "1",
     )
     assert convert.returncode == 0
     assert "groups=" in convert.stderr
@@ -236,6 +240,28 @@ def test_cli_resources_fetch_local_manifest(tmp_path: Path):
     )
     assert status.returncode == 0
     assert "toy_resource\tok\t" in status.stdout
+
+
+def test_cli_default_gmt_bounds():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "convert",
+            "atac_bulk",
+            "--peaks",
+            "tests/data/toy_peaks.bed",
+            "--gtf",
+            "tests/data/toy.gtf",
+            "--out_dir",
+            "tests/tmp/unused",
+            "--organism",
+            "human",
+            "--genome_build",
+            "hg38",
+        ]
+    )
+    assert args.gmt_min_genes == 100
+    assert args.gmt_max_genes == 500
 
 
 def test_cli_resources_fetch_skips_missing_url_by_default(tmp_path: Path):

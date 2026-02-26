@@ -21,6 +21,7 @@ class Args:
     condition_column = None
     condition_a = None
     condition_b = None
+    min_cells_per_group = 1
     min_cells_per_condition = 50
     peak_summary = "sum_counts"
     peak_weight_transform = "positive"
@@ -59,6 +60,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = False
+    emit_small_gene_sets = False
     qc_marker_genes_tsv = None
     region_gene_links_tsv = None
     contrast = None
@@ -191,3 +193,30 @@ def test_sc_external_requires_region_gene_links(tmp_path: Path):
     args.region_gene_links_tsv = None
     with pytest.raises(ValueError, match="region_gene_links_tsv"):
         atac_sc_10x.run(args)
+
+
+def test_sc_groups_below_min_cells_per_group_are_skipped(tmp_path: Path, capsys):
+    groups_path = tmp_path / "groups.tsv"
+    groups_path.write_text(
+        "barcode\tgroup\n"
+        "c1\tg1\n"
+        "c2\tg1\n"
+        "c3\tg1\n"
+        "c4\tg2\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
+    args.out_dir = str(tmp_path / "sc_group_size_guard")
+    args.groups_tsv = str(groups_path)
+    args.min_cells_per_group = 2
+    args.min_cells_per_condition = 1
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    atac_sc_10x.run(args)
+    captured = capsys.readouterr()
+    assert "skipping group due to insufficient cells for stable output" in captured.err
+    assert "group=g2" in captured.err
+    assert (Path(args.out_dir) / "group=g1" / "geneset.tsv").exists()
+    assert not (Path(args.out_dir) / "group=g2" / "geneset.tsv").exists()

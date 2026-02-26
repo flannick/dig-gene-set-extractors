@@ -88,6 +88,7 @@ GMT defaults favor cleaner symbols:
 - `--use_reference_bundle true` (default) allows reference-backed contrasts; `false` forces contrast behavior to `none`.
 - `--use_reference_bundle false` is the explicit opt-out.
 - default GMT selection plans are compact: `--gmt_topk_list 200` and `--gmt_mass_list ""`.
+- default GMT size guardrails are strict: `--gmt_min_genes 100`, `--gmt_max_genes 500`, and `--emit_small_gene_sets false`.
 - Human builds currently supported out of the box: `hg19` (`GRCh37`) and `hg38` (`GRCh38`).
 
 Not recommended by default:
@@ -104,6 +105,12 @@ Not recommended by default:
 For ATAC defaults (`--normalize within_set_l1`), `weight` is normalized only within selected genes.
 Default ATAC usage attempts reference-backed methods when bundle resources are available.
 If resources are missing, methods are skipped by default (`--resource_policy skip`), and converters print runtime warnings for each skipped contrast with hints on how to enable it.
+
+### Why you might see fewer gene sets now
+
+- `omics2geneset` now skips GMT entries smaller than `--gmt_min_genes` by default.
+- Small or weak scATAC groups are skipped when they fail `--min_cells_per_group` (default `100`) or `--min_cells_per_condition` (for `condition_within_group`).
+- Use `--emit_small_gene_sets true` only when you intentionally want small sets for debugging or toy runs.
 
 ## Conceptual model and mapping to methods.tex
 
@@ -293,6 +300,7 @@ Optional:
 - Condition metadata flags:
   - `--condition_column <name>` in `cell_metadata_tsv`
   - `--condition_a <label>` and `--condition_b <label>` (optional when exactly two levels are present)
+  - `--min_cells_per_group <int>` minimum cells required for a group to emit outputs (default `100`)
   - `--min_cells_per_condition <int>` minimum cells per condition within each group
 - Peak transform (`--peak_weight_transform`):
   - default `positive` for opening programs
@@ -311,6 +319,9 @@ Optional:
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` (default `zscore`) plus `--atlas_min_raw_quantile` (default `0.95`) and `--atlas_use_log1p` stabilize atlas residual scoring.
 - Gene program selection and normalization: same controls as `atac_bulk`
+- GMT guardrails:
+  - by default, sets with fewer than `--gmt_min_genes` are skipped with warnings
+  - set `--emit_small_gene_sets true` to allow emitting small sets
 
 External linkage TSV format:
 

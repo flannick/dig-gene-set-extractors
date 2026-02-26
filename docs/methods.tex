@@ -547,6 +547,8 @@ Project to genes by Eq.\ \ref{eq:gene_score} using a distal-aware linkage (Link 
 \label{sec:set_extraction}
 After the three axes and program catalog determine a gene-score vector for each program instance, this section specifies how scores are converted to one or more gene sets of size 100--500.
 CLI: \texttt{--select}/\texttt{--top\_k} define the selection operator; \texttt{--normalize} defines within-set normalization; \texttt{--emit\_gmt} controls GMT export.
+\paragraph{Practical default.}
+The default target size is 100--500 genes (\texttt{--gmt\_min\_genes=100}, \texttt{--gmt\_max\_genes=500}). If a program instance has too few positive genes after filtering, that GMT entry is skipped by default and a warning is emitted. Users can opt in to writing smaller sets with \texttt{--emit\_small\_gene\_sets true}.
 
 \subsection{Selection operators}
 Let $\mathbf{s} = (s_1,\dots,s_G)$ be gene scores for a program instance. The default operator is fixed-size top-$K$.

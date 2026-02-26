@@ -123,6 +123,12 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_topk_list", default="200")
     parser.add_argument("--gmt_mass_list", default="")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
+    parser.add_argument(
+        "--emit_small_gene_sets",
+        type=_parse_bool,
+        default=False,
+        help="If true, emit GMT sets smaller than gmt_min_genes (still warns).",
+    )
 
 
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
@@ -270,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--condition_column")
     p_sc.add_argument("--condition_a")
     p_sc.add_argument("--condition_b")
+    p_sc.add_argument("--min_cells_per_group", type=int, default=100)
     p_sc.add_argument("--min_cells_per_condition", type=int, default=50)
     p_sc.add_argument("--peak_summary", choices=["sum_counts", "mean_counts", "frac_cells_nonzero"], default="sum_counts")
     p_sc.add_argument("--peak_weight_transform", choices=["signed", "abs", "positive", "negative"], default="positive")

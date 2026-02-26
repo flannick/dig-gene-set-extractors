@@ -313,6 +313,7 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "condition_column": _arg(args, "condition_column", None),
         "condition_a": _arg(args, "condition_a", None),
         "condition_b": _arg(args, "condition_b", None),
+        "min_cells_per_group": int(_arg(args, "min_cells_per_group", 100)),
         "min_cells_per_condition": int(_arg(args, "min_cells_per_condition", 50)),
         "selection_method": _arg(args, "select", "top_k"),
         "top_k": _arg(args, "top_k", 200),
@@ -329,6 +330,7 @@ def _resolved_parameters(args, group_name: str | None = None) -> dict[str, objec
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,
         "gmt_split_signed": bool(_arg(args, "gmt_split_signed", False)),
+        "emit_small_gene_sets": bool(_arg(args, "emit_small_gene_sets", False)),
         "marker_qc_enabled": bool(_arg(args, "qc_marker_genes_tsv", None)),
     }
     if group_name is not None:
@@ -367,6 +369,55 @@ def _warn_skipped_program_methods(program_methods_skipped: dict[str, str]) -> No
             f"warning: program_method={method} skipped: {program_methods_skipped[method]}",
             file=sys.stderr,
         )
+
+
+def _warn_gmt_output_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> None:
+    for diag in gmt_diagnostics:
+        code = str(diag.get("code", ""))
+        base_name = str(diag.get("base_name", "unknown"))
+        n_genes = diag.get("n_genes", "na")
+        reason = str(diag.get("reason", "")).strip()
+        suggestion = str(diag.get("suggestion", "")).strip()
+        if code in {"small_gene_set_skipped", "no_positive_genes"}:
+            print(
+                f"warning: skipped GMT output for {base_name}; n_genes={n_genes}. {reason}",
+                file=sys.stderr,
+            )
+        elif code == "small_gene_set_emitted":
+            print(
+                f"warning: emitted small GMT output for {base_name}; n_genes={n_genes}. {reason}",
+                file=sys.stderr,
+            )
+        elif code == "marginal_gene_count":
+            print(
+                f"warning: marginal GMT signal for {base_name}; n_genes={n_genes}. {reason}",
+                file=sys.stderr,
+            )
+        else:
+            continue
+        if suggestion:
+            print(f"warning:   {suggestion}", file=sys.stderr)
+
+
+def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> list[dict[str, object]]:
+    skipped: list[dict[str, object]] = []
+    for diag in gmt_diagnostics:
+        code = str(diag.get("code", ""))
+        if code not in {"small_gene_set_skipped", "no_positive_genes"}:
+            continue
+        rec: dict[str, object] = {
+            "program_method": str(diag.get("program_method", "")),
+            "contrast_method": str(diag.get("contrast_method", "")),
+            "link_method": str(diag.get("link_method", "")),
+            "reason": str(diag.get("reason", "")),
+            "n_genes": int(diag.get("n_genes", 0) or 0),
+            "code": code,
+        }
+        direction = str(diag.get("direction", ""))
+        if direction:
+            rec["direction"] = direction
+        skipped.append(rec)
+    return skipped
 
 
 def _link(peaks: list[dict[str, object]], genes, args, link_method: str):
@@ -546,6 +597,7 @@ def run(args) -> dict[str, object]:
     gmt_topk_list = parse_int_list_csv(str(_arg(args, "gmt_topk_list", "200")))
     gmt_mass_list = parse_mass_list_csv(str(_arg(args, "gmt_mass_list", "")))
     gmt_split_signed = bool(_arg(args, "gmt_split_signed", False))
+    emit_small_gene_sets = bool(_arg(args, "emit_small_gene_sets", False))
     gmt_out = _arg(args, "gmt_out", None)
     marker_genes = load_marker_genes(_arg(args, "qc_marker_genes_tsv", None))
     contrast_metric = _arg(args, "contrast_metric", "log2fc")
@@ -708,16 +760,36 @@ def run(args) -> dict[str, object]:
     condition_b = ""
     condition_by_cell: dict[int, str] = {}
     condition_counts_by_group: dict[str, dict[str, int]] = {}
+    min_cells_per_group = max(1, int(_arg(args, "min_cells_per_group", 100)))
     min_cells_per_condition = max(1, int(_arg(args, "min_cells_per_condition", 50)))
 
     if contrast == "group_vs_rest" and not groups_tsv:
         raise ValueError("contrast=group_vs_rest requires --groups_tsv")
     if contrast == "condition_within_group":
         cell_metadata_tsv = _arg(args, "cell_metadata_tsv", None)
+        explicit_contrast = _arg(args, "contrast", None) is not None
         if not cell_metadata_tsv:
-            raise ValueError("contrast=condition_within_group requires --cell_metadata_tsv")
-        metadata_rows = read_cell_metadata_tsv(cell_metadata_tsv)
-        condition_a, condition_b, condition_by_cell = _resolve_condition_pair(args, barcodes, metadata_rows)
+            if explicit_contrast:
+                raise ValueError("contrast=condition_within_group requires --cell_metadata_tsv")
+            print(
+                "warning: condition_within_group contrast requested by preset but no --cell_metadata_tsv "
+                "was provided; falling back to group_vs_rest/none.",
+                file=sys.stderr,
+            )
+            contrast = "group_vs_rest" if groups_tsv else "none"
+        else:
+            metadata_rows = read_cell_metadata_tsv(cell_metadata_tsv)
+            try:
+                condition_a, condition_b, condition_by_cell = _resolve_condition_pair(args, barcodes, metadata_rows)
+            except ValueError as exc:
+                if explicit_contrast:
+                    raise
+                print(
+                    "warning: condition_within_group contrast requested by preset but condition labels "
+                    f"could not be resolved ({exc}); falling back to group_vs_rest/none.",
+                    file=sys.stderr,
+                )
+                contrast = "group_vs_rest" if groups_tsv else "none"
 
     files = [
         input_file_record(matrix_files["matrix"], "matrix"),
@@ -757,7 +829,18 @@ def run(args) -> dict[str, object]:
             )
             for group_name in group_indices
         }
-        output_groups = list(group_indices.keys())
+        output_groups = []
+        for group_name in group_indices:
+            group_n = group_sizes.get(group_name, len(group_indices[group_name]))
+            if group_n < min_cells_per_group:
+                print(
+                    "warning: skipping group due to insufficient cells for stable output: "
+                    f"group={group_name} n_cells={group_n} "
+                    f"(min_cells_per_group={min_cells_per_group})",
+                    file=sys.stderr,
+                )
+                continue
+            output_groups.append(group_name)
     else:
         group_sizes = {g: len(idxs) for g, idxs in group_indices.items()}
         if contrast == "condition_within_group":
@@ -773,10 +856,19 @@ def run(args) -> dict[str, object]:
             contrast_peak_stats = {}
             output_groups = []
             for group_name in group_indices:
+                group_n = group_sizes.get(group_name, len(group_indices[group_name]))
+                if group_n < min_cells_per_group:
+                    print(
+                        "warning: skipping group due to insufficient cells for stable output: "
+                        f"group={group_name} n_cells={group_n} "
+                        f"(min_cells_per_group={min_cells_per_group})",
+                        file=sys.stderr,
+                    )
+                    continue
                 counts = condition_counts_by_group[group_name]
                 if counts.get(condition_a, 0) < min_cells_per_condition or counts.get(condition_b, 0) < min_cells_per_condition:
                     print(
-                        "warning: skipping group due to insufficient cells per condition: "
+                        "warning: skipping group because condition labels are too sparse within group: "
                         f"group={group_name} {condition_a}={counts.get(condition_a, 0)} "
                         f"{condition_b}={counts.get(condition_b, 0)} "
                         f"(min_cells_per_condition={min_cells_per_condition})",
@@ -792,7 +884,7 @@ def run(args) -> dict[str, object]:
                 output_groups.append(group_name)
             if not output_groups:
                 raise ValueError(
-                    "No groups passed min_cells_per_condition for condition_within_group contrast"
+                    "No groups passed min_cells_per_group/min_cells_per_condition for condition_within_group contrast"
                 )
         else:
             if groups_tsv:
@@ -812,12 +904,30 @@ def run(args) -> dict[str, object]:
                     )
                 }
             contrast_peak_stats = {group_name: group_summary[group_name] for group_name in group_indices}
-            output_groups = list(group_indices.keys())
+            output_groups = []
+            for group_name in group_indices:
+                group_n = group_sizes.get(group_name, len(group_indices[group_name]))
+                if group_n < min_cells_per_group:
+                    print(
+                        "warning: skipping group due to insufficient cells for stable output: "
+                        f"group={group_name} n_cells={group_n} "
+                        f"(min_cells_per_group={min_cells_per_group})",
+                        file=sys.stderr,
+                    )
+                    continue
+                output_groups.append(group_name)
+
+    if not output_groups:
+        raise ValueError(
+            f"No groups passed min_cells_per_group={min_cells_per_group}; "
+            "lower --min_cells_per_group to allow small groups."
+        )
 
     unique_output_genes: set[str] = set()
     n_genes_per_group: list[int] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     combined_gmt_plans: list[dict[str, object]] = []
+    combined_gmt_diagnostics: list[dict[str, object]] = []
 
     selected_direction = "OPEN" if peak_weight_transform != "negative" else "CLOSE"
     if contrast == "condition_within_group":
@@ -1019,6 +1129,8 @@ def run(args) -> dict[str, object]:
         group_gmt_path = _resolve_group_gmt_out_path(group_dir, gmt_out)
         group_gmt_sets: list[tuple[str, list[str]]] = []
         group_gmt_plans: list[dict[str, object]] = []
+        group_requested_gmt_outputs: list[dict[str, str]] = []
+        group_gmt_diagnostics: list[dict[str, object]] = []
         linked_output_methods = link_methods_for_program(program_preset, PROGRAM_LINKED_ACTIVITY, link_methods)
         if PROGRAM_LINKED_ACTIVITY in program_methods and not linked_output_methods:
             program_methods_skipped[PROGRAM_LINKED_ACTIVITY] = (
@@ -1046,6 +1158,14 @@ def run(args) -> dict[str, object]:
                 if PROGRAM_LINKED_ACTIVITY in program_methods:
                     for contrast_method in contrast_methods:
                         for method in linked_output_methods:
+                            group_requested_gmt_outputs.append(
+                                {
+                                    "program_method": PROGRAM_LINKED_ACTIVITY,
+                                    "contrast_method": contrast_method,
+                                    "link_method": method,
+                                    "direction": direction,
+                                }
+                            )
                             method_sets, method_plans = build_gmt_sets_from_rows(
                                 rows=full_rows_by_contrast_by_method_by_direction[direction][contrast_method][method],
                                 base_name=(
@@ -1061,6 +1181,15 @@ def run(args) -> dict[str, object]:
                                 split_signed=gmt_split_signed,
                                 require_symbol=gmt_require_symbol,
                                 allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                                emit_small_gene_sets=emit_small_gene_sets,
+                                diagnostics=group_gmt_diagnostics,
+                                context={
+                                    "group": group_name,
+                                    "program_method": PROGRAM_LINKED_ACTIVITY,
+                                    "contrast_method": contrast_method,
+                                    "link_method": method,
+                                    "direction": direction,
+                                },
                             )
                             for plan in method_plans:
                                 params = dict(plan.get("parameters", {}))
@@ -1078,6 +1207,14 @@ def run(args) -> dict[str, object]:
                             allowed_methods = link_methods_for_program(program_preset, program_method, link_methods)
                             if method not in allowed_methods:
                                 continue
+                            group_requested_gmt_outputs.append(
+                                {
+                                    "program_method": program_method,
+                                    "contrast_method": contrast_method,
+                                    "link_method": method,
+                                    "direction": direction,
+                                }
+                            )
                             method_sets, method_plans = build_gmt_sets_from_rows(
                                 rows=rows,
                                 base_name=(
@@ -1093,6 +1230,15 @@ def run(args) -> dict[str, object]:
                                 split_signed=gmt_split_signed,
                                 require_symbol=gmt_require_symbol,
                                 allowed_biotypes={b.lower() for b in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                                emit_small_gene_sets=emit_small_gene_sets,
+                                diagnostics=group_gmt_diagnostics,
+                                context={
+                                    "group": group_name,
+                                    "program_method": program_method,
+                                    "contrast_method": contrast_method,
+                                    "link_method": method,
+                                    "direction": direction,
+                                },
                             )
                             for plan in method_plans:
                                 params = dict(plan.get("parameters", {}))
@@ -1114,6 +1260,9 @@ def run(args) -> dict[str, object]:
             write_gmt(group_gmt_sets, group_gmt_path)
             combined_gmt_sets.extend(group_gmt_sets)
             combined_gmt_plans.extend(group_gmt_plans)
+            combined_gmt_diagnostics.extend(group_gmt_diagnostics)
+
+        _warn_gmt_output_diagnostics(group_gmt_diagnostics)
 
         assigned_peaks = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})
         n_genes_per_group.append(len(selected_rows))
@@ -1127,6 +1276,7 @@ def run(args) -> dict[str, object]:
             }
         marker_qc = marker_hit_summary(selected_rows, marker_genes)
         emitted_combinations = collect_emitted_method_combinations(group_gmt_plans)
+        skipped_gmt_outputs = _collect_skipped_gmt_outputs(group_gmt_diagnostics)
         if not emitted_combinations:
             fallback_direction = selected_direction if contrast == "condition_within_group" else "PRIMARY"
             emitted_combinations = [
@@ -1198,6 +1348,8 @@ def run(args) -> dict[str, object]:
             "promoter_peak_count": len(promoter_indices),
             "distal_peak_count": len(peaks) - len(promoter_indices),
             "emitted_method_combinations": emitted_combinations,
+            "requested_gmt_outputs": group_requested_gmt_outputs,
+            "skipped_gmt_outputs": skipped_gmt_outputs,
             "program_methods_skipped": program_methods_skipped,
             "contrast_methods_skipped": contrast_methods_skipped,
         }
@@ -1291,6 +1443,11 @@ def run(args) -> dict[str, object]:
                 "biotype_allowlist": gmt_biotype_allowlist,
                 "min_genes": gmt_min_genes,
                 "max_genes": gmt_max_genes,
+                "emit_small_gene_sets": emit_small_gene_sets,
+                "requested_outputs": group_requested_gmt_outputs,
+                "emitted_outputs": emitted_combinations,
+                "skipped_outputs": skipped_gmt_outputs,
+                "diagnostics": group_gmt_diagnostics,
                 "plans": group_gmt_plans,
             },
         )
@@ -1342,6 +1499,8 @@ def run(args) -> dict[str, object]:
                     "biotype_allowlist": gmt_biotype_allowlist,
                     "min_genes": gmt_min_genes,
                     "max_genes": gmt_max_genes,
+                    "emit_small_gene_sets": emit_small_gene_sets,
+                    "diagnostics": combined_gmt_diagnostics,
                     "plans": combined_gmt_plans,
                 },
             }
