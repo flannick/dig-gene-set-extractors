@@ -88,6 +88,7 @@
         "normalize": {"type": "string"},
         "n_selected_genes": {"type": "integer"},
         "score_definition": {"type": "string"},
+        "study_contrast": {"type": "object"},
         "contrast": {"type": "object"}
       }
     },

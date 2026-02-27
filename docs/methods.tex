@@ -52,7 +52,7 @@ Promoter accessibility is often broadly shared across cell types and can be domi
 \paragraph{Baseline vs contrast.}
 A single-sample peak list (baseline accessibility) often yields generic programs unless we (i) emphasize distal enhancers and/or (ii) calibrate against reference accessibility. Stronger specificity is usually obtained from within-study contrasts (for example, cluster-vs-rest in scATAC or condition A vs B across donors). This note distinguishes:
 (i) study-design contrasts that define the peak statistic $x_p$ and
-(ii) calibration methods (\texttt{contrast\_methods}) that adjust peak/gene signals relative to external baselines.
+(ii) calibration methods (\texttt{calibration\_methods}) that adjust peak/gene signals relative to external baselines.
 
 \paragraph{What a contributor typically has.}
 ATAC-seq contributors commonly provide one of:
@@ -66,7 +66,7 @@ ATAC-seq contributors commonly provide one of:
 Across these inputs, the core pipeline is:
 (1) define a peak statistic $x_p$,
 (2) transform to a nonnegative peak weight $\alpha_p=\phi(x_p)$,
-(3) optionally calibrate peaks/genes against references (contrast-method axis),
+(3) optionally calibrate peaks/genes against references (calibration-method axis),
 (4) project to genes via a linkage model $L_{pg}$ to obtain gene scores $s_g$,
 (5) apply a program-family view (linked/promoter/distal/etc.),
 and (6) convert gene scores to one or more gene sets.
@@ -82,9 +82,9 @@ CLI flags (guide) & Model object (this note) & Defined in this note \\
 \midrule
 \texttt{--peaks}, \texttt{--peak\_matrix\_tsv}, \texttt{--matrix\_dir} & Peak coordinates and peak statistic $x_p$ & Sections \ref{sec:atac_mental_model}, \ref{sec:peak_weights} \\
 \texttt{--gtf}, \texttt{--organism}, \texttt{--genome\_build} & Gene coordinates (TSS/promoter/locus) & Section \ref{sec:linkage_models} \\
-\texttt{--contrast} and related condition flags & Study-design contrast defining $x_p$ & Section \ref{sec:study_design_contrast} \\
+\texttt{--study_contrast} and related condition flags & Study-design contrast defining $x_p$ & Section \ref{sec:study_design_contrast} \\
 \texttt{--peak\_weight\_transform} & Transform $\alpha_p=\phi(x_p)$ & Section \ref{sec:peak_weights} \\
-\texttt{--contrast\_methods} & External calibration (peak-level or gene-level) & Section \ref{sec:contrast_axis}, Eqs. \ref{eq:ref_idf}, \ref{eq:atlas_logratio}, \ref{eq:atlas_z} \\
+\texttt{--calibration\_methods} & External calibration (peak-level or gene-level) & Section \ref{sec:contrast_axis}, Eqs. \ref{eq:ref_idf}, \ref{eq:atlas_logratio}, \ref{eq:atlas_z} \\
 \texttt{--ref\_ubiquity\_resource\_id}, \texttt{--atlas\_resource\_id}, \texttt{--atlas\_metric}, \texttt{--atlas\_min\_raw\_quantile}, \texttt{--atlas\_use\_log1p} & Reference resources and stabilization choices & Section \ref{sec:resources}, Subsections M3.1 and M3.2 \\
 \texttt{--link\_method} & Linkage model $L_{pg}$ & Section \ref{sec:linkage_models} \\
 \texttt{--program\_preset}, \texttt{--program\_methods} & Program-family view $\Psi_m$ & Sections \ref{sec:program_axis}, \ref{sec:program_catalog} \\
@@ -158,8 +158,8 @@ In implementation terms, the gene sets are generated over three explicit, orthog
 \begin{itemize}[leftmargin=2em]
 \item \textbf{Link axis} ($\ell$): how peaks are linked to genes, via $L_{pg}^{(\ell)}$.
 CLI: \texttt{--link\_method}. Output tag: \texttt{\_\_link\_method=...}
-\item \textbf{Contrast-method axis} ($r$): how raw accessibility is calibrated against baseline/reference context.
-CLI: \texttt{--contrast\_methods}. Output tag: \texttt{\_\_contrast\_method=...}
+\item \textbf{Calibration-method axis} ($r$): how raw accessibility is calibrated against baseline/reference context.
+CLI: \texttt{--calibration\_methods}. Output tag: \texttt{\_\_calibration\_method=...}
 \item \textbf{Program-family axis} ($m$): what biological program view is emitted from linked scores (linked/promoter/distal/enhancer-bias/TFIDF variants).
 CLI: \texttt{--program\_methods} or \texttt{--program\_preset}. Output tag: \texttt{\_\_program=...}
 \end{itemize}
@@ -245,7 +245,7 @@ S_{pg} = A_p K_{pg}, \qquad L_{pg} = \frac{S_{pg}}{\sum_h S_{ph}+\epsilon}.
 
 \section{Study-design contrasts (defining the peak statistic $x_p$)}
 \label{sec:study_design_contrast}
-Before calibration by \texttt{--contrast\_methods}, users define a study-design contrast that produces peak statistics $x_p$:
+Before calibration by \texttt{--calibration\_methods}, users define a study-design contrast that produces peak statistics $x_p$:
 \begin{itemize}[leftmargin=2em]
 \item baseline accessibility (no within-study contrast),
 \item group-vs-rest (scATAC),
@@ -254,16 +254,16 @@ Before calibration by \texttt{--contrast\_methods}, users define a study-design 
 \item phenotype association (optional regression-based workflows).
 \end{itemize}
 These design-level contrasts define the signed or unsigned peak statistics that are then transformed to peak weights and passed through the rest of the pipeline.
-In output naming this study-design stage appears as \texttt{\_\_contrast=...}.
+In output naming this study-design stage appears as \texttt{\_\_study\_contrast=...}.
 
-Study-design contrast defines $x_p$ first. The calibration contrast-method axis (\texttt{--contrast\_methods}) is applied after $x_p$ is defined, and adjusts peak or gene signals relative to external references.
+Study-design contrast defines $x_p$ first. The calibration-method axis (\texttt{--calibration\_methods}) is applied after $x_p$ is defined, and adjusts peak or gene signals relative to external references.
 
-\section{Contrast-method axis}
+\section{Calibration-method axis}
 \label{sec:contrast_axis}
-The contrast-method axis ($r$) defines how peak or gene signals are calibrated before extracting gene sets.
-Conceptually, this axis answers: ``contrast against what baseline, and at what stage (peak-level or gene-level)?''
+The calibration-method axis ($r$) defines how peak or gene signals are calibrated before extracting gene sets.
+Conceptually, this axis answers: ``calibrate against what baseline, and at what stage (peak-level or gene-level)?''
 
-\subsection{Contrast method options}
+\subsection{Calibration method options}
 \begin{itemize}[leftmargin=2em]
 \item \texttt{none}: no external calibration; use raw within-dataset peak statistics.
 \item \texttt{ref\_ubiquity\_penalty}: reweight peaks by reference ubiquity (peak-level calibration) before projection.
@@ -284,7 +284,7 @@ This axis answers: ``what kind of gene program do we want to report from the sam
 \item \texttt{tfidf\_distal} (scATAC): specificity-weighted distal view.
 \end{itemize}
 
-Program families are independent of link and contrast-method choices, and are evaluated for each active $(r,\ell)$ combination.
+Program families are independent of link and calibration-method choices, and are evaluated for each active $(r,\ell)$ combination.
 The ``method families'' in Section \ref{sec:program_catalog} are practical bundles of axis choices for common biological questions; they are not additional axes.
 
 \section{ATAC program methods catalog}
@@ -299,10 +299,10 @@ This section defines a catalog of program methods. Each method corresponds to a 
 As defined in Sections \ref{sec:conceptual_axes}, \ref{sec:contrast_axis}, and \ref{sec:program_axis}, CLI outputs are generated over three independent axes:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{link\_method}: region-to-gene linkage model (promoter overlap, nearest TSS, distance decay, external).
-\item \texttt{contrast\_methods}: calibration/contrast choice (\texttt{none}, \texttt{ref\_ubiquity\_penalty}, \texttt{atlas\_residual}).
+\item \texttt{calibration\_methods}: calibration/contrast choice (\texttt{none}, \texttt{ref\_ubiquity\_penalty}, \texttt{atlas\_residual}).
 \item \texttt{program\_methods}: program-family view (\texttt{linked\_activity}, \texttt{promoter\_activity}, \texttt{distal\_activity}, \texttt{enhancer\_bias}, and \texttt{tfidf\_distal} where applicable).
 \end{itemize}
-Each active contrast method is evaluated for each selected linkage model, and each resulting linked score space is then emitted through requested program families.
+Each active calibration method is evaluated for each selected linkage model, and each resulting linked score space is then emitted through requested program families.
 The method families below are integrative templates built from these three axes.
 
 \subsection{Summary table}
@@ -623,7 +623,7 @@ The recommended default preset (\texttt{--program\_preset connectable}, with \te
 \begin{itemize}[leftmargin=2em]
 \item \textbf{linked\_activity} with \texttt{link\_method=nearest\_tss}.
 \item \textbf{distal\_activity} with \texttt{link\_method=distance\_decay}.
-\item a single contrast outcome per pair using \texttt{--contrast\_methods auto\_prefer\_ref\_ubiquity\_else\_none} (prefer reference ubiquity calibration, otherwise fallback to \texttt{none}).
+\item a single calibration outcome per pair using \texttt{--calibration\_methods auto\_prefer\_ref\_ubiquity\_else\_none} (prefer reference ubiquity calibration, otherwise fallback to \texttt{none}).
 \end{itemize}
 This avoids broad, low-specificity outputs in the common case while keeping dependencies minimal.
 

@@ -80,7 +80,7 @@ GMT defaults favor cleaner symbols:
 - default ATAC preset is `--program_preset connectable` (alias: `default`) and emits only two recommended outputs:
   - `linked_activity` with `nearest_tss`
   - `distal_activity` with `distance_decay`
-- default contrast policy is `--contrast_methods auto_prefer_ref_ubiquity_else_none`:
+- default calibration policy is `--calibration_methods auto_prefer_ref_ubiquity_else_none`:
   - uses `ref_ubiquity_penalty` when resource data is available
   - otherwise falls back to `none`
 - `--program_preset qc`, `--program_preset experimental`, and `--program_preset all` are opt-in for broader/non-recommended outputs.
@@ -140,15 +140,16 @@ Shared ATAC pipeline stages:
 
 1. Define a peak statistic `x_p` from input peaks/matrices.
 2. Transform to nonnegative peak weights `alpha_p = phi(x_p)`.
-3. Apply optional external calibration (`--contrast_methods`) after `x_p` is defined.
+3. Apply optional external calibration (`--calibration_methods`) after `x_p` is defined.
 4. Link peaks to genes with `L_pg` (`--link_method`) and compute gene scores `s_g = sum_p alpha_p * L_pg`.
 5. Apply program-family views (`--program_preset` / `--program_methods`).
 6. Select compact gene sets (`--select`, `--top_k`) and optional normalized weights (`--normalize`), then export GMT.
 
 Important distinction:
 
-- `--contrast` is the study-design contrast that defines `x_p` (for example, `group_vs_rest`, `condition_within_group`, or baseline/no contrast).
-- `--contrast_methods` is external calibration applied after `x_p` is defined (`none`, `ref_ubiquity_penalty`, `atlas_residual`).
+- `--study_contrast` is the study-design contrast that defines `x_p` (for example, `group_vs_rest`, `condition_within_group`, or baseline/no contrast).
+- `--calibration_methods` is external calibration applied after `x_p` is defined (`none`, `ref_ubiquity_penalty`, `atlas_residual`).
+- Backward-compatible aliases remain available with deprecation warnings: `--contrast` -> `--study_contrast`, `--contrast_methods` -> `--calibration_methods`.
 
 CLI to theory crosswalk:
 
@@ -156,9 +157,9 @@ CLI to theory crosswalk:
 |---|---|---|
 | `--peaks`, `--peak_matrix_tsv`, `--matrix_dir` | Peak coordinates and peak statistic `x_p` | Methods: Mental model (`sec:atac_mental_model`), Peak weights (`sec:peak_weights`) |
 | `--gtf`, `--organism`, `--genome_build` | Gene coordinates (TSS/promoter/locus) | Methods: Linkage models (`sec:linkage_models`) |
-| `--contrast` and related condition flags | Study-design contrast defining `x_p` | Methods: Study-design contrasts (`sec:study_design_contrast`) |
+| `--study_contrast` and related condition flags | Study-design contrast defining `x_p` | Methods: Study-design contrasts (`sec:study_design_contrast`) |
 | `--peak_weight_transform` | Transform `alpha_p = phi(x_p)` | Methods: Peak weights (`sec:peak_weights`) |
-| `--contrast_methods` | External calibration (peak-level or gene-level) | Methods: Contrast-method axis (`sec:contrast_axis`), `eq:ref_idf`, `eq:atlas_logratio`, `eq:atlas_z` |
+| `--calibration_methods` | External calibration (peak-level or gene-level) | Methods: Calibration-method axis (`sec:contrast_axis`), `eq:ref_idf`, `eq:atlas_logratio`, `eq:atlas_z` |
 | `--ref_ubiquity_resource_id`, `--atlas_resource_id`, `--atlas_metric`, `--atlas_min_raw_quantile`, `--atlas_use_log1p` | Reference resources and stabilization choices | Methods: Resources (`sec:resources`), M3.1/M3.2 |
 | `--link_method` | Linkage model `L_pg` | Methods: Linkage models (`sec:linkage_models`) |
 | `--program_preset`, `--program_methods` | Program-family view `Psi_m` | Methods: Program-family axis (`sec:program_axis`), catalog (`sec:program_catalog`) |
@@ -188,14 +189,14 @@ CLI to theory crosswalk:
 ATAC program generation follows three independent axes:
 
 - linkage axis (`--link_method`): how peaks are linked to genes
-- contrast axis (`--contrast_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
+- calibration axis (`--calibration_methods`): how peak/gene signals are calibrated (`none`, `ref_ubiquity_penalty`, `atlas_residual`)
 - program-family axis (`--program_methods` / `--program_preset`): how linked scores are turned into biologically motivated program views (`linked_activity`, `promoter_activity`, `distal_activity`, `enhancer_bias`, and `tfidf_distal` for scATAC)
 
 ### Theory cross-reference
 
 - Methods: Peak weights (`sec:peak_weights`)
 - Methods: Linkage models (`sec:linkage_models`)
-- Methods: Calibration contrast-methods (`sec:contrast_axis`)
+- Methods: Calibration methods (`sec:contrast_axis`)
 - Methods: Program-family axis and catalog (`sec:program_axis`, `sec:program_catalog`)
 - Methods: Set extraction and GMT export (`sec:set_extraction`, `sec:gmt_export`)
 
@@ -203,7 +204,7 @@ Recommended default (`--program_preset connectable`) is intentionally not a full
 
 - `linked_activity` at `link_method=nearest_tss`
 - `distal_activity` at `link_method=distance_decay`
-- one contrast outcome per pair via `auto_prefer_ref_ubiquity_else_none`
+- one calibration outcome per pair via `auto_prefer_ref_ubiquity_else_none`
 
 Use `--program_preset all` for full method-development cross-product behavior.
 
@@ -234,11 +235,11 @@ Optional peak weights:
 - `--program_methods` allows explicit family override (`linked_activity,promoter_activity,distal_activity,enhancer_bias`).
 - in `connectable/default`, only recommended pairs are emitted (linked+nearest, distal+distance).
 - use `all` for full cross-product.
-- Contrast methods:
-  - `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
+- Calibration methods:
+  - `--calibration_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
   - default is `auto_prefer_ref_ubiquity_else_none`
   - evaluated independently across each selected `--link_method`
-  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `calibration_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` (default `zscore`) plus `--atlas_min_raw_quantile` (default `0.95`) and `--atlas_use_log1p` stabilize atlas residual scoring.
@@ -269,7 +270,7 @@ omics2geneset convert atac_bulk \
   --genome_build hg38 \
   --peak_weights_tsv tests/data/toy_peak_weights.tsv \
   --program_preset connectable \
-  --contrast_methods auto_prefer_ref_ubiquity_else_none \
+  --calibration_methods auto_prefer_ref_ubiquity_else_none \
   --select top_k \
   --top_k 200 \
   --normalize within_set_l1
@@ -279,7 +280,7 @@ omics2geneset convert atac_bulk \
 
 - Genome build mismatch between peaks, `--gtf`, and reference resources.
 - Wrong `--peaks_weight_column` (for example selecting rank/length instead of accessibility signal).
-- Missing resources causing `--contrast_methods` to fall back under `--resource_policy skip`.
+- Missing resources causing `--calibration_methods` to fall back under `--resource_policy skip`.
 - Promoter-heavy outputs are often generic for baseline single-sample data; prefer distal programs for discovery.
 - Check `run_summary.txt` to confirm which methods ran versus skipped.
 
@@ -312,7 +313,7 @@ Optional:
 ### Extraction modes (concept + scientific intent)
 
 - Peak summary (`--peak_summary`): `sum_counts`, `mean_counts`, `frac_cells_nonzero`
-- Contrast (`--contrast`):
+- Study contrast (`--study_contrast`):
   - `group_vs_rest` (default when groups are provided) to capture group-specific accessibility
   - `condition_within_group` for per-group condition A vs B contrasts with OPEN/CLOSE programs
   - `none` for non-differential summaries
@@ -337,12 +338,12 @@ Optional:
 - `--program_methods` overrides with explicit families; scATAC supports `tfidf_distal` in addition to bulk methods.
   - in `connectable/default`, only recommended pairs are emitted (linked+nearest, distal+distance).
   - use `all` for full cross-product.
-- Contrast methods:
-  - `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
+- Calibration methods:
+  - `--calibration_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}`
   - default is `auto_prefer_ref_ubiquity_else_none`
-  - for `--contrast condition_within_group`, default/auto policy is forced to `none`; to run reference calibration explicitly, pass `--contrast_methods ref_ubiquity_penalty` (or another explicit non-auto choice)
+  - for `--study_contrast condition_within_group`, default/auto policy is forced to `none`; to run reference calibration explicitly, pass `--calibration_methods ref_ubiquity_penalty` (or another explicit non-auto choice)
   - evaluated independently across each selected `--link_method`
-  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `contrast_methods=none`.
+  - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force `calibration_methods=none`.
   - `--resource_policy {skip,fail}` controls behavior when resource-backed methods cannot load resources. Recommended: `fail` for production runs.
   - `--ref_ubiquity_resource_id` and `--atlas_resource_id` select catalog resources.
   - `--atlas_metric {logratio,zscore}` (default `zscore`) plus `--atlas_min_raw_quantile` (default `0.95`) and `--atlas_use_log1p` stabilize atlas residual scoring.
@@ -355,20 +356,20 @@ Optional:
 
 For `atac_sc_10x`, group-level gating is applied before GMT extraction:
 
-1. For `--contrast condition_within_group`, if `--contrast_methods` is auto/default, runtime forces `contrast_methods=none` unless you explicitly request a non-auto method.
-2. For `--contrast condition_within_group`, if condition metadata is present:
+1. For `--study_contrast condition_within_group`, if `--calibration_methods` is auto/default, runtime forces `calibration_methods=none` unless you explicitly request a non-auto method.
+2. For `--study_contrast condition_within_group`, if condition metadata is present:
    - print per-group case/control cell and donor counts
    - skip groups with `n_cells < --min_cells_per_group`
    - skip groups when either condition has `< --min_cells_per_condition` cells
    - skip groups when either condition has `< --min_donors_per_condition` donors
    - warn when case/control cell imbalance exceeds `--cell_imbalance_warn_ratio`
    - optionally warn on high baseline carry-through using `--baseline_carry_through_corr_warn`
-3. For `--contrast condition_within_group`, if overall donor coverage is too low (`--min_total_donors_per_condition`), explicit runs fail; implicit preset-selected runs fall back.
+3. For `--study_contrast condition_within_group`, if overall donor coverage is too low (`--min_total_donors_per_condition`), explicit runs fail; implicit preset-selected runs fall back.
 4. If no groups remain after condition QC filtering, conversion exits with an error.
-5. If `condition_within_group` is selected implicitly by preset (not explicitly set by `--contrast`) but condition metadata is missing or unusable, the converter warns and falls back to:
+5. If `condition_within_group` is selected implicitly by preset (not explicitly set by `--study_contrast`) but condition metadata is missing or unusable, the converter warns and falls back to:
    - `group_vs_rest` when groups are available
    - `none` when groups are not available
-6. If `--contrast condition_within_group` is explicitly requested and required condition metadata is missing/unusable, conversion errors instead of falling back.
+6. If `--study_contrast condition_within_group` is explicitly requested and required condition metadata is missing/unusable, conversion errors instead of falling back.
 
 External linkage TSV format:
 
@@ -429,7 +430,7 @@ omics2geneset convert atac_sc_10x \
   --organism human \
   --genome_build hg38 \
   --program_preset connectable \
-  --contrast group_vs_rest \
+  --study_contrast group_vs_rest \
   --select top_k \
   --top_k 200 \
   --normalize within_set_l1
@@ -472,12 +473,12 @@ Required inputs:
 - `--sample_metadata_tsv`: includes `sample_id` + `condition` columns (or overrides)
 - `--gtf`, `--organism`, `--genome_build`, `--out_dir`
 
-Key contrast flags:
+Key study-contrast and calibration flags:
 
 - `--condition_a`, `--condition_b`
 - `--contrast_metric {log2fc,diff}`
 - `--contrast_pseudocount` (used for `log2fc`)
-- `--contrast_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}` (default `auto_prefer_ref_ubiquity_else_none`)
+- `--calibration_methods {auto_prefer_ref_ubiquity_else_none,all,none,ref_ubiquity_penalty,atlas_residual}` (default `auto_prefer_ref_ubiquity_else_none`)
 - `--use_reference_bundle {true,false}` defaults to `true`; set `false` to force reference-backed contrasts off.
 - `--resource_policy {skip,fail}` recommended as `fail` for production runs.
 

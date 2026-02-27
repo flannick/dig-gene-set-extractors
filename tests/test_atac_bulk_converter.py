@@ -26,7 +26,7 @@ class Args:
     normalize = "within_set_l1"
     program_preset = "connectable"
     program_methods = None
-    contrast_methods = "auto_prefer_ref_ubiquity_else_none"
+    calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
@@ -122,11 +122,11 @@ def test_bulk_default_connectable_emits_exactly_two_sets(tmp_path: Path):
     lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
     text = "\n".join(lines)
-    assert "__program=linked_activity__contrast_method=ref_ubiquity_penalty__link_method=nearest_tss__topk=3" in text
-    assert "__program=distal_activity__contrast_method=ref_ubiquity_penalty__link_method=distance_decay__topk=3" in text
+    assert "__program=linked_activity__calibration_method=ref_ubiquity_penalty__link_method=nearest_tss__topk=3" in text
+    assert "__program=distal_activity__calibration_method=ref_ubiquity_penalty__link_method=distance_decay__topk=3" in text
     assert "__program=promoter_activity__" not in text
     assert "__program=enhancer_bias__" not in text
-    assert "__contrast_method=atlas_residual__" not in text
+    assert "__calibration_method=atlas_residual__" not in text
     assert "__link_method=promoter_overlap__" not in text
 
 
@@ -139,12 +139,12 @@ def test_bulk_default_auto_falls_back_to_none_without_resources(tmp_path: Path, 
     atac_bulk.run(args)
     captured = capsys.readouterr()
     assert "auto_prefer_ref_ubiquity_else_none" in captured.err
-    assert "falling back to contrast_method=none" in captured.err
+    assert "falling back to calibration_method=none" in captured.err
 
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast_method=none__" in text
-    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in text
-    assert "__program=distal_activity__contrast_method=none__link_method=distance_decay__topk=3" in text
+    assert "__calibration_method=none__" in text
+    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in text
+    assert "__program=distal_activity__calibration_method=none__link_method=distance_decay__topk=3" in text
 
 
 def test_bulk_use_reference_bundle_false_does_not_crash(tmp_path: Path, capsys):
@@ -228,7 +228,7 @@ def test_bulk_ref_ubiquity_changes_distal_ranking(tmp_path: Path):
     args_none.program_preset = "none"
     args_none.program_methods = "distal_activity"
     args_none.link_method = "distance_decay"
-    args_none.contrast_methods = "none"
+    args_none.calibration_methods = "none"
     args_none.gmt_min_genes = 1
     args_none.gmt_max_genes = 10
     args_none.gmt_topk_list = "1"
@@ -242,7 +242,7 @@ def test_bulk_ref_ubiquity_changes_distal_ranking(tmp_path: Path):
     args_ref.program_preset = "none"
     args_ref.program_methods = "distal_activity"
     args_ref.link_method = "distance_decay"
-    args_ref.contrast_methods = "ref_ubiquity_penalty"
+    args_ref.calibration_methods = "ref_ubiquity_penalty"
     args_ref.resources_manifest = str(manifest_path)
     args_ref.resources_dir = str(tmp_path)
     args_ref.ref_ubiquity_resource_id = "toy_ref"
@@ -324,7 +324,7 @@ def test_bulk_ref_ubiquity_applies_idf_once(tmp_path: Path):
     args.program_preset = "none"
     args.program_methods = "linked_activity"
     args.link_method = "nearest_tss"
-    args.contrast_methods = "ref_ubiquity_penalty"
+    args.calibration_methods = "ref_ubiquity_penalty"
     args.resources_manifest = str(manifest_path)
     args.resources_dir = str(tmp_path)
     args.ref_ubiquity_resource_id = "toy_ref"
@@ -378,7 +378,7 @@ def test_bulk_atlas_missing_score_definition_warns_and_skips(tmp_path: Path, cap
 
     args = Args()
     args.out_dir = str(tmp_path / "atlas_missing")
-    args.contrast_methods = "atlas_residual"
+    args.calibration_methods = "atlas_residual"
     args.resources_manifest = str(manifest_path)
     args.resources_dir = str(tmp_path)
     args.atlas_resource_id = "atlas_custom"
@@ -406,7 +406,7 @@ def test_bulk_skips_small_gmt_sets_by_default(tmp_path: Path, capsys):
     args.gmt_min_genes = 5
     args.gmt_max_genes = 10
     args.gmt_topk_list = "5"
-    args.contrast_methods = "none"
+    args.calibration_methods = "none"
     atac_bulk.run(args)
     captured = capsys.readouterr()
     assert "skipped GMT output" in captured.err
@@ -425,7 +425,7 @@ def test_bulk_emit_small_gene_sets_override(tmp_path: Path, capsys):
     args.gmt_max_genes = 10
     args.gmt_topk_list = "5"
     args.emit_small_gene_sets = True
-    args.contrast_methods = "none"
+    args.calibration_methods = "none"
     atac_bulk.run(args)
     captured = capsys.readouterr()
     assert "emitted small GMT output" in captured.err

@@ -56,16 +56,16 @@ ATAC reference bundle setup:
 - default ATAC preset is `connectable` and emits only high-value outputs:
   - `linked_activity` with `nearest_tss`
   - `distal_activity` with `distance_decay`
-  - contrast policy `auto_prefer_ref_ubiquity_else_none` (uses reference ubiquity when available, otherwise falls back to `none`)
+  - calibration policy `auto_prefer_ref_ubiquity_else_none` (uses reference ubiquity when available, otherwise falls back to `none`)
 - `qc`, `experimental`, and `all` presets are opt-in for broader/non-recommended outputs
-- when reference-backed contrasts cannot run, converters warn and continue with available methods by default
+- when reference-backed calibration methods cannot run, converters warn and continue with available methods by default
 - production guidance: run with `--resource_policy fail` after `resources status --check_schema`
 
 Not recommended by default:
 
 - `promoter_activity` (broad/open-chromatin bias)
 - `enhancer_bias` (use via `experimental` after manual review)
-- `atlas_residual` (resource-backed and score-definition sensitive; use via `experimental` or explicit `--contrast_methods`)
+- `atlas_residual` (resource-backed and score-definition sensitive; use via `experimental` or explicit `--calibration_methods`)
 - `promoter_overlap` linkage outputs for primary discovery programs
 
 ## Common Output Contract

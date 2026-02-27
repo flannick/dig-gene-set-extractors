@@ -32,7 +32,7 @@ class Args:
     normalize = "within_set_l1"
     program_preset = "connectable"
     program_methods = None
-    contrast_methods = "none"
+    calibration_methods = "none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
@@ -79,16 +79,16 @@ def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: P
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     lines = [x for x in gmt_text.splitlines() if x.strip()]
     assert 2 <= len(lines) <= 4
-    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in gmt_text
     assert "__direction=OPEN" in gmt_text
     assert "__direction=CLOSE" in gmt_text
     assert "__program=promoter_activity__" not in gmt_text
     assert "__program=enhancer_bias__" not in gmt_text
-    assert "__contrast_method=atlas_residual__" not in gmt_text
+    assert "__calibration_method=atlas_residual__" not in gmt_text
     assert "__link_method=promoter_overlap__" not in gmt_text
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast = meta["program_extraction"]["contrast"]
+    contrast = meta["program_extraction"]["study_contrast"]
     assert contrast["mode"] == "condition_between_samples"
     assert contrast["condition_a"] == "case"
     assert contrast["condition_b"] == "control"
@@ -103,7 +103,7 @@ def test_bulk_matrix_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, 
     args = Args()
     args.out_dir = str(tmp_path / "bulk_matrix_no_bundle")
     args.use_reference_bundle = False
-    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
+    args.calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_bulk_matrix.run(args)
     captured = capsys.readouterr()
     assert "auto_prefer_ref_ubiquity_else_none" in captured.err
@@ -115,9 +115,9 @@ def test_bulk_matrix_all_preset_allows_explicit_cross_product(tmp_path: Path):
     args.program_preset = "all"
     args.link_method = "all"
     args.program_methods = "linked_activity,promoter_activity,distal_activity,enhancer_bias"
-    args.contrast_methods = "none"
+    args.calibration_methods = "none"
     atac_bulk_matrix.run(args)
 
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in text
-    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in text
+    assert "__program=promoter_activity__calibration_method=none__link_method=promoter_overlap__topk=3" in text
+    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in text

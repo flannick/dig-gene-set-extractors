@@ -39,7 +39,7 @@ class Args:
     normalize = "within_set_l1"
     program_preset = "connectable"
     program_methods = None
-    contrast_methods = "none"
+    calibration_methods = "none"
     resources_manifest = None
     resources_dir = None
     use_reference_bundle = True
@@ -68,7 +68,7 @@ class Args:
     emit_small_gene_sets = False
     qc_marker_genes_tsv = None
     region_gene_links_tsv = None
-    contrast = None
+    study_contrast = None
     contrast_metric = "log2fc"
     contrast_pseudocount = None
     gtf_source = "toy"
@@ -84,8 +84,8 @@ def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     assert rows
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in gmt_text
-    assert "__program=distal_activity__contrast_method=none__link_method=distance_decay__topk=3" in gmt_text
+    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__program=distal_activity__calibration_method=none__link_method=distance_decay__topk=3" in gmt_text
     assert "__program=promoter_activity__" not in gmt_text
     assert "__program=enhancer_bias__" not in gmt_text
     assert "__link_method=promoter_overlap__" not in gmt_text
@@ -123,7 +123,7 @@ def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_pat
     args.condition_a = "treated"
     args.condition_b = "control"
     args.min_cells_per_condition = 1
-    args.contrast = "condition_within_group"
+    args.study_contrast = "condition_within_group"
     args.out_dir = str(tmp_path / "sc_condition_groups")
     args.link_method = "all"
     atac_sc_10x.run(args)
@@ -131,13 +131,13 @@ def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_pat
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
     combined_gmt = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast=condition_within_group" in combined_gmt
+    assert "__study_contrast=condition_within_group" in combined_gmt
     assert "__direction=OPEN" in combined_gmt
     assert "__direction=CLOSE" in combined_gmt
-    assert "__program=linked_activity__contrast_method=none__link_method=nearest_tss__topk=3" in combined_gmt
+    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in combined_gmt
 
     meta = json.loads((Path(args.out_dir) / "group=g1" / "geneset.meta.json").read_text(encoding="utf-8"))
-    contrast = meta["program_extraction"]["contrast"]
+    contrast = meta["program_extraction"]["study_contrast"]
     assert contrast["mode"] == "condition_within_group"
     assert contrast["condition_column"] == "condition"
     assert contrast["condition_a"] == "treated"
@@ -148,7 +148,7 @@ def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_pat
     assert contrast["directions_emitted"] == ["OPEN", "CLOSE"]
 
 
-def test_sc_condition_within_group_defaults_to_none_contrast_method(tmp_path: Path):
+def test_sc_condition_within_group_defaults_to_none_calibration_method(tmp_path: Path):
     args = Args()
     args.matrix_dir = "tests/data/toy_10x_mtx_conditions"
     args.groups_tsv = "tests/data/barcode_groups_conditions.tsv"
@@ -156,15 +156,15 @@ def test_sc_condition_within_group_defaults_to_none_contrast_method(tmp_path: Pa
     args.condition_column = "condition"
     args.condition_a = "treated"
     args.condition_b = "control"
-    args.contrast = "condition_within_group"
-    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
+    args.study_contrast = "condition_within_group"
+    args.calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     args.min_cells_per_condition = 1
     args.min_cells_per_group = 1
     args.out_dir = str(tmp_path / "sc_condition_none_default")
     atac_sc_10x.run(args)
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__contrast_method=none__" in text
-    assert "__contrast_method=ref_ubiquity_penalty__" not in text
+    assert "__calibration_method=none__" in text
+    assert "__calibration_method=ref_ubiquity_penalty__" not in text
 
 
 def test_sc_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, capsys):
@@ -172,7 +172,7 @@ def test_sc_auto_contrast_warning_when_bundle_disabled(tmp_path: Path, capsys):
     args.out_dir = str(tmp_path / "sc_no_reference_bundle")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
     args.use_reference_bundle = False
-    args.contrast_methods = "auto_prefer_ref_ubiquity_else_none"
+    args.calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_sc_10x.run(args)
     captured = capsys.readouterr()
     assert "auto_prefer_ref_ubiquity_else_none" in captured.err
@@ -185,12 +185,12 @@ def test_sc_all_preset_allows_explicit_cross_product(tmp_path: Path):
     args.link_method = "all"
     args.program_preset = "all"
     args.program_methods = "linked_activity,promoter_activity,distal_activity,enhancer_bias,tfidf_distal"
-    args.contrast_methods = "none"
+    args.calibration_methods = "none"
     atac_sc_10x.run(args)
 
     text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=promoter_activity__contrast_method=none__link_method=promoter_overlap__topk=3" in text
-    assert "__program=tfidf_distal__contrast_method=none__link_method=distance_decay__topk=3" in text
+    assert "__program=promoter_activity__calibration_method=none__link_method=promoter_overlap__topk=3" in text
+    assert "__program=tfidf_distal__calibration_method=none__link_method=distance_decay__topk=3" in text
 
 
 def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
@@ -240,7 +240,7 @@ def test_sc_groups_below_min_cells_per_group_are_skipped(tmp_path: Path, capsys)
     args.condition_column = "condition"
     args.condition_a = "treated"
     args.condition_b = "control"
-    args.contrast = "condition_within_group"
+    args.study_contrast = "condition_within_group"
     args.min_donors_per_condition = 1
     args.min_total_donors_per_condition = 1
     args.min_cells_per_group = 2
@@ -265,7 +265,7 @@ def test_sc_condition_group_skipped_when_donor_support_low(tmp_path: Path, capsy
     args.condition_column = "condition"
     args.condition_a = "treated"
     args.condition_b = "control"
-    args.contrast = "condition_within_group"
+    args.study_contrast = "condition_within_group"
     args.min_cells_per_group = 1
     args.min_cells_per_condition = 1
     args.min_donors_per_condition = 2
@@ -285,7 +285,7 @@ def test_sc_condition_dataset_donor_gate_blocks_explicit_contrast(tmp_path: Path
     args.condition_column = "condition"
     args.condition_a = "treated"
     args.condition_b = "control"
-    args.contrast = "condition_within_group"
+    args.study_contrast = "condition_within_group"
     args.min_cells_per_group = 1
     args.min_cells_per_condition = 1
     args.min_donors_per_condition = 1
@@ -298,7 +298,7 @@ def test_sc_group_vs_rest_not_filtered_by_condition_donor_gates(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "sc_group_vs_rest_unchanged")
     args.groups_tsv = "tests/data/barcode_groups.tsv"
-    args.contrast = "group_vs_rest"
+    args.study_contrast = "group_vs_rest"
     args.min_cells_per_group = 100
     args.min_cells_per_condition = 100
     args.min_donors_per_condition = 100

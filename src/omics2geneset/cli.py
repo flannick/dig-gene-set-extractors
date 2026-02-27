@@ -62,13 +62,20 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "--contrast_methods",
+        "--calibration_methods",
+        dest="calibration_methods",
         default="auto_prefer_ref_ubiquity_else_none",
         help=(
-            "Comma-separated contrast methods applied independently of link_method. "
+            "Comma-separated calibration methods applied independently of link_method. "
             "Tokens: all,auto_prefer_ref_ubiquity_else_none,none,ref_ubiquity_penalty,atlas_residual. "
             "Default auto_prefer_ref_ubiquity_else_none."
         ),
+    )
+    parser.add_argument(
+        "--contrast_methods",
+        dest="calibration_methods",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
     parser.add_argument("--top_k", type=int, default=200)
@@ -91,11 +98,11 @@ def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
         "--use_reference_bundle",
         type=_parse_bool,
         default=True,
-        help="If true (default), allow reference-backed contrast methods; if false, contrast behavior is forced to none.",
+        help="If true (default), allow reference-backed calibration methods; if false, calibration behavior is forced to none.",
     )
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
-    parser.add_argument("--ref_ubiquity_resource_id", help="Resource id used by contrast_method=ref_ubiquity_penalty")
-    parser.add_argument("--atlas_resource_id", help="Resource id used by contrast_method=atlas_residual")
+    parser.add_argument("--ref_ubiquity_resource_id", help="Resource id used by calibration_method=ref_ubiquity_penalty")
+    parser.add_argument("--atlas_resource_id", help="Resource id used by calibration_method=atlas_residual")
     parser.add_argument("--atlas_metric", choices=["logratio", "zscore"], default="zscore")
     parser.add_argument("--atlas_eps", type=float, default=1e-6)
     parser.add_argument(
@@ -286,7 +293,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--peak_summary", choices=["sum_counts", "mean_counts", "frac_cells_nonzero"], default="sum_counts")
     p_sc.add_argument("--peak_weight_transform", choices=["signed", "abs", "positive", "negative"], default="positive")
     p_sc.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
-    p_sc.add_argument("--contrast", choices=["none", "group_vs_rest", "condition_within_group"])
+    p_sc.add_argument(
+        "--study_contrast",
+        dest="study_contrast",
+        choices=["none", "group_vs_rest", "condition_within_group"],
+        help="Study-design contrast used to define peak statistics before calibration.",
+    )
+    p_sc.add_argument("--contrast", dest="study_contrast", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     p_sc.add_argument("--contrast_metric", choices=["log2fc", "diff"], default="log2fc")
     p_sc.add_argument("--contrast_pseudocount", type=float)
     p_sc.add_argument("--gtf_source")
@@ -352,8 +365,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _flag_used(argv: list[str], flag: str) -> bool:
+    for token in argv:
+        if token == flag or token.startswith(flag + "="):
+            return True
+    return False
+
+
+def _emit_cli_alias_warnings(argv: list[str]) -> None:
+    if _flag_used(argv, "--contrast_methods"):
+        print(
+            "warning: --contrast_methods is deprecated; use --calibration_methods.",
+            file=sys.stderr,
+        )
+    if _flag_used(argv, "--contrast"):
+        print(
+            "warning: --contrast is deprecated; use --study_contrast.",
+            file=sys.stderr,
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
+    _emit_cli_alias_warnings(raw_argv)
     try:
         if args.command == "list":
             for name, desc in list_converters():
@@ -509,18 +544,18 @@ def main(argv: list[str] | None = None) -> int:
                         print("program_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_methods)), file=sys.stderr)
                     else:
                         print("program_methods_skipped=none", file=sys.stderr)
-            active_contrasts = result.get("contrast_methods")
+            active_contrasts = result.get("calibration_methods")
             if isinstance(active_contrasts, list) and active_contrasts:
-                print("contrast_methods_active=" + ",".join(str(x) for x in active_contrasts), file=sys.stderr)
-                skipped_contrasts = result.get("contrast_methods_skipped")
+                print("calibration_methods_active=" + ",".join(str(x) for x in active_contrasts), file=sys.stderr)
+                skipped_contrasts = result.get("calibration_methods_skipped")
                 if isinstance(skipped_contrasts, dict):
                     if skipped_contrasts:
                         print(
-                            "contrast_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_contrasts)),
+                            "calibration_methods_skipped=" + ",".join(sorted(str(k) for k in skipped_contrasts)),
                             file=sys.stderr,
                         )
                     else:
-                        print("contrast_methods_skipped=none", file=sys.stderr)
+                        print("calibration_methods_skipped=none", file=sys.stderr)
             return 0
     except Exception as exc:  # pragma: no cover
         print(f"error: {exc}", file=sys.stderr)

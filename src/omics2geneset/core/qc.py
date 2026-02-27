@@ -142,16 +142,16 @@ def collect_emitted_method_combinations(gmt_plans: list[dict[str, object]]) -> l
         if not isinstance(params, dict):
             continue
         program_method = str(params.get("program_method", ""))
-        contrast_method = str(params.get("contrast_method", ""))
+        calibration_method = str(params.get("calibration_method", params.get("contrast_method", "")))
         link_method = str(params.get("link_method", ""))
         direction = str(params.get("direction", ""))
-        key = (program_method, contrast_method, link_method, direction)
+        key = (program_method, calibration_method, link_method, direction)
         if key in seen:
             continue
         seen.add(key)
         record: dict[str, str] = {
             "program_method": program_method,
-            "contrast_method": contrast_method,
+            "calibration_method": calibration_method,
             "link_method": link_method,
         }
         if direction:
@@ -168,14 +168,17 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
         "converter",
         "dataset_label",
         "group",
+        "study_contrast",
         "program_preset",
         "primary_program_method",
         "primary_link_method",
-        "primary_contrast_method",
+        "primary_calibration_method",
         "selected_direction",
     ):
         if key in payload:
             lines.append(f"{key}: {payload[key]}")
+    if "primary_calibration_method" not in payload and "primary_contrast_method" in payload:
+        lines.append(f"primary_calibration_method: {payload['primary_contrast_method']}")
 
     if "n_input_peaks" in payload:
         lines.append(f"n_input_peaks: {payload['n_input_peaks']}")
@@ -215,12 +218,12 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
             lines.append(
                 "  "
                 + f"program={row.get('program_method','')}"
-                + f" contrast_method={row.get('contrast_method','')}"
+                + f" calibration_method={row.get('calibration_method','')}"
                 + f" link_method={row.get('link_method','')}"
                 + (f" direction={row.get('direction','')}" if row.get("direction") else "")
             )
 
-    for key in ("program_methods_skipped", "contrast_methods_skipped"):
+    for key in ("program_methods_skipped", "calibration_methods_skipped", "contrast_methods_skipped"):
         value = payload.get(key)
         if isinstance(value, dict):
             if value:

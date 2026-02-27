@@ -24,7 +24,7 @@ from omics2geneset.core.atac_programs import (
     PROGRAM_REF_UBIQUITY_PENALTY,
     atlas_residual_scores,
     atlas_stats_for_score_definition,
-    contrast_method_enablement_hint,
+    calibration_method_enablement_hint,
     default_link_methods_for_preset,
     enhancer_bias_scores,
     link_methods_for_program,
@@ -33,8 +33,8 @@ from omics2geneset.core.atac_programs import (
     peak_values_for_contrast,
     promoter_peak_indices,
     remove_reference_program_methods,
-    resolve_auto_contrast_methods,
-    resolve_contrast_methods,
+    resolve_auto_calibration_methods,
+    resolve_calibration_methods,
     resolve_program_methods,
     score_definition_key,
 )
@@ -77,7 +77,22 @@ _EXTERNAL_LINK_METHOD = "external"
 
 
 def _arg(args, name: str, default):
-    return getattr(args, name, default)
+    aliases = {
+        "calibration_methods": ("contrast_methods",),
+        "contrast_methods": ("calibration_methods",),
+        "study_contrast": ("contrast",),
+        "contrast": ("study_contrast",),
+    }
+    if hasattr(args, name):
+        value = getattr(args, name)
+        if value is not None:
+            return value
+    for alias in aliases.get(name, ()):
+        if hasattr(args, alias):
+            value = getattr(args, alias)
+            if value is not None:
+                return value
+    return default
 
 
 def _extract_peak_weights(peaks: list[dict[str, object]], peaks_weight_column: int | None, peak_weights_tsv: str | None) -> list[float]:
@@ -206,8 +221,8 @@ def _resolved_parameters(args) -> dict[str, object]:
         _arg(args, "program_methods", None),
     )
     program_methods = remove_reference_program_methods(program_methods)
-    contrast_methods = resolve_contrast_methods(
-        _arg(args, "contrast_methods", None),
+    calibration_methods = resolve_calibration_methods(
+        _arg(args, "calibration_methods", None),
         _arg(args, "program_methods", None),
         use_reference_bundle=use_reference_bundle,
     )
@@ -226,9 +241,10 @@ def _resolved_parameters(args) -> dict[str, object]:
         "link_method": _arg(args, "link_method", "all"),
         "link_methods_evaluated": link_methods,
         "primary_link_method": link_methods[0],
-        "contrast_methods": _arg(args, "contrast_methods", None),
-        "contrast_methods_evaluated": contrast_methods,
-        "primary_contrast_method": contrast_methods[0],
+        "study_contrast": "baseline",
+        "calibration_methods": _arg(args, "calibration_methods", None),
+        "calibration_methods_evaluated": calibration_methods,
+        "primary_calibration_method": calibration_methods[0],
         "program_preset": program_preset,
         "program_methods": _arg(args, "program_methods", None),
         "program_methods_evaluated": program_methods,
@@ -268,25 +284,25 @@ def _resolved_parameters(args) -> dict[str, object]:
     }
 
 
-def _warn_skipped_contrast_methods(
-    contrast_methods_skipped: dict[str, str],
+def _warn_skipped_calibration_methods(
+    calibration_methods_skipped: dict[str, str],
     genome_build: str,
     resource_policy: str,
 ) -> None:
-    if not contrast_methods_skipped:
+    if not calibration_methods_skipped:
         return
-    print("warning: some contrast methods were skipped; continuing with available methods.", file=sys.stderr)
-    for method in sorted(contrast_methods_skipped):
+    print("warning: some calibration methods were skipped; continuing with available methods.", file=sys.stderr)
+    for method in sorted(calibration_methods_skipped):
         print(
-            f"warning: contrast_method={method} skipped: {contrast_methods_skipped[method]}",
+            f"warning: calibration_method={method} skipped: {calibration_methods_skipped[method]}",
             file=sys.stderr,
         )
-        hint = contrast_method_enablement_hint(method, genome_build)
+        hint = calibration_method_enablement_hint(method, genome_build)
         if hint:
             print(f"warning:   {hint}", file=sys.stderr)
     if resource_policy == "skip":
         print(
-            "warning: run with --resource_policy fail to require all requested contrast methods.",
+            "warning: run with --resource_policy fail to require all requested calibration methods.",
             file=sys.stderr,
         )
 
@@ -338,7 +354,7 @@ def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> li
         skipped.append(
             {
                 "program_method": str(diag.get("program_method", "")),
-                "contrast_method": str(diag.get("contrast_method", "")),
+                "calibration_method": str(diag.get("calibration_method", "")),
                 "link_method": str(diag.get("link_method", "")),
                 "reason": str(diag.get("reason", "")),
                 "n_genes": int(diag.get("n_genes", 0) or 0),
@@ -495,27 +511,27 @@ def run(args) -> dict[str, object]:
         _arg(args, "program_methods", None),
     )
     program_methods = remove_reference_program_methods(program_methods)
-    contrast_methods_requested = resolve_contrast_methods(
-        _arg(args, "contrast_methods", None),
+    calibration_methods_requested = resolve_calibration_methods(
+        _arg(args, "calibration_methods", None),
         _arg(args, "program_methods", None),
         use_reference_bundle=True,
     )
-    contrast_methods = list(contrast_methods_requested)
+    calibration_methods = list(calibration_methods_requested)
     program_methods_skipped: dict[str, str] = {}
-    contrast_methods_skipped: dict[str, str] = {}
+    calibration_methods_skipped: dict[str, str] = {}
     resources_used: list[dict[str, object]] = []
     resource_policy = str(_arg(args, "resource_policy", "skip"))
     if resource_policy not in {"skip", "fail"}:
         raise ValueError(f"Unsupported resource_policy: {resource_policy}")
     if not use_reference_bundle:
-        for method in contrast_methods_requested:
+        for method in calibration_methods_requested:
             if method == CONTRAST_METHOD_NONE:
                 continue
-            contrast_methods_skipped.setdefault(
+            calibration_methods_skipped.setdefault(
                 method,
                 "disabled because --use_reference_bundle=false",
             )
-        contrast_methods = [m for m in contrast_methods if m == CONTRAST_METHOD_NONE]
+        calibration_methods = [m for m in calibration_methods if m == CONTRAST_METHOD_NONE]
 
     link_methods = _resolve_link_methods(args)
     primary_link_method = link_methods[0]
@@ -551,10 +567,10 @@ def run(args) -> dict[str, object]:
     gene_biotype_by_id = {g.gene_id: g.gene_biotype for g in genes}
 
     needs_ref_ubiquity = (
-        PROGRAM_REF_UBIQUITY_PENALTY in contrast_methods
-        or CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY in contrast_methods
+        PROGRAM_REF_UBIQUITY_PENALTY in calibration_methods
+        or CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY in calibration_methods
     )
-    needs_atlas = PROGRAM_ATLAS_RESIDUAL in contrast_methods
+    needs_atlas = PROGRAM_ATLAS_RESIDUAL in calibration_methods
     manifest_resources: dict[str, dict[str, object]] = {}
     manifest_label = "bundled"
     manifest_warnings: list[str] = []
@@ -589,8 +605,8 @@ def run(args) -> dict[str, object]:
         except Exception as exc:
             if resource_policy == "fail":
                 raise
-            contrast_methods_skipped[PROGRAM_REF_UBIQUITY_PENALTY] = str(exc)
-            contrast_methods = [m for m in contrast_methods if m != PROGRAM_REF_UBIQUITY_PENALTY]
+            calibration_methods_skipped[PROGRAM_REF_UBIQUITY_PENALTY] = str(exc)
+            calibration_methods = [m for m in calibration_methods if m != PROGRAM_REF_UBIQUITY_PENALTY]
 
     if needs_atlas:
         atlas_resource_id = _arg(args, "atlas_resource_id", None) or _default_atlas_resource_id(str(args.genome_build))
@@ -615,20 +631,20 @@ def run(args) -> dict[str, object]:
         except Exception as exc:
             if resource_policy == "fail":
                 raise
-            contrast_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
-            contrast_methods = [m for m in contrast_methods if m != PROGRAM_ATLAS_RESIDUAL]
+            calibration_methods_skipped[PROGRAM_ATLAS_RESIDUAL] = str(exc)
+            calibration_methods = [m for m in calibration_methods if m != PROGRAM_ATLAS_RESIDUAL]
 
-    contrast_methods, auto_reason = resolve_auto_contrast_methods(
-        contrast_methods,
+    calibration_methods, auto_reason = resolve_auto_calibration_methods(
+        calibration_methods,
         ref_ubiquity_ready=(ref_peak_idf is not None),
     )
     if auto_reason:
-        contrast_methods_skipped[CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY] = auto_reason
-    if not contrast_methods:
-        contrast_methods = [CONTRAST_METHOD_NONE]
-    primary_contrast_method = contrast_methods[0]
-    _warn_skipped_contrast_methods(
-        contrast_methods_skipped,
+        calibration_methods_skipped[CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY] = auto_reason
+    if not calibration_methods:
+        calibration_methods = [CONTRAST_METHOD_NONE]
+    primary_calibration_method = calibration_methods[0]
+    _warn_skipped_calibration_methods(
+        calibration_methods_skipped,
         str(args.genome_build),
         resource_policy,
     )
@@ -689,10 +705,10 @@ def run(args) -> dict[str, object]:
     family_scores_by_contrast_by_method: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
     atlas_missing_score_definitions: set[str] = set()
 
-    for contrast_method in contrast_methods:
-        if contrast_method == PROGRAM_ATLAS_RESIDUAL:
-            linked_scores_by_contrast_by_method[contrast_method] = {}
-            family_scores_by_contrast_by_method[contrast_method] = {}
+    for calibration_method in calibration_methods:
+        if calibration_method == PROGRAM_ATLAS_RESIDUAL:
+            linked_scores_by_contrast_by_method[calibration_method] = {}
+            family_scores_by_contrast_by_method[calibration_method] = {}
             for method in link_methods:
                 linked_key = score_definition_key(PROGRAM_LINKED_ACTIVITY, method)
                 linked_stats = atlas_stats_for_score_definition(atlas_stats_by_definition, linked_key)
@@ -703,7 +719,7 @@ def run(args) -> dict[str, object]:
                             f"{linked_key}. Provide matching score definitions in atlas resource."
                         )
                     atlas_missing_score_definitions.add(linked_key)
-                    linked_scores_by_contrast_by_method[contrast_method][method] = {}
+                    linked_scores_by_contrast_by_method[calibration_method][method] = {}
                 else:
                     residual_scores = atlas_residual_scores(
                         linked_scores_none_by_method[method],
@@ -713,10 +729,10 @@ def run(args) -> dict[str, object]:
                         min_raw_quantile=atlas_min_raw_quantile,
                         use_log1p=atlas_use_log1p,
                     )
-                    linked_scores_by_contrast_by_method[contrast_method][method] = {
+                    linked_scores_by_contrast_by_method[calibration_method][method] = {
                         g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
                     }
-                family_scores_by_contrast_by_method[contrast_method][method] = {}
+                family_scores_by_contrast_by_method[calibration_method][method] = {}
                 for program_method, base_scores in family_scores_none_by_method.get(method, {}).items():
                     score_key = score_definition_key(program_method, method)
                     score_stats = atlas_stats_for_score_definition(atlas_stats_by_definition, score_key)
@@ -727,7 +743,7 @@ def run(args) -> dict[str, object]:
                                 f"{score_key}. Provide matching score definitions in atlas resource."
                             )
                         atlas_missing_score_definitions.add(score_key)
-                        family_scores_by_contrast_by_method[contrast_method][method][program_method] = {}
+                        family_scores_by_contrast_by_method[calibration_method][method][program_method] = {}
                         continue
                     residual_scores = atlas_residual_scores(
                         base_scores,
@@ -737,32 +753,32 @@ def run(args) -> dict[str, object]:
                         min_raw_quantile=atlas_min_raw_quantile,
                         use_log1p=atlas_use_log1p,
                     )
-                    family_scores_by_contrast_by_method[contrast_method][method][program_method] = {
+                    family_scores_by_contrast_by_method[calibration_method][method][program_method] = {
                         g: float(s) for g, s in residual_scores.items() if float(s) != 0.0
                     }
             continue
 
         contrast_peak_values = peak_values_for_contrast(
             peak_weights,
-            contrast_method,
+            calibration_method,
             ref_peak_idf,
         )
-        linked_scores_by_contrast_by_method[contrast_method] = _linked_scores_for_peak_values(contrast_peak_values)
-        family_scores_by_contrast_by_method[contrast_method] = _family_scores_for_peak_values(contrast_peak_values)
+        linked_scores_by_contrast_by_method[calibration_method] = _linked_scores_for_peak_values(contrast_peak_values)
+        family_scores_by_contrast_by_method[calibration_method] = _family_scores_for_peak_values(contrast_peak_values)
 
     if atlas_missing_score_definitions:
         msg = (
             "atlas_residual baseline missing for score definitions: "
             + ", ".join(sorted(atlas_missing_score_definitions))
         )
-        contrast_methods_skipped.setdefault(PROGRAM_ATLAS_RESIDUAL, msg)
+        calibration_methods_skipped.setdefault(PROGRAM_ATLAS_RESIDUAL, msg)
         print(f"warning: {msg}", file=sys.stderr)
         print(
-            "warning: provide per-score-definition atlas baselines or run with --contrast_methods none/ref_ubiquity_penalty.",
+            "warning: provide per-score-definition atlas baselines or run with --calibration_methods none/ref_ubiquity_penalty.",
             file=sys.stderr,
         )
 
-    full_scores = linked_scores_by_contrast_by_method[primary_contrast_method][primary_link_method]
+    full_scores = linked_scores_by_contrast_by_method[primary_calibration_method][primary_link_method]
     selected_gene_ids = _select_gene_ids(full_scores, args)
     selected_weights = _selected_weights(full_scores, selected_gene_ids, normalize)
 
@@ -781,22 +797,22 @@ def run(args) -> dict[str, object]:
     _write_rows(out_dir / "geneset.tsv", selected_rows)
 
     full_rows_by_contrast_by_method: dict[str, dict[str, list[dict[str, object]]]] = {}
-    for contrast_method, scores_by_method in linked_scores_by_contrast_by_method.items():
-        full_rows_by_contrast_by_method[contrast_method] = {}
+    for calibration_method, scores_by_method in linked_scores_by_contrast_by_method.items():
+        full_rows_by_contrast_by_method[calibration_method] = {}
         for method in link_methods:
-            full_rows_by_contrast_by_method[contrast_method][method] = _rows_from_scores(
+            full_rows_by_contrast_by_method[calibration_method][method] = _rows_from_scores(
                 scores_by_method.get(method, {}),
                 gene_symbol_by_id,
                 gene_biotype_by_id,
             )
-    full_rows = full_rows_by_contrast_by_method[primary_contrast_method][primary_link_method]
+    full_rows = full_rows_by_contrast_by_method[primary_calibration_method][primary_link_method]
     if emit_full:
         _write_rows(out_dir / "geneset.full.tsv", full_rows)
 
     additional_program_rows_by_contrast_by_method: dict[
         str, dict[str, dict[str, list[dict[str, object]]]]
     ] = {}
-    for contrast_method in contrast_methods:
+    for calibration_method in calibration_methods:
         rows_by_method: dict[str, dict[str, list[dict[str, object]]]] = {}
         for method in link_methods:
             program_rows: dict[str, list[dict[str, object]]] = {}
@@ -804,7 +820,7 @@ def run(args) -> dict[str, object]:
                 if program_method == PROGRAM_LINKED_ACTIVITY:
                     continue
                 scores = (
-                    family_scores_by_contrast_by_method.get(contrast_method, {})
+                    family_scores_by_contrast_by_method.get(calibration_method, {})
                     .get(method, {})
                     .get(program_method, {})
                 )
@@ -814,7 +830,7 @@ def run(args) -> dict[str, object]:
                     gene_biotype_by_id,
                 )
             rows_by_method[method] = program_rows
-        additional_program_rows_by_contrast_by_method[contrast_method] = rows_by_method
+        additional_program_rows_by_contrast_by_method[calibration_method] = rows_by_method
 
     gmt_path = resolve_gmt_out_path(out_dir, gmt_out)
     gmt_sets: list[tuple[str, list[str]]] = []
@@ -828,20 +844,20 @@ def run(args) -> dict[str, object]:
         )
     if emit_gmt:
         if PROGRAM_LINKED_ACTIVITY in program_methods:
-            for contrast_method in contrast_methods:
+            for calibration_method in calibration_methods:
                 for method in linked_output_methods:
                     requested_gmt_outputs.append(
                         {
                             "program_method": PROGRAM_LINKED_ACTIVITY,
-                            "contrast_method": contrast_method,
+                            "calibration_method": calibration_method,
                             "link_method": method,
                         }
                     )
                     method_sets, method_plans = build_gmt_sets_from_rows(
-                        rows=full_rows_by_contrast_by_method[contrast_method][method],
+                        rows=full_rows_by_contrast_by_method[calibration_method][method],
                         base_name=(
                             f"atac_bulk__program={PROGRAM_LINKED_ACTIVITY}"
-                            f"__contrast_method={contrast_method}"
+                            f"__calibration_method={calibration_method}"
                             f"__link_method={method}"
                         ),
                         prefer_symbol=gmt_prefer_symbol,
@@ -856,20 +872,20 @@ def run(args) -> dict[str, object]:
                         diagnostics=gmt_diagnostics,
                         context={
                             "program_method": PROGRAM_LINKED_ACTIVITY,
-                            "contrast_method": contrast_method,
+                            "calibration_method": calibration_method,
                             "link_method": method,
                         },
                     )
                     for plan in method_plans:
                         params = dict(plan.get("parameters", {}))
                         params["program_method"] = PROGRAM_LINKED_ACTIVITY
-                        params["contrast_method"] = contrast_method
+                        params["calibration_method"] = calibration_method
                         params["link_method"] = method
                         plan["parameters"] = params
                     gmt_sets.extend(method_sets)
                     gmt_plans.extend(method_plans)
 
-        for contrast_method, rows_by_method in additional_program_rows_by_contrast_by_method.items():
+        for calibration_method, rows_by_method in additional_program_rows_by_contrast_by_method.items():
             for method, rows_by_program in rows_by_method.items():
                 for program_method, rows in rows_by_program.items():
                     allowed_methods = link_methods_for_program(program_preset, program_method, link_methods)
@@ -878,7 +894,7 @@ def run(args) -> dict[str, object]:
                     requested_gmt_outputs.append(
                         {
                             "program_method": program_method,
-                            "contrast_method": contrast_method,
+                            "calibration_method": calibration_method,
                             "link_method": method,
                         }
                     )
@@ -886,7 +902,7 @@ def run(args) -> dict[str, object]:
                         rows=rows,
                         base_name=(
                             f"atac_bulk__program={program_method}"
-                            f"__contrast_method={contrast_method}"
+                            f"__calibration_method={calibration_method}"
                             f"__link_method={method}"
                         ),
                         prefer_symbol=gmt_prefer_symbol,
@@ -901,14 +917,14 @@ def run(args) -> dict[str, object]:
                         diagnostics=gmt_diagnostics,
                         context={
                             "program_method": program_method,
-                            "contrast_method": contrast_method,
+                            "calibration_method": calibration_method,
                             "link_method": method,
                         },
                     )
                     for plan in method_plans:
                         params = dict(plan.get("parameters", {}))
                         params["program_method"] = program_method
-                        params["contrast_method"] = contrast_method
+                        params["calibration_method"] = calibration_method
                         params["link_method"] = method
                         plan["parameters"] = params
                     gmt_sets.extend(method_sets)
@@ -940,7 +956,7 @@ def run(args) -> dict[str, object]:
         emitted_combinations = [
             {
                 "program_method": PROGRAM_LINKED_ACTIVITY,
-                "contrast_method": primary_contrast_method,
+                "calibration_method": primary_calibration_method,
                 "link_method": primary_link_method,
             }
         ]
@@ -976,7 +992,8 @@ def run(args) -> dict[str, object]:
         "program_preset": program_preset,
         "primary_program_method": PROGRAM_LINKED_ACTIVITY,
         "primary_link_method": primary_link_method,
-        "primary_contrast_method": primary_contrast_method,
+        "study_contrast": "baseline",
+        "primary_calibration_method": primary_calibration_method,
         "selected_direction": "PRIMARY",
         "n_input_peaks": len(peaks),
         "link_assignment": link_assignment,
@@ -986,7 +1003,7 @@ def run(args) -> dict[str, object]:
         "requested_gmt_outputs": requested_gmt_outputs,
         "skipped_gmt_outputs": skipped_gmt_outputs,
         "program_methods_skipped": program_methods_skipped,
-        "contrast_methods_skipped": contrast_methods_skipped,
+        "calibration_methods_skipped": calibration_methods_skipped,
     }
     if marker_qc is not None:
         run_summary_payload["marker_qc"] = marker_qc
@@ -999,9 +1016,9 @@ def run(args) -> dict[str, object]:
     params = _resolved_parameters(args)
     params["program_methods_active"] = program_methods
     params["program_methods_skipped"] = program_methods_skipped
-    params["contrast_methods_active"] = contrast_methods
-    params["contrast_methods_skipped"] = contrast_methods_skipped
-    params["primary_contrast_method"] = primary_contrast_method
+    params["calibration_methods_active"] = calibration_methods
+    params["calibration_methods_skipped"] = calibration_methods_skipped
+    params["primary_calibration_method"] = primary_calibration_method
     summary_payload: dict[str, object] = {
         "n_input_features": len(peaks),
         "n_genes": len(selected_rows),
@@ -1009,8 +1026,8 @@ def run(args) -> dict[str, object]:
         "fraction_features_assigned": assigned_peaks / len(peaks) if peaks else 0.0,
         "n_external_links_unresolved_gene_id": external_links_unresolved,
         "n_program_methods": len(program_methods),
-        "n_contrast_methods": len(contrast_methods),
-        "n_contrast_methods_skipped": len(contrast_methods_skipped),
+        "n_calibration_methods": len(calibration_methods),
+        "n_calibration_methods_skipped": len(calibration_methods_skipped),
         "n_resource_manifest_warnings": len(manifest_warnings),
     }
     if marker_qc is not None:
@@ -1048,9 +1065,9 @@ def run(args) -> dict[str, object]:
             "normalize": normalize,
             "n_selected_genes": len(selected_rows),
             "score_definition": "sum over peaks of transformed peak_weight times link_weight",
-            "contrast_methods": contrast_methods,
-            "contrast_methods_skipped": contrast_methods_skipped,
-            "primary_contrast_method": primary_contrast_method,
+            "calibration_methods": calibration_methods,
+            "calibration_methods_skipped": calibration_methods_skipped,
+            "primary_calibration_method": primary_calibration_method,
             "program_methods": program_methods,
             "program_methods_skipped": program_methods_skipped,
             "primary_program_method": PROGRAM_LINKED_ACTIVITY,
@@ -1091,6 +1108,6 @@ def run(args) -> dict[str, object]:
         "out_dir": str(out_dir),
         "program_methods": program_methods,
         "program_methods_skipped": program_methods_skipped,
-        "contrast_methods": contrast_methods,
-        "contrast_methods_skipped": contrast_methods_skipped,
+        "calibration_methods": calibration_methods,
+        "calibration_methods_skipped": calibration_methods_skipped,
     }

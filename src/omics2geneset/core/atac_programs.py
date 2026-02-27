@@ -31,6 +31,9 @@ ALLOWED_CONTRAST_METHODS = (
     PROGRAM_ATLAS_RESIDUAL,
     CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY,
 )
+CALIBRATION_METHOD_NONE = CONTRAST_METHOD_NONE
+CALIBRATION_METHOD_AUTO_PREFER_REF_UBIQUITY = CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY
+ALLOWED_CALIBRATION_METHODS = ALLOWED_CONTRAST_METHODS
 
 
 _BULK_ALLOWED = (
@@ -174,12 +177,12 @@ def remove_reference_program_methods(program_methods: list[str]) -> list[str]:
     return [method for method in program_methods if method not in blocked]
 
 
-def resolve_contrast_methods(
-    contrast_methods_csv: str | None,
+def resolve_calibration_methods(
+    calibration_methods_csv: str | None,
     legacy_program_methods_csv: str | None,
     use_reference_bundle: bool,
 ) -> list[str]:
-    requested = parse_csv_tokens(contrast_methods_csv)
+    requested = parse_csv_tokens(calibration_methods_csv)
     legacy = parse_csv_tokens(legacy_program_methods_csv)
     legacy_ref = [tok for tok in legacy if tok in REFERENCE_PROGRAM_METHODS]
 
@@ -201,8 +204,8 @@ def resolve_contrast_methods(
     out: list[str] = []
     seen: set[str] = set()
     for method in expanded:
-        if method not in ALLOWED_CONTRAST_METHODS:
-            raise ValueError(f"Unsupported contrast method: {method}")
+        if method not in ALLOWED_CALIBRATION_METHODS:
+            raise ValueError(f"Unsupported calibration method: {method}")
         if method in seen:
             continue
         out.append(method)
@@ -226,7 +229,19 @@ def resolve_contrast_methods(
     return out
 
 
-def contrast_method_enablement_hint(method: str, genome_build: str) -> str | None:
+def resolve_contrast_methods(
+    contrast_methods_csv: str | None,
+    legacy_program_methods_csv: str | None,
+    use_reference_bundle: bool,
+) -> list[str]:
+    return resolve_calibration_methods(
+        contrast_methods_csv,
+        legacy_program_methods_csv,
+        use_reference_bundle=use_reference_bundle,
+    )
+
+
+def calibration_method_enablement_hint(method: str, genome_build: str) -> str | None:
     if method not in REFERENCE_PROGRAM_METHODS and method != CONTRAST_METHOD_AUTO_PREFER_REF_UBIQUITY:
         return None
     gb = genome_build.strip().lower()
@@ -396,7 +411,11 @@ def link_methods_for_program(
     return [method for method in link_methods if method == preferred]
 
 
-def resolve_auto_contrast_methods(
+def contrast_method_enablement_hint(method: str, genome_build: str) -> str | None:
+    return calibration_method_enablement_hint(method, genome_build)
+
+
+def resolve_auto_calibration_methods(
     requested: list[str],
     ref_ubiquity_ready: bool,
 ) -> tuple[list[str], str | None]:
@@ -407,8 +426,8 @@ def resolve_auto_contrast_methods(
             chosen = PROGRAM_REF_UBIQUITY_PENALTY if ref_ubiquity_ready else CONTRAST_METHOD_NONE
             if not ref_ubiquity_ready:
                 fallback_reason = (
-                    "contrast_method=auto_prefer_ref_ubiquity_else_none could not load ref_ubiquity resource; "
-                    "falling back to contrast_method=none"
+                    "calibration_method=auto_prefer_ref_ubiquity_else_none could not load ref_ubiquity resource; "
+                    "falling back to calibration_method=none"
                 )
         else:
             chosen = method
@@ -419,16 +438,35 @@ def resolve_auto_contrast_methods(
     return out, fallback_reason
 
 
+def resolve_auto_contrast_methods(
+    requested: list[str],
+    ref_ubiquity_ready: bool,
+) -> tuple[list[str], str | None]:
+    return resolve_auto_calibration_methods(requested, ref_ubiquity_ready=ref_ubiquity_ready)
+
+
+def peak_values_for_calibration(
+    peak_values: list[float],
+    calibration_method: str,
+    ref_peak_idf: list[float] | None,
+) -> list[float]:
+    if calibration_method == PROGRAM_REF_UBIQUITY_PENALTY:
+        if ref_peak_idf is None:
+            raise ValueError("ref_ubiquity contrast requested but ref_peak_idf is unavailable")
+        return apply_peak_idf(peak_values, ref_peak_idf)
+    return [float(v) for v in peak_values]
+
+
 def peak_values_for_contrast(
     peak_values: list[float],
     contrast_method: str,
     ref_peak_idf: list[float] | None,
 ) -> list[float]:
-    if contrast_method == PROGRAM_REF_UBIQUITY_PENALTY:
-        if ref_peak_idf is None:
-            raise ValueError("ref_ubiquity contrast requested but ref_peak_idf is unavailable")
-        return apply_peak_idf(peak_values, ref_peak_idf)
-    return [float(v) for v in peak_values]
+    return peak_values_for_calibration(
+        peak_values,
+        calibration_method=contrast_method,
+        ref_peak_idf=ref_peak_idf,
+    )
 
 
 def score_definition_key(program_method: str, link_method: str) -> str:
