@@ -79,6 +79,7 @@ class DEGWorkflowConfig:
     gmt_emit_abs: bool
     gmt_source: str
     emit_small_gene_sets: bool
+    warn_biotype_missing: bool
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -200,11 +201,11 @@ def _warn_split_signed_no_negatives(rows: list[dict[str, object]], cfg: DEGWorkf
     )
 
 
-def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowConfig, allowlist: list[str]) -> None:
+def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowConfig, allowlist: list[str]) -> bool:
     if not allowlist:
-        return
+        return False
     if not rows:
-        return
+        return False
     missing = 0
     for row in rows:
         value = row.get("gene_biotype")
@@ -217,6 +218,8 @@ def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowCo
             f"{missing}/{len(rows)} rows; filter may be weakly informative.",
             file=sys.stderr,
         )
+        return True
+    return False
 
 
 def run_deg_workflow(
@@ -370,7 +373,11 @@ def run_deg_workflow(
     gmt_rows = full_rows if cfg.gmt_source == "full" else selected_rows
     if cfg.emit_gmt:
         _warn_symbol_availability(gmt_rows, cfg)
-        _warn_biotype_availability(gmt_rows, cfg, gmt_biotype_allowlist)
+        biotype_warning_emitted = (
+            _warn_biotype_availability(gmt_rows, cfg, gmt_biotype_allowlist)
+            if cfg.warn_biotype_missing
+            else False
+        )
         _warn_split_signed_no_negatives(gmt_rows, cfg)
         safe_signature = sanitize_name_component(cfg.signature_name)
         safe_score_mode = sanitize_name_component(resolved_score_mode)
@@ -594,6 +601,7 @@ def run_deg_workflow(
         "n_genes_selected": len(selected_rows),
         "n_rows_skipped_unparseable": skipped_rows,
         "n_genes_filtered_by_symbol_regex": n_filtered,
+        "biotype_warning_emitted": bool(biotype_warning_emitted if cfg.emit_gmt else False),
         "gmt_sets": gmt_sets,
         "gmt_plans": gmt_plans,
     }

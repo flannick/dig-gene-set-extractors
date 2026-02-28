@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from omics2geneset.converters import rna_deg_multi
 from omics2geneset.core.validate import validate_output_dir
 
@@ -108,3 +110,18 @@ def test_rna_deg_multi_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "__signature=toy_deg_long__" in gmt_text
+
+
+def test_rna_deg_multi_biotype_missing_warning_emitted_once(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    args = Args()
+    args.out_dir = str(tmp_path / "multi_warn_once")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "1"
+    args.emit_small_gene_sets = True
+    rna_deg_multi.run(args)
+    captured = capsys.readouterr()
+    assert captured.err.count("gene_biotype values are missing") == 1

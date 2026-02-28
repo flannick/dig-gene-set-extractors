@@ -46,6 +46,7 @@ def run(args) -> dict[str, object]:
     used_paths: set[str] = set()
     manifest_rows: list[tuple[str, str]] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
+    biotype_warning_seen = False
 
     for comparison in sorted(grouped):
         base = _safe_name(comparison)
@@ -100,6 +101,7 @@ def run(args) -> dict[str, object]:
             gmt_emit_abs=args.gmt_emit_abs,
             gmt_source=args.gmt_source,
             emit_small_gene_sets=args.emit_small_gene_sets,
+            warn_biotype_missing=not biotype_warning_seen,
         )
         result = run_deg_workflow(
             cfg=cfg,
@@ -107,6 +109,8 @@ def run(args) -> dict[str, object]:
             rows=grouped[comparison],
             input_files=files,
         )
+        if bool(result.get("biotype_warning_emitted", False)):
+            biotype_warning_seen = True
         manifest_rows.append((comparison, str(group_dir.relative_to(out_dir))))
         if args.emit_gmt:
             combined_gmt_sets.extend(result.get("gmt_sets", []))

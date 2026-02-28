@@ -63,6 +63,7 @@ def run(args) -> dict[str, object]:
         gmt_emit_abs=args.gmt_emit_abs,
         gmt_source=args.gmt_source,
         emit_small_gene_sets=args.emit_small_gene_sets,
+        warn_biotype_missing=True,
     )
     result = run_deg_workflow(
         cfg=cfg,
