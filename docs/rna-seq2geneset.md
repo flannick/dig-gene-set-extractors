@@ -39,6 +39,7 @@ Defaults for `rna_deg`:
 
 - `--score_mode auto` (prefer `stat`; fallback to `logfc_times_neglog10p`)
 - `--duplicate_gene_policy max_abs`
+- `--signature_name contrast` resolves to `deg_tsv` filename stem
 - `--select top_k --top_k 200`
 - `--normalize within_set_l1`
 - `--emit_gmt true --gmt_split_signed true`
@@ -143,6 +144,11 @@ Controls:
 
 Filter matching uses `gene_symbol` when present, and falls back to `gene_id` when symbols are missing.
 
+Auto symbol handling when `gene_symbol` is missing:
+
+- if `gene_id` is mostly non-Ensembl-like, `gene_symbol` is auto-promoted from `gene_id`
+- if `gene_id` is mostly Ensembl-like, symbols are not auto-promoted; provide `--gtf` for mapping (or set `--gmt_require_symbol false`)
+
 Optional GTF annotation:
 
 - `--gtf <file.gtf(.gz)>`
@@ -164,6 +170,7 @@ Useful controls:
 
 - `--gmt_prefer_symbol`, `--gmt_require_symbol`
 - `--gmt_biotype_allowlist protein_coding`
+- `--gmt_emit_abs true` to emit additional abs(score)-ranked gene sets
 - `--emit_small_gene_sets true` for toy/debug runs
 
 ## Common pitfalls

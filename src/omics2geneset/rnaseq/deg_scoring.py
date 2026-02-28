@@ -25,6 +25,9 @@ DEFAULT_EXCLUDE_GENE_REGEXES = (
 )
 
 DUPLICATE_GENE_POLICIES = ("sum", "max_abs", "mean", "last")
+_WS_RE = re.compile(r"\s+")
+_BAD_NAME_RE = re.compile(r"[^A-Za-z0-9._=-]+")
+_ENSEMBL_LIKE_RE = re.compile(r"^ENS[A-Z]*G[0-9]+(?:\.[0-9]+)?$")
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,12 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     v = str(value).strip()
     return v or None
+
+
+def _clean_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def resolve_column(
@@ -154,6 +163,84 @@ def compile_exclude_gene_regexes(
 
 def _strip_version(gene_id: str) -> str:
     return str(gene_id).split(".", 1)[0]
+
+
+def sanitize_name_component(value: str | None) -> str:
+    text = "" if value is None else str(value)
+    text = _WS_RE.sub("_", text.strip())
+    text = _BAD_NAME_RE.sub("_", text)
+    text = text.strip("_")
+    return text or "na"
+
+
+def detect_ensembl_like_fraction(gene_ids: list[str]) -> float:
+    clean = [str(gid).strip() for gid in gene_ids if str(gid).strip()]
+    if not clean:
+        return 0.0
+    ensembl_like = sum(1 for gid in clean if _ENSEMBL_LIKE_RE.match(gid))
+    return float(ensembl_like) / float(len(clean))
+
+
+def maybe_promote_gene_id_to_symbol(
+    records: dict[str, dict[str, object]],
+    ensembl_like_threshold: float = 0.7,
+    missing_symbol_fraction_threshold: float = 0.7,
+) -> dict[str, object]:
+    if not records:
+        return {
+            "records": records,
+            "promoted": False,
+            "ensembl_like_fraction": 0.0,
+            "n_records": 0,
+            "n_missing_symbol": 0,
+            "reason": "no_records",
+        }
+    n_records = len(records)
+    n_missing_symbol = 0
+    for rec in records.values():
+        symbol = _clean_text(rec.get("gene_symbol"))
+        if not symbol:
+            n_missing_symbol += 1
+    missing_symbol_fraction = float(n_missing_symbol) / float(n_records)
+    if missing_symbol_fraction < float(missing_symbol_fraction_threshold):
+        return {
+            "records": records,
+            "promoted": False,
+            "ensembl_like_fraction": 0.0,
+            "n_records": n_records,
+            "n_missing_symbol": n_missing_symbol,
+            "reason": "symbols_mostly_present",
+        }
+
+    ensembl_like_fraction = detect_ensembl_like_fraction(list(records.keys()))
+    if ensembl_like_fraction > float(ensembl_like_threshold):
+        return {
+            "records": records,
+            "promoted": False,
+            "ensembl_like_fraction": ensembl_like_fraction,
+            "n_records": n_records,
+            "n_missing_symbol": n_missing_symbol,
+            "reason": "gene_id_looks_ensembl_like",
+        }
+
+    promoted_records: dict[str, dict[str, object]] = {}
+    promoted_count = 0
+    for gene_id, rec in records.items():
+        out = dict(rec)
+        symbol = _clean_text(out.get("gene_symbol"))
+        if not symbol:
+            out["gene_symbol"] = str(gene_id)
+            promoted_count += 1
+        promoted_records[gene_id] = out
+    return {
+        "records": promoted_records,
+        "promoted": True,
+        "n_promoted": promoted_count,
+        "ensembl_like_fraction": ensembl_like_fraction,
+        "n_records": n_records,
+        "n_missing_symbol": n_missing_symbol,
+        "reason": "promoted_from_gene_id",
+    }
 
 
 def _resolve_pvalue_column(rows: list[DEGRow], padj_column: str | None, pvalue_column: str | None) -> str | None:
@@ -396,7 +483,7 @@ def apply_exclude_filters(
     filtered: dict[str, dict[str, object]] = {}
     removed = 0
     for gene_id, rec in records.items():
-        symbol = str(rec.get("gene_symbol", "")).strip()
+        symbol = _clean_text(rec.get("gene_symbol"))
         candidates: list[str] = []
         if symbol:
             candidates.append(symbol)

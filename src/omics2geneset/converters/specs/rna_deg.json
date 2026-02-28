@@ -16,7 +16,7 @@
     }
   ],
   "parameters": [
-    {"name": "signature_name", "type": "string", "default": "contrast", "help": "Label included in metadata and GMT names"},
+    {"name": "signature_name", "type": "string", "default": "contrast", "help": "Label included in metadata and GMT names; default 'contrast' resolves to deg_tsv stem"},
     {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Column containing gene identifiers"},
     {"name": "gene_symbol_column", "type": "string", "default": null, "help": "Optional symbol column override (auto-detects gene_symbol|gene_name when unset)"},
     {"name": "stat_column", "type": "string", "default": null, "help": "Signed statistic column for score_mode=stat (auto-detects stat when unset)"},
@@ -43,6 +43,7 @@
     {"name": "gmt_require_symbol", "type": "boolean", "default": true, "help": "Drop rows without usable symbols for GMT"},
     {"name": "gmt_biotype_allowlist", "type": "string", "default": "protein_coding", "help": "Comma-separated allowed biotypes for GMT"},
     {"name": "gmt_split_signed", "type": "boolean", "default": true, "help": "Emit __pos and __neg sets from signed scores"},
+    {"name": "gmt_emit_abs", "type": "boolean", "default": false, "help": "Emit an additional abs(score)-ranked GMT set family"},
     {"name": "gmt_source", "type": "string", "default": "full", "enum": ["full", "selected"], "help": "Source rows for GMT export; default full ranked table"},
     {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
     {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated HPD mass GMT plans"},

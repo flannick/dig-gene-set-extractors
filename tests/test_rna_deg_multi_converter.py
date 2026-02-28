@@ -43,6 +43,7 @@ class Args:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_emit_abs = False
     gmt_source = "full"
     emit_small_gene_sets = True
 
@@ -93,3 +94,17 @@ def test_rna_deg_multi_sanitizes_unsafe_comparison_label_in_gmt(tmp_path: Path):
         assert set_name
         assert genes
         assert all(not ch.isspace() for ch in set_name)
+
+
+def test_rna_deg_multi_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
+    args = Args()
+    args.signature_name = "contrast"
+    args.out_dir = str(tmp_path / "multi_default_signature")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "1"
+    args.emit_small_gene_sets = True
+    rna_deg_multi.run(args)
+
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__signature=toy_deg_long__" in gmt_text

@@ -46,6 +46,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_emit_abs = False
     gmt_source = "full"
     emit_small_gene_sets = True
 
@@ -123,10 +124,10 @@ def test_rna_deg_auto_mode_errors_on_missing_columns(tmp_path: Path):
         rna_deg.run(args)
 
 
-def test_rna_deg_warns_when_symbols_missing_and_required(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    no_symbol = tmp_path / "no_symbol.tsv"
+def test_rna_deg_warns_when_symbols_missing_and_ensembl_like_ids(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    no_symbol = tmp_path / "no_symbol_ensembl.tsv"
     no_symbol.write_text(
-        "gene_id\tstat\nG1\t3.0\nG2\t-4.0\nG3\t2.5\n",
+        "gene_id\tstat\nENSG00000111111\t3.0\nENSG00000122222\t-4.0\nENSG00000133333\t2.5\n",
         encoding="utf-8",
     )
     args = Args()
@@ -139,7 +140,32 @@ def test_rna_deg_warns_when_symbols_missing_and_required(tmp_path: Path, capsys:
     args.emit_small_gene_sets = True
     rna_deg.run(args)
     captured = capsys.readouterr()
-    assert "no gene_symbol values found" in captured.err
+    assert "gene_id appears Ensembl-like" in captured.err
+    assert "gmt_require_symbol=true" in captured.err
+
+
+def test_rna_deg_auto_promotes_gene_id_to_symbol_when_not_ensembl_like(tmp_path: Path):
+    tsv = tmp_path / "symbols_only.tsv"
+    tsv.write_text(
+        "gene_id\tstat\nINS\t5.0\nABCC8\t-4.0\nPCSK1\t3.0\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "promote_symbols")
+    args.gmt_require_symbol = True
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "2"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+
+    with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows
+    assert all(str(row.get("gene_symbol", "")).strip() for row in rows)
+    gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert gmt_lines
 
 
 def test_rna_deg_default_excludes_apply_to_gene_id_when_symbol_missing(tmp_path: Path):
@@ -216,3 +242,64 @@ def test_rna_deg_warns_when_biotype_allowlist_has_mostly_missing_biotypes(
     rna_deg.run(args)
     captured = capsys.readouterr()
     assert "gene_biotype values are missing" in captured.err
+
+
+def test_rna_deg_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
+    tsv = tmp_path / "airway_conditionA_vs_B.tsv"
+    tsv.write_text("gene_id\tstat\nG1\t3.0\nG2\t-2.0\n", encoding="utf-8")
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.signature_name = "contrast"
+    args.out_dir = str(tmp_path / "default_signature")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "2"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["converter"]["parameters"]["signature_name"] == "airway_conditionA_vs_B"
+    gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
+    assert "__signature=airway_conditionA_vs_B__" in gmt_text
+
+
+def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
+    tsv = tmp_path / "mixed.tsv"
+    tsv.write_text(
+        "gene_id\tstat\nA\t5.0\nB\t-7.0\nC\t2.0\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "gmt_abs")
+    args.gmt_emit_abs = True
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "1"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+
+    lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert any("__abs__topk=1" in line for line in lines)
+    abs_line = next(line for line in lines if "__abs__topk=1" in line)
+    abs_gene = abs_line.split("\t", 1)[1]
+    assert abs_gene == "B"
+
+
+def test_rna_deg_warns_when_split_signed_and_no_negative_scores(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    tsv = tmp_path / "all_positive.tsv"
+    tsv.write_text("gene_id\tstat\nA\t5.0\nB\t3.0\nC\t1.0\n", encoding="utf-8")
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "split_no_neg")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "2"
+    args.emit_small_gene_sets = True
+    args.gmt_split_signed = True
+    rna_deg.run(args)
+    captured = capsys.readouterr()
+    assert "No negative scores detected" in captured.err

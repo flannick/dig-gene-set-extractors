@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-import re
 import sys
 
 from omics2geneset.core.gmt import (
@@ -29,12 +28,11 @@ from omics2geneset.rnaseq.deg_scoring import (
     annotate_records_with_gtf,
     apply_exclude_filters,
     compile_exclude_gene_regexes,
+    maybe_promote_gene_id_to_symbol,
     resolve_deg_columns,
+    sanitize_name_component,
     score_deg_rows,
 )
-
-_WS_RE = re.compile(r"\s+")
-_BAD_NAME_RE = re.compile(r"[^A-Za-z0-9._=-]+")
 
 
 @dataclass
@@ -78,6 +76,7 @@ class DEGWorkflowConfig:
     gmt_topk_list: str
     gmt_mass_list: str
     gmt_split_signed: bool
+    gmt_emit_abs: bool
     gmt_source: str
     emit_small_gene_sets: bool
 
@@ -167,16 +166,38 @@ def _warn_symbol_availability(full_rows: list[dict[str, object]], cfg: DEGWorkfl
     n_with_symbol = sum(1 for row in full_rows if str(row.get("gene_symbol", "")).strip())
     n_total = len(full_rows)
     if n_with_symbol == 0:
-        print(
-            "warning: no gene_symbol values found; GMT token selection will fall back to gene_id.",
-            file=sys.stderr,
-        )
+        if cfg.gmt_require_symbol:
+            print(
+                "warning: no gene_symbol values found and gmt_require_symbol=true; "
+                "GMT tokenization may drop most or all genes. Provide --gtf to map symbols, "
+                "or set --gmt_require_symbol false.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "warning: no gene_symbol values found; GMT token selection will fall back to gene_id.",
+                file=sys.stderr,
+            )
         return
     if cfg.gmt_require_symbol and n_with_symbol < max(1, int(0.2 * n_total)):
         print(
             "warning: gmt_require_symbol=true but most rows lack gene_symbol; many genes may be dropped from GMT output.",
             file=sys.stderr,
         )
+
+
+def _warn_split_signed_no_negatives(rows: list[dict[str, object]], cfg: DEGWorkflowConfig) -> None:
+    if not cfg.gmt_split_signed:
+        return
+    if not rows:
+        return
+    has_negative = any(float(row.get("score", 0.0)) < 0.0 for row in rows)
+    if has_negative:
+        return
+    print(
+        "warning: No negative scores detected; writing unsplit (pos-only) GMT set(s).",
+        file=sys.stderr,
+    )
 
 
 def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowConfig, allowlist: list[str]) -> None:
@@ -196,14 +217,6 @@ def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowCo
             f"{missing}/{len(rows)} rows; filter may be weakly informative.",
             file=sys.stderr,
         )
-
-
-def _sanitize_gmt_component(value: str | None) -> str:
-    text = "" if value is None else str(value)
-    text = _WS_RE.sub("_", text.strip())
-    text = _BAD_NAME_RE.sub("_", text)
-    text = text.strip("_")
-    return text or "na"
 
 
 def run_deg_workflow(
@@ -267,6 +280,22 @@ def run_deg_workflow(
 
     if cfg.gtf:
         records = annotate_records_with_gtf(records, cfg.gtf, cfg.gtf_gene_id_field)
+
+    symbol_promotion = maybe_promote_gene_id_to_symbol(records)
+    records = symbol_promotion["records"]
+    if bool(symbol_promotion.get("promoted", False)):
+        print(
+            "warning: promoted gene_id values to gene_symbol for rows missing symbols "
+            f"(n_promoted={int(symbol_promotion.get('n_promoted', 0))}).",
+            file=sys.stderr,
+        )
+    elif str(symbol_promotion.get("reason", "")) == "gene_id_looks_ensembl_like":
+        print(
+            "warning: gene_symbol values are mostly missing and gene_id appears Ensembl-like; "
+            "symbols were not auto-promoted. Provide --gtf for symbol mapping or set "
+            "--gmt_require_symbol false to allow gene_id tokens.",
+            file=sys.stderr,
+        )
 
     exclude_patterns = compile_exclude_gene_regexes(
         cfg.exclude_gene_regex,
@@ -342,11 +371,12 @@ def run_deg_workflow(
     if cfg.emit_gmt:
         _warn_symbol_availability(gmt_rows, cfg)
         _warn_biotype_availability(gmt_rows, cfg, gmt_biotype_allowlist)
-        safe_signature = _sanitize_gmt_component(cfg.signature_name)
-        safe_score_mode = _sanitize_gmt_component(resolved_score_mode)
+        _warn_split_signed_no_negatives(gmt_rows, cfg)
+        safe_signature = sanitize_name_component(cfg.signature_name)
+        safe_score_mode = sanitize_name_component(resolved_score_mode)
         base_name = f"{cfg.converter_name}__signature={safe_signature}__score_mode={safe_score_mode}"
         if cfg.comparison_label:
-            safe_comparison = _sanitize_gmt_component(cfg.comparison_label)
+            safe_comparison = sanitize_name_component(cfg.comparison_label)
             base_name = (
                 f"{cfg.converter_name}__comparison={safe_comparison}__signature={safe_signature}"
                 f"__score_mode={safe_score_mode}"
@@ -369,6 +399,38 @@ def run_deg_workflow(
                 "comparison": cfg.comparison_label or "",
             },
         )
+        if cfg.gmt_emit_abs:
+            abs_rows = [
+                {
+                    "gene_id": str(row.get("gene_id", "")),
+                    "gene_symbol": row.get("gene_symbol"),
+                    "gene_biotype": row.get("gene_biotype"),
+                    "score": abs(float(row.get("score", 0.0))),
+                    "rank": row.get("rank"),
+                }
+                for row in gmt_rows
+            ]
+            abs_sets, abs_plans = build_gmt_sets_from_rows(
+                rows=abs_rows,
+                base_name=f"{base_name}__abs",
+                prefer_symbol=bool(cfg.gmt_prefer_symbol),
+                min_genes=int(cfg.gmt_min_genes),
+                max_genes=int(cfg.gmt_max_genes),
+                topk_list=gmt_topk_list,
+                mass_list=gmt_mass_list,
+                split_signed=False,
+                require_symbol=bool(cfg.gmt_require_symbol),
+                allowed_biotypes={x.lower() for x in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                emit_small_gene_sets=bool(cfg.emit_small_gene_sets),
+                diagnostics=gmt_diagnostics,
+                context={
+                    "converter": cfg.converter_name,
+                    "comparison": cfg.comparison_label or "",
+                    "direction": "abs",
+                },
+            )
+            gmt_sets.extend(abs_sets)
+            gmt_plans.extend(abs_plans)
         write_gmt(gmt_sets, gmt_path)
     _warn_gmt_diagnostics(gmt_diagnostics)
 
@@ -392,6 +454,12 @@ def run_deg_workflow(
         "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
         "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
         "duplicate_gene_examples": duplicate_info.get("top_examples", []),
+        "symbol_promotion": {
+            "promoted": bool(symbol_promotion.get("promoted", False)),
+            "reason": str(symbol_promotion.get("reason", "")),
+            "n_promoted": int(symbol_promotion.get("n_promoted", 0) or 0),
+            "ensembl_like_fraction": float(symbol_promotion.get("ensembl_like_fraction", 0.0) or 0.0),
+        },
         "requested_gmt_outputs": [{"name": p.get("name", "")} for p in gmt_plans],
         "skipped_gmt_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
     }
@@ -426,6 +494,7 @@ def run_deg_workflow(
         "emit_full": cfg.emit_full,
         "emit_gmt": cfg.emit_gmt,
         "gmt_split_signed": cfg.gmt_split_signed,
+        "gmt_emit_abs": cfg.gmt_emit_abs,
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,
         "gmt_source": cfg.gmt_source,
@@ -476,6 +545,12 @@ def run_deg_workflow(
             "n_genes_filtered_by_symbol_regex": int(n_filtered),
             "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
             "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
+            "symbol_promotion": {
+                "promoted": bool(symbol_promotion.get("promoted", False)),
+                "reason": str(symbol_promotion.get("reason", "")),
+                "n_promoted": int(symbol_promotion.get("n_promoted", 0) or 0),
+                "ensembl_like_fraction": float(symbol_promotion.get("ensembl_like_fraction", 0.0) or 0.0),
+            },
         },
         program_extraction={
             "selection_method": cfg.select,
@@ -500,6 +575,7 @@ def run_deg_workflow(
             "require_symbol": bool(cfg.gmt_require_symbol),
             "biotype_allowlist": gmt_biotype_allowlist,
             "source": cfg.gmt_source,
+            "emit_abs": bool(cfg.gmt_emit_abs),
             "min_genes": int(cfg.gmt_min_genes),
             "max_genes": int(cfg.gmt_max_genes),
             "emit_small_gene_sets": bool(cfg.emit_small_gene_sets),

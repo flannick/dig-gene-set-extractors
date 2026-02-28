@@ -6,7 +6,7 @@ import re
 
 from omics2geneset.core.gmt import write_gmt
 from omics2geneset.core.metadata import input_file_record
-from omics2geneset.rnaseq.deg_scoring import DEGRow, read_deg_tsv
+from omics2geneset.rnaseq.deg_scoring import DEGRow, read_deg_tsv, sanitize_name_component
 from omics2geneset.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
 
@@ -35,6 +35,10 @@ def run(args) -> dict[str, object]:
     if not grouped:
         raise ValueError("No non-empty comparison labels found in comparison_column.")
 
+    signature_name = str(args.signature_name or "").strip()
+    if not signature_name or signature_name == "contrast":
+        signature_name = sanitize_name_component(Path(args.deg_tsv).stem)
+
     files = [input_file_record(args.deg_tsv, "deg_tsv")]
     if args.gtf:
         files.append(input_file_record(args.gtf, "gtf"))
@@ -58,7 +62,7 @@ def run(args) -> dict[str, object]:
             out_dir=group_dir,
             organism=args.organism,
             genome_build=args.genome_build,
-            signature_name=args.signature_name,
+            signature_name=signature_name,
             deg_tsv_label=Path(args.deg_tsv).name,
             comparison_label=comparison,
             gene_id_column=args.gene_id_column,
@@ -93,6 +97,7 @@ def run(args) -> dict[str, object]:
             gmt_topk_list=args.gmt_topk_list,
             gmt_mass_list=args.gmt_mass_list,
             gmt_split_signed=args.gmt_split_signed,
+            gmt_emit_abs=args.gmt_emit_abs,
             gmt_source=args.gmt_source,
             emit_small_gene_sets=args.emit_small_gene_sets,
         )

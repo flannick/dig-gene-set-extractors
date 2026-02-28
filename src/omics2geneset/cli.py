@@ -144,7 +144,11 @@ def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
 
 
 def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--signature_name", default="contrast")
+    parser.add_argument(
+        "--signature_name",
+        default="contrast",
+        help="Signature label for metadata/GMT naming. If left as 'contrast', uses deg_tsv filename stem.",
+    )
     parser.add_argument("--gene_id_column", default="gene_id")
     parser.add_argument("--gene_symbol_column")
     parser.add_argument("--stat_column")
@@ -179,6 +183,12 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
 
     _add_gmt_flags(parser)
+    parser.add_argument(
+        "--gmt_emit_abs",
+        type=_parse_bool,
+        default=False,
+        help="If true, emit an additional abs(score)-ranked GMT set family.",
+    )
     parser.add_argument(
         "--gmt_source",
         choices=["full", "selected"],

@@ -62,7 +62,7 @@ Key objects and their corresponding CLI flags are:
 \item Filtering: \texttt{--exclude\_gene\_regex}, optional \texttt{--gtf} for gene symbol/biotype.
 \item Selection of a compact set $S$: \texttt{--select} plus parameters (e.g.\ \texttt{--top\_k}).
 \item Weights $w_g$: \texttt{--normalize} (recommended: \texttt{within\_set\_l1}).
-\item Gene set export: \texttt{--emit\_gmt}, \texttt{--gmt\_topk\_list}, \texttt{--gmt\_split\_signed}, \texttt{--gmt\_source}.
+\item Gene set export: \texttt{--emit\_gmt}, \texttt{--gmt\_topk\_list}, \texttt{--gmt\_split\_signed}, \texttt{--gmt\_emit\_abs}, \texttt{--gmt\_source}.
 \item Naming: \texttt{--signature\_name} (recommended for provenance and interpretability).
 \end{itemize}
 
@@ -162,6 +162,13 @@ DE signatures often contain technical or broadly expressed artifacts (mitochondr
 These filters should be configurable and optional; they can remove real biology in some contexts (e.g., stress responses).
 When \texttt{gene\_symbol} is missing, filtering falls back to \texttt{gene\_id}.
 
+\subsection{Auto symbol promotion}
+When \texttt{gene\_symbol} is mostly missing, the implementation inspects the \texttt{gene\_id} namespace:
+\begin{itemize}[leftmargin=2em]
+\item If \texttt{gene\_id} is mostly non-Ensembl-like, \texttt{gene\_symbol} is auto-promoted from \texttt{gene\_id}.
+\item If \texttt{gene\_id} is mostly Ensembl-like, no auto-promotion is applied and a warning suggests providing \texttt{--gtf} for symbol mapping.
+\end{itemize}
+
 \section{From scores to compact gene sets}
 The extractor produces:
 \begin{itemize}[leftmargin=2em]
@@ -198,15 +205,22 @@ The GMT export then applies the requested size controls (e.g., \texttt{topk\_lis
 By default (\texttt{--gmt\_source=full}), GMT sets are derived from the full ranked score table (\texttt{geneset.full.tsv} when emitted), while \texttt{geneset.tsv} remains the selected compact program used for weighted downstream analyses.
 Setting \texttt{--gmt\_source=selected} restricts GMT generation to selected rows only.
 
+\paragraph{Optional directionless set.}
+With \texttt{--gmt\_emit\_abs=true}, an additional abs(score)-ranked GMT family is emitted (for users who want a single ``most differential genes'' view independent of sign).
+
+\paragraph{Split-signed edge case.}
+If \texttt{--gmt\_split\_signed=true} but no negative scores are present, the converter emits unsplit/positive sets and warns explicitly.
+
 \section{Recommended defaults}
 A sensible default configuration for a single DE contrast is:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{score\_mode=auto} (prefer \texttt{stat} if available, else Eq.\ \ref{eq:logfc_p})
+\item \texttt{duplicate\_gene\_policy=max\_abs}
 \item \texttt{select=top\_k}, \texttt{top\_k=200}
 \item \texttt{normalize=within\_set\_l1}
-\item \texttt{emit\_gmt=true}, \texttt{gmt\_topk\_list=200}, \texttt{gmt\_split\_signed=true}
+\item \texttt{emit\_gmt=true}, \texttt{gmt\_topk\_list=200}, \texttt{gmt\_split\_signed=true}, \texttt{gmt\_emit\_abs=false}, \texttt{gmt\_source=full}
 \item Conservative artifact filters enabled but user-configurable
-\item Strongly recommend setting \texttt{signature\_name} for provenance
+\item \texttt{signature\_name=contrast} resolves to the DE filename stem by default (user can override)
 \end{itemize}
 
 For batched tables (\texttt{rna\_deg\_multi}), apply the same defaults per comparison, writing one output directory per comparison plus a root manifest.
