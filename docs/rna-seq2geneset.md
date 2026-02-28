@@ -38,9 +38,11 @@ omics2geneset validate results/rna_deg_example
 Defaults for `rna_deg`:
 
 - `--score_mode auto` (prefer `stat`; fallback to `logfc_times_neglog10p`)
+- `--duplicate_gene_policy max_abs`
 - `--select top_k --top_k 200`
 - `--normalize within_set_l1`
 - `--emit_gmt true --gmt_split_signed true`
+- `--gmt_source full` (GMT derived from full ranked table, not only selected rows)
 - `--gmt_topk_list 200 --gmt_min_genes 100 --gmt_max_genes 500`
 
 ## Quickstart: multi-contrast table (`rna_deg_multi`)
@@ -121,6 +123,13 @@ omics2geneset convert rna_deg \
 
 Selection and weights use `abs(score)` by default; the emitted `score` remains signed.
 
+Duplicate `gene_id` rows are aggregated using `--duplicate_gene_policy`:
+
+- `max_abs` (default): keep the signed score with largest absolute magnitude
+- `sum`: sum signed scores
+- `mean`: mean signed score
+- `last`: last row wins
+
 ## Filtering and annotation
 
 Default symbol filters remove common technical genes:
@@ -131,6 +140,8 @@ Controls:
 
 - add filters with repeatable `--exclude_gene_regex`
 - disable defaults with `--disable_default_excludes`
+
+Filter matching uses `gene_symbol` when present, and falls back to `gene_id` when symbols are missing.
 
 Optional GTF annotation:
 
@@ -145,7 +156,9 @@ GTF fills missing `gene_symbol`/`gene_biotype` where possible.
 Default directional GMT:
 
 - `--gmt_split_signed true` produces `__pos` and `__neg` sets
-- names include `signature` and resolved `score_mode`
+- names include sanitized `signature`, optional sanitized comparison label, and resolved `score_mode`
+- default `--gmt_source full` means GMT sets are built from `geneset.full.tsv` ranking
+- use `--gmt_source selected` to build GMT only from the selected `geneset.tsv` rows
 
 Useful controls:
 
@@ -157,6 +170,7 @@ Useful controls:
 
 - `score_mode=auto` needs either parseable `stat`, or parseable `logFC` + `p/padj`.
 - If most symbols are missing and `--gmt_require_symbol true`, many genes may be dropped.
+- If `--gmt_biotype_allowlist` is set but most rows have missing `gene_biotype`, the converter warns because the filter may not be informative.
 - With small toy tables, lower `--gmt_min_genes` (or use `--emit_small_gene_sets true`) if GMT sets are skipped.
 
 ## Documentation map
@@ -165,4 +179,3 @@ Useful controls:
 - ATAC practical guide: `docs/atac-seq2geneset.md`
 - RNA methods note: `docs/rna-seq_methods.tex`
 - methods index: `docs/methods.tex`
-

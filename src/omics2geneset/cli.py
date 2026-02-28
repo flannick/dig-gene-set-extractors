@@ -157,6 +157,12 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         choices=["auto", "stat", "logfc_times_neglog10p", "custom_column"],
         default="auto",
     )
+    parser.add_argument(
+        "--duplicate_gene_policy",
+        choices=["sum", "max_abs", "mean", "last"],
+        default="max_abs",
+        help="How to aggregate duplicate gene_id rows in DEG tables.",
+    )
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
     parser.add_argument("--exclude_gene_regex", action="append")
@@ -173,6 +179,12 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
 
     _add_gmt_flags(parser)
+    parser.add_argument(
+        "--gmt_source",
+        choices=["full", "selected"],
+        default="full",
+        help="Source table for GMT export: full ranked scores or selected geneset.tsv rows.",
+    )
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=True,

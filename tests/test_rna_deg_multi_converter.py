@@ -19,6 +19,7 @@ class Args:
     pvalue_column = None
     score_column = None
     score_mode = "auto"
+    duplicate_gene_policy = "max_abs"
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
     exclude_gene_regex = None
@@ -42,6 +43,7 @@ class Args:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_source = "full"
     emit_small_gene_sets = True
 
 
@@ -60,3 +62,34 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
 
     schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
+
+
+def test_rna_deg_multi_sanitizes_unsafe_comparison_label_in_gmt(tmp_path: Path):
+    tsv = tmp_path / "unsafe_labels.tsv"
+    tsv.write_text(
+        "comparison_id\tgene_id\tstat\n"
+        "\"bad label\\twith spaces\"\tG1\t5.0\n"
+        "\"bad label\\twith spaces\"\tG2\t-4.0\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "unsafe_multi")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "1"
+    args.emit_small_gene_sets = True
+    result = rna_deg_multi.run(args)
+    assert result["n_groups"] == 1
+
+    gmt_path = Path(args.out_dir) / "genesets.gmt"
+    assert gmt_path.exists()
+    lines = [line for line in gmt_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert lines
+    for line in lines:
+        assert line.count("\t") == 1
+        set_name, genes = line.split("\t")
+        assert set_name
+        assert genes
+        assert all(not ch.isspace() for ch in set_name)

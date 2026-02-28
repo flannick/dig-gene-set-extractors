@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import sys
 
 from omics2geneset.core.gmt import (
@@ -32,6 +33,9 @@ from omics2geneset.rnaseq.deg_scoring import (
     score_deg_rows,
 )
 
+_WS_RE = re.compile(r"\s+")
+_BAD_NAME_RE = re.compile(r"[^A-Za-z0-9._=-]+")
+
 
 @dataclass
 class DEGWorkflowConfig:
@@ -52,6 +56,7 @@ class DEGWorkflowConfig:
     score_mode: str
     neglog10p_cap: float
     neglog10p_eps: float
+    duplicate_gene_policy: str
     exclude_gene_regex: list[str] | None
     disable_default_excludes: bool
     gtf: str | None
@@ -73,6 +78,7 @@ class DEGWorkflowConfig:
     gmt_topk_list: str
     gmt_mass_list: str
     gmt_split_signed: bool
+    gmt_source: str
     emit_small_gene_sets: bool
 
 
@@ -173,6 +179,33 @@ def _warn_symbol_availability(full_rows: list[dict[str, object]], cfg: DEGWorkfl
         )
 
 
+def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowConfig, allowlist: list[str]) -> None:
+    if not allowlist:
+        return
+    if not rows:
+        return
+    missing = 0
+    for row in rows:
+        value = row.get("gene_biotype")
+        if value is None or not str(value).strip():
+            missing += 1
+    fraction = float(missing) / float(len(rows))
+    if fraction > 0.8:
+        print(
+            "warning: gmt_biotype_allowlist is set but gene_biotype values are missing for "
+            f"{missing}/{len(rows)} rows; filter may be weakly informative.",
+            file=sys.stderr,
+        )
+
+
+def _sanitize_gmt_component(value: str | None) -> str:
+    text = "" if value is None else str(value)
+    text = _WS_RE.sub("_", text.strip())
+    text = _BAD_NAME_RE.sub("_", text)
+    text = text.strip("_")
+    return text or "na"
+
+
 def run_deg_workflow(
     *,
     cfg: DEGWorkflowConfig,
@@ -182,6 +215,8 @@ def run_deg_workflow(
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if cfg.gmt_source not in {"full", "selected"}:
+        raise ValueError(f"Unsupported gmt_source: {cfg.gmt_source}")
 
     resolved_columns = resolve_deg_columns(
         fieldnames,
@@ -201,7 +236,7 @@ def run_deg_workflow(
                 f"Provided: {cfg.score_column!r}; available: {', '.join(fieldnames)}"
             )
 
-    resolved_score_mode, records, skipped_rows = score_deg_rows(
+    resolved_score_mode, records, skipped_rows, duplicate_info = score_deg_rows(
         rows,
         gene_id_column=str(resolved_columns["gene_id_column"]),
         gene_symbol_column=resolved_columns["gene_symbol_column"],
@@ -213,8 +248,22 @@ def run_deg_workflow(
         score_mode=cfg.score_mode,
         neglog10p_eps=float(cfg.neglog10p_eps),
         neglog10p_cap=float(cfg.neglog10p_cap),
+        duplicate_gene_policy=cfg.duplicate_gene_policy,
     )
     n_input_features = len(records)
+    if int(duplicate_info.get("n_gene_ids_with_duplicates", 0)) > 0:
+        examples = duplicate_info.get("top_examples", [])
+        preview = ", ".join(
+            f"{str(item.get('gene_id', ''))}(n={int(item.get('n_rows', 0))})"
+            for item in examples[:3]
+        )
+        print(
+            "warning: detected duplicate gene_id rows in DE input; "
+            f"n_gene_ids_with_duplicates={int(duplicate_info.get('n_gene_ids_with_duplicates', 0))}, "
+            f"policy={cfg.duplicate_gene_policy}. "
+            + (f"Examples: {preview}" if preview else ""),
+            file=sys.stderr,
+        )
 
     if cfg.gtf:
         records = annotate_records_with_gtf(records, cfg.gtf, cfg.gtf_gene_id_field)
@@ -289,13 +338,21 @@ def run_deg_workflow(
     gmt_topk_list = parse_int_list_csv(str(cfg.gmt_topk_list))
     gmt_mass_list = parse_mass_list_csv(str(cfg.gmt_mass_list))
     gmt_biotype_allowlist = parse_str_list_csv(str(cfg.gmt_biotype_allowlist))
+    gmt_rows = full_rows if cfg.gmt_source == "full" else selected_rows
     if cfg.emit_gmt:
-        _warn_symbol_availability(full_rows, cfg)
-        base_name = f"{cfg.converter_name}__signature={cfg.signature_name}__score_mode={resolved_score_mode}"
+        _warn_symbol_availability(gmt_rows, cfg)
+        _warn_biotype_availability(gmt_rows, cfg, gmt_biotype_allowlist)
+        safe_signature = _sanitize_gmt_component(cfg.signature_name)
+        safe_score_mode = _sanitize_gmt_component(resolved_score_mode)
+        base_name = f"{cfg.converter_name}__signature={safe_signature}__score_mode={safe_score_mode}"
         if cfg.comparison_label:
-            base_name = f"{cfg.converter_name}__comparison={cfg.comparison_label}__signature={cfg.signature_name}__score_mode={resolved_score_mode}"
+            safe_comparison = _sanitize_gmt_component(cfg.comparison_label)
+            base_name = (
+                f"{cfg.converter_name}__comparison={safe_comparison}__signature={safe_signature}"
+                f"__score_mode={safe_score_mode}"
+            )
         gmt_sets, gmt_plans = build_gmt_sets_from_rows(
-            rows=full_rows,
+            rows=gmt_rows,
             base_name=base_name,
             prefer_symbol=bool(cfg.gmt_prefer_symbol),
             min_genes=int(cfg.gmt_min_genes),
@@ -331,6 +388,10 @@ def run_deg_workflow(
         "n_genes_selected": len(selected_rows),
         "n_rows_skipped_unparseable": skipped_rows,
         "n_genes_filtered_by_symbol_regex": n_filtered,
+        "duplicate_gene_policy": cfg.duplicate_gene_policy,
+        "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
+        "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
+        "duplicate_gene_examples": duplicate_info.get("top_examples", []),
         "requested_gmt_outputs": [{"name": p.get("name", "")} for p in gmt_plans],
         "skipped_gmt_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
     }
@@ -352,6 +413,7 @@ def run_deg_workflow(
         },
         "score_mode": resolved_score_mode,
         "score_mode_requested": cfg.score_mode,
+        "duplicate_gene_policy": cfg.duplicate_gene_policy,
         "neglog10p_cap": cfg.neglog10p_cap,
         "neglog10p_eps": cfg.neglog10p_eps,
         "selection_method": cfg.select,
@@ -366,6 +428,7 @@ def run_deg_workflow(
         "gmt_split_signed": cfg.gmt_split_signed,
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,
+        "gmt_source": cfg.gmt_source,
         "gmt_min_genes": cfg.gmt_min_genes,
         "gmt_max_genes": cfg.gmt_max_genes,
         "gmt_prefer_symbol": cfg.gmt_prefer_symbol,
@@ -402,7 +465,7 @@ def run_deg_workflow(
                 "method": cfg.normalize,
                 "target_sum": 1.0 if cfg.normalize in {"within_set_l1", "l1"} else None,
             },
-            "aggregation": "sum",
+            "aggregation": cfg.duplicate_gene_policy,
         },
         summary={
             "n_input_features": int(n_input_features),
@@ -411,6 +474,8 @@ def run_deg_workflow(
             "fraction_features_assigned": 1.0 if n_input_features else 0.0,
             "n_rows_skipped_unparseable": int(skipped_rows),
             "n_genes_filtered_by_symbol_regex": int(n_filtered),
+            "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
+            "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
         },
         program_extraction={
             "selection_method": cfg.select,
@@ -434,6 +499,7 @@ def run_deg_workflow(
             "prefer_symbol": bool(cfg.gmt_prefer_symbol),
             "require_symbol": bool(cfg.gmt_require_symbol),
             "biotype_allowlist": gmt_biotype_allowlist,
+            "source": cfg.gmt_source,
             "min_genes": int(cfg.gmt_min_genes),
             "max_genes": int(cfg.gmt_max_genes),
             "emit_small_gene_sets": bool(cfg.emit_small_gene_sets),

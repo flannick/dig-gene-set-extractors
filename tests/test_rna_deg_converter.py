@@ -22,6 +22,7 @@ class Args:
     pvalue_column = None
     score_column = None
     score_mode = "auto"
+    duplicate_gene_policy = "max_abs"
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
     exclude_gene_regex = None
@@ -45,6 +46,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_source = "full"
     emit_small_gene_sets = True
 
 
@@ -138,3 +140,79 @@ def test_rna_deg_warns_when_symbols_missing_and_required(tmp_path: Path, capsys:
     rna_deg.run(args)
     captured = capsys.readouterr()
     assert "no gene_symbol values found" in captured.err
+
+
+def test_rna_deg_default_excludes_apply_to_gene_id_when_symbol_missing(tmp_path: Path):
+    tsv = tmp_path / "gene_id_only.tsv"
+    tsv.write_text(
+        "gene_id\tstat\nMT-ND1\t8.0\nRPLP0\t7.0\nGENE_OK\t3.0\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "filtered_gene_id")
+    args.emit_gmt = False
+    rna_deg.run(args)
+    with (Path(args.out_dir) / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert {row["gene_id"] for row in rows} == {"GENE_OK"}
+
+    args_disable = Args()
+    args_disable.deg_tsv = str(tsv)
+    args_disable.out_dir = str(tmp_path / "unfiltered_gene_id")
+    args_disable.emit_gmt = False
+    args_disable.disable_default_excludes = True
+    rna_deg.run(args_disable)
+    with (Path(args_disable.out_dir) / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert {"MT-ND1", "RPLP0", "GENE_OK"} == {row["gene_id"] for row in rows}
+
+
+def test_rna_deg_duplicate_gene_policy_sum_vs_max_abs(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    tsv = tmp_path / "dups.tsv"
+    tsv.write_text(
+        "gene_id\tstat\nG_DUP\t2.0\nG_DUP\t-5.0\nG_OTHER\t4.0\n",
+        encoding="utf-8",
+    )
+
+    args_max = Args()
+    args_max.deg_tsv = str(tsv)
+    args_max.out_dir = str(tmp_path / "dup_max_abs")
+    args_max.emit_gmt = False
+    args_max.top_k = 1
+    args_max.duplicate_gene_policy = "max_abs"
+    rna_deg.run(args_max)
+    captured_max = capsys.readouterr()
+    assert "duplicate gene_id rows" in captured_max.err
+    with (Path(args_max.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows_max = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows_max[0]["gene_id"] == "G_DUP"
+    assert float(rows_max[0]["score"]) == pytest.approx(-5.0)
+
+    args_sum = Args()
+    args_sum.deg_tsv = str(tsv)
+    args_sum.out_dir = str(tmp_path / "dup_sum")
+    args_sum.emit_gmt = False
+    args_sum.top_k = 1
+    args_sum.duplicate_gene_policy = "sum"
+    rna_deg.run(args_sum)
+    with (Path(args_sum.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows_sum = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows_sum[0]["gene_id"] == "G_OTHER"
+    assert float(rows_sum[0]["score"]) == pytest.approx(4.0)
+
+
+def test_rna_deg_warns_when_biotype_allowlist_has_mostly_missing_biotypes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    args = Args()
+    args.out_dir = str(tmp_path / "biotype_warn")
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "2"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+    captured = capsys.readouterr()
+    assert "gene_biotype values are missing" in captured.err

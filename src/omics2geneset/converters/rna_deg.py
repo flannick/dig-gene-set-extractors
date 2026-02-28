@@ -34,6 +34,7 @@ def run(args) -> dict[str, object]:
         score_mode=args.score_mode,
         neglog10p_cap=args.neglog10p_cap,
         neglog10p_eps=args.neglog10p_eps,
+        duplicate_gene_policy=args.duplicate_gene_policy,
         exclude_gene_regex=args.exclude_gene_regex,
         disable_default_excludes=args.disable_default_excludes,
         gtf=args.gtf,
@@ -55,6 +56,7 @@ def run(args) -> dict[str, object]:
         gmt_topk_list=args.gmt_topk_list,
         gmt_mass_list=args.gmt_mass_list,
         gmt_split_signed=args.gmt_split_signed,
+        gmt_source=args.gmt_source,
         emit_small_gene_sets=args.emit_small_gene_sets,
     )
     result = run_deg_workflow(
@@ -69,4 +71,3 @@ def run(args) -> dict[str, object]:
         "out_dir": str(out_dir),
         "resolved_score_mode": result["resolved_score_mode"],
     }
-

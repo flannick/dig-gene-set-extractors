@@ -24,6 +24,8 @@ DEFAULT_EXCLUDE_GENE_REGEXES = (
     r"^Rps",
 )
 
+DUPLICATE_GENE_POLICIES = ("sum", "max_abs", "mean", "last")
+
 
 @dataclass(frozen=True)
 class DEGRow:
@@ -269,6 +271,27 @@ def _row_score(
     return float(logfc) * float(score_mag)
 
 
+def _aggregate_duplicate_scores(values: list[float], policy: str) -> float:
+    if not values:
+        return 0.0
+    if policy == "sum":
+        return float(sum(values))
+    if policy == "mean":
+        return float(sum(values) / len(values))
+    if policy == "last":
+        return float(values[-1])
+    if policy == "max_abs":
+        best = values[0]
+        best_abs = abs(best)
+        for value in values[1:]:
+            value_abs = abs(value)
+            if value_abs > best_abs:
+                best = value
+                best_abs = value_abs
+        return float(best)
+    raise ValueError(f"Unsupported duplicate_gene_policy: {policy}")
+
+
 def score_deg_rows(
     rows: list[DEGRow],
     *,
@@ -282,7 +305,14 @@ def score_deg_rows(
     score_mode: str,
     neglog10p_eps: float,
     neglog10p_cap: float,
-) -> tuple[str, dict[str, dict[str, object]], int]:
+    duplicate_gene_policy: str,
+) -> tuple[str, dict[str, dict[str, object]], int, dict[str, object]]:
+    if duplicate_gene_policy not in DUPLICATE_GENE_POLICIES:
+        raise ValueError(
+            f"Unsupported duplicate_gene_policy: {duplicate_gene_policy}. "
+            f"Expected one of {', '.join(DUPLICATE_GENE_POLICIES)}"
+        )
+
     resolved_mode, resolved_pvalue_column = _resolve_score_mode(
         rows=rows,
         requested_mode=score_mode,
@@ -294,6 +324,7 @@ def score_deg_rows(
     )
 
     records: dict[str, dict[str, object]] = {}
+    gene_score_values: dict[str, list[float]] = {}
     skipped_rows = 0
     for row in rows:
         gene_id = str(row.values.get(gene_id_column, "")).strip()
@@ -322,7 +353,7 @@ def score_deg_rows(
                 "gene_biotype": None,
             },
         )
-        rec["score"] = float(rec.get("score", 0.0)) + float(score)
+        gene_score_values.setdefault(gene_id, []).append(float(score))
         if gene_symbol_column:
             symbol = str(row.values.get(gene_symbol_column, "")).strip()
             if symbol and not rec.get("gene_symbol"):
@@ -336,7 +367,24 @@ def score_deg_rows(
             "No valid gene scores were parsed from the DE table. "
             "Check column mappings and score_mode."
         )
-    return resolved_mode, records, skipped_rows
+
+    duplicate_counts: list[tuple[str, int]] = []
+    for gene_id, values in gene_score_values.items():
+        records[gene_id]["score"] = _aggregate_duplicate_scores(values, duplicate_gene_policy)
+        if len(values) > 1:
+            duplicate_counts.append((gene_id, len(values)))
+
+    duplicate_counts.sort(key=lambda item: (-item[1], item[0]))
+    duplicate_info = {
+        "policy": duplicate_gene_policy,
+        "n_gene_ids_with_duplicates": len(duplicate_counts),
+        "n_duplicate_rows": int(sum(count - 1 for _, count in duplicate_counts)),
+        "top_examples": [
+            {"gene_id": gene_id, "n_rows": count}
+            for gene_id, count in duplicate_counts[:5]
+        ],
+    }
+    return resolved_mode, records, skipped_rows, duplicate_info
 
 
 def apply_exclude_filters(
@@ -349,7 +397,12 @@ def apply_exclude_filters(
     removed = 0
     for gene_id, rec in records.items():
         symbol = str(rec.get("gene_symbol", "")).strip()
-        if symbol and any(p.search(symbol) for p in patterns):
+        candidates: list[str] = []
+        if symbol:
+            candidates.append(symbol)
+        if gene_id:
+            candidates.append(str(gene_id))
+        if any(p.search(candidate) for p in patterns for candidate in candidates):
             removed += 1
             continue
         filtered[gene_id] = rec
