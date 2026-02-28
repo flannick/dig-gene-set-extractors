@@ -143,6 +143,45 @@ def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
     parser.add_argument("--normalize", choices=["l1", "none"], default="l1")
 
 
+def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_name", default="contrast")
+    parser.add_argument("--gene_id_column", default="gene_id")
+    parser.add_argument("--gene_symbol_column")
+    parser.add_argument("--stat_column")
+    parser.add_argument("--logfc_column")
+    parser.add_argument("--padj_column")
+    parser.add_argument("--pvalue_column")
+    parser.add_argument("--score_column")
+    parser.add_argument(
+        "--score_mode",
+        choices=["auto", "stat", "logfc_times_neglog10p", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--exclude_gene_regex", action="append")
+    parser.add_argument("--disable_default_excludes", action="store_true")
+    parser.add_argument("--gtf")
+    parser.add_argument("--gtf_gene_id_field", default="gene_id")
+    parser.add_argument("--gtf_source")
+
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omics2geneset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -313,9 +352,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna.add_argument("--out_dir", required=True)
     p_rna.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna.add_argument("--genome_build", required=True)
-    p_rna.add_argument("--gene_id_column", default="gene_id")
-    p_rna.add_argument("--score_column", default="log2fc")
-    _add_transform_flags(p_rna, default="signed")
+    _add_rna_deg_flags(p_rna)
+
+    p_rna_multi = conv.add_parser("rna_deg_multi")
+    p_rna_multi.add_argument("--deg_tsv", required=True)
+    p_rna_multi.add_argument("--comparison_column", required=True)
+    p_rna_multi.add_argument("--out_dir", required=True)
+    p_rna_multi.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_rna_multi.add_argument("--genome_build", required=True)
+    _add_rna_deg_flags(p_rna_multi)
 
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)

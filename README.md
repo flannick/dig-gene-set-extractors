@@ -5,7 +5,7 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `omics2geneset` (ATAC-seq extractors)
+- `omics2geneset` (ATAC-seq and RNA-seq extractors)
 
 ## Repository Scope
 
@@ -15,7 +15,11 @@ This root README is intentionally framework-level:
 - common output contract expectations
 - where to find package-specific documentation
 
-Detailed `omics2geneset` CLI and method behavior lives in `docs/omics2geneset.md`.
+Detailed `omics2geneset` CLI and method behavior is split by assay:
+
+- `docs/atac-seq2geneset.md` (ATAC practical guide)
+- `docs/rna-seq2geneset.md` (RNA practical guide)
+- `docs/omics2geneset.md` (index/entrypoint linking both)
 
 ## Quick Start (Common Case)
 
@@ -32,19 +36,29 @@ For offline/air-gapped setup only, see `docs/air_gapped_install.md`.
 
 ### `omics2geneset`
 
-ATAC-focused converters currently available:
+ATAC-focused converters:
 
 - `atac_bulk`
 - `atac_bulk_matrix`
 - `atac_sc_10x`
 
-Full package guide, CLI flags, inputs, modes, and examples:
+RNA-focused converters:
 
-- `docs/omics2geneset.md`
+- `rna_deg`
+- `rna_deg_multi`
+- `sc_rna_marker`
 
-Method notes and equations:
+Practical guides, CLI flags, inputs, modes, and examples:
 
-- `docs/methods.tex`
+- `docs/atac-seq2geneset.md`
+- `docs/rna-seq2geneset.md`
+- `docs/omics2geneset.md` (index)
+
+Method notes and equations (split by assay + index):
+
+- `docs/atac-seq_methods.tex`
+- `docs/rna-seq_methods.tex`
+- `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
 
@@ -98,7 +112,11 @@ dig-gene-set-extractors/
     omics2geneset/
   docs/
     omics2geneset.md
+    atac-seq2geneset.md
+    rna-seq2geneset.md
     methods.tex
+    atac-seq_methods.tex
+    rna-seq_methods.tex
     atac_reference_bundle.md
     air_gapped_install.md
   tests/
@@ -107,7 +125,7 @@ dig-gene-set-extractors/
 
 ## Adding a New Extractor Family
 
-When adding another extractor family (for example RNA-seq or proteomics):
+When adding another extractor family (for example proteomics):
 
 1. Add a new package under `src/<family_name>/`.
 2. Keep extractor-specific docs under `docs/<family_name>.md`.
@@ -118,4 +136,4 @@ When adding another extractor family (for example RNA-seq or proteomics):
 ## Development Notes
 
 - Do not commit large generated artifacts under `dist/` or `data/external/`.
-- For `omics2geneset` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/omics2geneset.md` and `docs/atac_reference_bundle.md`.
+- For `omics2geneset` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/atac-seq2geneset.md` and `docs/atac_reference_bundle.md`.

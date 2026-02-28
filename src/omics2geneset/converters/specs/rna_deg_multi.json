@@ -1,11 +1,11 @@
 {
-  "name": "rna_deg",
-  "description": "RNA-seq differential expression table converted to signed gene programs and GMT gene sets",
+  "name": "rna_deg_multi",
+  "description": "Long-format RNA-seq DE table grouped by comparison_column into one output per contrast",
   "inputs": [
     {
       "name": "deg_tsv",
       "type": "tsv",
-      "description": "Differential expression table for one contrast",
+      "description": "Long differential expression table containing multiple comparisons",
       "required": true
     },
     {
@@ -16,6 +16,7 @@
     }
   ],
   "parameters": [
+    {"name": "comparison_column", "type": "string", "default": null, "help": "Column used to group DE rows into individual contrasts"},
     {"name": "signature_name", "type": "string", "default": "contrast", "help": "Label included in metadata and GMT names"},
     {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Column containing gene identifiers"},
     {"name": "gene_symbol_column", "type": "string", "default": null, "help": "Optional symbol column override (auto-detects gene_symbol|gene_name when unset)"},
@@ -36,8 +37,8 @@
     {"name": "quantile", "type": "number", "default": 0.01, "help": "Quantile fraction when select=quantile"},
     {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold on abs(score) when select=threshold"},
     {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization on abs(score)"},
-    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv"},
-    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write genesets.gmt"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv in each comparison directory"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write genesets.gmt in each comparison directory and combined root"},
     {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol tokens in GMT"},
     {"name": "gmt_require_symbol", "type": "boolean", "default": true, "help": "Drop rows without usable symbols for GMT"},
     {"name": "gmt_biotype_allowlist", "type": "string", "default": "protein_coding", "help": "Comma-separated allowed biotypes for GMT"},
@@ -49,11 +50,11 @@
     {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes (with warning)"}
   ],
   "outputs": [
-    {"name": "geneset.tsv", "description": "Selected gene program (signed score + nonnegative weight)"},
-    {"name": "geneset.meta.json", "description": "Run metadata and provenance"},
-    {"name": "geneset.full.tsv", "description": "Full signed score table (optional)"},
-    {"name": "genesets.gmt", "description": "Directional GMT gene sets (optional)"},
-    {"name": "run_summary.json", "description": "Machine-readable run summary"},
-    {"name": "run_summary.txt", "description": "Human-readable run summary"}
+    {"name": "manifest.tsv", "description": "Comparison-to-output-path mapping"},
+    {"name": "comparison=<NAME>/geneset.tsv", "description": "Selected gene program per comparison"},
+    {"name": "comparison=<NAME>/geneset.meta.json", "description": "Metadata per comparison"},
+    {"name": "comparison=<NAME>/geneset.full.tsv", "description": "Full signed scores per comparison (optional)"},
+    {"name": "comparison=<NAME>/genesets.gmt", "description": "Per-comparison directional GMT sets (optional)"},
+    {"name": "genesets.gmt", "description": "Combined GMT across comparisons (optional)"}
   ]
 }

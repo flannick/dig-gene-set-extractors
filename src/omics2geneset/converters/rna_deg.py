@@ -1,65 +1,72 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
-from omics2geneset.core.metadata import input_file_record, make_metadata, write_metadata
-from omics2geneset.core.models import GeneWeights
-from omics2geneset.core.normalization import normalize
-from omics2geneset.core.scoring import transform_peak_weight
-
-
-def _read_gene_scores(path: str | Path, gene_id_column: str, score_column: str) -> dict[str, float]:
-    gene_scores: dict[str, float] = {}
-    with Path(path).open("r", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        if not reader.fieldnames or gene_id_column not in reader.fieldnames or score_column not in reader.fieldnames:
-            raise ValueError(f"Input TSV must contain {gene_id_column} and {score_column}")
-        for row in reader:
-            gid = str(row[gene_id_column])
-            score = float(row[score_column])
-            gene_scores[gid] = gene_scores.get(gid, 0.0) + score
-    return gene_scores
+from omics2geneset.core.metadata import input_file_record
+from omics2geneset.rnaseq.deg_scoring import read_deg_tsv
+from omics2geneset.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
 
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    raw = _read_gene_scores(args.deg_tsv, args.gene_id_column, args.score_column)
-    transformed = {k: transform_peak_weight(v, args.score_transform) for k, v in raw.items()}
-    final = normalize(transformed, args.normalize)
+    fieldnames, rows = read_deg_tsv(args.deg_tsv)
+    files = [input_file_record(args.deg_tsv, "deg_tsv")]
+    if args.gtf:
+        files.append(input_file_record(args.gtf, "gtf"))
 
-    rows = [{"gene_id": gid, "weight": w} for gid, w in final.items()]
-    gw = GeneWeights(rows).sort_desc()
-    gw.to_tsv(out_dir / "geneset.tsv")
-
-    meta = make_metadata(
+    cfg = DEGWorkflowConfig(
         converter_name="rna_deg",
-        parameters={
-            "gene_id_column": args.gene_id_column,
-            "score_column": args.score_column,
-            "score_transform": args.score_transform,
-            "normalize": args.normalize,
-            "aggregation": "sum",
-        },
-        data_type="rna_seq",
-        assay="bulk",
+        out_dir=out_dir,
         organism=args.organism,
         genome_build=args.genome_build,
-        files=[input_file_record(args.deg_tsv, "deg_tsv")],
-        gene_annotation={"mode": "none", "source": "none", "gene_id_field": args.gene_id_column},
-        weights={
-            "weight_type": "signed" if args.score_transform == "signed" else "nonnegative",
-            "normalization": {"method": args.normalize, "target_sum": 1.0 if args.normalize == "l1" else None},
-            "aggregation": "sum",
-        },
-        summary={
-            "n_input_features": len(raw),
-            "n_genes": len(rows),
-            "n_features_assigned": len(raw),
-            "fraction_features_assigned": 1.0 if raw else 0.0,
-        },
+        signature_name=args.signature_name,
+        deg_tsv_label=Path(args.deg_tsv).name,
+        comparison_label=None,
+        gene_id_column=args.gene_id_column,
+        gene_symbol_column=args.gene_symbol_column,
+        stat_column=args.stat_column,
+        logfc_column=args.logfc_column,
+        padj_column=args.padj_column,
+        pvalue_column=args.pvalue_column,
+        score_column=args.score_column,
+        score_mode=args.score_mode,
+        neglog10p_cap=args.neglog10p_cap,
+        neglog10p_eps=args.neglog10p_eps,
+        exclude_gene_regex=args.exclude_gene_regex,
+        disable_default_excludes=args.disable_default_excludes,
+        gtf=args.gtf,
+        gtf_gene_id_field=args.gtf_gene_id_field,
+        gtf_source=args.gtf_source,
+        select=args.select,
+        top_k=args.top_k,
+        quantile=args.quantile,
+        min_score=args.min_score,
+        normalize=args.normalize,
+        emit_full=args.emit_full,
+        emit_gmt=args.emit_gmt,
+        gmt_out=args.gmt_out,
+        gmt_prefer_symbol=args.gmt_prefer_symbol,
+        gmt_require_symbol=args.gmt_require_symbol,
+        gmt_biotype_allowlist=args.gmt_biotype_allowlist,
+        gmt_min_genes=args.gmt_min_genes,
+        gmt_max_genes=args.gmt_max_genes,
+        gmt_topk_list=args.gmt_topk_list,
+        gmt_mass_list=args.gmt_mass_list,
+        gmt_split_signed=args.gmt_split_signed,
+        emit_small_gene_sets=args.emit_small_gene_sets,
     )
-    write_metadata(out_dir / "geneset.meta.json", meta)
-    return {"n_peaks": len(raw), "n_genes": len(rows), "out_dir": str(out_dir)}
+    result = run_deg_workflow(
+        cfg=cfg,
+        fieldnames=fieldnames,
+        rows=rows,
+        input_files=files,
+    )
+    return {
+        "n_input_features": result["n_input_features"],
+        "n_genes": result["n_genes_selected"],
+        "out_dir": str(out_dir),
+        "resolved_score_mode": result["resolved_score_mode"],
+    }
+

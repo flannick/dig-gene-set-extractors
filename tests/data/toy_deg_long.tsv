@@ -1,0 +1,7 @@
+comparison_id	gene_id	gene_symbol	stat	log2fc	padj	pvalue
+case_vs_control	GENE_A	INS	6.0	2.2	1e-8	1e-8
+case_vs_control	GENE_B	ABCC8	-5.0	-1.8	1e-7	1e-7
+case_vs_control	GENE_C	PCSK1	3.0	1.1	1e-4	1e-4
+treat_vs_baseline	GENE_A	INS	-4.0	-1.4	1e-6	1e-6
+treat_vs_baseline	GENE_D	MAFA	5.0	1.9	1e-7	1e-7
+treat_vs_baseline	GENE_E	RFX6	2.5	0.9	2e-3	2e-3

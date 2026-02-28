@@ -1,0 +1,8 @@
+gene_id	gene_symbol	stat	log2fc	padj	pvalue
+GENE_POS	INS	5.5	2.1	1e-8	1e-8
+GENE_NEG	ABCC8	-9.0	-2.4	1e-12	1e-12
+GENE_NEG	ABCC8	-1.0	-0.4	1e-2	1e-2
+GENE_MITO	MT-CO1	8.0	3.2	1e-9	1e-9
+GENE_RIBO	RPLP0	7.0	2.9	1e-9	1e-9
+GENE_MID	PCSK1	3.0	1.2	1e-4	1e-4
+GENE_WEAK	GENEWEAK	0.2	0.1	0.8	0.8
