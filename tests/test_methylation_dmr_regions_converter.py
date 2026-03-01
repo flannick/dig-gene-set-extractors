@@ -1,6 +1,8 @@
 import csv
 from pathlib import Path
 
+import pytest
+
 from omics2geneset.converters import methylation_dmr_regions
 from omics2geneset.core.validate import validate_output_dir
 
@@ -21,6 +23,7 @@ class Args:
     pvalue_column = "pvalue"
     drop_sex_chrom = True
     score_mode = "delta_times_neglog10p"
+    delta_orientation = "activity_oriented"
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
     link_method = "promoter_overlap"
@@ -57,6 +60,8 @@ class Args:
     enhancer_resource_id = None
     enhancer_bed = None
     distal_mode = "nonpromoter"
+    exclude_gene_symbol_regex = None
+    exclude_gene_symbols_tsv = None
 
 
 def test_methylation_dmr_regions_basic(tmp_path: Path):
@@ -73,3 +78,30 @@ def test_methylation_dmr_regions_basic(tmp_path: Path):
     score_by_gene = {str(row["gene_id"]): float(row["score"]) for row in rows}
     assert "GENE1" in score_by_gene
     assert score_by_gene["GENE1"] < 0.0
+
+
+def test_methylation_dmr_regions_delta_orientation_raw(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "meth_dmr_regions_raw")
+    args.delta_orientation = "raw"
+    methylation_dmr_regions.run(args)
+    rows = list(csv.DictReader((Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8"), delimiter="\t"))
+    score_by_gene = {str(row["gene_id"]): float(row["score"]) for row in rows}
+    assert "GENE1" in score_by_gene
+    assert score_by_gene["GENE1"] > 0.0
+
+
+def test_methylation_dmr_regions_small_set_warning_has_actionable_hint(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    args = Args()
+    args.out_dir = str(tmp_path / "meth_dmr_regions_small_hint")
+    args.gmt_min_genes = 100
+    args.gmt_max_genes = 500
+    args.gmt_topk_list = "200"
+    args.emit_small_gene_sets = False
+    methylation_dmr_regions.run(args)
+    captured = capsys.readouterr()
+    assert "--emit_small_gene_sets true" in captured.err
+    assert "--gmt_min_genes" in captured.err

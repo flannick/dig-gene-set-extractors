@@ -162,8 +162,8 @@ def collect_emitted_method_combinations(gmt_plans: list[dict[str, object]]) -> l
 
 def render_run_summary_text(payload: dict[str, object]) -> str:
     lines: list[str] = []
-    lines.append("ATAC Run Summary")
-    lines.append("================")
+    lines.append("Run Summary")
+    lines.append("===========")
     for key in (
         "converter",
         "dataset_label",
@@ -251,6 +251,85 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
                     "  "
                     + f"{cutoff}: n_marker_hits={entry.get('n_marker_hits', 0)} "
                     + f"matched_rows={entry.get('matched_rows', [])}"
+                )
+
+    parse_summary = payload.get("parse_summary")
+    if isinstance(parse_summary, dict):
+        lines.append("parse_summary:")
+        for key in sorted(parse_summary):
+            lines.append(f"  {key}: {parse_summary[key]}")
+
+    sign_semantics = payload.get("sign_semantics")
+    if isinstance(sign_semantics, dict):
+        lines.append("sign_semantics:")
+        for key in ("delta_orientation", "pos_set_meaning", "neg_set_meaning"):
+            if key in sign_semantics:
+                lines.append(f"  {key}: {sign_semantics[key]}")
+
+    artifact = payload.get("artifact_diagnostics")
+    if isinstance(artifact, dict):
+        patterns = artifact.get("patterns")
+        threshold = artifact.get("pattern_threshold")
+        warnings = artifact.get("warnings")
+        lines.append("artifact_diagnostics:")
+        if isinstance(patterns, list):
+            lines.append(f"  patterns: {patterns}")
+        if threshold is not None:
+            lines.append(f"  pattern_threshold: {threshold}")
+        if isinstance(warnings, list):
+            lines.append(f"  n_warnings: {len(warnings)}")
+            for warning in warnings:
+                if not isinstance(warning, dict):
+                    continue
+                lines.append(
+                    "  "
+                    + f"set={warning.get('set_name','')} "
+                    + f"pattern={warning.get('pattern','')} "
+                    + f"fraction={warning.get('fraction','')}"
+                )
+
+    symbol_filter = payload.get("symbol_filter")
+    if isinstance(symbol_filter, dict):
+        lines.append("symbol_filter:")
+        for key in ("exclude_gene_symbol_regex", "exclude_gene_symbols_tsv"):
+            if key in symbol_filter:
+                lines.append(f"  {key}: {symbol_filter[key]}")
+        counts_by_output = symbol_filter.get("counts_by_output")
+        if isinstance(counts_by_output, dict):
+            lines.append("  counts_by_output:")
+            for output_key in sorted(counts_by_output):
+                lines.append(f"    {output_key}: {counts_by_output[output_key]}")
+
+    resources = payload.get("resources")
+    if isinstance(resources, dict):
+        lines.append("resources:")
+        if "manifest" in resources:
+            lines.append(f"  manifest: {resources.get('manifest')}")
+        if "resources_dir" in resources:
+            lines.append(f"  resources_dir: {resources.get('resources_dir')}")
+        used = resources.get("used")
+        if isinstance(used, list):
+            lines.append(f"  used: {len(used)}")
+            for entry in used:
+                if not isinstance(entry, dict):
+                    continue
+                lines.append(
+                    "  "
+                    + f"resource_id={entry.get('id','')} "
+                    + f"method={entry.get('method','')} "
+                    + f"path={entry.get('path','')}"
+                )
+        missing = resources.get("missing")
+        if isinstance(missing, list):
+            lines.append(f"  missing: {len(missing)}")
+            for entry in missing:
+                if not isinstance(entry, dict):
+                    continue
+                lines.append(
+                    "  "
+                    + f"resource_id={entry.get('resource_id','')} "
+                    + f"role={entry.get('role_label','')} "
+                    + f"expected_path={entry.get('expected_path','')}"
                 )
 
     return "\n".join(lines) + "\n"

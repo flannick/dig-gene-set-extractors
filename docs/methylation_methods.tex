@@ -20,17 +20,22 @@ This note defines the methylation extractors implemented in \texttt{omics2genese
 Inputs are differential CpG/probe or DMR tables, and outputs are gene programs plus GMT gene sets.
 
 \section{Mental model}
-DNA methylation changes are converted to an activity-oriented signed signal.
+DNA methylation changes are converted to a signed signal with configurable orientation.
 If differential methylation is represented as $\Delta_p$ (higher means hypermethylation in condition A vs B),
-we define a signed activity-oriented effect as:
+define orientation factor $\eta \in \{-1,+1\}$ where:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{delta\_orientation=activity\_oriented}: $\eta=-1$
+\item \texttt{delta\_orientation=raw}: $\eta=+1$
+\end{itemize}
+Then:
 \[
-\tilde{x}_p = -\Delta_p.
+\tilde{x}_p = \eta \Delta_p.
 \]
-Positive values indicate hypomethylation-associated permissive activity; negative values indicate hypermethylation-associated repressive activity.
+Under \texttt{activity\_oriented}, positive values indicate hypomethylation-associated permissive activity and negative values indicate hypermethylation-associated repressive activity.
 
 With significance weighting:
 \[
-x_p = (-\Delta_p) \cdot \min\{-\log_{10}(p_p + \epsilon), C\},
+x_p = (\eta \Delta_p) \cdot \min\{-\log_{10}(p_p + \epsilon), C\},
 \]
 where $p_p$ is p-value/FDR, $\epsilon$ is a small floor, and $C$ is a cap.
 
@@ -90,6 +95,8 @@ Default GMT export uses signed splitting:
 \item \texttt{\_\_neg}: genes with negative score (ranked by magnitude)
 \end{itemize}
 
+Interpretation depends on \texttt{delta\_orientation}. Under \texttt{activity\_oriented}, \texttt{\_\_pos} corresponds to hypomethylation-associated activity increase and \texttt{\_\_neg} corresponds to hypermethylation-associated activity decrease. Under \texttt{raw}, signs follow the raw delta definition.
+
 Default guardrails:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{gmt\_min\_genes=100}
@@ -103,5 +110,8 @@ Default guardrails:
 \item Coordinate conventions and genome build consistency are critical.
 \item Distal methylation effects are context dependent; interpretation should be paired with orthogonal evidence where available.
 \end{itemize}
+
+\paragraph{Practical heuristics in implementation.}
+The implementation emits explicit warnings when sex chromosomes are dropped, when a large fraction of rows cannot be mapped to GTF chromosome space, and when optional resources are requested but unavailable under skip policy. It also computes lightweight artifact diagnostics on emitted GMT sets (for example OR/KRT family dominance fractions) and warns when dominance exceeds a threshold. These diagnostics are advisory by default; exclusion filters are opt-in.
 
 \end{document}

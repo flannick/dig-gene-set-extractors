@@ -251,9 +251,27 @@ def _add_methylation_common_flags(parser: argparse.ArgumentParser) -> None:
         default="delta_times_neglog10p",
         help="Methylation feature scoring mode before program extraction.",
     )
+    parser.add_argument(
+        "--delta_orientation",
+        choices=["activity_oriented", "raw"],
+        default="activity_oriented",
+        help=(
+            "How delta is interpreted before scoring. "
+            "activity_oriented uses -delta (default); raw uses +delta."
+        ),
+    )
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
     parser.add_argument("--drop_sex_chrom", type=_parse_bool, default=True)
+    parser.add_argument(
+        "--exclude_gene_symbol_regex",
+        action="append",
+        help="Repeatable regex filter for gene_symbol/gene_id exclusion before selection and GMT.",
+    )
+    parser.add_argument(
+        "--exclude_gene_symbols_tsv",
+        help="Optional one-symbol-per-line exclusion list applied before selection and GMT.",
+    )
     _add_linking_flags(parser)
     _add_methylation_program_flags(parser)
     _add_methylation_resource_flags(parser)

@@ -61,6 +61,11 @@ def test_cli_describe_methylation_cpg_diff():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "methylation_cpg_diff"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "probe_manifest_resource_id" in param_names
+    assert "delta_orientation" in param_names
+    assert "exclude_gene_symbol_regex" in param_names
+    assert "resources_dir" in param_names
 
 
 def test_cli_describe_methylation_dmr_regions():
@@ -68,6 +73,10 @@ def test_cli_describe_methylation_dmr_regions():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "methylation_dmr_regions"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "delta_orientation" in param_names
+    assert "exclude_gene_symbol_regex" in param_names
+    assert "resource_policy" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):

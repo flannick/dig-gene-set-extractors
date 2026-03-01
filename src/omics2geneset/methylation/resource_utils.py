@@ -14,6 +14,7 @@ class ResourceContext:
     resources_dir: Path | None = None
     warnings: list[str] = field(default_factory=list)
     used: list[dict[str, object]] = field(default_factory=list)
+    missing: list[dict[str, object]] = field(default_factory=list)
 
 
 def load_resource_context(
@@ -62,6 +63,13 @@ def resolve_resource_path(
     message = (
         f"Missing {role_label} resource file: {path}. {enablement_hint}"
     )
+    ctx.missing.append(
+        {
+            "resource_id": rid,
+            "expected_path": str(path),
+            "role_label": role_label,
+        }
+    )
     if resource_policy == "fail":
         raise FileNotFoundError(message)
     print(f"warning: {message}", file=sys.stderr)
@@ -69,11 +77,12 @@ def resolve_resource_path(
 
 
 def build_resources_info(ctx: ResourceContext) -> dict[str, object] | None:
-    if not ctx.used and not ctx.warnings:
+    if not ctx.used and not ctx.warnings and not ctx.missing:
         return None
     return {
         "manifest": ctx.manifest_label,
         "resources_dir": str(ctx.resources_dir) if ctx.resources_dir else None,
         "used": list(ctx.used),
+        "missing": list(ctx.missing),
         "warnings": list(ctx.warnings),
     }

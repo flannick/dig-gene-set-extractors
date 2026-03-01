@@ -55,6 +55,7 @@ def run(args) -> dict[str, object]:
         padj_column=args.padj_column,
         pvalue_column=args.pvalue_column,
         score_mode=args.score_mode,
+        delta_orientation=args.delta_orientation,
         neglog10p_eps=float(args.neglog10p_eps),
         neglog10p_cap=float(args.neglog10p_cap),
         drop_sex_chrom=bool(args.drop_sex_chrom),
@@ -111,8 +112,11 @@ def run(args) -> dict[str, object]:
         emit_small_gene_sets=bool(args.emit_small_gene_sets),
         resource_policy=resource_policy,
         score_mode=args.score_mode,
+        delta_orientation=args.delta_orientation,
         distal_mode=args.distal_mode,
         enhancer_bed=enhancer_bed,
+        exclude_gene_symbol_regex=args.exclude_gene_symbol_regex,
+        exclude_gene_symbols_tsv=args.exclude_gene_symbols_tsv,
     )
 
     resources_info = build_resources_info(ctx) if ctx is not None else None

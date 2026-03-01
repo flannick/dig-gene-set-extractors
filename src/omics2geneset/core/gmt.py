@@ -233,8 +233,8 @@ def build_gmt_sets_from_rows(
                     "min_genes": min_genes,
                     "reason": "too few positive genes for default minimum",
                     "suggestion": (
-                        "likely tiny group or weak contrast; try lowering --gmt_min_genes "
-                        "or using a stronger contrast"
+                        "likely tiny group or weak contrast; try --emit_small_gene_sets true "
+                        "for debugging, or lower --gmt_min_genes"
                     ),
                 }
             )
@@ -273,8 +273,8 @@ def build_gmt_sets_from_rows(
                         "method": "topk",
                         "reason": "set smaller than gmt_min_genes after filtering",
                         "suggestion": (
-                            "likely tiny group or weak contrast; try lowering --gmt_min_genes "
-                            "or using a stronger contrast"
+                            "likely tiny group or weak contrast; try --emit_small_gene_sets true "
+                            "for debugging, or lower --gmt_min_genes"
                         ),
                     }
                 )
@@ -319,8 +319,8 @@ def build_gmt_sets_from_rows(
                         "method": "hpd_mass",
                         "reason": "set smaller than gmt_min_genes after filtering",
                         "suggestion": (
-                            "likely tiny group or weak contrast; try lowering --gmt_min_genes "
-                            "or using a stronger contrast"
+                            "likely tiny group or weak contrast; try --emit_small_gene_sets true "
+                            "for debugging, or lower --gmt_min_genes"
                         ),
                     }
                 )

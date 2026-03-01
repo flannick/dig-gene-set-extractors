@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import gzip
 import math
 from pathlib import Path
+import re
 import sys
 
 from omics2geneset.core.gmt import (
@@ -51,6 +52,12 @@ DEFAULT_DELTA_COLUMNS = ("delta_beta", "delta_methylation", "delta_meth", "delta
 DEFAULT_PADJ_COLUMNS = ("padj", "fdr", "adj.p.val", "qvalue")
 DEFAULT_PVALUE_COLUMNS = ("pvalue", "p_value", "p.val", "p")
 SEX_CHROMS = {"x", "y", "chrx", "chry"}
+CHROM_MISMATCH_WARN_FRACTION = 0.2
+ARTIFACT_FAMILY_PATTERNS = (
+    r"^OR[0-9A-Z]+",
+    r"^KRT[0-9A-Z]+",
+)
+ARTIFACT_FAMILY_WARN_THRESHOLD = 0.2
 
 
 @dataclass(frozen=True)
@@ -104,8 +111,11 @@ class MethylationWorkflowConfig:
     emit_small_gene_sets: bool
     resource_policy: str
     score_mode: str
+    delta_orientation: str
     distal_mode: str
     enhancer_bed: str | None
+    exclude_gene_symbol_regex: list[str] | None
+    exclude_gene_symbols_tsv: str | None
 
 
 def _open_text(path: Path):
@@ -143,6 +153,46 @@ def read_probe_blacklist(path: str | Path | None) -> set[str]:
             if token:
                 out.add(token)
     return out
+
+
+def read_exclude_gene_symbols(path: str | Path | None) -> set[str]:
+    if not path:
+        return set()
+    out: set[str] = set()
+    with _open_text(Path(path)) as fh:
+        for line in fh:
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            token = text.split("\t", 1)[0].strip()
+            if token:
+                out.add(token.upper())
+    return out
+
+
+def compile_symbol_regexes(raw_patterns: list[str] | None) -> list[re.Pattern[str]]:
+    out: list[re.Pattern[str]] = []
+    for raw in raw_patterns or []:
+        text = str(raw).strip()
+        if not text:
+            continue
+        for piece in text.split(","):
+            pattern = piece.strip()
+            if not pattern:
+                continue
+            out.append(re.compile(pattern, flags=re.IGNORECASE))
+    return out
+
+
+def _orientation_factor(delta_orientation: str) -> float:
+    if delta_orientation == "activity_oriented":
+        return -1.0
+    if delta_orientation == "raw":
+        return 1.0
+    raise ValueError(
+        "Unsupported delta_orientation: "
+        f"{delta_orientation}. Expected one of activity_oriented, raw."
+    )
 
 
 def _resolve_column(
@@ -292,6 +342,7 @@ def parse_cpg_diff_features(
     padj_column: str | None,
     pvalue_column: str | None,
     score_mode: str,
+    delta_orientation: str,
     neglog10p_eps: float,
     neglog10p_cap: float,
     input_pos_is_0based: bool,
@@ -313,11 +364,16 @@ def parse_cpg_diff_features(
     dropped_blacklist = 0
     dropped_sex = 0
     chrom_converted = 0
+    chrom_mismatch_skipped = 0
+    rows_with_probe_id = 0
     skipped_rows = 0
     missing_p_for_mode = 0
+    orient = _orientation_factor(delta_orientation)
 
     for idx, row in enumerate(rows, start=1):
         probe_id = str(row.get(probe_col or "", "")).strip() if probe_col else ""
+        if probe_id:
+            rows_with_probe_id += 1
         if probe_id and probe_id in probe_blacklist:
             dropped_blacklist += 1
             continue
@@ -357,6 +413,7 @@ def parse_cpg_diff_features(
         if converted:
             chrom_converted += 1
         if chrom_norm not in gene_chroms:
+            chrom_mismatch_skipped += 1
             skipped_rows += 1
             continue
 
@@ -371,9 +428,9 @@ def parse_cpg_diff_features(
                 continue
             p = min(1.0, max(float(neglog10p_eps), float(pvalue)))
             neglog10p = min(-math.log10(p + float(neglog10p_eps)), float(neglog10p_cap))
-            score_raw = float(-delta) * float(neglog10p)
+            score_raw = float(delta) * float(orient) * float(neglog10p)
         elif score_mode == "delta_only":
-            score_raw = float(-delta)
+            score_raw = float(delta) * float(orient)
         else:
             raise ValueError(f"Unsupported methylation score_mode: {score_mode}")
 
@@ -395,12 +452,15 @@ def parse_cpg_diff_features(
         "n_rows": len(rows),
         "n_features_parsed": len(features),
         "n_probe_unresolved": unresolved_probe_ids,
+        "n_rows_with_probe_id": rows_with_probe_id,
         "n_rows_skipped": skipped_rows,
+        "n_rows_skipped_chrom_mismatch": chrom_mismatch_skipped,
         "n_rows_missing_pvalue_for_score_mode": missing_p_for_mode,
         "n_dropped_probe_blacklist": dropped_blacklist,
         "n_dropped_sex_chrom": dropped_sex,
         "n_chrom_name_converted": chrom_converted,
         "score_mode": score_mode,
+        "delta_orientation": delta_orientation,
     }
     return features, summary
 
@@ -416,6 +476,7 @@ def parse_dmr_region_features(
     padj_column: str | None,
     pvalue_column: str | None,
     score_mode: str,
+    delta_orientation: str,
     neglog10p_eps: float,
     neglog10p_cap: float,
     drop_sex_chrom: bool,
@@ -430,8 +491,10 @@ def parse_dmr_region_features(
     features: list[MethylationFeature] = []
     dropped_sex = 0
     chrom_converted = 0
+    chrom_mismatch_skipped = 0
     skipped_rows = 0
     missing_p_for_mode = 0
+    orient = _orientation_factor(delta_orientation)
 
     for idx, row in enumerate(rows, start=1):
         chrom = str(row.get(chrom_col or "", "")).strip()
@@ -451,6 +514,7 @@ def parse_dmr_region_features(
         if converted:
             chrom_converted += 1
         if chrom_norm not in gene_chroms:
+            chrom_mismatch_skipped += 1
             skipped_rows += 1
             continue
 
@@ -465,9 +529,9 @@ def parse_dmr_region_features(
                 continue
             p = min(1.0, max(float(neglog10p_eps), float(pvalue)))
             neglog10p = min(-math.log10(p + float(neglog10p_eps)), float(neglog10p_cap))
-            score_raw = float(-delta) * float(neglog10p)
+            score_raw = float(delta) * float(orient) * float(neglog10p)
         elif score_mode == "delta_only":
-            score_raw = float(-delta)
+            score_raw = float(delta) * float(orient)
         else:
             raise ValueError(f"Unsupported methylation score_mode: {score_mode}")
 
@@ -488,10 +552,12 @@ def parse_dmr_region_features(
         "n_rows": len(rows),
         "n_features_parsed": len(features),
         "n_rows_skipped": skipped_rows,
+        "n_rows_skipped_chrom_mismatch": chrom_mismatch_skipped,
         "n_rows_missing_pvalue_for_score_mode": missing_p_for_mode,
         "n_dropped_sex_chrom": dropped_sex,
         "n_chrom_name_converted": chrom_converted,
         "score_mode": score_mode,
+        "delta_orientation": delta_orientation,
     }
     return features, summary
 
@@ -777,6 +843,66 @@ def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> li
     return skipped
 
 
+def _apply_gene_symbol_exclusion(
+    scores: dict[str, float],
+    genes_by_id: dict[str, dict[str, str]],
+    patterns: list[re.Pattern[str]],
+    symbol_blocklist: set[str],
+) -> tuple[dict[str, float], dict[str, int]]:
+    if not patterns and not symbol_blocklist:
+        return scores, {"n_excluded_regex": 0, "n_excluded_symbol_list": 0, "n_excluded_total": 0}
+    out: dict[str, float] = {}
+    excluded_regex = 0
+    excluded_symbol_list = 0
+    for gene_id, score in scores.items():
+        info = genes_by_id.get(gene_id, {})
+        symbol = str(info.get("gene_symbol", "")).strip()
+        token = symbol if symbol else str(gene_id)
+        upper = token.upper()
+        drop_by_list = upper in symbol_blocklist if symbol_blocklist else False
+        drop_by_regex = any(p.search(token) for p in patterns) if patterns else False
+        if drop_by_list:
+            excluded_symbol_list += 1
+            continue
+        if drop_by_regex:
+            excluded_regex += 1
+            continue
+        out[gene_id] = float(score)
+    return out, {
+        "n_excluded_regex": excluded_regex,
+        "n_excluded_symbol_list": excluded_symbol_list,
+        "n_excluded_total": excluded_regex + excluded_symbol_list,
+    }
+
+
+def _artifact_family_diagnostics(gmt_sets: list[tuple[str, list[str]]]) -> dict[str, object]:
+    patterns = [re.compile(p, flags=re.IGNORECASE) for p in ARTIFACT_FAMILY_PATTERNS]
+    warnings: list[dict[str, object]] = []
+    for set_name, genes in gmt_sets:
+        n = len(genes)
+        if n <= 0:
+            continue
+        for pattern_text, pattern in zip(ARTIFACT_FAMILY_PATTERNS, patterns):
+            matched = sum(1 for gene in genes if pattern.search(str(gene)))
+            frac = float(matched) / float(n)
+            if frac > ARTIFACT_FAMILY_WARN_THRESHOLD:
+                warnings.append(
+                    {
+                        "set_name": set_name,
+                        "pattern": pattern_text,
+                        "n_matched": matched,
+                        "n_genes": n,
+                        "fraction": frac,
+                        "threshold": ARTIFACT_FAMILY_WARN_THRESHOLD,
+                    }
+                )
+    return {
+        "pattern_threshold": ARTIFACT_FAMILY_WARN_THRESHOLD,
+        "patterns": list(ARTIFACT_FAMILY_PATTERNS),
+        "warnings": warnings,
+    }
+
+
 def _feature_overlaps_intervals(feature: MethylationFeature, intervals: list[dict[str, object]]) -> bool:
     for iv in intervals:
         if str(iv.get("chrom", "")) != feature.chrom:
@@ -801,6 +927,22 @@ def run_methylation_workflow(
     if not features:
         raise ValueError("No methylation features with usable coordinates/scores were parsed")
 
+    n_rows = int(parse_summary.get("n_rows", 0) or 0)
+    n_dropped_sex = int(parse_summary.get("n_dropped_sex_chrom", 0) or 0)
+    if n_dropped_sex > 0:
+        print(
+            "warning: drop_sex_chrom=true removed "
+            f"{n_dropped_sex} features. Set --drop_sex_chrom false to keep sex chromosomes.",
+            file=sys.stderr,
+        )
+    n_chrom_mismatch = int(parse_summary.get("n_rows_skipped_chrom_mismatch", 0) or 0)
+    if n_rows > 0 and (float(n_chrom_mismatch) / float(n_rows)) > CHROM_MISMATCH_WARN_FRACTION:
+        print(
+            "warning: many rows could not be mapped to GTF chromosome names/genome build "
+            f"({n_chrom_mismatch}/{n_rows}). Check --genome_build and chr-prefix conventions.",
+            file=sys.stderr,
+        )
+
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -819,6 +961,8 @@ def run_methylation_workflow(
         }
         for g in genes
     }
+    exclude_patterns = compile_symbol_regexes(cfg.exclude_gene_symbol_regex)
+    exclude_symbol_list = read_exclude_gene_symbols(cfg.exclude_gene_symbols_tsv)
 
     peaks = [
         {
@@ -884,6 +1028,7 @@ def run_methylation_workflow(
     program_methods_skipped: dict[str, str] = {}
     scored_rows_by_program_by_link: dict[str, dict[str, list[dict[str, object]]]] = {}
     selected_rows_by_program_by_link: dict[str, dict[str, list[dict[str, object]]]] = {}
+    filter_counts_by_output: dict[str, dict[str, int]] = {}
 
     primary_program_method: str | None = None
     primary_link_method: str | None = None
@@ -928,6 +1073,13 @@ def run_methylation_workflow(
             transformed = [transform_peak_weight(float(v), cfg.score_transform) for v in masked_scores]
             links = links_by_method[link_method]
             scores = _aggregate_gene_scores(transformed, links, cfg.aggregation)
+            scores, filter_counts = _apply_gene_symbol_exclusion(
+                scores,
+                genes_by_id,
+                exclude_patterns,
+                exclude_symbol_list,
+            )
+            filter_counts_by_output[f"{program_method}__{link_method}"] = filter_counts
             selected_rows, full_rows = _rows_from_scores(scores, genes_by_id, cfg)
             scored_rows_by_program_by_link[program_method][link_method] = full_rows
             selected_rows_by_program_by_link[program_method][link_method] = selected_rows
@@ -991,6 +1143,18 @@ def run_methylation_workflow(
                 gmt_plans.extend(method_plans)
 
         write_gmt(gmt_sets, gmt_path)
+    artifact_diagnostics = _artifact_family_diagnostics(gmt_sets) if cfg.emit_gmt else {"warnings": []}
+    for warning in artifact_diagnostics.get("warnings", []):
+        if not isinstance(warning, dict):
+            continue
+        frac = float(warning.get("fraction", 0.0) or 0.0)
+        print(
+            "warning: potential gene-family dominance in "
+            f"{warning.get('set_name','unknown')}: pattern={warning.get('pattern')} "
+            f"fraction={frac:.3f}. "
+            "Consider --exclude_gene_symbol_regex or interpret cautiously.",
+            file=sys.stderr,
+        )
 
     _warn_gmt_output_diagnostics(gmt_diagnostics)
 
@@ -1004,6 +1168,19 @@ def run_methylation_workflow(
     emitted_combinations = collect_emitted_method_combinations(gmt_plans)
     requested_gmt_outputs = [{"name": p.get("name", "")} for p in gmt_plans]
     skipped_gmt_outputs = _collect_skipped_gmt_outputs(gmt_diagnostics)
+    sign_semantics = {
+        "delta_orientation": cfg.delta_orientation,
+        "pos_set_meaning": (
+            "hypomethylation-associated activity increase"
+            if cfg.delta_orientation == "activity_oriented"
+            else "positive raw delta signal"
+        ),
+        "neg_set_meaning": (
+            "hypermethylation-associated activity decrease"
+            if cfg.delta_orientation == "activity_oriented"
+            else "negative raw delta signal"
+        ),
+    }
 
     assigned_primary = len({int(link["peak_index"]) for link in links_by_method.get(primary_link_method, [])})
     link_assignment: dict[str, dict[str, object]] = {}
@@ -1032,7 +1209,16 @@ def run_methylation_workflow(
         "program_methods_skipped": program_methods_skipped,
         "calibration_methods_skipped": {},
         "parse_summary": parse_summary,
+        "sign_semantics": sign_semantics,
+        "artifact_diagnostics": artifact_diagnostics,
+        "symbol_filter": {
+            "exclude_gene_symbol_regex": cfg.exclude_gene_symbol_regex or [],
+            "exclude_gene_symbols_tsv": cfg.exclude_gene_symbols_tsv,
+            "counts_by_output": filter_counts_by_output,
+        },
     }
+    if resources_info is not None:
+        run_summary_payload["resources"] = resources_info
     run_summary_json_path, run_summary_txt_path = write_run_summary_files(out_dir, run_summary_payload)
     output_files.append({"path": str(run_summary_json_path), "role": "run_summary_json"})
     output_files.append({"path": str(run_summary_txt_path), "role": "run_summary_text"})
@@ -1048,6 +1234,7 @@ def run_methylation_workflow(
         "primary_program_method": primary_program_method,
         "primary_link_method": primary_link_method,
         "score_mode": cfg.score_mode,
+        "delta_orientation": cfg.delta_orientation,
         "score_transform": cfg.score_transform,
         "aggregation": cfg.aggregation,
         "select": cfg.select,
@@ -1070,14 +1257,17 @@ def run_methylation_workflow(
         "emit_small_gene_sets": cfg.emit_small_gene_sets,
         "distal_mode": cfg.distal_mode,
         "enhancer_bed": cfg.enhancer_bed,
+        "exclude_gene_symbol_regex": cfg.exclude_gene_symbol_regex or [],
+        "exclude_gene_symbols_tsv": cfg.exclude_gene_symbols_tsv,
         "resource_policy": cfg.resource_policy,
         "n_external_links_unresolved_gene_id": n_external_links_unresolved,
     }
 
+    oriented_delta_expr = "-delta" if cfg.delta_orientation == "activity_oriented" else "delta"
     score_definition = (
-        "gene_score = aggregate(link_weight * transform((-delta) * neglog10p))"
+        f"gene_score = aggregate(link_weight * transform(({oriented_delta_expr}) * neglog10p))"
         if cfg.score_mode == "delta_times_neglog10p"
-        else "gene_score = aggregate(link_weight * transform(-delta))"
+        else f"gene_score = aggregate(link_weight * transform({oriented_delta_expr}))"
     )
 
     meta = make_metadata(
@@ -1111,6 +1301,7 @@ def run_methylation_workflow(
             "n_program_methods": len(scored_rows_by_program_by_link),
             "n_program_methods_skipped": len(program_methods_skipped),
             "n_external_links_unresolved_gene_id": n_external_links_unresolved,
+            "symbol_filter_counts_by_output": filter_counts_by_output,
         },
         program_extraction={
             "selection_method": cfg.select,
@@ -1126,6 +1317,7 @@ def run_methylation_workflow(
             "program_methods_skipped": program_methods_skipped,
             "primary_program_method": primary_program_method,
             "primary_link_method": primary_link_method,
+            "delta_orientation": cfg.delta_orientation,
         },
         output_files=output_files,
         gmt={
@@ -1144,6 +1336,7 @@ def run_methylation_workflow(
             "requested_outputs": requested_gmt_outputs,
             "emitted_outputs": emitted_combinations,
             "skipped_outputs": skipped_gmt_outputs,
+            "artifact_diagnostics": artifact_diagnostics,
             "diagnostics": gmt_diagnostics,
             "plans": gmt_plans,
         },

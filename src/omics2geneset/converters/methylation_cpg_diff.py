@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
@@ -46,15 +47,27 @@ def run(args) -> dict[str, object]:
     if resource_policy not in {"skip", "fail"}:
         raise ValueError(f"Unsupported resource_policy: {resource_policy}")
 
-    need_resources = bool(args.probe_manifest_resource_id or args.enhancer_resource_id)
+    has_resource_location = bool(
+        args.resources_dir
+        or args.resources_manifest
+        or os.getenv("OMICS2GENESET_RESOURCES_DIR")
+    )
+    need_resources = bool(
+        has_resource_location
+        or args.probe_manifest_resource_id
+        or args.enhancer_resource_id
+    )
     ctx = load_resource_context(args.resources_manifest, args.resources_dir) if need_resources else None
 
     probe_manifest_path: str | None = args.probe_manifest_tsv
+    probe_manifest_source = "explicit_tsv" if probe_manifest_path else "none"
+    attempted_probe_manifest_resource_id: str | None = None
     if not probe_manifest_path:
         probe_manifest_resource_id = args.probe_manifest_resource_id or _default_probe_manifest_resource_id(
             args.genome_build,
             args.array_type,
         )
+        attempted_probe_manifest_resource_id = probe_manifest_resource_id
         if probe_manifest_resource_id and ctx is not None:
             resolved = resolve_resource_path(
                 ctx=ctx,
@@ -62,11 +75,13 @@ def run(args) -> dict[str, object]:
                 resource_policy=resource_policy,
                 role_label="probe_manifest",
                 enablement_hint=(
-                    "Provide --probe_manifest_tsv (probe_id->coordinate mapping) or place the resource in "
-                    "--resources_dir and set --probe_manifest_resource_id."
+                    "Provide --probe_manifest_tsv (probe_id->coordinate mapping), or point "
+                    "--resources_dir to a bundle containing this resource id."
                 ),
             )
-            probe_manifest_path = str(resolved) if resolved is not None else None
+            if resolved is not None:
+                probe_manifest_path = str(resolved)
+                probe_manifest_source = f"resource:{probe_manifest_resource_id}"
 
     enhancer_bed = args.enhancer_bed
     if not enhancer_bed and args.enhancer_resource_id and ctx is not None:
@@ -107,6 +122,7 @@ def run(args) -> dict[str, object]:
         padj_column=args.padj_column,
         pvalue_column=args.pvalue_column,
         score_mode=args.score_mode,
+        delta_orientation=args.delta_orientation,
         neglog10p_eps=float(args.neglog10p_eps),
         neglog10p_cap=float(args.neglog10p_cap),
         input_pos_is_0based=bool(args.input_pos_is_0based),
@@ -117,10 +133,21 @@ def run(args) -> dict[str, object]:
     )
 
     unresolved = int(parse_summary.get("n_probe_unresolved", 0) or 0)
+    parse_summary["probe_manifest_source"] = probe_manifest_source
+    parse_summary["probe_manifest_resource_id_attempted"] = attempted_probe_manifest_resource_id
+    parse_summary["probe_manifest_path"] = probe_manifest_path
     if unresolved > 0:
+        default_hint = ""
+        if attempted_probe_manifest_resource_id:
+            default_hint = (
+                f" Default auto-resolve resource id for this run: "
+                f"{attempted_probe_manifest_resource_id}."
+            )
         msg = (
             f"{unresolved} probe_id rows could not be resolved to coordinates. "
-            "Provide --probe_manifest_tsv or --probe_manifest_resource_id."
+            "Provide --probe_manifest_tsv, or set --resources_dir so the converter can auto-resolve "
+            "a probe manifest resource."
+            + default_hint
         )
         if resource_policy == "fail":
             raise ValueError(msg)
@@ -180,8 +207,11 @@ def run(args) -> dict[str, object]:
         emit_small_gene_sets=bool(args.emit_small_gene_sets),
         resource_policy=resource_policy,
         score_mode=args.score_mode,
+        delta_orientation=args.delta_orientation,
         distal_mode=args.distal_mode,
         enhancer_bed=enhancer_bed,
+        exclude_gene_symbol_regex=args.exclude_gene_symbol_regex,
+        exclude_gene_symbols_tsv=args.exclude_gene_symbols_tsv,
     )
 
     resources_info = build_resources_info(ctx) if ctx is not None else None
