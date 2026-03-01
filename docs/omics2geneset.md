@@ -7,7 +7,7 @@ Use this page as the entrypoint, then jump to the assay you are running.
 ## Practical guides
 
 - ATAC-seq: `docs/atac-seq2geneset.md`
-- RNA-seq: `docs/rna-seq2geneset.md`
+- RNA-seq: `docs/rna-seq-to-geneset.md`
 - DNA methylation: `docs/methylation2geneset.md`
 
 ## Methods notes
@@ -20,7 +20,7 @@ Use this page as the entrypoint, then jump to the assay you are running.
 ## Choosing a guide
 
 - If your input is peaks, peak matrices, or scATAC 10x matrices: start with `docs/atac-seq2geneset.md`.
-- If your input is RNA differential expression results or external scRNA program loadings (for example cNMF/scHPF gene loadings): start with `docs/rna-seq2geneset.md`.
+- If your input is RNA differential expression results or external scRNA program loadings (for example cNMF/scHPF gene loadings): start with `docs/rna-seq-to-geneset.md`.
 - If your input is differential CpG/probe or DMR tables: start with `docs/methylation2geneset.md`.
 
 ## Backward compatibility note

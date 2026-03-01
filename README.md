@@ -18,7 +18,7 @@ This root README is intentionally framework-level:
 Detailed `omics2geneset` CLI and method behavior is split by assay:
 
 - `docs/atac-seq2geneset.md` (ATAC practical guide)
-- `docs/rna-seq2geneset.md` (RNA practical guide)
+- `docs/rna-seq-to-geneset.md` (RNA practical guide)
 - `docs/methylation2geneset.md` (DNA methylation practical guide)
 - `docs/omics2geneset.md` (index/entrypoint linking assay guides)
 
@@ -59,7 +59,7 @@ DNA methylation converters:
 Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/atac-seq2geneset.md`
-- `docs/rna-seq2geneset.md`
+- `docs/rna-seq-to-geneset.md`
 - `docs/methylation2geneset.md`
 - `docs/omics2geneset.md` (index)
 
@@ -123,7 +123,7 @@ dig-gene-set-extractors/
   docs/
     omics2geneset.md
     atac-seq2geneset.md
-    rna-seq2geneset.md
+    rna-seq-to-geneset.md
     methylation2geneset.md
     methods.tex
     atac-seq_methods.tex

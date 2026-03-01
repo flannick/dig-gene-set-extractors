@@ -55,7 +55,7 @@ NEGATIVE_WARNING_FRACTION = 0.2
 LARGE_PROGRAM_COUNT_WARNING_THRESHOLD = 200
 LARGE_PARSED_VALUES_WARNING_THRESHOLD = 5_000_000
 LARGE_INPUT_GUIDE_HINT = (
-    "See docs/rna-seq2geneset.md#best-practices-for-large-scrna-maps-recommended-upstream-factorization-workflow"
+    "See docs/rna-seq-to-geneset.md#best-practices-for-large-scrna-maps-recommended-upstream-factorization-workflow"
 )
 
 

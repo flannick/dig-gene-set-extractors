@@ -4,5 +4,4 @@
 
 Use the current practical RNA guide:
 
-- `docs/rna-seq2geneset.md`
-
+- `docs/rna-seq-to-geneset.md`

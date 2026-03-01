@@ -174,5 +174,5 @@ Use one of:
 
 - package index: `docs/omics2geneset.md`
 - ATAC guide: `docs/atac-seq2geneset.md`
-- RNA guide: `docs/rna-seq2geneset.md`
+- RNA guide: `docs/rna-seq-to-geneset.md`
 - methylation methods note: `docs/methylation_methods.tex`
