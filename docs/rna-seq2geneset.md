@@ -113,6 +113,36 @@ omics2geneset convert rna_sc_programs \
 - optional per-program `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined across programs)
 
+## Best practices for large scRNA maps (recommended upstream factorization workflow)
+
+When working with large, heterogeneous single-cell atlases, the quality of inferred programs usually depends more on upstream factorization strategy than on downstream conversion.
+
+Recommended upstream workflow:
+
+- Fit programs within cell types or a small set of broad compartments rather than one global run across all cell states.
+- Downsample before factorization:
+  - cap total cells
+  - cap cells per donor (and per cell type if available)
+- If donor metadata is present, avoid donor imbalance so one donor does not dominate factorization.
+- Keep gene filtering policy stable between factorization and conversion (especially mitochondrial/ribosomal handling).
+- Start with moderate `K` values and increase only if programs remain interpretable.
+
+Supported loadings artifacts for `rna_sc_programs`:
+
+- cNMF gene spectra (`gene_spectra_tpm` or `gene_spectra_score`)
+- scHPF gene scores table
+- Generic TSV in either wide genes-by-program or long tidy format
+
+Minimal long-tidy TSV example:
+
+```tsv
+program_id	gene_id	loading
+P1	INS	2.41
+P1	MAFA	1.73
+```
+
+If you see warnings about very large numbers of programs or parsed values, split conversion by cell type and/or reduce factor count before rerunning.
+
 ## Column mapping examples
 
 ### DESeq2-style table
@@ -196,12 +226,32 @@ Enable directional sets from signed loadings with:
 --score_transform signed --gmt_split_signed true
 ```
 
-Duplicate `gene_id` rows are aggregated using `--duplicate_gene_policy`:
+Repeated `(program_id, gene_id)` rows are aggregated additively at parse time.
 
-- `max_abs` (default): keep the signed score with largest absolute magnitude
-- `sum`: sum signed scores
-- `mean`: mean signed score
-- `last`: last row wins
+## Optional helper script for quick NMF loadings
+
+For exploratory workflows, the repo includes an optional convenience script:
+
+```bash
+python scripts/scrna_quick_nmf.py --help
+```
+
+It reads:
+
+- a cell x gene expression TSV
+- optional metadata TSV (`cell_id` plus optional `cell_type` and `donor_id`)
+
+Then it:
+
+- downsamples per `(cell_type, donor_id)` bucket
+- fits sklearn NMF
+- writes a wide genes-by-program table compatible with `rna_sc_programs`
+
+Optional dependencies (not required for base `omics2geneset`):
+
+```bash
+python -m pip install -e ".[scrna_tools]"
+```
 
 ## Filtering and annotation
 

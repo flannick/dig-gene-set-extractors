@@ -281,6 +281,17 @@ An optional combined \texttt{genesets.gmt} is written at the root.
 When loadings are signed and the user requests \texttt{gmt\_split\_signed=true}, GMT emits \texttt{\_\_pos} and \texttt{\_\_neg} sets per program.
 Under default \texttt{score\_transform=positive}, negatives are dropped and only positive sets are emitted. The converter warns when a substantial fraction of raw loadings are negative under this default.
 
+\subsection*{Practical heuristics for fitting programs on large atlases}
+For very large scRNA maps, upstream factorization choices usually dominate downstream gene-set quality.
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Fit within cell types or broad compartments.} A single global factorization across heterogeneous cell states often produces diffuse programs.
+\item \textbf{Downsample before fitting.} Cap total cells and cap cells per donor (and ideally per cell type) to keep both runtime and donor influence controlled.
+\item \textbf{Control donor imbalance.} If one donor contributes most cells, factors can become donor-driven rather than biology-driven.
+\item \textbf{Keep gene filtering consistent.} Use the same mitochondrial/ribosomal policy upstream and during conversion.
+\item \textbf{Choose moderate factor count first.} Start with conservative $K$, then increase only if resulting programs remain interpretable.
+\end{itemize}
+To support practical workflows, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected.
+
 \begin{thebibliography}{9}
 \bibitem{love2014deseq2}
 Love MI, Huber W, Anders S.

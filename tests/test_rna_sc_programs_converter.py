@@ -5,6 +5,7 @@ import pytest
 
 from omics2geneset.converters import rna_sc_programs
 from omics2geneset.core.validate import validate_output_dir
+from omics2geneset.rnaseq.sc_program_workflow import read_program_loadings
 
 
 class Args:
@@ -115,3 +116,99 @@ def test_rna_sc_programs_cnmf_convenience_parser(tmp_path: Path):
     out_dir = Path(args.out_dir)
     assert (out_dir / "manifest.tsv").exists()
     assert (out_dir / "genesets.gmt").exists()
+
+
+def test_rna_sc_programs_schpf_convenience_parser(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_schpf")
+    args.program_loadings_tsv = None
+    args.schpf_gene_scores_tsv = "tests/data/toy_program_loadings.tsv"
+    args.loadings_format = "auto"
+    result = rna_sc_programs.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    assert (out_dir / "manifest.tsv").exists()
+    assert (out_dir / "genesets.gmt").exists()
+
+
+def test_read_program_loadings_long_tidy_streaming_counts(tmp_path: Path):
+    path = tmp_path / "loadings_long.tsv"
+    n_rows = 0
+    n_values_parsed = 0
+    expected: dict[tuple[str, str], float] = {}
+
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh, delimiter="\t")
+        writer.writerow(["gene_id", "program_id", "loading"])
+        for i in range(3000):
+            gene_id = f"G{i % 7}"
+            program_id = f"P{i % 3}"
+            value = float((i % 5) - 2)
+            writer.writerow([gene_id, program_id, value])
+            n_rows += 1
+            n_values_parsed += 1
+            key = (program_id, gene_id)
+            expected[key] = float(expected.get(key, 0.0)) + value
+        writer.writerow(["G0", "P0", "NA"])
+        n_rows += 1
+        writer.writerow(["", "P0", "1.0"])
+        n_rows += 1
+        writer.writerow(["G1", "", "2.0"])
+        n_rows += 1
+
+    programs, summary = read_program_loadings(
+        path=path,
+        loadings_format="long_tidy",
+        gene_id_column="gene_id",
+        program_id_column="program_id",
+        loading_column="loading",
+        transpose=False,
+    )
+
+    assert int(summary["n_rows"]) == n_rows
+    assert int(summary["n_values_parsed"]) == n_values_parsed
+    assert int(summary["n_values_non_numeric"]) == 1
+    assert int(summary["n_programs"]) == 3
+    assert int(summary["n_genes_unique"]) == 7
+    assert float(programs["P0"]["G0"]) == pytest.approx(expected[("P0", "G0")])
+    assert float(programs["P2"]["G6"]) == pytest.approx(expected[("P2", "G6")])
+
+
+def test_rna_sc_programs_large_input_warnings(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
+    fake_programs = {
+        "P1": {
+            "GeneA": 2.0,
+            "GeneB": 1.0,
+            "GeneC": 0.5,
+        }
+    }
+    fake_parse_summary = {
+        "input_path": "tests/data/toy_program_loadings.tsv",
+        "requested_loadings_format": "auto",
+        "resolved_loadings_format": "wide_genes_by_program",
+        "effective_loadings_format": "wide_genes_by_program",
+        "transpose": False,
+        "n_rows": 10,
+        "n_programs": 250,
+        "n_genes_unique": 3,
+        "n_values_parsed": 6_500_000,
+        "n_values_non_numeric": 0,
+        "used_gene_column": "gene_id",
+        "used_program_column": None,
+    }
+
+    def _fake_read_program_loadings(**_kwargs):
+        return fake_programs, fake_parse_summary
+
+    monkeypatch.setattr(rna_sc_programs, "read_program_loadings", _fake_read_program_loadings)
+
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_large_warning")
+    result = rna_sc_programs.run(args)
+    assert result["n_groups"] == 1
+
+    captured = capsys.readouterr()
+    err = captured.err
+    assert "large program-loading input detected" in err
+    assert "very large parsed loading table detected" in err
+    assert "Best practice: run factorization within cell types" in err

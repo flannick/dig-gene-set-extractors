@@ -52,6 +52,11 @@ WIDE_GENES_BY_PROGRAM_FORMATS = {
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 NEGATIVE_WARNING_FRACTION = 0.2
+LARGE_PROGRAM_COUNT_WARNING_THRESHOLD = 200
+LARGE_PARSED_VALUES_WARNING_THRESHOLD = 5_000_000
+LARGE_INPUT_GUIDE_HINT = (
+    "See docs/rna-seq2geneset.md#best-practices-for-large-scrna-maps-recommended-upstream-factorization-workflow"
+)
 
 
 @dataclass
@@ -186,118 +191,122 @@ def read_program_loadings(
     transpose: bool,
 ) -> tuple[dict[str, dict[str, float]], dict[str, object]]:
     p = Path(path)
-    with _open_text(p) as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        if not reader.fieldnames:
-            raise ValueError(f"Program loadings table has no header: {p}")
-        fieldnames = [str(x) for x in reader.fieldnames]
-        rows = [{k: ("" if v is None else str(v)) for k, v in row.items() if k is not None} for row in reader]
-
     requested = str(loadings_format).strip()
     if requested not in KNOWN_LOADINGS_FORMATS:
         raise ValueError(
             "Unsupported loadings_format: "
             f"{requested}. Expected one of {', '.join(sorted(KNOWN_LOADINGS_FORMATS))}"
         )
-
-    resolved_format = requested
-    if requested == "auto":
-        resolved_format = _resolve_format_auto(
-            p,
-            fieldnames,
-            gene_id_column=gene_id_column,
-            program_id_column=program_id_column,
-            loading_column=loading_column,
-        )
-
-    effective_format = resolved_format
-    if transpose and resolved_format in {"wide_genes_by_program", "wide_programs_by_gene"}:
-        effective_format = (
-            "wide_programs_by_gene" if resolved_format == "wide_genes_by_program" else "wide_genes_by_program"
-        )
-
     programs: dict[str, dict[str, float]] = {}
     values_parsed = 0
     values_non_numeric = 0
+    n_rows = 0
     used_gene_column: str | None = None
     used_program_column: str | None = None
+    resolved_format: str
+    effective_format: str
 
-    if effective_format == "long_tidy":
-        if gene_id_column not in fieldnames:
-            raise ValueError(
-                f"long_tidy format requires gene_id_column '{gene_id_column}'. "
-                f"Available columns: {', '.join(fieldnames)}"
+    with _open_text(p) as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames:
+            raise ValueError(f"Program loadings table has no header: {p}")
+        fieldnames = [str(x) for x in reader.fieldnames]
+
+        resolved_format = requested
+        if requested == "auto":
+            resolved_format = _resolve_format_auto(
+                p,
+                fieldnames,
+                gene_id_column=gene_id_column,
+                program_id_column=program_id_column,
+                loading_column=loading_column,
             )
-        if program_id_column not in fieldnames:
-            raise ValueError(
-                f"long_tidy format requires program_id_column '{program_id_column}'. "
-                f"Available columns: {', '.join(fieldnames)}"
+
+        effective_format = resolved_format
+        if transpose and resolved_format in {"wide_genes_by_program", "wide_programs_by_gene"}:
+            effective_format = (
+                "wide_programs_by_gene" if resolved_format == "wide_genes_by_program" else "wide_genes_by_program"
             )
-        if loading_column not in fieldnames:
-            raise ValueError(
-                f"long_tidy format requires loading_column '{loading_column}'. "
-                f"Available columns: {', '.join(fieldnames)}"
-            )
-        used_gene_column = gene_id_column
-        used_program_column = program_id_column
-        for row in rows:
-            gene_id = str(row.get(gene_id_column, "")).strip()
-            program_id = str(row.get(program_id_column, "")).strip()
-            raw_loading = str(row.get(loading_column, "")).strip()
-            if not gene_id or not program_id:
-                continue
-            val = _parse_float(raw_loading)
-            if val is None:
-                if raw_loading:
-                    values_non_numeric += 1
-                continue
-            programs.setdefault(program_id, {})
-            programs[program_id][gene_id] = float(programs[program_id].get(gene_id, 0.0)) + float(val)
-            values_parsed += 1
-    elif effective_format in WIDE_GENES_BY_PROGRAM_FORMATS:
-        gene_col = _resolve_gene_column(fieldnames, gene_id_column)
-        used_gene_column = gene_col
-        program_cols = [name for name in fieldnames if name != gene_col]
-        if not program_cols:
-            raise ValueError("wide_genes_by_program format requires at least one program column")
-        for row in rows:
-            gene_id = str(row.get(gene_col, "")).strip()
-            if not gene_id:
-                continue
-            for prog_col in program_cols:
-                raw_loading = str(row.get(prog_col, "")).strip()
-                if not raw_loading:
+
+        if effective_format == "long_tidy":
+            if gene_id_column not in fieldnames:
+                raise ValueError(
+                    f"long_tidy format requires gene_id_column '{gene_id_column}'. "
+                    f"Available columns: {', '.join(fieldnames)}"
+                )
+            if program_id_column not in fieldnames:
+                raise ValueError(
+                    f"long_tidy format requires program_id_column '{program_id_column}'. "
+                    f"Available columns: {', '.join(fieldnames)}"
+                )
+            if loading_column not in fieldnames:
+                raise ValueError(
+                    f"long_tidy format requires loading_column '{loading_column}'. "
+                    f"Available columns: {', '.join(fieldnames)}"
+                )
+            used_gene_column = gene_id_column
+            used_program_column = program_id_column
+            for row in reader:
+                n_rows += 1
+                gene_id = str(row.get(gene_id_column, "")).strip()
+                program_id = str(row.get(program_id_column, "")).strip()
+                raw_loading = str(row.get(loading_column, "")).strip()
+                if not gene_id or not program_id:
                     continue
                 val = _parse_float(raw_loading)
                 if val is None:
-                    values_non_numeric += 1
+                    if raw_loading:
+                        values_non_numeric += 1
                     continue
-                programs.setdefault(str(prog_col), {})
-                programs[str(prog_col)][gene_id] = float(programs[str(prog_col)].get(gene_id, 0.0)) + float(val)
+                programs.setdefault(program_id, {})
+                programs[program_id][gene_id] = float(programs[program_id].get(gene_id, 0.0)) + float(val)
                 values_parsed += 1
-    elif effective_format == "wide_programs_by_gene":
-        program_col = _resolve_program_column(fieldnames, program_id_column)
-        used_program_column = program_col
-        gene_cols = [name for name in fieldnames if name != program_col]
-        if not gene_cols:
-            raise ValueError("wide_programs_by_gene format requires at least one gene column")
-        for row in rows:
-            program_id = str(row.get(program_col, "")).strip()
-            if not program_id:
-                continue
-            programs.setdefault(program_id, {})
-            for gene_col in gene_cols:
-                raw_loading = str(row.get(gene_col, "")).strip()
-                if not raw_loading:
+        elif effective_format in WIDE_GENES_BY_PROGRAM_FORMATS:
+            gene_col = _resolve_gene_column(fieldnames, gene_id_column)
+            used_gene_column = gene_col
+            program_cols = [name for name in fieldnames if name != gene_col]
+            if not program_cols:
+                raise ValueError("wide_genes_by_program format requires at least one program column")
+            for row in reader:
+                n_rows += 1
+                gene_id = str(row.get(gene_col, "")).strip()
+                if not gene_id:
                     continue
-                val = _parse_float(raw_loading)
-                if val is None:
-                    values_non_numeric += 1
+                for prog_col in program_cols:
+                    raw_loading = str(row.get(prog_col, "")).strip()
+                    if not raw_loading:
+                        continue
+                    val = _parse_float(raw_loading)
+                    if val is None:
+                        values_non_numeric += 1
+                        continue
+                    programs.setdefault(str(prog_col), {})
+                    programs[str(prog_col)][gene_id] = float(programs[str(prog_col)].get(gene_id, 0.0)) + float(val)
+                    values_parsed += 1
+        elif effective_format == "wide_programs_by_gene":
+            program_col = _resolve_program_column(fieldnames, program_id_column)
+            used_program_column = program_col
+            gene_cols = [name for name in fieldnames if name != program_col]
+            if not gene_cols:
+                raise ValueError("wide_programs_by_gene format requires at least one gene column")
+            for row in reader:
+                n_rows += 1
+                program_id = str(row.get(program_col, "")).strip()
+                if not program_id:
                     continue
-                programs[program_id][str(gene_col)] = float(programs[program_id].get(str(gene_col), 0.0)) + float(val)
-                values_parsed += 1
-    else:
-        raise ValueError(f"Unsupported effective loadings format: {effective_format}")
+                programs.setdefault(program_id, {})
+                for gene_col in gene_cols:
+                    raw_loading = str(row.get(gene_col, "")).strip()
+                    if not raw_loading:
+                        continue
+                    val = _parse_float(raw_loading)
+                    if val is None:
+                        values_non_numeric += 1
+                        continue
+                    programs[program_id][str(gene_col)] = float(programs[program_id].get(str(gene_col), 0.0)) + float(val)
+                    values_parsed += 1
+        else:
+            raise ValueError(f"Unsupported effective loadings format: {effective_format}")
 
     if not programs:
         raise ValueError("No program loadings were parsed from input table")
@@ -309,7 +318,7 @@ def read_program_loadings(
         "resolved_loadings_format": resolved_format,
         "effective_loadings_format": effective_format,
         "transpose": bool(transpose),
-        "n_rows": len(rows),
+        "n_rows": n_rows,
         "n_programs": len(programs),
         "n_genes_unique": n_genes_unique,
         "n_values_parsed": values_parsed,
@@ -435,6 +444,28 @@ def run_sc_programs_workflow(
     gmt_topk_list = parse_int_list_csv(str(cfg.gmt_topk_list))
     gmt_mass_list = parse_mass_list_csv(str(cfg.gmt_mass_list))
     gmt_biotype_allowlist = parse_str_list_csv(str(cfg.gmt_biotype_allowlist))
+
+    n_programs_summary = int(parse_summary.get("n_programs", 0) or 0)
+    n_values_summary = int(parse_summary.get("n_values_parsed", 0) or 0)
+    if n_programs_summary > LARGE_PROGRAM_COUNT_WARNING_THRESHOLD:
+        print(
+            "warning: large program-loading input detected "
+            f"(n_programs={n_programs_summary} > {LARGE_PROGRAM_COUNT_WARNING_THRESHOLD}). "
+            "This usually means too many factors were converted at once. "
+            "Best practice: run factorization within cell types or broad compartments, "
+            "cap cells per donor, reduce K, and/or convert per cell type separately. "
+            f"{LARGE_INPUT_GUIDE_HINT}",
+            file=sys.stderr,
+        )
+    if n_values_summary > LARGE_PARSED_VALUES_WARNING_THRESHOLD:
+        print(
+            "warning: very large parsed loading table detected "
+            f"(n_values_parsed={n_values_summary} > {LARGE_PARSED_VALUES_WARNING_THRESHOLD}). "
+            "Best practice: run factorization within cell types or broad compartments, "
+            "cap cells per donor, reduce K, and/or split conversion by cell type. "
+            f"{LARGE_INPUT_GUIDE_HINT}",
+            file=sys.stderr,
+        )
 
     for program_id in sorted(programs):
         raw_scores = {str(gid): float(val) for gid, val in programs[program_id].items()}
