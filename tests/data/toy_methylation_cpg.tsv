@@ -1,0 +1,5 @@
+probe_id	delta_beta	pvalue
+cg0001	0.30	1e-6
+cg0002	-0.25	1e-4
+cg0003	-0.10	1e-3
+cg0004	-0.20	1e-5

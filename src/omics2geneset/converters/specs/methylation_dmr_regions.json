@@ -1,0 +1,36 @@
+{
+  "name": "methylation_dmr_regions",
+  "description": "Differential methylated regions (DMR) table to methylation-driven gene programs and GMT gene sets",
+  "inputs": [
+    {"name": "dmr_tsv", "type": "tsv", "description": "DMR table with chrom/start/end and delta methylation", "required": true},
+    {"name": "gtf", "type": "gtf", "description": "Gene annotation used for region-to-gene linking", "required": true},
+    {"name": "region_gene_links_tsv", "type": "tsv", "description": "Optional external region->gene links when link_method includes external", "required": false}
+  ],
+  "parameters": [
+    {"name": "program_preset", "type": "string", "default": "connectable", "enum": ["none", "default", "connectable", "qc", "experimental", "all"], "help": "Methylation program preset"},
+    {"name": "program_methods", "type": "string", "default": "", "help": "Optional explicit program methods"},
+    {"name": "link_method", "type": "string", "default": "all", "help": "Linking methods expression"},
+    {"name": "score_mode", "type": "string", "default": "delta_times_neglog10p", "enum": ["delta_times_neglog10p", "delta_only"], "help": "DMR scoring mode before gene projection"},
+    {"name": "score_transform", "type": "string", "default": "signed", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to feature scores"},
+    {"name": "aggregation", "type": "string", "default": "weighted_mean", "enum": ["weighted_mean", "sum", "mean", "max_abs"], "help": "Aggregation from linked features to gene score"},
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method"},
+    {"name": "top_k", "type": "integer", "default": 200, "help": "Top-K selected genes"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization method"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write genesets.gmt"},
+    {"name": "gmt_split_signed", "type": "boolean", "default": true, "help": "Emit directional pos/neg GMT sets"},
+    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-k GMT plans"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
+    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes"},
+    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Behavior when optional resources are missing"}
+  ],
+  "outputs": [
+    {"name": "geneset.tsv", "description": "Selected methylation-driven gene program"},
+    {"name": "geneset.full.tsv", "description": "Full signed gene-score table (optional)"},
+    {"name": "genesets.gmt", "description": "Directional GMT gene sets (optional)"},
+    {"name": "geneset.meta.json", "description": "Run metadata and provenance"},
+    {"name": "run_summary.json", "description": "Machine-readable run summary"},
+    {"name": "run_summary.txt", "description": "Human-readable run summary"}
+  ]
+}

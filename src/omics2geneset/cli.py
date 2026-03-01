@@ -204,6 +204,71 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--program_preset",
+        choices=["none", "default", "connectable", "qc", "experimental", "all"],
+        default="connectable",
+        help="Methylation program preset (connectable/default recommended).",
+    )
+    parser.add_argument(
+        "--program_methods",
+        help=(
+            "Optional comma-separated methylation program methods overriding preset. "
+            "Methods: promoter_activity,distal_activity,linked_activity."
+        ),
+    )
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument(
+        "--aggregation",
+        choices=["weighted_mean", "sum", "mean", "max_abs"],
+        default="weighted_mean",
+        help="Gene-score aggregation across linked CpGs/DMRs.",
+    )
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
+
+
+def _add_methylation_resource_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--resources_manifest", help="Optional resources manifest path")
+    parser.add_argument("--resources_dir", help="Optional resources directory")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--enhancer_resource_id", help="Optional resource id for enhancer BED")
+
+
+def _add_methylation_common_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--gtf", required=True)
+    parser.add_argument("--gtf_source")
+    parser.add_argument("--distal_mode", choices=["nonpromoter", "enhancer_only"], default="nonpromoter")
+    parser.add_argument("--enhancer_bed")
+    parser.add_argument(
+        "--score_mode",
+        choices=["delta_times_neglog10p", "delta_only"],
+        default="delta_times_neglog10p",
+        help="Methylation feature scoring mode before program extraction.",
+    )
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--drop_sex_chrom", type=_parse_bool, default=True)
+    _add_linking_flags(parser)
+    _add_methylation_program_flags(parser)
+    _add_methylation_resource_flags(parser)
+    _add_gmt_flags(parser)
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        emit_small_gene_sets=False,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omics2geneset")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -396,6 +461,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_chip.add_argument("--gtf_source")
     _add_linking_flags(p_chip)
     p_chip.set_defaults(link_method="promoter_overlap")
+
+    p_meth_cpg = conv.add_parser("methylation_cpg_diff")
+    p_meth_cpg.add_argument("--cpg_tsv", required=True)
+    p_meth_cpg.add_argument("--out_dir", required=True)
+    p_meth_cpg.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_meth_cpg.add_argument("--genome_build", required=True)
+    p_meth_cpg.add_argument("--array_type", choices=["450k", "epic"], default="450k")
+    p_meth_cpg.add_argument("--probe_id_column", default="probe_id")
+    p_meth_cpg.add_argument("--chrom_column", default="chrom")
+    p_meth_cpg.add_argument("--pos_column", default="pos")
+    p_meth_cpg.add_argument("--start_column")
+    p_meth_cpg.add_argument("--end_column")
+    p_meth_cpg.add_argument("--input_pos_is_0based", type=_parse_bool, default=False)
+    p_meth_cpg.add_argument("--delta_column", default="delta_beta")
+    p_meth_cpg.add_argument("--padj_column")
+    p_meth_cpg.add_argument("--pvalue_column")
+    p_meth_cpg.add_argument("--probe_manifest_tsv")
+    p_meth_cpg.add_argument("--probe_manifest_resource_id")
+    p_meth_cpg.add_argument("--manifest_probe_id_column", default="probe_id")
+    p_meth_cpg.add_argument("--manifest_chrom_column", default="chrom")
+    p_meth_cpg.add_argument("--manifest_pos_column", default="pos")
+    p_meth_cpg.add_argument("--manifest_start_column")
+    p_meth_cpg.add_argument("--manifest_end_column")
+    p_meth_cpg.add_argument("--manifest_pos_is_0based", type=_parse_bool, default=False)
+    p_meth_cpg.add_argument("--probe_blacklist_tsv")
+    _add_methylation_common_flags(p_meth_cpg)
+
+    p_meth_dmr_regions = conv.add_parser("methylation_dmr_regions")
+    p_meth_dmr_regions.add_argument("--dmr_tsv", required=True)
+    p_meth_dmr_regions.add_argument("--out_dir", required=True)
+    p_meth_dmr_regions.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_meth_dmr_regions.add_argument("--genome_build", required=True)
+    p_meth_dmr_regions.add_argument("--chrom_column", default="chrom")
+    p_meth_dmr_regions.add_argument("--start_column", default="start")
+    p_meth_dmr_regions.add_argument("--end_column", default="end")
+    p_meth_dmr_regions.add_argument("--delta_column", default="delta_methylation")
+    p_meth_dmr_regions.add_argument("--padj_column")
+    p_meth_dmr_regions.add_argument("--pvalue_column")
+    _add_methylation_common_flags(p_meth_dmr_regions)
 
     p_meth = conv.add_parser("methylation_dmr")
     p_meth.add_argument("--dmr_tsv", required=True)

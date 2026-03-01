@@ -5,7 +5,7 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `omics2geneset` (ATAC-seq and RNA-seq extractors)
+- `omics2geneset` (ATAC-seq, RNA-seq, and DNA methylation extractors)
 
 ## Repository Scope
 
@@ -19,7 +19,8 @@ Detailed `omics2geneset` CLI and method behavior is split by assay:
 
 - `docs/atac-seq2geneset.md` (ATAC practical guide)
 - `docs/rna-seq2geneset.md` (RNA practical guide)
-- `docs/omics2geneset.md` (index/entrypoint linking both)
+- `docs/methylation2geneset.md` (DNA methylation practical guide)
+- `docs/omics2geneset.md` (index/entrypoint linking assay guides)
 
 ## Quick Start (Common Case)
 
@@ -48,16 +49,24 @@ RNA-focused converters:
 - `rna_deg_multi`
 - `sc_rna_marker`
 
+DNA methylation converters:
+
+- `methylation_cpg_diff`
+- `methylation_dmr_regions`
+- `methylation_dmr` (legacy, expects pre-aggregated gene-level inputs)
+
 Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/atac-seq2geneset.md`
 - `docs/rna-seq2geneset.md`
+- `docs/methylation2geneset.md`
 - `docs/omics2geneset.md` (index)
 
 Method notes and equations (split by assay + index):
 
 - `docs/atac-seq_methods.tex`
 - `docs/rna-seq_methods.tex`
+- `docs/methylation_methods.tex`
 - `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
@@ -114,9 +123,11 @@ dig-gene-set-extractors/
     omics2geneset.md
     atac-seq2geneset.md
     rna-seq2geneset.md
+    methylation2geneset.md
     methods.tex
     atac-seq_methods.tex
     rna-seq_methods.tex
+    methylation_methods.tex
     atac_reference_bundle.md
     air_gapped_install.md
   tests/

@@ -21,6 +21,8 @@ def test_cli_list():
     assert p.returncode == 0
     assert "atac_bulk" in p.stdout
     assert "atac_bulk_matrix" in p.stdout
+    assert "methylation_cpg_diff" in p.stdout
+    assert "methylation_dmr_regions" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
 
@@ -52,6 +54,20 @@ def test_cli_describe_rna_deg_multi():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "rna_deg_multi"
+
+
+def test_cli_describe_methylation_cpg_diff():
+    p = _run("describe", "methylation_cpg_diff")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "methylation_cpg_diff"
+
+
+def test_cli_describe_methylation_dmr_regions():
+    p = _run("describe", "methylation_dmr_regions")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "methylation_dmr_regions"
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
@@ -205,6 +221,66 @@ def test_cli_convert_bulk_matrix(tmp_path: Path):
         "3",
         "--gmt_mass_list",
         "",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+
+
+def test_cli_convert_methylation_cpg_diff(tmp_path: Path):
+    out = tmp_path / "methylation_cpg_cli"
+    convert = _run(
+        "convert",
+        "methylation_cpg_diff",
+        "--cpg_tsv",
+        "tests/data/toy_methylation_cpg.tsv",
+        "--probe_manifest_tsv",
+        "tests/data/toy_probe_manifest.tsv",
+        "--gtf",
+        "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "10",
+        "--gmt_topk_list",
+        "2",
+        "--emit_small_gene_sets",
+        "true",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+
+
+def test_cli_convert_methylation_dmr_regions(tmp_path: Path):
+    out = tmp_path / "methylation_dmr_regions_cli"
+    convert = _run(
+        "convert",
+        "methylation_dmr_regions",
+        "--dmr_tsv",
+        "tests/data/toy_methylation_dmr_regions.tsv",
+        "--gtf",
+        "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "10",
+        "--gmt_topk_list",
+        "2",
+        "--emit_small_gene_sets",
+        "true",
     )
     assert convert.returncode == 0
     validate = _run("validate", str(out))

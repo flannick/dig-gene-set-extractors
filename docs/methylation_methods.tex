@@ -1,0 +1,107 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\geometry{margin=1in}
+
+\title{Supplementary Note: DNA Methylation to Gene Programs and Gene Sets in dig-gene-set-extractors}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Overview}
+This note defines the methylation extractors implemented in \texttt{omics2geneset}:
+\texttt{methylation\_cpg\_diff} and \texttt{methylation\_dmr\_regions}.
+Inputs are differential CpG/probe or DMR tables, and outputs are gene programs plus GMT gene sets.
+
+\section{Mental model}
+DNA methylation changes are converted to an activity-oriented signed signal.
+If differential methylation is represented as $\Delta_p$ (higher means hypermethylation in condition A vs B),
+we define a signed activity-oriented effect as:
+\[
+\tilde{x}_p = -\Delta_p.
+\]
+Positive values indicate hypomethylation-associated permissive activity; negative values indicate hypermethylation-associated repressive activity.
+
+With significance weighting:
+\[
+x_p = (-\Delta_p) \cdot \min\{-\log_{10}(p_p + \epsilon), C\},
+\]
+where $p_p$ is p-value/FDR, $\epsilon$ is a small floor, and $C$ is a cap.
+
+\section{Linkage model axis}
+Each CpG/DMR is treated as a genomic interval and linked to genes via $L_{pg}$:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{promoter\_overlap}
+\item \texttt{nearest\_tss}
+\item \texttt{distance\_decay}
+\item \texttt{external} (user-provided region-to-gene links)
+\end{itemize}
+
+\section{Program-family axis}
+Implemented program families are:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{promoter\_activity}: promoter-overlapping methylation signals
+\item \texttt{distal\_activity}: non-promoter methylation signals
+\item \texttt{linked\_activity}: all intervals linked to nearest genes (mostly QC/secondary)
+\end{itemize}
+
+Default preset is \texttt{connectable}, which emphasizes:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{promoter\_activity} with \texttt{promoter\_overlap}
+\item \texttt{distal\_activity} with \texttt{distance\_decay}
+\end{itemize}
+
+\section{Gene scoring and aggregation}
+Given transformed feature weights $\alpha_p = \phi(x_p)$ and links $L_{pg}$,
+feature contributions to gene $g$ are aggregated with default \texttt{weighted\_mean}:
+\[
+\text{num}_g = \sum_p \alpha_p L_{pg}, \qquad
+\text{den}_g = \sum_p |L_{pg}|,
+\]
+\[
+s_g = \frac{\text{num}_g}{\max(\text{den}_g, \epsilon)}.
+\]
+
+Alternative aggregations are \texttt{sum}, \texttt{mean}, and \texttt{max\_abs}.
+
+\section{From gene scores to gene sets}
+Selection is based on magnitude $|s_g|$ by default (for differential signal strength), while preserving signed $s_g$ in outputs.
+Typical default:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{select=top\_k}, \texttt{top\_k=200}
+\item \texttt{normalize=within\_set\_l1}
+\end{itemize}
+
+Within-set normalization:
+\[
+w_g = \frac{|s_g|}{\sum_{h\in S} |s_h|}, \qquad g \in S.
+\]
+
+\section{GMT export and directionality}
+Default GMT export uses signed splitting:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{\_\_pos}: genes with positive score
+\item \texttt{\_\_neg}: genes with negative score (ranked by magnitude)
+\end{itemize}
+
+Default guardrails:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{gmt\_min\_genes=100}
+\item \texttt{gmt\_max\_genes=500}
+\item small sets skipped unless \texttt{emit\_small\_gene\_sets=true}
+\end{itemize}
+
+\section{Practical caveats}
+\begin{itemize}[leftmargin=2em]
+\item Probe-level artifacts (cross-reactive probes, SNP overlap) should be filtered upstream when possible.
+\item Coordinate conventions and genome build consistency are critical.
+\item Distal methylation effects are context dependent; interpretation should be paired with orthogonal evidence where available.
+\end{itemize}
+
+\end{document}

@@ -1,6 +1,6 @@
 {
   "name": "methylation_dmr",
-  "description": "DMR summary table converted to gene weights",
+  "description": "Legacy: pre-aggregated gene-level DMR summary table converted to gene weights",
   "inputs": [
     {"name": "dmr_tsv", "type": "tsv", "description": "Table with gene IDs and methylation effect sizes", "required": true}
   ],

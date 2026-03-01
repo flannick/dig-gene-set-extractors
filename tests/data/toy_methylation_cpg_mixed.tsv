@@ -1,0 +1,3 @@
+probe_id	chrom	pos	delta_beta	pvalue
+	chr1	3001	-0.20	1e-4
+cg_missing			0.30	1e-6

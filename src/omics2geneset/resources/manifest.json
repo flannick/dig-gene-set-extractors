@@ -107,6 +107,54 @@
       "url": "",
       "sha256": "",
       "license": "TBD"
+    },
+    {
+      "id": "methylation_probe_manifest_450k_hg19",
+      "description": "Probe manifest for Illumina 450k arrays on hg19 (probe_id -> genomic coordinates)",
+      "provider": "user_or_curated_placeholder",
+      "stable_id": "TODO",
+      "version": "0.1.0",
+      "genome_build": "hg19",
+      "filename": "methylation_probe_manifest_450k_hg19.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    },
+    {
+      "id": "methylation_probe_manifest_epic_hg19",
+      "description": "Probe manifest for Illumina EPIC arrays on hg19 (probe_id -> genomic coordinates)",
+      "provider": "user_or_curated_placeholder",
+      "stable_id": "TODO",
+      "version": "0.1.0",
+      "genome_build": "hg19",
+      "filename": "methylation_probe_manifest_epic_hg19.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    },
+    {
+      "id": "methylation_probe_manifest_450k_hg38",
+      "description": "Probe manifest for Illumina 450k arrays on hg38 (probe_id -> genomic coordinates)",
+      "provider": "user_or_curated_placeholder",
+      "stable_id": "TODO",
+      "version": "0.1.0",
+      "genome_build": "hg38",
+      "filename": "methylation_probe_manifest_450k_hg38.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
+    },
+    {
+      "id": "methylation_probe_manifest_epic_hg38",
+      "description": "Probe manifest for Illumina EPIC arrays on hg38 (probe_id -> genomic coordinates)",
+      "provider": "user_or_curated_placeholder",
+      "stable_id": "TODO",
+      "version": "0.1.0",
+      "genome_build": "hg38",
+      "filename": "methylation_probe_manifest_epic_hg38.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "TBD"
     }
   ],
   "presets": {
@@ -137,6 +185,12 @@
       "atac_reference_profiles_hg38",
       "encode_ccre_hg19",
       "encode_ccre_hg38"
+    ],
+    "methylation_probe_manifests_human": [
+      "methylation_probe_manifest_450k_hg19",
+      "methylation_probe_manifest_epic_hg19",
+      "methylation_probe_manifest_450k_hg38",
+      "methylation_probe_manifest_epic_hg38"
     ]
   }
 }
