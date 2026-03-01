@@ -204,6 +204,63 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--program_loadings_tsv")
+    parser.add_argument(
+        "--loadings_format",
+        choices=[
+            "auto",
+            "wide_genes_by_program",
+            "wide_programs_by_gene",
+            "long_tidy",
+            "cnmf_gene_spectra_tpm",
+            "cnmf_gene_spectra_score",
+            "schpf_gene_scores",
+        ],
+        default="auto",
+    )
+    parser.add_argument("--gene_id_column", default="gene_id")
+    parser.add_argument("--program_id_column", default="program_id")
+    parser.add_argument("--loading_column", default="loading")
+    parser.add_argument("--transpose", type=_parse_bool, default=False)
+
+    parser.add_argument("--cnmf_gene_spectra_tsv")
+    parser.add_argument("--cnmf_kind", choices=["tpm", "score"])
+    parser.add_argument("--schpf_gene_scores_tsv")
+
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--signature_name", default="programs")
+    parser.add_argument("--program_id_prefix")
+
+    parser.add_argument("--exclude_gene_regex", action="append")
+    parser.add_argument("--disable_default_excludes", action="store_true")
+    parser.add_argument("--gtf")
+    parser.add_argument("--gtf_gene_id_field", default="gene_id")
+    parser.add_argument("--gtf_source")
+
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument(
+        "--score_transform",
+        choices=["signed", "abs", "positive", "negative"],
+        default="positive",
+    )
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=False,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        gmt_require_symbol=False,
+    )
+
+
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--program_preset",
@@ -466,6 +523,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_multi.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna_multi.add_argument("--genome_build", required=True)
     _add_rna_deg_flags(p_rna_multi)
+
+    p_rna_sc_programs = conv.add_parser("rna_sc_programs")
+    p_rna_sc_programs.add_argument("--out_dir", required=True)
+    p_rna_sc_programs.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_rna_sc_programs.add_argument("--genome_build", required=True)
+    _add_rna_sc_program_flags(p_rna_sc_programs)
 
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)

@@ -1,6 +1,6 @@
 # RNA-seq to Gene Sets (Practical Guide)
 
-`omics2geneset` RNA converters consume differential expression (DE) tables and emit:
+`omics2geneset` RNA converters consume either differential expression (DE) tables or external scRNA program loadings and emit:
 
 - `geneset.tsv` (selected signed gene program with nonnegative weights)
 - `geneset.meta.json` (provenance + parameters)
@@ -21,6 +21,7 @@ omics2geneset list
 
 - `rna_deg`: one DE contrast per input table.
 - `rna_deg_multi`: many contrasts in one long table, grouped by `--comparison_column`.
+- `rna_sc_programs`: grouped scRNA gene-program extraction from external factorization loadings (generic/cNMF/scHPF outputs).
 - `sc_rna_marker`: legacy single-cell count-summary converter (non-DE workflow).
 
 ## Quickstart: single contrast (`rna_deg`)
@@ -66,6 +67,51 @@ Grouped output layout:
 - `comparison=<NAME>/geneset.meta.json`
 - optional per-comparison `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined)
+
+## Quickstart: scRNA program loadings (`rna_sc_programs`)
+
+This converter does not run NMF/cNMF/scHPF itself. It ingests precomputed gene loadings from those tools.
+
+### Generic loadings TSV
+
+```bash
+omics2geneset convert rna_sc_programs \
+  --program_loadings_tsv path/to/program_loadings.tsv \
+  --loadings_format wide_genes_by_program \
+  --out_dir results/rna_sc_programs \
+  --organism human \
+  --genome_build hg38
+
+omics2geneset validate results/rna_sc_programs
+```
+
+### cNMF convenience input
+
+```bash
+omics2geneset convert rna_sc_programs \
+  --cnmf_gene_spectra_tsv path/to/name.gene_spectra_tpm.k_20.dt_0_01.txt \
+  --out_dir results/rna_sc_programs_cnmf \
+  --organism human \
+  --genome_build hg38
+```
+
+### scHPF convenience input
+
+```bash
+omics2geneset convert rna_sc_programs \
+  --schpf_gene_scores_tsv path/to/schpf_gene_scores.tsv \
+  --out_dir results/rna_sc_programs_schpf \
+  --organism human \
+  --genome_build hg38
+```
+
+### Output layout (`rna_sc_programs`)
+
+- `manifest.tsv`
+- `program=<ID>/geneset.tsv`
+- `program=<ID>/geneset.meta.json`
+- optional per-program `geneset.full.tsv` and `genesets.gmt`
+- optional root `genesets.gmt` (combined across programs)
 
 ## Column mapping examples
 
@@ -123,6 +169,32 @@ omics2geneset convert rna_deg \
 - `custom_column`: use `--score_column` directly.
 
 Selection and weights use `abs(score)` by default; the emitted `score` remains signed.
+
+## scRNA program loading semantics (`rna_sc_programs`)
+
+Per program and gene, let loading be `l_pg` from upstream factorization output.
+
+- default `--score_transform positive`: `s_pg = max(l_pg, 0)`
+- alternatives:
+  - `signed`: keep signed `s_pg = l_pg`
+  - `abs`: `s_pg = |l_pg|`
+  - `negative`: `s_pg = max(-l_pg, 0)`
+
+Defaults are conservative for interpretability:
+
+- one primary positive-loading set per program
+- `--select top_k --top_k 200`
+- `--normalize within_set_l1`
+- `--emit_gmt true --gmt_split_signed false`
+- `--gmt_topk_list 200 --gmt_min_genes 100 --gmt_max_genes 500`
+
+If loadings contain substantial negatives and `score_transform=positive`, the converter warns that negatives are being dropped and suggests signed/split mode.
+
+Enable directional sets from signed loadings with:
+
+```bash
+--score_transform signed --gmt_split_signed true
+```
 
 Duplicate `gene_id` rows are aggregated using `--duplicate_gene_policy`:
 

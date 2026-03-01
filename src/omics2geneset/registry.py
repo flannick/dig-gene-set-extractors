@@ -14,6 +14,7 @@ from omics2geneset.converters import (
     proteomics_diff,
     rna_deg,
     rna_deg_multi,
+    rna_sc_programs,
     sc_rna_marker,
 )
 
@@ -29,6 +30,7 @@ CONVERTERS = {
     "proteomics_diff": proteomics_diff,
     "rna_deg": rna_deg,
     "rna_deg_multi": rna_deg_multi,
+    "rna_sc_programs": rna_sc_programs,
     "sc_rna_marker": sc_rna_marker,
 }
 

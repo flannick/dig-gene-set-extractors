@@ -25,6 +25,7 @@ def test_cli_list():
     assert "methylation_dmr_regions" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
+    assert "rna_sc_programs" in p.stdout
 
 
 def test_cli_describe():
@@ -54,6 +55,17 @@ def test_cli_describe_rna_deg_multi():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "rna_deg_multi"
+
+
+def test_cli_describe_rna_sc_programs():
+    p = _run("describe", "rna_sc_programs")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "rna_sc_programs"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "loadings_format" in param_names
+    assert "score_transform" in param_names
+    assert "cnmf_gene_spectra_tsv" not in param_names  # input entry, not parameter
 
 
 def test_cli_describe_methylation_cpg_diff():

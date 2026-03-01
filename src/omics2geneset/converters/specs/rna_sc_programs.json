@@ -1,0 +1,70 @@
+{
+  "name": "rna_sc_programs",
+  "description": "scRNA-seq gene programs from external factorization loadings (generic/cNMF/scHPF) to grouped gene sets",
+  "inputs": [
+    {
+      "name": "program_loadings_tsv",
+      "type": "tsv",
+      "description": "Generic program loadings table (wide or tidy long); required if cNMF/scHPF convenience inputs are not used",
+      "required": false
+    },
+    {
+      "name": "cnmf_gene_spectra_tsv",
+      "type": "tsv",
+      "description": "cNMF gene spectra table (TPM or score) convenience input",
+      "required": false
+    },
+    {
+      "name": "schpf_gene_scores_tsv",
+      "type": "tsv",
+      "description": "scHPF gene score table convenience input",
+      "required": false
+    },
+    {
+      "name": "gtf",
+      "type": "gtf_optional",
+      "description": "Optional GTF for gene_symbol/gene_biotype annotation",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {"name": "loadings_format", "type": "string", "default": "auto", "enum": ["auto", "wide_genes_by_program", "wide_programs_by_gene", "long_tidy", "cnmf_gene_spectra_tpm", "cnmf_gene_spectra_score", "schpf_gene_scores"], "help": "Input loadings table layout"},
+    {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Gene column for tidy or wide formats"},
+    {"name": "program_id_column", "type": "string", "default": "program_id", "help": "Program/factor column for tidy or wide formats"},
+    {"name": "loading_column", "type": "string", "default": "loading", "help": "Loading value column for long_tidy format"},
+    {"name": "transpose", "type": "boolean", "default": false, "help": "Transpose interpretation for wide formats"},
+    {"name": "cnmf_kind", "type": "string", "default": null, "enum": ["tpm", "score"], "help": "Optional cNMF spectra kind hint"},
+    {"name": "dataset_label", "type": "string", "default": null, "help": "Dataset label for metadata/GMT naming"},
+    {"name": "signature_name", "type": "string", "default": "programs", "help": "Signature label; default resolves to input filename stem"},
+    {"name": "program_id_prefix", "type": "string", "default": null, "help": "Optional prefix prepended to program IDs"},
+    {"name": "exclude_gene_regex", "type": "array[string]", "default": [], "help": "Repeatable regexes to exclude genes by symbol"},
+    {"name": "disable_default_excludes", "type": "boolean", "default": false, "help": "Disable default MT/RPL/RPS symbol excludes"},
+    {"name": "gtf_gene_id_field", "type": "string", "default": "gene_id", "help": "GTF attribute to use as gene_id"},
+    {"name": "gtf_source", "type": "string", "default": null, "help": "Metadata source label for GTF"},
+    {"name": "score_transform", "type": "string", "default": "positive", "enum": ["signed", "abs", "positive", "negative"], "help": "Transform applied to raw program loadings"},
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Selection method per program"},
+    {"name": "top_k", "type": "integer", "default": 200, "help": "K for top_k selection"},
+    {"name": "quantile", "type": "number", "default": 0.01, "help": "Quantile fraction when select=quantile"},
+    {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold when select=threshold"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization per program"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv per program"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write per-program genesets.gmt and combined root genesets.gmt"},
+    {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol tokens in GMT"},
+    {"name": "gmt_require_symbol", "type": "boolean", "default": false, "help": "Drop rows without usable symbols for GMT"},
+    {"name": "gmt_biotype_allowlist", "type": "string", "default": "protein_coding", "help": "Comma-separated allowed biotypes for GMT"},
+    {"name": "gmt_split_signed", "type": "boolean", "default": false, "help": "Emit __pos and __neg sets for signed loadings"},
+    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
+    {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated HPD mass GMT plans"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
+    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes (with warning)"}
+  ],
+  "outputs": [
+    {"name": "manifest.tsv", "description": "Program-to-output-path mapping"},
+    {"name": "program=<PROGRAM>/geneset.tsv", "description": "Selected gene program per factor"},
+    {"name": "program=<PROGRAM>/geneset.meta.json", "description": "Metadata per factor"},
+    {"name": "program=<PROGRAM>/geneset.full.tsv", "description": "Full transformed loading table per factor (optional)"},
+    {"name": "program=<PROGRAM>/genesets.gmt", "description": "Per-factor GMT gene sets (optional)"},
+    {"name": "genesets.gmt", "description": "Combined GMT across all emitted factors (optional)"}
+  ]
+}

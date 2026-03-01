@@ -10,7 +10,7 @@
 
 \geometry{margin=1in}
 
-\title{Supplementary Note: RNA-seq Differential Expression to Gene Programs and Gene Sets in dig-gene-set-extractors}
+\title{Supplementary Note: RNA-seq Differential Expression and scRNA Program Loadings to Gene Sets in dig-gene-set-extractors}
 \author{}
 \date{}
 
@@ -22,7 +22,7 @@ The \texttt{dig-gene-set-extractors} repository provides converters that map div
 (i) \emph{gene programs} (scores or weights over genes) and
 (ii) compact \emph{gene sets} (typically 100--500 genes) suitable for enrichment and mechanism-level interpretation.
 
-This note specifies the RNA-seq differential expression (DE) extractors currently implemented as \texttt{rna\_deg} (single contrast) and \texttt{rna\_deg\_multi} (batched contrasts from one long table). In contrast to ATAC-seq, RNA-seq is already gene-centric: the primary measured objects are genes (or transcripts), so the central modeling step is not locus-to-gene projection, but rather how to:
+This note specifies the RNA-seq extractors currently implemented as \texttt{rna\_deg} (single contrast), \texttt{rna\_deg\_multi} (batched contrasts from one long table), and \texttt{rna\_sc\_programs} (external scRNA factor-loading ingestion). In contrast to ATAC-seq, RNA-seq is already gene-centric: the primary measured objects are genes (or transcripts), so the central modeling step is not locus-to-gene projection, but rather how to:
 (1) define a stable signed gene-level DE score,
 (2) transform scores into weights appropriate for downstream use, and
 (3) convert scores/weights into one or more gene sets with clear semantics.
@@ -232,6 +232,54 @@ For batched tables (\texttt{rna\_deg\_multi}), apply the same defaults per compa
 \item \textbf{Gene IDs.} If using Ensembl IDs and you want symbols in GMT, provide a GTF or a symbol mapping; otherwise set \texttt{gmt\_prefer\_symbol=false} and \texttt{gmt\_require\_symbol=false}.
 \item \textbf{Extreme p-values.} Cap $-\log_{10}(q_g)$ and add $\epsilon$.
 \end{itemize}
+
+\section{scRNA program loadings (external factorization outputs)}
+The \texttt{rna\_sc\_programs} converter ingests precomputed gene loadings from external methods (for example cNMF and scHPF outputs). It does \emph{not} fit factor models itself.
+
+Let $l_{pg}$ denote loading for program (factor) $p$ and gene $g$. The converter defines transformed program score $s_{pg}$ by \texttt{score\_transform}:
+\[
+s_{pg} =
+\begin{cases}
+l_{pg} & \texttt{signed}\\
+|l_{pg}| & \texttt{abs}\\
+\max(l_{pg}, 0) & \texttt{positive}\\
+\max(-l_{pg}, 0) & \texttt{negative}
+\end{cases}
+\]
+Default is \texttt{positive}, yielding nonnegative program membership-like scores and avoiding sign ambiguity for first-pass interpretation.
+
+\subsection*{Per-program selection and weights}
+Selection is performed independently for each program:
+\[
+S_p = \mathrm{Select}\left(\{g, b_{pg}\}_g\right),
+\]
+where
+\[
+b_{pg} =
+\begin{cases}
+|s_{pg}| & \text{if } \texttt{score\_transform=signed}\\
+s_{pg} & \text{otherwise}.
+\end{cases}
+\]
+The default \texttt{top\_k=200} is applied per program, and weights use within-program $\ell_1$ normalization:
+\[
+w_{pg} = \frac{b_{pg}}{\sum_{h \in S_p} b_{ph}}.
+\]
+
+\subsection*{Grouped outputs}
+Each program is emitted as its own directory under a grouped root:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{manifest.tsv}
+\item \texttt{program=<ID>/geneset.tsv}
+\item \texttt{program=<ID>/geneset.meta.json}
+\item optional \texttt{program=<ID>/geneset.full.tsv}
+\item optional \texttt{program=<ID>/genesets.gmt}
+\end{itemize}
+An optional combined \texttt{genesets.gmt} is written at the root.
+
+\subsection*{Signed loadings and GMT directionality}
+When loadings are signed and the user requests \texttt{gmt\_split\_signed=true}, GMT emits \texttt{\_\_pos} and \texttt{\_\_neg} sets per program.
+Under default \texttt{score\_transform=positive}, negatives are dropped and only positive sets are emitted. The converter warns when a substantial fraction of raw loadings are negative under this default.
 
 \begin{thebibliography}{9}
 \bibitem{love2014deseq2}

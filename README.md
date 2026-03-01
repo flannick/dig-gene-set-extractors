@@ -47,6 +47,7 @@ RNA-focused converters:
 
 - `rna_deg`
 - `rna_deg_multi`
+- `rna_sc_programs`
 - `sc_rna_marker`
 
 DNA methylation converters:
