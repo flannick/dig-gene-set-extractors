@@ -264,8 +264,18 @@ def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
 def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--matrix_tsv", required=True, help="Cell x gene dense TSV (header required).")
     parser.add_argument(
+        "--matrix_orientation",
+        choices=["auto", "cell_by_gene", "gene_by_cell"],
+        default="auto",
+        help="Input matrix orientation (default auto).",
+    )
+    parser.add_argument(
         "--matrix_cell_id_column",
         help="Column name containing cell IDs in matrix_tsv (default: first column).",
+    )
+    parser.add_argument(
+        "--matrix_gene_id_column",
+        help="Gene ID column for gene_by_cell orientation (default: first column).",
     )
     parser.add_argument("--matrix_delim", default="\t", help="Matrix delimiter (default: tab).")
     parser.add_argument("--meta_tsv", required=True, help="Cell metadata TSV.")

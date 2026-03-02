@@ -13,8 +13,11 @@ import subprocess
 import sys
 from typing import TextIO
 
+import numpy as np
+
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._=-]+")
+GENE_BY_CELL_MAX_INMEMORY_VALUES = 80_000_000
 
 
 def _parse_float(raw: str) -> float:
@@ -90,6 +93,46 @@ def _resolve_cell_id_index(header: list[str], requested: str | None) -> int:
             f"Available columns: {', '.join(header[:20])}"
         )
     return 0
+
+
+def _resolve_gene_id_index(header: list[str], requested: str | None) -> int:
+    if requested:
+        req = str(requested).strip()
+        if req in header:
+            return header.index(req)
+        raise ValueError(
+            f"matrix_gene_id_column '{req}' was not found in matrix header. "
+            f"Available columns: {', '.join(header[:20])}"
+        )
+    return 0
+
+
+def _resolve_matrix_orientation(
+    *,
+    requested: str,
+    header: list[str],
+    matrix_cell_id_column: str | None,
+    matrix_gene_id_column: str | None,
+    meta_cell_ids: set[str],
+) -> str:
+    req = str(requested).strip().lower()
+    if req in {"cell_by_gene", "gene_by_cell"}:
+        return req
+    if matrix_cell_id_column and matrix_cell_id_column in header:
+        return "cell_by_gene"
+    if matrix_gene_id_column and matrix_gene_id_column in header:
+        return "gene_by_cell"
+    if not header:
+        return "cell_by_gene"
+    first = str(header[0]).strip().lower()
+    gene_like_first = first in {"gene", "gene_id", "feature", "symbol", "gene_name"}
+    if len(header) > 1:
+        header_cells = [str(x).strip() for x in header[1:] if str(x).strip()]
+        overlap = sum(1 for c in header_cells if c in meta_cell_ids)
+        overlap_frac = float(overlap) / float(len(header_cells)) if header_cells else 0.0
+        if gene_like_first and overlap_frac >= 0.5:
+            return "gene_by_cell"
+    return "cell_by_gene"
 
 
 def _resolve_split_by_cell_type(requested: bool | None, cell_type_column: str | None) -> bool:
@@ -551,6 +594,73 @@ def _execute_script_if_requested(script_path: Path, execute: bool) -> None:
     subprocess.run(["bash", str(script_path)], check=True)
 
 
+def _write_tmp_subset_from_gene_by_cell(
+    *,
+    matrix_path: Path,
+    matrix_delim: str,
+    gene_id_col_idx: int,
+    selected_cell_ids: list[str],
+    out_tmp_path: Path,
+    out_cell_id_col_name: str,
+) -> dict[str, int]:
+    with _open_text(matrix_path) as fh:
+        reader = csv.reader(fh, delimiter=matrix_delim)
+        try:
+            header = next(reader)
+        except StopIteration as exc:
+            raise ValueError(f"matrix_tsv is empty: {matrix_path}") from exc
+    col_index = {str(name): i for i, name in enumerate(header)}
+    selected_cols: list[tuple[str, int]] = []
+    for cid in selected_cell_ids:
+        if cid in col_index:
+            selected_cols.append((cid, int(col_index[cid])))
+    if not selected_cols:
+        raise ValueError("No selected cells were found in matrix header for gene_by_cell orientation.")
+
+    n_selected = len(selected_cols)
+    gene_ids: list[str] = []
+    gene_values: list[list[float]] = []
+    n_non_numeric = 0
+
+    with _open_text(matrix_path) as fh:
+        reader = csv.reader(fh, delimiter=matrix_delim)
+        _ = next(reader)
+        for line_idx, row in enumerate(reader, start=1):
+            gene_raw = row[gene_id_col_idx] if gene_id_col_idx < len(row) else ""
+            gene_id = str(gene_raw).strip() or f"gene_{line_idx}"
+            vals: list[float] = []
+            for _cid, col_idx in selected_cols:
+                raw = row[col_idx] if col_idx < len(row) else ""
+                val = _parse_float(raw)
+                if str(raw).strip() and val == 0.0 and str(raw).strip() not in {"0", "0.0", "0.00"}:
+                    n_non_numeric += 1
+                vals.append(val)
+            gene_ids.append(gene_id)
+            gene_values.append(vals)
+            if len(gene_ids) * n_selected > GENE_BY_CELL_MAX_INMEMORY_VALUES:
+                raise ValueError(
+                    "gene_by_cell transpose would exceed in-memory limit for this subset "
+                    f"({len(gene_ids)} genes x {n_selected} cells). "
+                    "Reduce max_cells_total/per-bucket, split by cell type, or provide a cell_by_gene matrix."
+                )
+
+    if not gene_ids:
+        raise ValueError("No genes were found in gene_by_cell input matrix.")
+
+    arr = np.asarray(gene_values, dtype=np.float32).T  # cells x genes
+    out_tmp_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_tmp_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh, delimiter=matrix_delim)
+        writer.writerow([out_cell_id_col_name] + gene_ids)
+        for i, (cid, _col_idx) in enumerate(selected_cols):
+            writer.writerow([cid] + [float(x) for x in arr[i]])
+    return {
+        "n_cells_written_tmp": len(selected_cols),
+        "n_genes_input": len(gene_ids),
+        "n_non_numeric_values": n_non_numeric,
+    }
+
+
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -629,6 +739,9 @@ def run(args) -> dict[str, object]:
     n_cells_empty_id = 0
     gene_names: list[str] = []
     matrix_cell_id_col_name = ""
+    matrix_orientation = "cell_by_gene"
+    gene_id_col_idx = 0
+    n_genes_input_summary = 0
 
     with _open_text(matrix_path) as fh:
         reader = csv.reader(fh, delimiter=matrix_delim)
@@ -638,50 +751,106 @@ def run(args) -> dict[str, object]:
             raise ValueError(f"matrix_tsv is empty: {matrix_path}") from exc
         if not header:
             raise ValueError(f"matrix_tsv has empty header: {matrix_path}")
+        matrix_orientation = _resolve_matrix_orientation(
+            requested=str(args.matrix_orientation),
+            header=[str(x) for x in header],
+            matrix_cell_id_column=args.matrix_cell_id_column,
+            matrix_gene_id_column=args.matrix_gene_id_column,
+            meta_cell_ids=set(meta_by_cell.keys()),
+        )
 
-        cell_idx = _resolve_cell_id_index(header, args.matrix_cell_id_column)
-        matrix_cell_id_col_name = header[cell_idx]
-        gene_names = [name for i, name in enumerate(header) if i != cell_idx]
-        if not gene_names:
-            raise ValueError("matrix_tsv must include at least one gene column")
+        if matrix_orientation == "cell_by_gene":
+            cell_idx = _resolve_cell_id_index(header, args.matrix_cell_id_column)
+            matrix_cell_id_col_name = header[cell_idx]
+            gene_names = [name for i, name in enumerate(header) if i != cell_idx]
+            n_genes_input_summary = len(gene_names)
+            if not gene_names:
+                raise ValueError("matrix_tsv must include at least one gene column")
 
-        for row in reader:
-            n_matrix_rows += 1
-            if cell_idx >= len(row):
-                continue
-            cell_id = str(row[cell_idx]).strip()
-            if not cell_id:
-                n_cells_empty_id += 1
-                continue
-            meta = meta_by_cell.get(cell_id)
-            if meta is None:
-                n_matrix_cells_missing_meta += 1
-                continue
-
-            if split_by_cell_type:
-                raw_cell_type = str(meta.get(cell_type_active or "", "")).strip() if cell_type_active else ""
-                subset_label = raw_cell_type or "unknown"
-                if allow_cell_types and subset_label not in allow_cell_types:
-                    n_matrix_cells_skipped_allowlist += 1
+            for row in reader:
+                n_matrix_rows += 1
+                if cell_idx >= len(row):
                     continue
-                subset_id = f"cell_type={_safe_component(subset_label, 'unknown')}"
-            else:
-                subset_label = "all"
-                subset_id = "all"
+                cell_id = str(row[cell_idx]).strip()
+                if not cell_id:
+                    n_cells_empty_id += 1
+                    continue
+                meta = meta_by_cell.get(cell_id)
+                if meta is None:
+                    n_matrix_cells_missing_meta += 1
+                    continue
 
-            subset_counts_before[subset_id] = int(subset_counts_before.get(subset_id, 0)) + 1
+                if split_by_cell_type:
+                    raw_cell_type = str(meta.get(cell_type_active or "", "")).strip() if cell_type_active else ""
+                    subset_label = raw_cell_type or "unknown"
+                    if allow_cell_types and subset_label not in allow_cell_types:
+                        n_matrix_cells_skipped_allowlist += 1
+                        continue
+                    subset_id = f"cell_type={_safe_component(subset_label, 'unknown')}"
+                else:
+                    subset_label = "all"
+                    subset_id = "all"
 
-            if bucket_columns:
-                bucket_vals = [str(meta.get(col, "")).strip() or "unknown" for col in bucket_columns]
-                bucket_key = "|".join(bucket_vals)
-            else:
-                bucket_key = "__all__"
+                subset_counts_before[subset_id] = int(subset_counts_before.get(subset_id, 0)) + 1
 
-            skey = (subset_id, bucket_key)
-            seen = int(bucket_seen.get(skey, 0)) + 1
-            bucket_seen[skey] = seen
-            bucket = bucket_reservoir.setdefault(skey, [])
-            _reservoir_add(bucket, seen, cell_id, int(args.max_cells_per_bucket), rng)
+                if bucket_columns:
+                    bucket_vals = [str(meta.get(col, "")).strip() or "unknown" for col in bucket_columns]
+                    bucket_key = "|".join(bucket_vals)
+                else:
+                    bucket_key = "__all__"
+
+                skey = (subset_id, bucket_key)
+                seen = int(bucket_seen.get(skey, 0)) + 1
+                bucket_seen[skey] = seen
+                bucket = bucket_reservoir.setdefault(skey, [])
+                _reservoir_add(bucket, seen, cell_id, int(args.max_cells_per_bucket), rng)
+        else:
+            gene_id_col_idx = _resolve_gene_id_index(header, args.matrix_gene_id_column)
+            matrix_cell_id_col_name = args.meta_cell_id_column
+            candidate_cells = [str(x).strip() for i, x in enumerate(header) if i != gene_id_col_idx]
+            n_matrix_rows = len(candidate_cells)
+            for cell_id in candidate_cells:
+                if not cell_id:
+                    n_cells_empty_id += 1
+                    continue
+                meta = meta_by_cell.get(cell_id)
+                if meta is None:
+                    n_matrix_cells_missing_meta += 1
+                    continue
+
+                if split_by_cell_type:
+                    raw_cell_type = str(meta.get(cell_type_active or "", "")).strip() if cell_type_active else ""
+                    subset_label = raw_cell_type or "unknown"
+                    if allow_cell_types and subset_label not in allow_cell_types:
+                        n_matrix_cells_skipped_allowlist += 1
+                        continue
+                    subset_id = f"cell_type={_safe_component(subset_label, 'unknown')}"
+                else:
+                    subset_label = "all"
+                    subset_id = "all"
+
+                subset_counts_before[subset_id] = int(subset_counts_before.get(subset_id, 0)) + 1
+                if bucket_columns:
+                    bucket_vals = [str(meta.get(col, "")).strip() or "unknown" for col in bucket_columns]
+                    bucket_key = "|".join(bucket_vals)
+                else:
+                    bucket_key = "__all__"
+                skey = (subset_id, bucket_key)
+                seen = int(bucket_seen.get(skey, 0)) + 1
+                bucket_seen[skey] = seen
+                bucket = bucket_reservoir.setdefault(skey, [])
+                _reservoir_add(bucket, seen, cell_id, int(args.max_cells_per_bucket), rng)
+
+            with _open_text(matrix_path) as fh_count:
+                reader_count = csv.reader(fh_count, delimiter=matrix_delim)
+                _ = next(reader_count)
+                n_genes_input_summary = sum(1 for _ in reader_count)
+            print(
+                "warning: matrix_orientation=gene_by_cell selected. "
+                "Preparing subset temp matrices requires in-memory transposition per subset; "
+                "for very large subsets, prefer lower max_cells_total or split_by_cell_type.",
+                file=sys.stderr,
+            )
 
     retained_subset_ids: list[str] = []
     subset_selected: dict[str, list[str]] = {}
@@ -735,39 +904,58 @@ def run(args) -> dict[str, object]:
             selected_cells=selected_cells,
             n_cells_before=int(subset_counts_before.get(subset_id, 0)),
             n_cells_after_downsample=len(selected_cells),
-            n_genes_before=len(gene_names),
+            n_genes_before=int(n_genes_input_summary),
         )
 
-    tmp_handles: dict[str, TextIO] = {}
-    tmp_writers: dict[str, csv.writer] = {}
     tmp_paths: dict[str, Path] = {}
     for subset_id, plan in plans.items():
         tmp_path = plan.subset_dir / ".counts_selected.tmp.tsv"
         tmp_paths[subset_id] = tmp_path
-        fh = tmp_path.open("w", encoding="utf-8", newline="")
-        writer = csv.writer(fh, delimiter=matrix_delim)
-        writer.writerow([matrix_cell_id_col_name] + gene_names)
-        tmp_handles[subset_id] = fh
-        tmp_writers[subset_id] = writer
+        if matrix_orientation == "cell_by_gene":
+            with tmp_path.open("w", encoding="utf-8", newline="") as fh:
+                writer = csv.writer(fh, delimiter=matrix_delim)
+                writer.writerow([matrix_cell_id_col_name] + gene_names)
 
-    with _open_text(matrix_path) as fh:
-        reader = csv.reader(fh, delimiter=matrix_delim)
-        header = next(reader)
-        cell_idx = _resolve_cell_id_index(header, args.matrix_cell_id_column)
-        gene_indices = [i for i in range(len(header)) if i != cell_idx]
-        for row in reader:
-            if cell_idx >= len(row):
-                continue
-            cell_id = str(row[cell_idx]).strip()
-            subset_id = selected_to_subset.get(cell_id)
-            if not subset_id:
-                continue
-            out_row = [cell_id] + [row[i] if i < len(row) else "" for i in gene_indices]
-            tmp_writers[subset_id].writerow(out_row)
-            plans[subset_id].n_cells_written_tmp += 1
-
-    for fh in tmp_handles.values():
-        fh.close()
+    if matrix_orientation == "cell_by_gene":
+        with _open_text(matrix_path) as fh:
+            reader = csv.reader(fh, delimiter=matrix_delim)
+            header = next(reader)
+            cell_idx = _resolve_cell_id_index(header, args.matrix_cell_id_column)
+            gene_indices = [i for i in range(len(header)) if i != cell_idx]
+            handle_by_subset: dict[str, TextIO] = {}
+            writer_by_subset: dict[str, csv.writer] = {}
+            try:
+                for subset_id, tmp_path in tmp_paths.items():
+                    h = tmp_path.open("a", encoding="utf-8", newline="")
+                    handle_by_subset[subset_id] = h
+                    writer_by_subset[subset_id] = csv.writer(h, delimiter=matrix_delim)
+                for row in reader:
+                    if cell_idx >= len(row):
+                        continue
+                    cell_id = str(row[cell_idx]).strip()
+                    subset_id = selected_to_subset.get(cell_id)
+                    if not subset_id:
+                        continue
+                    out_row = [cell_id] + [row[i] if i < len(row) else "" for i in gene_indices]
+                    writer_by_subset[subset_id].writerow(out_row)
+                    plans[subset_id].n_cells_written_tmp += 1
+            finally:
+                for h in handle_by_subset.values():
+                    h.close()
+    else:
+        for subset_id in retained_subset_ids:
+            plan = plans[subset_id]
+            tmp_path = tmp_paths[subset_id]
+            tmp_summary = _write_tmp_subset_from_gene_by_cell(
+                matrix_path=matrix_path,
+                matrix_delim=matrix_delim,
+                gene_id_col_idx=gene_id_col_idx,
+                selected_cell_ids=plan.selected_cells,
+                out_tmp_path=tmp_path,
+                out_cell_id_col_name=matrix_cell_id_col_name,
+            )
+            plan.n_cells_written_tmp = int(tmp_summary.get("n_cells_written_tmp", 0))
+            plan.n_non_numeric_values += int(tmp_summary.get("n_non_numeric_values", 0))
 
     for subset_id in retained_subset_ids:
         plan = plans[subset_id]
@@ -786,7 +974,7 @@ def run(args) -> dict[str, object]:
         plan.n_cells_dropped_zero_total = int(filter_summary["n_cells_dropped_zero_total"])
         plan.n_genes_after_filter = int(filter_summary["n_genes_after_filter"])
         plan.n_genes_dropped_zero_total = int(filter_summary["n_genes_dropped_zero_total"])
-        plan.n_non_numeric_values = int(filter_summary["n_non_numeric_values"])
+        plan.n_non_numeric_values += int(filter_summary["n_non_numeric_values"])
 
         keep_cells = set(str(x) for x in filter_summary["final_cell_ids"])
         meta_out = plan.subset_dir / "meta.tsv"
@@ -907,7 +1095,8 @@ def run(args) -> dict[str, object]:
         },
         "matrix_summary": {
             "n_rows": int(n_matrix_rows),
-            "n_genes_input": int(len(gene_names)),
+            "n_genes_input": int(n_genes_input_summary),
+            "matrix_orientation": str(matrix_orientation),
             "n_cells_missing_meta": int(n_matrix_cells_missing_meta),
             "n_cells_empty_id": int(n_cells_empty_id),
             "n_cells_skipped_allowlist": int(n_matrix_cells_skipped_allowlist),

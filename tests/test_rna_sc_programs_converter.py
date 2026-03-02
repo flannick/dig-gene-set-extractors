@@ -118,6 +118,41 @@ def test_rna_sc_programs_cnmf_convenience_parser(tmp_path: Path):
     assert (out_dir / "genesets.gmt").exists()
 
 
+def test_rna_sc_programs_cnmf_programs_by_gene_orientation(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_cnmf_programs_by_gene")
+    args.program_loadings_tsv = None
+    args.cnmf_gene_spectra_tsv = "tests/data/toy.gene_spectra_tpm.programs_by_gene.k_2.dt_0_01.txt"
+    args.loadings_format = "auto"
+    args.gmt_topk_list = "2"
+    result = rna_sc_programs.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert len(rows) == 2
+    program_ids = {str(r["program_id"]) for r in rows}
+    assert program_ids == {"1", "2"}
+
+
+def test_rna_sc_programs_skips_empty_gmt_file_when_no_sets_emitted(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_no_gmt")
+    args.gmt_min_genes = 100
+    args.gmt_max_genes = 500
+    args.gmt_topk_list = "200"
+    args.emit_small_gene_sets = False
+    result = rna_sc_programs.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows
+    for row in rows:
+        gmt_path = out_dir / str(row["path"]) / "genesets.gmt"
+        assert not gmt_path.exists()
+
+
 def test_rna_sc_programs_schpf_convenience_parser(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "rna_sc_programs_schpf")

@@ -20,6 +20,12 @@ omics2geneset workflows scrna_cnmf_prepare --help
 
 `rna_sc_programs` remains ingestion-only and consumes the resulting cNMF gene spectra files.
 
+Matrix orientation:
+
+- default expected input is `cell_by_gene`
+- `--matrix_orientation auto` can detect `gene_by_cell` when header columns match metadata cell IDs
+- you can force with `--matrix_orientation gene_by_cell` and `--matrix_gene_id_column`
+
 ## Required inputs
 
 - `--matrix_tsv`: dense cell x gene matrix TSV.

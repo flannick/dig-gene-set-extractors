@@ -9,20 +9,32 @@ from omics2geneset.cli import main
 from omics2geneset.workflows.cnmf_select_k import run as run_cnmf_select_k
 
 
-def _write_stats_npz(base_dir: Path, name: str) -> Path:
+def _write_stats_npz(base_dir: Path, name: str, *, use_silhouette: bool = False) -> Path:
     run_dir = base_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)
     stats_path = run_dir / f"{name}.k_selection_stats.df.npz"
-    data = np.array(
-        [
-            [10.0, 0.92, 1.00],
-            [15.0, 0.98, 1.10],
-            [20.0, 0.96, 1.25],
-            [25.0, 0.93, 1.45],
-        ],
-        dtype=float,
-    )
-    columns = np.array(["k", "stability", "prediction_error"], dtype=object)
+    if use_silhouette:
+        data = np.array(
+            [
+                [10.0, 0.92, 1.00],
+                [15.0, 0.98, 1.10],
+                [20.0, 0.96, 1.25],
+                [25.0, 0.93, 1.45],
+            ],
+            dtype=float,
+        )
+        columns = np.array(["k", "silhouette", "prediction_error"], dtype=object)
+    else:
+        data = np.array(
+            [
+                [10.0, 0.92, 1.00],
+                [15.0, 0.98, 1.10],
+                [20.0, 0.96, 1.25],
+                [25.0, 0.93, 1.45],
+            ],
+            dtype=float,
+        )
+        columns = np.array(["k", "stability", "prediction_error"], dtype=object)
     index = np.array([0, 1, 2, 3], dtype=int)
     np.savez(stats_path, data=data, columns=columns, index=index)
     return stats_path
@@ -107,5 +119,16 @@ def test_cnmf_select_k_cli_prints_integer_only(tmp_path: Path, capsys):
         ]
     )
     assert code == 0
+    captured = capsys.readouterr()
+    assert captured.out == "20\n"
+
+
+def test_cnmf_select_k_accepts_silhouette_alias(tmp_path: Path, capsys):
+    out = tmp_path / "cnmf_out"
+    name = "toy"
+    _write_stats_npz(out, name, use_silhouette=True)
+    args = _Args(out, name)
+    result = run_cnmf_select_k(args)
+    assert int(result["selected_k"]) == 20
     captured = capsys.readouterr()
     assert captured.out == "20\n"

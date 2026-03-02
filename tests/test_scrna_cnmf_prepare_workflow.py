@@ -10,7 +10,9 @@ from omics2geneset.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_pre
 def _make_args(out_dir: Path) -> SimpleNamespace:
     return SimpleNamespace(
         matrix_tsv="tests/data/toy_scrna_matrix.tsv",
+        matrix_orientation="auto",
         matrix_cell_id_column="cell_id",
+        matrix_gene_id_column=None,
         matrix_delim="\t",
         meta_tsv="tests/data/toy_scrna_meta.tsv",
         meta_cell_id_column="cell_id",
@@ -137,6 +139,21 @@ def test_scrna_cnmf_prepare_downsampling_is_deterministic(tmp_path: Path):
         counts1 = (out_dir1 / "subsets" / subset / "counts_prefiltered.tsv").read_text(encoding="utf-8")
         counts2 = (out_dir2 / "subsets" / subset / "counts_prefiltered.tsv").read_text(encoding="utf-8")
         assert counts1 == counts2
+
+
+def test_scrna_cnmf_prepare_accepts_gene_by_cell_orientation(tmp_path: Path):
+    out_dir = tmp_path / "prep_gene_by_cell"
+    args = _make_args(out_dir)
+    args.matrix_tsv = "tests/data/toy_scrna_matrix_gene_by_cell.tsv"
+    args.matrix_orientation = "auto"
+    args.matrix_cell_id_column = "cell_id"
+    args.matrix_gene_id_column = "gene_id"
+    result = run_scrna_cnmf_prepare(args)
+    assert int(result["n_subsets"]) == 2
+    summary = json.loads((out_dir / "prepare_summary.json").read_text(encoding="utf-8"))
+    assert summary["matrix_summary"]["matrix_orientation"] == "gene_by_cell"
+    assert (out_dir / "subsets" / "cell_type=A" / "counts_prefiltered.tsv").exists()
+    assert (out_dir / "subsets" / "cell_type=B" / "counts_prefiltered.tsv").exists()
 
 
 def test_scrna_cnmf_prepare_cli_entrypoint(tmp_path: Path):

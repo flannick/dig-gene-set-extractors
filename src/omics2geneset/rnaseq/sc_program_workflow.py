@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 import gzip
+from itertools import chain
 from pathlib import Path
 import re
 import sys
@@ -48,6 +49,9 @@ WIDE_GENES_BY_PROGRAM_FORMATS = {
     "cnmf_gene_spectra_tpm",
     "cnmf_gene_spectra_score",
     "schpf_gene_scores",
+}
+WIDE_PROGRAMS_BY_GENE_FORMATS = {
+    "wide_programs_by_gene",
 }
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -181,6 +185,62 @@ def _resolve_program_column(fieldnames: list[str], program_id_column: str) -> st
     return fieldnames[0]
 
 
+def _normalize_row_dict(row: dict[str | None, str | None]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in row.items():
+        if key is None:
+            continue
+        out[str(key)] = "" if value is None else str(value)
+    return out
+
+
+def _infer_wide_orientation_for_spectra(
+    *,
+    fieldnames: list[str],
+    sample_rows: list[dict[str, str]],
+    gene_id_column: str,
+    program_id_column: str,
+) -> str:
+    if not fieldnames:
+        return "wide_genes_by_program"
+    first_col = str(fieldnames[0]).strip()
+    if not first_col:
+        return "wide_programs_by_gene"
+    first_low = first_col.lower()
+    if first_low in {"program", "program_id", "factor", "topic", "component", "k"}:
+        return "wide_programs_by_gene"
+
+    field_set = set(fieldnames)
+    if gene_id_column in field_set and program_id_column not in field_set:
+        return "wide_genes_by_program"
+    if program_id_column in field_set and gene_id_column not in field_set:
+        return "wide_programs_by_gene"
+
+    values = [str(r.get(fieldnames[0], "")).strip() for r in sample_rows if str(r.get(fieldnames[0], "")).strip()]
+    if values:
+        numeric_like = 0
+        ensembl_like = 0
+        for val in values:
+            try:
+                float(val)
+                numeric_like += 1
+            except ValueError:
+                pass
+            up = val.upper()
+            if up.startswith("ENSG") or up.startswith("ENSMUSG"):
+                ensembl_like += 1
+        frac_numeric = float(numeric_like) / float(len(values))
+        frac_ensembl = float(ensembl_like) / float(len(values))
+        if frac_numeric >= 0.6:
+            return "wide_programs_by_gene"
+        if frac_ensembl >= 0.6:
+            return "wide_genes_by_program"
+
+    if len(fieldnames) >= 100:
+        return "wide_programs_by_gene"
+    return "wide_genes_by_program"
+
+
 def read_program_loadings(
     *,
     path: str | Path,
@@ -211,6 +271,12 @@ def read_program_loadings(
         if not reader.fieldnames:
             raise ValueError(f"Program loadings table has no header: {p}")
         fieldnames = [str(x) for x in reader.fieldnames]
+        sample_rows: list[dict[str, str]] = []
+        for _ in range(32):
+            row = next(reader, None)
+            if row is None:
+                break
+            sample_rows.append(_normalize_row_dict(row))
 
         resolved_format = requested
         if requested == "auto":
@@ -223,10 +289,23 @@ def read_program_loadings(
             )
 
         effective_format = resolved_format
-        if transpose and resolved_format in {"wide_genes_by_program", "wide_programs_by_gene"}:
-            effective_format = (
-                "wide_programs_by_gene" if resolved_format == "wide_genes_by_program" else "wide_genes_by_program"
+        if resolved_format in {"cnmf_gene_spectra_tpm", "cnmf_gene_spectra_score", "schpf_gene_scores"}:
+            inferred = _infer_wide_orientation_for_spectra(
+                fieldnames=fieldnames,
+                sample_rows=sample_rows,
+                gene_id_column=gene_id_column,
+                program_id_column=program_id_column,
             )
+            effective_format = inferred
+        if transpose and (
+            resolved_format in {"wide_genes_by_program", "wide_programs_by_gene"}
+            or resolved_format in {"cnmf_gene_spectra_tpm", "cnmf_gene_spectra_score", "schpf_gene_scores"}
+        ):
+            effective_format = (
+                "wide_programs_by_gene" if effective_format == "wide_genes_by_program" else "wide_genes_by_program"
+            )
+
+        row_iter = chain(sample_rows, (_normalize_row_dict(r) for r in reader))
 
         if effective_format == "long_tidy":
             if gene_id_column not in fieldnames:
@@ -246,7 +325,7 @@ def read_program_loadings(
                 )
             used_gene_column = gene_id_column
             used_program_column = program_id_column
-            for row in reader:
+            for row in row_iter:
                 n_rows += 1
                 gene_id = str(row.get(gene_id_column, "")).strip()
                 program_id = str(row.get(program_id_column, "")).strip()
@@ -267,7 +346,7 @@ def read_program_loadings(
             program_cols = [name for name in fieldnames if name != gene_col]
             if not program_cols:
                 raise ValueError("wide_genes_by_program format requires at least one program column")
-            for row in reader:
+            for row in row_iter:
                 n_rows += 1
                 gene_id = str(row.get(gene_col, "")).strip()
                 if not gene_id:
@@ -283,13 +362,13 @@ def read_program_loadings(
                     programs.setdefault(str(prog_col), {})
                     programs[str(prog_col)][gene_id] = float(programs[str(prog_col)].get(gene_id, 0.0)) + float(val)
                     values_parsed += 1
-        elif effective_format == "wide_programs_by_gene":
+        elif effective_format in WIDE_PROGRAMS_BY_GENE_FORMATS:
             program_col = _resolve_program_column(fieldnames, program_id_column)
             used_program_column = program_col
             gene_cols = [name for name in fieldnames if name != program_col]
             if not gene_cols:
                 raise ValueError("wide_programs_by_gene format requires at least one gene column")
-            for row in reader:
+            for row in row_iter:
                 n_rows += 1
                 program_id = str(row.get(program_col, "")).strip()
                 if not program_id:
@@ -607,8 +686,9 @@ def run_sc_programs_workflow(
                     "program_id": base_program_id,
                 },
             )
-            write_gmt(gmt_sets, gmt_path)
-            combined_gmt_sets.extend(gmt_sets)
+            if gmt_sets:
+                write_gmt(gmt_sets, gmt_path)
+                combined_gmt_sets.extend(gmt_sets)
         _warn_gmt_diagnostics(gmt_diagnostics)
 
         output_files: list[dict[str, object]] = [
@@ -616,7 +696,7 @@ def run_sc_programs_workflow(
         ]
         if cfg.emit_full:
             output_files.append({"path": str(program_dir / "geneset.full.tsv"), "role": "full_scores"})
-        if cfg.emit_gmt:
+        if cfg.emit_gmt and gmt_sets:
             output_files.append({"path": str(gmt_path), "role": "gmt"})
 
         run_summary_payload: dict[str, object] = {
@@ -731,13 +811,13 @@ def run_sc_programs_workflow(
             },
             output_files=output_files,
             gmt={
-                "written": bool(cfg.emit_gmt),
+                "written": bool(cfg.emit_gmt and gmt_sets),
                 "path": (
                     str(gmt_path.relative_to(program_dir))
                     if cfg.emit_gmt and gmt_path.is_relative_to(program_dir)
                     else str(gmt_path)
                 )
-                if cfg.emit_gmt
+                if cfg.emit_gmt and gmt_sets
                 else None,
                 "prefer_symbol": bool(cfg.gmt_prefer_symbol),
                 "require_symbol": bool(cfg.gmt_require_symbol),

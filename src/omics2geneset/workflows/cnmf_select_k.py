@@ -11,6 +11,8 @@ import numpy as np
 
 
 REQUIRED_COLUMNS = ("k", "stability", "prediction_error")
+STABILITY_ALIASES = ("stability", "silhouette")
+PREDICTION_ERROR_ALIASES = ("prediction_error", "pred_error", "prediction_err", "error")
 
 
 def _as_text(value: Any) -> str:
@@ -34,19 +36,29 @@ def _float_or_none(value: Any) -> float | None:
     return float(out)
 
 
+def _get_first_numeric(row: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key not in row:
+            continue
+        val = _float_or_none(row.get(key))
+        if val is not None:
+            return float(val)
+    return None
+
+
 def _load_rows_from_stats_tsv(path: Path) -> list[dict[str, float]]:
     with path.open("r", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         if not reader.fieldnames:
             raise ValueError(f"stats_tsv has no header: {path}")
         field_set = set(str(x) for x in reader.fieldnames)
-        missing = [col for col in REQUIRED_COLUMNS if col not in field_set]
-        if missing:
+        has_stability = any(col in field_set for col in STABILITY_ALIASES)
+        has_error = any(col in field_set for col in PREDICTION_ERROR_ALIASES)
+        if "k" not in field_set or not has_stability or not has_error:
             raise ValueError(
-                "stats_tsv missing required columns: "
-                + ", ".join(missing)
-                + ". Required columns are: "
-                + ", ".join(REQUIRED_COLUMNS)
+                "stats_tsv missing required columns. "
+                "Required: k, one of {stability,silhouette}, and one of "
+                "{prediction_error,pred_error,prediction_err,error}."
             )
         rows: list[dict[str, float]] = []
         for row in reader:
@@ -56,11 +68,15 @@ def _load_rows_from_stats_tsv(path: Path) -> list[dict[str, float]]:
                 if key is None:
                     continue
                 val = _float_or_none(raw)
-                if key in REQUIRED_COLUMNS and val is None:
+                if key == "k" and val is None:
                     skip_row = True
                     break
                 if val is not None:
                     parsed[str(key)] = float(val)
+            if _get_first_numeric(parsed, STABILITY_ALIASES) is None:
+                skip_row = True
+            if _get_first_numeric(parsed, PREDICTION_ERROR_ALIASES) is None:
+                skip_row = True
             if skip_row:
                 continue
             rows.append(parsed)
@@ -102,8 +118,10 @@ def _rows_from_structured_data(data: np.ndarray) -> list[dict[str, float]]:
 
 def _rows_from_direct_arrays(npz: np.lib.npyio.NpzFile) -> list[dict[str, float]]:
     keys = list(npz.files)
-    if not set(REQUIRED_COLUMNS).issubset(set(keys)):
-        raise ValueError("npz did not include direct required arrays for k/stability/prediction_error.")
+    has_stability = any(col in set(keys) for col in STABILITY_ALIASES)
+    has_error = any(col in set(keys) for col in PREDICTION_ERROR_ALIASES)
+    if "k" not in set(keys) or not has_stability or not has_error:
+        raise ValueError("npz did not include direct arrays for k + stability/silhouette + prediction_error aliases.")
     lengths = []
     arrays: dict[str, np.ndarray] = {}
     for key in keys:
@@ -146,8 +164,8 @@ def _load_rows_from_df_npz(path: Path) -> list[dict[str, float]]:
     filtered: list[dict[str, float]] = []
     for row in rows:
         k = _float_or_none(row.get("k"))
-        s = _float_or_none(row.get("stability"))
-        e = _float_or_none(row.get("prediction_error"))
+        s = _get_first_numeric(row, STABILITY_ALIASES)
+        e = _get_first_numeric(row, PREDICTION_ERROR_ALIASES)
         if k is None or s is None or e is None:
             continue
         clean = dict(row)
@@ -295,4 +313,3 @@ def run(args) -> dict[str, object]:
         "selection_json": str(json_path),
         "selection_tsv": str(rows_path),
     }
-

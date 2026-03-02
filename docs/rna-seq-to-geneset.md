@@ -105,6 +105,12 @@ omics2geneset convert rna_sc_programs \
 
 Detailed workflow page: `docs/scrna_cnmf_workflow.md`.
 
+If your matrix is gene x cell, use:
+
+```bash
+--matrix_orientation gene_by_cell --matrix_gene_id_column gene_id
+```
+
 Override examples:
 
 ```bash
