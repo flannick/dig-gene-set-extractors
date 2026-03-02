@@ -172,7 +172,7 @@ Use one of:
 
 ## Documentation map
 
-- package index: `docs/omics2geneset.md`
+- package index: `docs/geneset-extractors.md`
 - ATAC guide: `docs/atac-seq2geneset.md`
 - RNA guide: `docs/rna-seq-to-geneset.md`
 - methylation methods note: `docs/methylation_methods.tex`

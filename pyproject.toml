@@ -27,6 +27,8 @@ scrna_tools = [
 
 [project.scripts]
 omics2geneset = "omics2geneset.cli:main"
+geneset-extractors = "geneset_extractors.cli:main"
+geneset_extractors = "geneset_extractors.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -361,7 +361,7 @@ Useful controls:
 
 ## Documentation map
 
-- package index: `docs/omics2geneset.md`
+- package index: `docs/geneset-extractors.md`
 - ATAC practical guide: `docs/atac-seq2geneset.md`
 - RNA methods note: `docs/rna-seq_methods.tex`
 - methods index: `docs/methods.tex`

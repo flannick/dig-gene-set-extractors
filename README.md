@@ -6,6 +6,7 @@ This repository is designed to host multiple extractor families over time.
 Current implemented family:
 
 - `omics2geneset` (ATAC-seq, RNA-seq, and DNA methylation extractors)
+  - exposed via neutral aliases `geneset-extractors`/`geneset_extractors`
 
 ## Repository Scope
 
@@ -21,14 +22,15 @@ Detailed `omics2geneset` CLI and method behavior is split by assay:
 - `docs/rna-seq-to-geneset.md` (RNA practical guide)
 - `docs/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/methylation2geneset.md` (DNA methylation practical guide)
-- `docs/omics2geneset.md` (index/entrypoint linking assay guides)
+- `docs/geneset-extractors.md` (neutral index/entrypoint)
+- `docs/omics2geneset.md` (compatibility index)
 
 ## Quick Start (Common Case)
 
 ```bash
 python -m pip install -U pip
 python -m pip install -e ".[dev]"
-omics2geneset list
+geneset-extractors list
 pytest -q
 ```
 
@@ -37,6 +39,12 @@ For offline/air-gapped setup only, see `docs/air_gapped_install.md`.
 ## Implemented Extractor Family
 
 ### `omics2geneset`
+
+CLI aliases (same implementation):
+
+- `geneset-extractors`
+- `geneset_extractors`
+- `omics2geneset`
 
 ATAC-focused converters:
 
@@ -68,7 +76,8 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/rna-seq-to-geneset.md`
 - `docs/scrna_cnmf_workflow.md`
 - `docs/methylation2geneset.md`
-- `docs/omics2geneset.md` (index)
+- `docs/geneset-extractors.md` (index)
+- `docs/omics2geneset.md` (compatibility index)
 
 Method notes and equations (split by assay + index):
 
@@ -126,8 +135,10 @@ dig-gene-set-extractors/
   README.md
   pyproject.toml
   src/
+    geneset_extractors/
     omics2geneset/
   docs/
+    geneset-extractors.md
     omics2geneset.md
     atac-seq2geneset.md
     rna-seq-to-geneset.md
