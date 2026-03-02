@@ -1,0 +1,76 @@
+{
+  "name": "cnv_gene_extractor",
+  "description": "CNV segment table to per-sample amplification/deletion gene programs and GMT gene sets",
+  "inputs": [
+    {
+      "name": "segments_tsv",
+      "type": "tsv",
+      "description": "CNV segments table (TSV/TSV.GZ) with chromosome, start, end, and amplitude columns",
+      "required": true
+    },
+    {
+      "name": "gtf",
+      "type": "gtf",
+      "description": "Gene annotation used to map segment overlap to gene bodies",
+      "required": true
+    },
+    {
+      "name": "purity_tsv",
+      "type": "tsv",
+      "description": "Optional sample purity table used for amplitude correction",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {"name": "dataset_label", "type": "string", "default": "", "help": "Optional dataset label written to metadata"},
+    {"name": "gtf_source", "type": "string", "default": "", "help": "Optional annotation provenance label"},
+    {"name": "gtf_gene_id_field", "type": "string", "default": "gene_id", "help": "GTF attribute used as gene_id"},
+    {"name": "chrom_column", "type": "string", "default": "auto", "help": "Chromosome column (autodetect if unset)"},
+    {"name": "start_column", "type": "string", "default": "auto", "help": "Start column (autodetect if unset)"},
+    {"name": "end_column", "type": "string", "default": "auto", "help": "End column (autodetect if unset)"},
+    {"name": "amplitude_column", "type": "string", "default": "auto", "help": "Segment amplitude/log2-ratio column (autodetect if unset)"},
+    {"name": "sample_id_column", "type": "string", "default": "auto", "help": "Sample id column (defaults to sample1 when absent)"},
+    {"name": "coord_system", "type": "string", "default": "one_based_closed", "enum": ["one_based_closed", "zero_based_half_open"], "help": "Segment coordinate convention"},
+    {"name": "chrom_prefix_mode", "type": "string", "default": "auto", "enum": ["auto", "add_chr", "drop_chr", "none"], "help": "Chromosome prefix handling before GTF matching"},
+    {"name": "purity_sample_id_column", "type": "string", "default": "sample_id", "help": "Sample id column in purity_tsv"},
+    {"name": "purity_value_column", "type": "string", "default": "purity", "help": "Purity value column in purity_tsv"},
+    {"name": "use_purity_correction", "type": "boolean", "default": false, "help": "Apply amplitude/purity correction when purity values are available"},
+    {"name": "purity_floor", "type": "number", "default": 0.1, "help": "Lower bound used in purity correction denominator"},
+    {"name": "max_abs_amplitude", "type": "number", "default": 3.0, "help": "Cap corrected absolute amplitudes"},
+    {"name": "min_abs_amplitude", "type": "number", "default": 0.1, "help": "Drop segments with abs(amplitude) below this threshold"},
+    {"name": "focal_length_scale_bp", "type": "number", "default": 10000000, "help": "Focal penalty length scale in base pairs"},
+    {"name": "focal_length_alpha", "type": "number", "default": 1.0, "help": "Focal penalty exponent"},
+    {"name": "gene_count_penalty", "type": "string", "default": "inv_sqrt", "enum": ["none", "inv_sqrt", "inv"], "help": "Penalty as function of genes hit per segment"},
+    {"name": "aggregation", "type": "string", "default": "weighted_mean", "enum": ["weighted_mean", "sum", "mean", "max_abs"], "help": "Aggregation from segment contributions to gene score"},
+    {"name": "program_preset", "type": "string", "default": "default", "enum": ["default", "connectable", "broad", "qc", "all", "none"], "help": "CNV program preset controlling emitted program types"},
+    {"name": "program_methods", "type": "string", "default": "", "help": "Optional comma-separated explicit programs: amp,del,abs"},
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method per sample/program"},
+    {"name": "top_k", "type": "integer", "default": 200, "help": "K for top_k selection"},
+    {"name": "quantile", "type": "number", "default": 0.01, "help": "Quantile fraction when select=quantile"},
+    {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold when select=threshold"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization for selected genes"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv per sample/program"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write genesets.gmt per sample/program"},
+    {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol tokens in GMT"},
+    {"name": "gmt_require_symbol", "type": "boolean", "default": true, "help": "Require non-empty symbol tokens in GMT"},
+    {"name": "gmt_biotype_allowlist", "type": "string", "default": "protein_coding", "help": "Comma-separated allowed biotypes for GMT"},
+    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
+    {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated HPD-mass GMT plans"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
+    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes with warning"},
+    {"name": "emit_cohort_sets", "type": "boolean", "default": false, "help": "Emit optional cohort-level recurrent amp/del gene sets"},
+    {"name": "cohort_score_threshold", "type": "number", "default": 0.15, "help": "Score threshold for per-sample recurrence counting"},
+    {"name": "cohort_min_fraction", "type": "number", "default": 0.05, "help": "Minimum recurrence fraction to retain gene for cohort ranking"},
+    {"name": "cohort_min_samples", "type": "integer", "default": 5, "help": "Minimum samples required before cohort sets are emitted"}
+  ],
+  "outputs": [
+    {"name": "manifest.tsv", "description": "Grouped manifest with one row per sample/program output directory"},
+    {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.tsv", "description": "Selected genes for one sample/program"},
+    {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json", "description": "Metadata for one sample/program"},
+    {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.full.tsv", "description": "Full nonzero score table (optional)"},
+    {"name": "sample=<SAMPLE>/program=<PROGRAM>/genesets.gmt", "description": "Per-sample/program GMT output (optional)"},
+    {"name": "cohort/genesets.gmt", "description": "Optional cohort recurrence GMT output when emit_cohort_sets=true"}
+  ]
+}
+

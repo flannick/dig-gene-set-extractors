@@ -1,0 +1,8 @@
+sample_id	Chromosome	Start	End	Segment_Mean
+S1	chr1	1100	1300	1.2
+S1	chr1	20000000	60000000	1.0
+S1	chr2	5100	5300	-1.5
+S2	chr1	1200	1400	0.8
+S2	chr1	25000000	55000000	0.9
+S2	chr2	5200	5400	-1.1
+

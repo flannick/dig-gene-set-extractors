@@ -6,6 +6,7 @@ This repository is designed to host multiple extractor families over time.
 Current implemented family:
 
 - `omics2geneset` (ATAC-seq, RNA-seq, and DNA methylation extractors)
+  - includes CNV segment extraction (`cnv_gene_extractor`)
   - exposed via neutral aliases `geneset-extractors`/`geneset_extractors`
 
 ## Repository Scope
@@ -70,12 +71,17 @@ DNA methylation converters:
 - `methylation_dmr_regions`
 - `methylation_dmr` (legacy, expects pre-aggregated gene-level inputs)
 
+CNV converter:
+
+- `cnv_gene_extractor`
+
 Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/atac-seq2geneset.md`
 - `docs/rna-seq-to-geneset.md`
 - `docs/scrna_cnmf_workflow.md`
 - `docs/methylation2geneset.md`
+- `docs/cnv2geneset.md`
 - `docs/geneset-extractors.md` (index)
 - `docs/omics2geneset.md` (compatibility index)
 
@@ -84,6 +90,7 @@ Method notes and equations (split by assay + index):
 - `docs/atac-seq_methods.tex`
 - `docs/rna-seq_methods.tex`
 - `docs/methylation_methods.tex`
+- `docs/cnv_methods.tex`
 - `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
@@ -144,6 +151,8 @@ dig-gene-set-extractors/
     rna-seq-to-geneset.md
     scrna_cnmf_workflow.md
     methylation2geneset.md
+    cnv2geneset.md
+    cnv_methods.tex
     methods.tex
     atac-seq_methods.tex
     rna-seq_methods.tex

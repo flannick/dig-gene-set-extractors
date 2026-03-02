@@ -23,6 +23,7 @@ def test_cli_list():
     assert "atac_bulk_matrix" in p.stdout
     assert "methylation_cpg_diff" in p.stdout
     assert "methylation_dmr_regions" in p.stdout
+    assert "cnv_gene_extractor" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
     assert "rna_sc_programs" in p.stdout
@@ -89,6 +90,17 @@ def test_cli_describe_methylation_dmr_regions():
     assert "delta_orientation" in param_names
     assert "exclude_gene_symbol_regex" in param_names
     assert "resource_policy" in param_names
+
+
+def test_cli_describe_cnv_gene_extractor():
+    p = _run("describe", "cnv_gene_extractor")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "cnv_gene_extractor"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "focal_length_scale_bp" in param_names
+    assert "gene_count_penalty" in param_names
+    assert "use_purity_correction" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):

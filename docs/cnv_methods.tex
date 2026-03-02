@@ -1,0 +1,160 @@
+\documentclass[11pt]{article}
+
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\geometry{margin=1in}
+
+\title{CNV Segment to Gene Set Methods}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+
+The CNV extractor (\texttt{cnv\_gene\_extractor}) maps CNV segments to genes,
+computes signed gene scores, and emits directional gene programs:
+amplification (\texttt{amp}) and deletion (\texttt{del}).
+
+The implementation is designed for segment-level inputs (tumor or germline)
+without requiring integer copy-number reconstruction.
+
+\section{Inputs and notation}
+
+For each sample $s$, let segments be indexed by $i$ with:
+\[
+(\mathrm{chrom}_i, \mathrm{start}_i, \mathrm{end}_i, a_i),
+\]
+where $a_i$ is the signed segment amplitude (for example log2 copy-ratio).
+
+Genes from the GTF are indexed by $g$ with gene-body interval
+$[\mathrm{gstart}_g, \mathrm{gend}_g)$ on chromosome $\mathrm{chrom}_g$.
+
+\section{Segment-to-gene overlap}
+
+For segment $i$ and gene $g$, overlap length is:
+\[
+\mathrm{ovbp}_{ig}
+=
+\max\left(0,\,
+\min(\mathrm{end}_i,\mathrm{gend}_g) -
+\max(\mathrm{start}_i,\mathrm{gstart}_g)\right).
+\]
+
+Gene-length-normalized overlap fraction:
+\[
+f_{ig} = \frac{\mathrm{ovbp}_{ig}}{\max(1,\mathrm{gend}_g-\mathrm{gstart}_g)}.
+\]
+
+\section{Focality and breadth penalties}
+
+Segment length:
+\[
+L_i = \max(1, \mathrm{end}_i - \mathrm{start}_i).
+\]
+
+Focal penalty:
+\[
+p^{\text{focal}}_i
+=
+\frac{1}{1 + \left(\frac{L_i}{L_{\text{scale}}}\right)^{\alpha}},
+\]
+with CLI controls \texttt{--focal\_length\_scale\_bp} and
+\texttt{--focal\_length\_alpha}.
+
+Gene-count penalty for $n_i$ genes overlapping segment $i$:
+\[
+p^{\text{genes}}_i =
+\begin{cases}
+1 & \text{mode=none}\\
+\frac{1}{\sqrt{n_i}} & \text{mode=inv\_sqrt}\\
+\frac{1}{n_i} & \text{mode=inv}
+\end{cases}
+\]
+controlled by \texttt{--gene\_count\_penalty}.
+
+Combined segment weight:
+\[
+w_i = p^{\text{focal}}_i \cdot p^{\text{genes}}_i.
+\]
+
+\section{Gene scoring}
+
+Default per-gene numerator:
+\[
+N_g = \sum_i a_i \cdot w_i \cdot f_{ig}.
+\]
+
+Default aggregation (\texttt{weighted\_mean}):
+\[
+\mathrm{score}_g = \frac{N_g}{\sum_i |f_{ig}|}.
+\]
+
+Alternative aggregations (\texttt{sum}, \texttt{mean}, \texttt{max\_abs})
+are exposed by \texttt{--aggregation}.
+
+Segments with $|a_i| < \texttt{--min\_abs\_amplitude}$ are dropped before scoring.
+
+\section{Directional program construction}
+
+From signed gene score $\mathrm{score}_g$:
+\[
+\mathrm{amp}_g = \max(\mathrm{score}_g, 0),
+\qquad
+\mathrm{del}_g = \max(-\mathrm{score}_g, 0).
+\]
+
+These define \texttt{program=amp} and \texttt{program=del}.
+Optional \texttt{program=abs} uses $|\mathrm{score}_g|$.
+
+\section{Selection, normalization, and GMT}
+
+Per program, the extractor applies the shared selection operator
+(\texttt{top\_k}, \texttt{quantile}, or \texttt{threshold}) and then
+normalizes selected weights (default \texttt{within\_set\_l1}).
+
+Default GMT behavior targets compact, enrichment-ready sets:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{--gmt\_topk\_list 200}
+\item \texttt{--gmt\_min\_genes 100}
+\item \texttt{--gmt\_max\_genes 500}
+\item sets below minimum are skipped unless \texttt{--emit\_small\_gene\_sets true}
+\end{itemize}
+
+\section{Optional purity correction}
+
+If enabled (\texttt{--use\_purity\_correction true}), amplitude is adjusted as:
+\[
+a'_i = \frac{a_i}{\max(\mathrm{purity}_s, p_{\min})},
+\]
+with caps via \texttt{--max\_abs\_amplitude}.
+
+This is a lightweight correction and not a full ploidy model.
+
+\section{Optional cohort recurrence sets}
+
+Given sample-level scores, recurrent amp/del genes are defined by fraction
+of samples passing a score threshold:
+\[
+r^{\text{amp}}_g = \frac{1}{|S|}\sum_{s \in S} \mathbf{1}\left[\max(\mathrm{score}_{g,s},0) > \tau\right],
+\]
+\[
+r^{\text{del}}_g = \frac{1}{|S|}\sum_{s \in S} \mathbf{1}\left[\max(-\mathrm{score}_{g,s},0) > \tau\right].
+\]
+Genes passing \texttt{--cohort\_min\_fraction} are ranked by recurrence.
+
+\section{Practical caveats}
+
+\begin{itemize}[leftmargin=2em]
+\item Broad CNV burden can dominate interpretation; defaults penalize broad segments.
+\item If arm-level aneuploidy is expected, use \texttt{--program\_preset broad}.
+\item Coordinate-system and chromosome-prefix mismatches can silently remove many segments if unchecked.
+\item Purity correction can amplify noise in low-purity samples; review run summaries.
+\end{itemize}
+
+\end{document}
+

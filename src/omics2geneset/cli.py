@@ -640,6 +640,67 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_sc_programs.add_argument("--genome_build", required=True)
     _add_rna_sc_program_flags(p_rna_sc_programs)
 
+    p_cnv = conv.add_parser("cnv_gene_extractor")
+    p_cnv.add_argument("--segments_tsv", required=True)
+    p_cnv.add_argument("--out_dir", required=True)
+    p_cnv.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_cnv.add_argument("--genome_build", required=True)
+    p_cnv.add_argument("--dataset_label")
+    p_cnv.add_argument("--gtf", required=True)
+    p_cnv.add_argument("--gtf_source")
+    p_cnv.add_argument("--gtf_gene_id_field", default="gene_id")
+    p_cnv.add_argument("--chrom_column")
+    p_cnv.add_argument("--start_column")
+    p_cnv.add_argument("--end_column")
+    p_cnv.add_argument("--amplitude_column")
+    p_cnv.add_argument("--sample_id_column")
+    p_cnv.add_argument(
+        "--coord_system",
+        choices=["one_based_closed", "zero_based_half_open"],
+        default="one_based_closed",
+    )
+    p_cnv.add_argument(
+        "--chrom_prefix_mode",
+        choices=["auto", "add_chr", "drop_chr", "none"],
+        default="auto",
+    )
+    p_cnv.add_argument("--purity_tsv")
+    p_cnv.add_argument("--purity_sample_id_column", default="sample_id")
+    p_cnv.add_argument("--purity_value_column", default="purity")
+    p_cnv.add_argument("--use_purity_correction", type=_parse_bool, default=False)
+    p_cnv.add_argument("--purity_floor", type=float, default=0.1)
+    p_cnv.add_argument("--max_abs_amplitude", type=float, default=3.0)
+    p_cnv.add_argument("--min_abs_amplitude", type=float, default=0.10)
+    p_cnv.add_argument("--focal_length_scale_bp", type=float, default=10_000_000)
+    p_cnv.add_argument("--focal_length_alpha", type=float, default=1.0)
+    p_cnv.add_argument("--gene_count_penalty", choices=["none", "inv_sqrt", "inv"], default="inv_sqrt")
+    p_cnv.add_argument("--aggregation", choices=["weighted_mean", "sum", "mean", "max_abs"], default="weighted_mean")
+    p_cnv.add_argument(
+        "--program_preset",
+        choices=["default", "connectable", "broad", "qc", "all", "none"],
+        default="default",
+    )
+    p_cnv.add_argument("--program_methods")
+    p_cnv.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    p_cnv.add_argument("--top_k", type=int, default=200)
+    p_cnv.add_argument("--quantile", type=float, default=0.01)
+    p_cnv.add_argument("--min_score", type=float, default=0.0)
+    p_cnv.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    p_cnv.add_argument("--emit_full", type=_parse_bool, default=True)
+    p_cnv.add_argument("--emit_cohort_sets", type=_parse_bool, default=False)
+    p_cnv.add_argument("--cohort_score_threshold", type=float, default=0.15)
+    p_cnv.add_argument("--cohort_min_fraction", type=float, default=0.05)
+    p_cnv.add_argument("--cohort_min_samples", type=int, default=5)
+    _add_gmt_flags(p_cnv)
+    p_cnv.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=False,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        emit_small_gene_sets=False,
+    )
+
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)
     p_chip.add_argument("--gtf", required=True)
