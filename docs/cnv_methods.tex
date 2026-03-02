@@ -152,9 +152,10 @@ Genes passing \texttt{--cohort\_min\_fraction} are ranked by recurrence.
 \begin{itemize}[leftmargin=2em]
 \item Broad CNV burden can dominate interpretation; defaults penalize broad segments.
 \item If arm-level aneuploidy is expected, use \texttt{--program\_preset broad}.
-\item Coordinate-system and chromosome-prefix mismatches can silently remove many segments if unchecked.
+\item Coordinate-system and chromosome-prefix mismatches can remove many segments.
+The implementation runs a chromosome-compatibility preflight check before scoring and warns (or fails) when compatibility is very low.
 \item Purity correction can amplify noise in low-purity samples; review run summaries.
+\item If a requested program has no positive signal after directional projection, it is skipped and recorded in \texttt{skipped\_programs.json}.
 \end{itemize}
 
 \end{document}
-

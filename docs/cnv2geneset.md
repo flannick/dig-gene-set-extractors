@@ -38,6 +38,31 @@ Optional column overrides:
 
 If sample column is absent, the converter treats input as a single sample (`sample1`).
 
+## Data fetch in DNS-restricted environments
+
+For CNV validation runbooks that normally use public URLs, use local-cache mode:
+
+```bash
+../../.venv/bin/python scripts/fetch_data.py \
+  --from-local-cache /path/to/local/cache \
+  --dest data/external \
+  --file tcga_cnv_segments.tsv.gz \
+  --file gencode.v49.basic.annotation.gtf.gz
+```
+
+You can also pass a manifest TSV (`source_rel`, `target_rel`, optional `sha256`):
+
+```bash
+../../.venv/bin/python scripts/fetch_data.py \
+  --from-local-cache /path/to/local/cache \
+  --dest data/external \
+  --manifest config/data_fetch_manifest.tsv
+```
+
+Small versioned CNV fixtures are included under `tests/data/` (for example
+`tests/data/toy_cnv_segments.tsv`, `tests/data/toy_cnv_purity.tsv`) for quick
+validation and CI-style smoke checks.
+
 ## Scoring model
 
 Per segment `i`:
@@ -132,6 +157,8 @@ Grouped output root:
 - `sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json`
 - optional `geneset.full.tsv`, `genesets.gmt`, and run summaries per directory
 - optional cohort GMT at `cohort/genesets.gmt`
+- `skipped_programs.json` at output root with structured reasons when requested
+  program/sample combinations are skipped (for example `no_positive_signal`)
 
 Sign semantics:
 
@@ -145,6 +172,20 @@ Sign semantics:
 - Wrong coordinate convention (`one_based_closed` vs `zero_based_half_open`)
 - Thresholds too strict (`--min_abs_amplitude`, `--gmt_min_genes`)
 - Broad-event dominance: use `--program_preset broad` when arm-level CNV is expected
+- If no rows map to GTF chromosomes, CNV preflight fails fast with remediation hints.
+
+## PIGEAN helper summarization
+
+If your PIGEAN wrapper writes files like `*.gene_stats.out`, use:
+
+```bash
+../../.venv/bin/python scripts/pigean_summarize_outputs.py \
+  --out-dir <run_dir> \
+  --stem <same_stem>
+```
+
+The summarizer accepts both legacy short names (`.gs/.gss/.phs/.f`) and
+wrapper-style names (`.gene_stats.out`, `.gene_set_stats.out`, etc.).
 
 ## Documentation map
 
@@ -152,4 +193,3 @@ Sign semantics:
 - compatibility index: `docs/omics2geneset.md`
 - CNV methods note: `docs/cnv_methods.tex`
 - methods index: `docs/methods.tex`
-

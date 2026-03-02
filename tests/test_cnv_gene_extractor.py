@@ -1,9 +1,11 @@
 import csv
+import json
 from pathlib import Path
 
 import pytest
 
 from omics2geneset.converters import cnv_gene_extractor
+from omics2geneset.cli import build_parser
 from omics2geneset.core.validate import validate_output_dir
 
 
@@ -175,3 +177,100 @@ def test_cnv_gene_extractor_chr_mismatch_warning(tmp_path: Path, capsys: pytest.
     captured = capsys.readouterr()
     assert "many segments could not be mapped to GTF chromosome names/genome build" in captured.err
 
+
+def test_cnv_gene_extractor_writes_skipped_programs_and_git_commit(tmp_path: Path):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "only_amp.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "sample_id\tChromosome\tStart\tEnd\tSegment_Mean",
+                "S1\tchr1\t1100\t1300\t1.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.program_methods = "amp,del"
+    args.gmt_topk_list = "1"
+    args.top_k = 1
+    args.out_dir = str(tmp_path / "cnv_skips")
+    cnv_gene_extractor.run(args)
+
+    skipped_payload = json.loads((Path(args.out_dir) / "skipped_programs.json").read_text(encoding="utf-8"))
+    assert int(skipped_payload["n_skipped"]) >= 1
+    assert any(str(item.get("reason_code")) == "no_positive_signal" for item in skipped_payload.get("items", []))
+
+    rows = _manifest_rows(Path(args.out_dir))
+    amp_meta = Path(args.out_dir) / {(r["sample_id"], r["program"]): r for r in rows}[("S1", "amp")]["path"] / "geneset.meta.json"
+    meta = json.loads(amp_meta.read_text(encoding="utf-8"))
+    assert str(meta["converter"]["code"]["git_commit"]).strip()
+    assert meta["converter"]["code"]["git_commit"] != "null"
+
+
+def test_cnv_gene_extractor_preflight_zero_compatibility_raises(tmp_path: Path):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "no_compat.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "sample_id\tchrom\tstart\tend\tsegment_mean",
+                "S1\tchrUn1\t1000\t1200\t0.8",
+                "S1\tchrUn2\t2000\t2400\t-0.9",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.program_methods = "amp"
+    args.out_dir = str(tmp_path / "cnv_preflight_fail")
+    with pytest.raises(ValueError, match="CNV preflight failed"):
+        cnv_gene_extractor.run(args)
+
+
+def test_cnv_cli_boolean_flag_ergonomics():
+    parser = build_parser()
+    ns_true = parser.parse_args(
+        [
+            "convert",
+            "cnv_gene_extractor",
+            "--segments_tsv",
+            "tests/data/toy_cnv_segments.tsv",
+            "--gtf",
+            "tests/data/toy.gtf",
+            "--out_dir",
+            "tests/tmp/cnv_bool_true",
+            "--organism",
+            "human",
+            "--genome_build",
+            "hg38",
+            "--use_purity_correction",
+        ]
+    )
+    assert ns_true.use_purity_correction is True
+    ns_false = parser.parse_args(
+        [
+            "convert",
+            "cnv_gene_extractor",
+            "--segments_tsv",
+            "tests/data/toy_cnv_segments.tsv",
+            "--gtf",
+            "tests/data/toy.gtf",
+            "--out_dir",
+            "tests/tmp/cnv_bool_false",
+            "--organism",
+            "human",
+            "--genome_build",
+            "hg38",
+            "--no-use-purity-correction",
+        ]
+    )
+    assert ns_false.use_purity_correction is False

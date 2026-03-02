@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 import re
 import statistics
@@ -38,6 +39,7 @@ _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 CHROM_MISMATCH_WARN_FRACTION = 0.2
 BREADTH_MEDIAN_BP_WARN = 50_000_000
 BREADTH_MEAN_FOCAL_WARN = 0.10
+PREFLIGHT_CHROM_COMPAT_WARN_FRACTION = 0.2
 
 
 @dataclass
@@ -205,6 +207,36 @@ def _map_chrom_to_gene_space(chrom: str, gene_chroms: set[str], chrom_prefix_mod
             if alt in gene_chroms:
                 return alt
     return c if c in gene_chroms else None
+
+
+def _chrom_compatibility_summary(
+    segments: list[CNVSegment],
+    gene_chroms: set[str],
+    chrom_prefix_mode: str,
+) -> dict[str, object]:
+    n_total = len(segments)
+    n_compatible = 0
+    unique_input: set[str] = set()
+    unique_compatible: set[str] = set()
+    incompatible_examples: list[str] = []
+    for seg in segments:
+        raw = str(seg.chrom)
+        unique_input.add(raw)
+        mapped = _map_chrom_to_gene_space(raw, gene_chroms, chrom_prefix_mode)
+        if mapped is not None:
+            n_compatible += 1
+            unique_compatible.add(mapped)
+        elif len(incompatible_examples) < 10:
+            incompatible_examples.append(raw)
+    frac = float(n_compatible) / float(n_total) if n_total else 0.0
+    return {
+        "n_segments_total": n_total,
+        "n_segments_chrom_compatible": n_compatible,
+        "fraction_segments_chrom_compatible": frac,
+        "n_unique_chrom_input": len(unique_input),
+        "n_unique_chrom_compatible": len(unique_compatible),
+        "incompatible_chrom_examples": sorted(set(incompatible_examples)),
+    }
 
 
 def _segment_length(seg: CNVSegment) -> int:
@@ -430,6 +462,25 @@ def run_cnv_workflow(
         for g in genes
     }
 
+    preflight = _chrom_compatibility_summary(
+        segments=segments,
+        gene_chroms=gene_chroms,
+        chrom_prefix_mode=cfg.chrom_prefix_mode,
+    )
+    if int(preflight["n_segments_chrom_compatible"]) == 0:
+        raise ValueError(
+            "CNV preflight failed: 0 segment rows are chromosome-compatible with the provided GTF. "
+            "Check --genome_build, --coord_system, and --chrom_prefix_mode (chr prefix handling). "
+            f"Incompatible examples: {', '.join(preflight['incompatible_chrom_examples'])}"
+        )
+    if float(preflight["fraction_segments_chrom_compatible"]) < PREFLIGHT_CHROM_COMPAT_WARN_FRACTION:
+        print(
+            "warning: CNV preflight found low chromosome compatibility before scoring "
+            f"({preflight['n_segments_chrom_compatible']}/{preflight['n_segments_total']} compatible). "
+            "Recommended: verify --genome_build and try --chrom_prefix_mode auto/add_chr/drop_chr.",
+            file=sys.stderr,
+        )
+
     usable_segments, segment_filter_summary = _filter_and_correct_segments(
         segments=segments,
         gene_chroms=gene_chroms,
@@ -480,6 +531,7 @@ def run_cnv_workflow(
     manifest_rows: list[dict[str, object]] = []
     combined_signed_scores: dict[str, dict[str, float]] = {}
     combined_gmt_sets: list[tuple[str, list[str]]] = []
+    skipped_programs: list[dict[str, object]] = []
 
     for sample_id in sample_ids:
         sample_segments = [s for s in usable_segments if s.sample_id == sample_id]
@@ -495,6 +547,15 @@ def run_cnv_workflow(
                 print(
                     f"warning: sample={sample_id} program={program} has no positive signal after scoring; skipped.",
                     file=sys.stderr,
+                )
+                skipped_programs.append(
+                    {
+                        "sample_id": sample_id,
+                        "program": program,
+                        "reason_code": "no_positive_signal",
+                        "reason": "no positive genes remained after directional projection and scoring",
+                        "n_genes_scored": 0,
+                    }
                 )
                 continue
             selected_gene_ids = _select_gene_ids(program_scores, cfg)
@@ -611,6 +672,7 @@ def run_cnv_workflow(
                     d for d in gmt_diagnostics if str(d.get("code")) in {"small_gene_set_skipped", "no_positive_genes"}
                 ],
                 "parse_summary": parse_summary,
+                "preflight_chrom_compatibility": preflight,
             }
             run_summary_json_path, run_summary_txt_path = write_run_summary_files(out_subdir, run_summary_payload)
 
@@ -691,6 +753,7 @@ def run_cnv_workflow(
                     "segment_stats": sample_stats,
                     "segment_filter_summary": segment_filter_summary,
                     "parse_summary": parse_summary,
+                    "preflight_chrom_compatibility": preflight,
                     "warnings_count": warning_count,
                 },
                 program_extraction={
@@ -741,6 +804,21 @@ def run_cnv_workflow(
     if not manifest_rows:
         raise ValueError("No CNV outputs were emitted after filtering/scoring.")
 
+    skipped_path = out_dir / "skipped_programs.json"
+    skipped_path.write_text(
+        json.dumps(
+            {
+                "converter": cfg.converter_name,
+                "n_skipped": len(skipped_programs),
+                "items": skipped_programs,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     manifest_path = out_dir / "manifest.tsv"
     with manifest_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(
@@ -777,6 +855,7 @@ def run_cnv_workflow(
         "n_genes": len({gid for scores in combined_signed_scores.values() for gid in scores}),
         "out_dir": str(out_dir),
         "program_methods": program_methods,
+        "skipped_programs": len(skipped_programs),
     }
 
 
@@ -879,4 +958,3 @@ def _emit_cohort_gmt(
             "n_del_genes": len(del_rows),
         }
         write_run_summary_files(cohort_dir, run_summary_payload)
-

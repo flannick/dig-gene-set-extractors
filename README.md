@@ -37,6 +37,13 @@ pytest -q
 
 For offline/air-gapped setup only, see `docs/air_gapped_install.md`.
 
+If `pip install -e ".[dev]"` fails in DNS-restricted environments:
+
+1. Use the offline flow in `docs/air_gapped_install.md`.
+2. Use `scripts/install_offline.sh --wheelhouse <path>` for no-index installs.
+3. If build isolation fails in a fresh venv, use the documented `--no-build-isolation`
+   path with pre-bootstrapped local build tools (`scripts/bootstrap_build_tools.sh`).
+
 ## Implemented Extractor Family
 
 ### `omics2geneset`

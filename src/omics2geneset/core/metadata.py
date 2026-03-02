@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import subprocess
+import threading
 
 from omics2geneset import __version__
 from omics2geneset.hashing import sha256_file, stable_hash_object
@@ -22,6 +24,35 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+_GIT_COMMIT_CACHE: str | None = None
+_GIT_COMMIT_LOCK = threading.Lock()
+
+
+def _resolve_git_commit() -> str:
+    global _GIT_COMMIT_CACHE
+    with _GIT_COMMIT_LOCK:
+        if _GIT_COMMIT_CACHE is not None:
+            return _GIT_COMMIT_CACHE
+        repo_root = Path(__file__).resolve().parents[3]
+        commit = "unknown"
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(repo_root),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode == 0:
+                candidate = proc.stdout.strip()
+                if candidate:
+                    commit = candidate
+        except Exception:
+            commit = "unknown"
+        _GIT_COMMIT_CACHE = commit
+        return commit
 
 
 def make_metadata(
@@ -49,7 +80,7 @@ def make_metadata(
             "name": converter_name,
             "version": __version__,
             "parameters": parameters,
-            "code": {"git_commit": None},
+            "code": {"git_commit": _resolve_git_commit()},
         },
         "input": {
             "data_type": data_type,

@@ -667,7 +667,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_cnv.add_argument("--purity_tsv")
     p_cnv.add_argument("--purity_sample_id_column", default="sample_id")
     p_cnv.add_argument("--purity_value_column", default="purity")
-    p_cnv.add_argument("--use_purity_correction", type=_parse_bool, default=False)
+    p_cnv.add_argument(
+        "--use_purity_correction",
+        nargs="?",
+        const=True,
+        type=_parse_bool,
+        default=False,
+        help="Enable purity correction (supports --use_purity_correction or --use_purity_correction true/false).",
+    )
+    p_cnv.add_argument(
+        "--use-purity-correction",
+        dest="use_purity_correction",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    p_cnv.add_argument(
+        "--no-use-purity-correction",
+        dest="use_purity_correction",
+        action="store_false",
+        help="Disable purity correction.",
+    )
     p_cnv.add_argument("--purity_floor", type=float, default=0.1)
     p_cnv.add_argument("--max_abs_amplitude", type=float, default=3.0)
     p_cnv.add_argument("--min_abs_amplitude", type=float, default=0.10)
@@ -687,7 +706,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_cnv.add_argument("--min_score", type=float, default=0.0)
     p_cnv.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
     p_cnv.add_argument("--emit_full", type=_parse_bool, default=True)
-    p_cnv.add_argument("--emit_cohort_sets", type=_parse_bool, default=False)
+    p_cnv.add_argument(
+        "--emit_cohort_sets",
+        nargs="?",
+        const=True,
+        type=_parse_bool,
+        default=False,
+        help="Enable cohort recurrence gene sets (supports --emit_cohort_sets or --emit_cohort_sets true/false).",
+    )
+    p_cnv.add_argument(
+        "--emit-cohort-sets",
+        dest="emit_cohort_sets",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    p_cnv.add_argument(
+        "--no-emit-cohort-sets",
+        dest="emit_cohort_sets",
+        action="store_false",
+        help="Disable cohort recurrence gene sets.",
+    )
     p_cnv.add_argument("--cohort_score_threshold", type=float, default=0.15)
     p_cnv.add_argument("--cohort_min_fraction", type=float, default=0.05)
     p_cnv.add_argument("--cohort_min_samples", type=int, default=5)
