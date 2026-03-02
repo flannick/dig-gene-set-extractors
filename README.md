@@ -19,6 +19,7 @@ Detailed `omics2geneset` CLI and method behavior is split by assay:
 
 - `docs/atac-seq2geneset.md` (ATAC practical guide)
 - `docs/rna-seq-to-geneset.md` (RNA practical guide)
+- `docs/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/methylation2geneset.md` (DNA methylation practical guide)
 - `docs/omics2geneset.md` (index/entrypoint linking assay guides)
 
@@ -60,6 +61,7 @@ Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/atac-seq2geneset.md`
 - `docs/rna-seq-to-geneset.md`
+- `docs/scrna_cnmf_workflow.md`
 - `docs/methylation2geneset.md`
 - `docs/omics2geneset.md` (index)
 
@@ -124,6 +126,7 @@ dig-gene-set-extractors/
     omics2geneset.md
     atac-seq2geneset.md
     rna-seq-to-geneset.md
+    scrna_cnmf_workflow.md
     methylation2geneset.md
     methods.tex
     atac-seq_methods.tex

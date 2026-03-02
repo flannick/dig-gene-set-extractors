@@ -261,6 +261,63 @@ def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--matrix_tsv", required=True, help="Cell x gene dense TSV (header required).")
+    parser.add_argument(
+        "--matrix_cell_id_column",
+        help="Column name containing cell IDs in matrix_tsv (default: first column).",
+    )
+    parser.add_argument("--matrix_delim", default="\t", help="Matrix delimiter (default: tab).")
+    parser.add_argument("--meta_tsv", required=True, help="Cell metadata TSV.")
+    parser.add_argument("--meta_cell_id_column", default="cell_id")
+    parser.add_argument(
+        "--donor_column",
+        default="donor_id",
+        help="Donor column for donor-aware balancing (default: donor_id if present).",
+    )
+    parser.add_argument("--phenotype_column", help="Optional phenotype column in metadata.")
+    parser.add_argument("--cell_type_column", help="Optional cell-type column in metadata.")
+    parser.add_argument(
+        "--split_by_cell_type",
+        type=_parse_bool,
+        default=None,
+        help="If true, emit one subset per cell_type. Default: true when --cell_type_column is provided, else false.",
+    )
+    parser.add_argument("--cell_type_allowlist", help="Optional comma-separated cell types to keep.")
+    parser.add_argument("--min_cells_per_cell_type", type=int, default=500)
+    parser.add_argument(
+        "--bucket_columns",
+        help=(
+            "Optional comma-separated bucket columns for downsampling. "
+            "Default: (cell_type,donor) when split, donor when not split, else global."
+        ),
+    )
+    parser.add_argument("--max_cells_per_bucket", type=int, default=200)
+    parser.add_argument("--max_cells_total", type=int, default=20000)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--matrix_value_type", choices=["counts", "logcounts"], default="logcounts")
+    parser.add_argument("--min_total_per_cell", type=float)
+    parser.add_argument("--min_total_per_gene", type=float)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--keep_tmp", type=_parse_bool, default=False)
+
+    parser.add_argument("--cnmf_name", help="Optional base cNMF run name per subset.")
+    parser.add_argument("--cnmf_k_list", default="10 15 20")
+    parser.add_argument("--cnmf_n_iter", type=int, default=100)
+    parser.add_argument("--cnmf_numgenes", type=int, default=2000)
+    parser.add_argument("--cnmf_total_workers", type=int, default=1)
+    parser.add_argument(
+        "--cnmf_densify",
+        type=_parse_bool,
+        default=True,
+        help="Whether generated cnmf prepare command includes --densify.",
+    )
+    parser.add_argument("--write_postprocess_template", type=_parse_bool, default=True)
+    parser.add_argument("--execute", type=_parse_bool, default=False)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+
+
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--program_preset",
@@ -358,6 +415,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
+
+    p_workflows = sub.add_parser("workflows")
+    wf_sub = p_workflows.add_subparsers(dest="workflow_command", required=True)
+    p_scrna_cnmf_prepare = wf_sub.add_parser("scrna_cnmf_prepare")
+    _add_scrna_cnmf_prepare_flags(p_scrna_cnmf_prepare)
 
     p_resources = sub.add_parser("resources")
     res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
@@ -767,6 +829,19 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("manifest validation failed in strict mode due to warnings")
                 print("ok")
                 print(f"# manifest={manifest_path}", file=sys.stderr)
+                return 0
+
+        if args.command == "workflows":
+            if args.workflow_command == "scrna_cnmf_prepare":
+                from omics2geneset.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_prepare
+
+                result = run_scrna_cnmf_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=scrna_cnmf_prepare n_subsets={result.get('n_subsets')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
                 return 0
 
         if args.command == "convert":

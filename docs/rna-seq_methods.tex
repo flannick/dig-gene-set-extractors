@@ -289,8 +289,9 @@ For very large scRNA maps, upstream factorization choices usually dominate downs
 \item \textbf{Control donor imbalance.} If one donor contributes most cells, factors can become donor-driven rather than biology-driven.
 \item \textbf{Keep gene filtering consistent.} Use the same mitochondrial/ribosomal policy upstream and during conversion.
 \item \textbf{Choose moderate factor count first.} Start with conservative $K$, then increase only if resulting programs remain interpretable.
+\item \textbf{Respect cNMF input constraints.} Remove zero-total cells and zero-total genes before factorization; cNMF warnings on these inputs usually indicate unstable factorization setup.
 \end{itemize}
-To support practical workflows, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected.
+To support practical workflows, this repo provides \texttt{omics2geneset workflows scrna\_cnmf\_prepare}, which performs deterministic downsampling, subset splitting, and zero-total filtering, and writes per-subset cNMF run scripts. Separately, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected during ingestion.
 
 \begin{thebibliography}{9}
 \bibitem{love2014deseq2}

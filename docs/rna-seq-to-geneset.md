@@ -70,7 +70,36 @@ Grouped output layout:
 
 ## Quickstart: scRNA program loadings (`rna_sc_programs`)
 
-This converter does not run NMF/cNMF/scHPF itself. It ingests precomputed gene loadings from those tools.
+This converter ingests precomputed gene loadings only. It does not downsample cells, split by cell type, or run cNMF/scHPF itself.
+
+### Recommended cNMF path in this repo
+
+Use the workflow command to prepare cNMF-ready subsets and run scripts, then ingest the resulting gene spectra with `rna_sc_programs`:
+
+```bash
+omics2geneset workflows scrna_cnmf_prepare \
+  --matrix_tsv path/to/cell_by_gene_logcounts.tsv \
+  --meta_tsv path/to/cell_metadata.tsv \
+  --meta_cell_id_column cell_id \
+  --cell_type_column cell_type \
+  --donor_column donor_id \
+  --split_by_cell_type true \
+  --max_cells_per_bucket 200 \
+  --max_cells_total 20000 \
+  --out_dir results/scrna_cnmf_prepare
+
+# Then run each generated subset script:
+#   results/scrna_cnmf_prepare/subsets/<subset>/run_cnmf.sh
+
+# After cNMF consensus, ingest gene spectra:
+omics2geneset convert rna_sc_programs \
+  --cnmf_gene_spectra_tsv path/to/<name>.gene_spectra_tpm.k_<K>.dt_<...>.txt \
+  --out_dir results/rna_sc_programs_cnmf \
+  --organism human \
+  --genome_build hg38
+```
+
+Detailed workflow page: `docs/scrna_cnmf_workflow.md`.
 
 ### Generic loadings TSV
 
@@ -126,6 +155,14 @@ Recommended upstream workflow:
 - If donor metadata is present, avoid donor imbalance so one donor does not dominate factorization.
 - Keep gene filtering policy stable between factorization and conversion (especially mitochondrial/ribosomal handling).
 - Start with moderate `K` values and increase only if programs remain interpretable.
+- cNMF expects nonnegative expression matrices and should not include zero-total cells or zero-total genes. The `workflows scrna_cnmf_prepare` command enforces these filters.
+
+Large atlas best-practice checklist:
+
+- Split by cell type when the atlas is heterogeneous.
+- Cap cells per `(cell_type, donor)` bucket to avoid donor dominance.
+- Keep `--seed` fixed for reproducibility.
+- Prefer counts for cNMF when available; if using logcounts, keep values nonnegative and use the generated `--densify` script option as needed.
 
 Supported loadings artifacts for `rna_sc_programs`:
 
@@ -230,7 +267,7 @@ Repeated `(program_id, gene_id)` rows are aggregated additively at parse time.
 
 ## Optional helper script for quick NMF loadings
 
-For exploratory workflows, the repo includes an optional convenience script:
+For exploratory workflows (outside cNMF), the repo includes an optional convenience script:
 
 ```bash
 python scripts/scrna_quick_nmf.py --help
