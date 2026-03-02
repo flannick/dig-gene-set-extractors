@@ -673,7 +673,10 @@ def build_parser() -> argparse.ArgumentParser:
         const=True,
         type=_parse_bool,
         default=False,
-        help="Enable purity correction (supports --use_purity_correction or --use_purity_correction true/false).",
+        help=(
+            "Enable purity correction. Examples: --use_purity_correction ; "
+            "--use_purity_correction true ; --use_purity_correction false."
+        ),
     )
     p_cnv.add_argument(
         "--use-purity-correction",
@@ -712,7 +715,10 @@ def build_parser() -> argparse.ArgumentParser:
         const=True,
         type=_parse_bool,
         default=False,
-        help="Enable cohort recurrence gene sets (supports --emit_cohort_sets or --emit_cohort_sets true/false).",
+        help=(
+            "Enable cohort recurrence gene sets. Examples: --emit_cohort_sets ; "
+            "--emit_cohort_sets true ; --emit_cohort_sets false."
+        ),
     )
     p_cnv.add_argument(
         "--emit-cohort-sets",

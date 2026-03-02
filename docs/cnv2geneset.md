@@ -38,31 +38,6 @@ Optional column overrides:
 
 If sample column is absent, the converter treats input as a single sample (`sample1`).
 
-## Data fetch in DNS-restricted environments
-
-For CNV validation runbooks that normally use public URLs, use local-cache mode:
-
-```bash
-../../.venv/bin/python scripts/fetch_data.py \
-  --from-local-cache /path/to/local/cache \
-  --dest data/external \
-  --file tcga_cnv_segments.tsv.gz \
-  --file gencode.v49.basic.annotation.gtf.gz
-```
-
-You can also pass a manifest TSV (`source_rel`, `target_rel`, optional `sha256`):
-
-```bash
-../../.venv/bin/python scripts/fetch_data.py \
-  --from-local-cache /path/to/local/cache \
-  --dest data/external \
-  --manifest config/data_fetch_manifest.tsv
-```
-
-Small versioned CNV fixtures are included under `tests/data/` (for example
-`tests/data/toy_cnv_segments.tsv`, `tests/data/toy_cnv_purity.tsv`) for quick
-validation and CI-style smoke checks.
-
 ## Scoring model
 
 Per segment `i`:
@@ -105,6 +80,19 @@ omics2geneset convert cnv_gene_extractor \
   --genome_build hg38 \
   --purity_tsv path/to/purity.tsv \
   --use_purity_correction true
+```
+
+Boolean flag forms supported:
+
+```bash
+# implicit true
+--use_purity_correction
+
+# explicit true
+--use_purity_correction true
+
+# explicit false
+--use_purity_correction false
 ```
 
 Related flags:
@@ -173,19 +161,6 @@ Sign semantics:
 - Thresholds too strict (`--min_abs_amplitude`, `--gmt_min_genes`)
 - Broad-event dominance: use `--program_preset broad` when arm-level CNV is expected
 - If no rows map to GTF chromosomes, CNV preflight fails fast with remediation hints.
-
-## PIGEAN helper summarization
-
-If your PIGEAN wrapper writes files like `*.gene_stats.out`, use:
-
-```bash
-../../.venv/bin/python scripts/pigean_summarize_outputs.py \
-  --out-dir <run_dir> \
-  --stem <same_stem>
-```
-
-The summarizer accepts both legacy short names (`.gs/.gss/.phs/.f`) and
-wrapper-style names (`.gene_stats.out`, `.gene_set_stats.out`, etc.).
 
 ## Documentation map
 
