@@ -23,6 +23,7 @@ Use this page as the entrypoint, then jump to the assay you are running.
 - If your input is peaks, peak matrices, or scATAC 10x matrices: start with `docs/atac-seq2geneset.md`.
 - If your input is RNA differential expression results or external scRNA program loadings (for example cNMF/scHPF gene loadings): start with `docs/rna-seq-to-geneset.md`.
   For large scRNA atlas preprocessing before cNMF, use `docs/scrna_cnmf_workflow.md`.
+  Workflow commands: `omics2geneset workflows scrna_cnmf_prepare` and `omics2geneset workflows cnmf_select_k`.
 - If your input is differential CpG/probe or DMR tables: start with `docs/methylation2geneset.md`.
 
 ## Backward compatibility note

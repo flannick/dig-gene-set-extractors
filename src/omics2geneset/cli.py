@@ -302,7 +302,28 @@ def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--keep_tmp", type=_parse_bool, default=False)
 
     parser.add_argument("--cnmf_name", help="Optional base cNMF run name per subset.")
-    parser.add_argument("--cnmf_k_list", default="10 15 20")
+    parser.add_argument(
+        "--cnmf_k_list",
+        default="auto",
+        help=(
+            "K grid for cnmf prepare. Use 'auto' (default) for subset-size-dependent K grid, "
+            "or provide explicit values, e.g. '10 15 20'."
+        ),
+    )
+    parser.add_argument(
+        "--cnmf_k",
+        default="auto",
+        help="K for consensus script. Use 'auto' (default) to call workflows cnmf_select_k, or an integer.",
+    )
+    parser.add_argument(
+        "--cnmf_select_strategy",
+        choices=["largest_stable", "max_stability", "manual"],
+        default="largest_stable",
+        help="Auto-K strategy used by generated consensus/conversion scripts when --cnmf_k=auto.",
+    )
+    parser.add_argument("--cnmf_select_stability_frac_of_max", type=float, default=0.95)
+    parser.add_argument("--cnmf_select_min_stability_abs", type=float, default=0.0)
+    parser.add_argument("--cnmf_select_require_local_max", type=_parse_bool, default=False)
     parser.add_argument("--cnmf_n_iter", type=int, default=100)
     parser.add_argument("--cnmf_numgenes", type=int, default=2000)
     parser.add_argument("--cnmf_total_workers", type=int, default=1)
@@ -314,8 +335,23 @@ def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--write_postprocess_template", type=_parse_bool, default=True)
     parser.add_argument("--execute", type=_parse_bool, default=False)
+    parser.add_argument("--cnmf_local_density_threshold", type=float, default=0.5)
+    parser.add_argument("--cnmf_local_neighborhood_size", type=float, default=0.3)
+    parser.add_argument("--cnmf_show_clustering", type=_parse_bool, default=False)
+    parser.add_argument("--cnmf_export_kind", choices=["tpm", "score"], default="tpm")
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")
+
+
+def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cnmf_output_dir", required=True)
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--stats_tsv", help="Optional TSV fallback with columns k,stability,prediction_error.")
+    parser.add_argument("--strategy", choices=["largest_stable", "max_stability", "manual"], default="largest_stable")
+    parser.add_argument("--stability_frac_of_max", type=float, default=0.95)
+    parser.add_argument("--min_stability_abs", type=float, default=0.0)
+    parser.add_argument("--require_local_max", type=_parse_bool, default=False)
+    parser.add_argument("--fixed_k", type=int)
 
 
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
@@ -420,6 +456,8 @@ def build_parser() -> argparse.ArgumentParser:
     wf_sub = p_workflows.add_subparsers(dest="workflow_command", required=True)
     p_scrna_cnmf_prepare = wf_sub.add_parser("scrna_cnmf_prepare")
     _add_scrna_cnmf_prepare_flags(p_scrna_cnmf_prepare)
+    p_cnmf_select_k = wf_sub.add_parser("cnmf_select_k")
+    _add_cnmf_select_k_flags(p_cnmf_select_k)
 
     p_resources = sub.add_parser("resources")
     res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
@@ -842,6 +880,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
+                return 0
+            if args.workflow_command == "cnmf_select_k":
+                from omics2geneset.workflows.cnmf_select_k import run as run_cnmf_select_k
+
+                _ = run_cnmf_select_k(args)
                 return 0
 
         if args.command == "convert":

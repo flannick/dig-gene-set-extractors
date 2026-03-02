@@ -86,10 +86,14 @@ omics2geneset workflows scrna_cnmf_prepare \
   --split_by_cell_type true \
   --max_cells_per_bucket 200 \
   --max_cells_total 20000 \
+  --cnmf_k_list auto \
+  --cnmf_k auto \
   --out_dir results/scrna_cnmf_prepare
 
 # Then run each generated subset script:
 #   results/scrna_cnmf_prepare/subsets/<subset>/run_cnmf.sh
+#   results/scrna_cnmf_prepare/subsets/<subset>/run_cnmf_consensus_auto_k.sh
+#   results/scrna_cnmf_prepare/subsets/<subset>/run_omics2geneset_from_cnmf.sh
 
 # After cNMF consensus, ingest gene spectra:
 omics2geneset convert rna_sc_programs \
@@ -100,6 +104,16 @@ omics2geneset convert rna_sc_programs \
 ```
 
 Detailed workflow page: `docs/scrna_cnmf_workflow.md`.
+
+Override examples:
+
+```bash
+# Fixed K grid and fixed consensus K
+omics2geneset workflows scrna_cnmf_prepare \
+  ... \
+  --cnmf_k_list "10 15 20 25" \
+  --cnmf_k 20
+```
 
 ### Generic loadings TSV
 

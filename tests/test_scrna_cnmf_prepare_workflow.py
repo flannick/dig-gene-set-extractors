@@ -30,13 +30,22 @@ def _make_args(out_dir: Path) -> SimpleNamespace:
         out_dir=str(out_dir),
         keep_tmp=False,
         cnmf_name=None,
-        cnmf_k_list="5 8",
+        cnmf_k_list="auto",
+        cnmf_k="auto",
+        cnmf_select_strategy="largest_stable",
+        cnmf_select_stability_frac_of_max=0.95,
+        cnmf_select_min_stability_abs=0.0,
+        cnmf_select_require_local_max=False,
         cnmf_n_iter=20,
         cnmf_numgenes=50,
         cnmf_total_workers=1,
         cnmf_densify=True,
         write_postprocess_template=True,
         execute=False,
+        cnmf_local_density_threshold=0.5,
+        cnmf_local_neighborhood_size=0.3,
+        cnmf_show_clustering=False,
+        cnmf_export_kind="tpm",
         organism="human",
         genome_build="hg38",
     )
@@ -73,10 +82,16 @@ def test_scrna_cnmf_prepare_creates_split_subsets_and_filters_zero_totals(tmp_pa
         counts_path = subset_dir / "counts_prefiltered.tsv"
         meta_path = subset_dir / "meta.tsv"
         script_path = subset_dir / "run_cnmf.sh"
+        script_consensus = subset_dir / "run_cnmf_consensus_auto_k.sh"
+        script_convert = subset_dir / "run_omics2geneset_from_cnmf.sh"
         assert counts_path.exists()
         assert meta_path.exists()
         assert script_path.exists()
+        assert script_consensus.exists()
+        assert script_convert.exists()
         assert script_path.stat().st_mode & 0o111
+        assert script_consensus.stat().st_mode & 0o111
+        assert script_convert.stat().st_mode & 0o111
 
         header, values = _read_matrix(counts_path)
         assert len(header) >= 2
@@ -94,6 +109,8 @@ def test_scrna_cnmf_prepare_creates_split_subsets_and_filters_zero_totals(tmp_pa
     summary = json.loads((out_dir / "prepare_summary.json").read_text(encoding="utf-8"))
     assert summary["workflow"] == "scrna_cnmf_prepare"
     assert summary["split_by_cell_type"] is True
+    for subset in summary["subsets"]:
+        assert subset["cnmf_k_list_resolved"]
 
 
 def test_scrna_cnmf_prepare_downsampling_is_deterministic(tmp_path: Path):

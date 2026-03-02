@@ -113,9 +113,12 @@ class SubsetPlan:
     n_genes_after_filter: int = 0
     n_genes_dropped_zero_total: int = 0
     n_non_numeric_values: int = 0
+    cnmf_k_list_resolved: list[int] | None = None
     counts_path: Path | None = None
     meta_path: Path | None = None
-    run_script_path: Path | None = None
+    run_cnmf_script_path: Path | None = None
+    run_cnmf_consensus_auto_k_script_path: Path | None = None
+    run_omics2geneset_from_cnmf_script_path: Path | None = None
 
 
 def _load_meta_index(
@@ -319,22 +322,77 @@ def _filter_subset_matrix_for_cnmf(
     }
 
 
-def _parse_k_list(value: str) -> list[str]:
+def _parse_k_list(value: str) -> list[int]:
     tokens = [tok for tok in str(value).replace(",", " ").split() if tok]
     if not tokens:
         raise ValueError("cnmf_k_list must contain at least one K value")
-    return tokens
+    out: list[int] = []
+    for token in tokens:
+        try:
+            k = int(token)
+        except ValueError as exc:
+            raise ValueError(f"Invalid K token in cnmf_k_list: {token}") from exc
+        if k <= 0:
+            raise ValueError(f"K values must be > 0, got: {k}")
+        if k not in out:
+            out.append(k)
+    return out
 
 
-def _write_cnmf_script(
+def _resolve_cnmf_k_list_tokens(cnmf_k_list: str, n_cells_after_downsample: int) -> tuple[list[int], str]:
+    raw = str(cnmf_k_list).strip().lower()
+    if raw != "auto":
+        return _parse_k_list(cnmf_k_list), "explicit"
+    n = int(n_cells_after_downsample)
+    if n <= 1500:
+        return [5, 8, 10, 12, 15], "auto_small"
+    if n <= 5000:
+        return [10, 15, 20, 25, 30], "auto_medium"
+    return [15, 20, 25, 30, 35, 40, 45, 50], "auto_large"
+
+
+def _parse_fixed_k_or_auto(raw_value: str) -> tuple[str, int | None]:
+    text = str(raw_value).strip().lower()
+    if text == "auto":
+        return "auto", None
+    try:
+        k = int(text)
+    except ValueError as exc:
+        raise ValueError(f"--cnmf_k must be 'auto' or an integer, got: {raw_value}") from exc
+    if k <= 0:
+        raise ValueError(f"--cnmf_k must be > 0 when integer, got: {k}")
+    return "fixed", k
+
+
+def _selector_call_line(args, quote_fixed_k: str | None = None) -> str:
+    cmd = (
+        'omics2geneset workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
+        f'--strategy {args.cnmf_select_strategy} '
+        f'--stability_frac_of_max {float(args.cnmf_select_stability_frac_of_max)} '
+        f'--min_stability_abs {float(args.cnmf_select_min_stability_abs)} '
+        f'--require_local_max {"true" if bool(args.cnmf_select_require_local_max) else "false"}'
+    )
+    if quote_fixed_k is not None:
+        cmd += f" --fixed_k {quote_fixed_k}"
+    return cmd
+
+
+def _selector_manual_call_line(quote_fixed_k: str) -> str:
+    return (
+        'omics2geneset workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
+        f"--strategy manual --fixed_k {quote_fixed_k}"
+    )
+
+
+def _write_cnmf_prepare_script(
     *,
     subset_dir: Path,
     subset_id: str,
     args,
     counts_filename: str,
+    k_tokens: list[int],
 ) -> Path:
     script_path = subset_dir / "run_cnmf.sh"
-    k_tokens = _parse_k_list(args.cnmf_k_list)
     safe_subset = _safe_component(subset_id, "subset")
     cnmf_name = str(args.cnmf_name).strip() if args.cnmf_name else safe_subset
     densify = bool(args.cnmf_densify)
@@ -346,7 +404,7 @@ def _write_cnmf_script(
         'OUTDIR="$(pwd)/cnmf_out"',
         f'NAME="{cnmf_name}"',
         f'COUNTS="{counts_filename}"',
-        f'K_LIST="{" ".join(k_tokens)}"',
+        f'K_LIST="{" ".join(str(k) for k in k_tokens)}"',
         f'N_ITER="{int(args.cnmf_n_iter)}"',
         f'NUMGENES="{int(args.cnmf_numgenes)}"',
         f'SEED="{int(args.seed)}"',
@@ -370,25 +428,113 @@ def _write_cnmf_script(
         '  --worker-index 0 \\',
         '  --total-workers "$TOTAL_WORKERS"',
         "",
-        "cnmf combine --output-dir \"$OUTDIR\" --name \"$NAME\"",
-        "cnmf k_selection_plot --output-dir \"$OUTDIR\" --name \"$NAME\"",
-        "",
-        "# Choose K from the selection plot, then run consensus (example):",
-        "# cnmf consensus --output-dir \"$OUTDIR\" --name \"$NAME\" --components <K_CHOSEN> --local-density-threshold 0.01",
+        'cnmf combine --output-dir "$OUTDIR" --name "$NAME"',
+        'cnmf k_selection_plot --output-dir "$OUTDIR" --name "$NAME"',
     ]
+    script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    script_path.chmod(0o755)
+    return script_path
 
-    if bool(args.write_postprocess_template):
-        lines.extend(
-            [
-                "",
-                "# Convert selected cNMF spectra to gene sets (template):",
-                "# omics2geneset convert rna_sc_programs \\",
-                "#   --cnmf_gene_spectra_tsv \"$OUTDIR/$NAME.gene_spectra_tpm.k_<K_CHOSEN>.dt_0_01.txt\" \\",
-                "#   --out_dir \"$OUTDIR/omics2geneset_programs\" \\",
-                f"#   --organism {args.organism} --genome_build {args.genome_build}",
-            ]
-        )
 
+def _write_cnmf_consensus_auto_k_script(
+    *,
+    subset_dir: Path,
+    subset_id: str,
+    args,
+) -> Path:
+    script_path = subset_dir / "run_cnmf_consensus_auto_k.sh"
+    safe_subset = _safe_component(subset_id, "subset")
+    cnmf_name = str(args.cnmf_name).strip() if args.cnmf_name else safe_subset
+    _k_mode, fixed_k = _parse_fixed_k_or_auto(args.cnmf_k)
+    selector_cmd_auto = _selector_call_line(args)
+    selector_cmd_manual = _selector_manual_call_line('"$K"')
+
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        'OUTDIR="$(pwd)/cnmf_out"',
+        f'NAME="{cnmf_name}"',
+        f'K_OVERRIDE="{args.cnmf_k}"',
+        "",
+        'if [[ "$K_OVERRIDE" == "auto" ]]; then',
+        f'  K="$({selector_cmd_auto})"',
+        "else",
+        '  K="$K_OVERRIDE"',
+        (f"  {selector_cmd_manual} > /dev/null" if fixed_k is not None else f"  {selector_cmd_auto} > /dev/null"),
+        "fi",
+        "",
+        'echo "Using K=$K for consensus" >&2',
+        "cnmf consensus \\",
+        '  --output-dir "$OUTDIR" \\',
+        '  --name "$NAME" \\',
+        '  --components "$K" \\',
+        f'  --local-density-threshold {float(args.cnmf_local_density_threshold)} \\',
+        f'  --local-neighborhood-size {float(args.cnmf_local_neighborhood_size)} \\',
+        ("  --show-clustering" if bool(args.cnmf_show_clustering) else "  # --show-clustering"),
+    ]
+    script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    script_path.chmod(0o755)
+    return script_path
+
+
+def _write_omics2geneset_from_cnmf_script(
+    *,
+    subset_dir: Path,
+    subset_id: str,
+    args,
+) -> Path:
+    script_path = subset_dir / "run_omics2geneset_from_cnmf.sh"
+    safe_subset = _safe_component(subset_id, "subset")
+    cnmf_name = str(args.cnmf_name).strip() if args.cnmf_name else safe_subset
+    export_kind = str(args.cnmf_export_kind).strip()
+    if export_kind not in {"tpm", "score"}:
+        raise ValueError(f"Unsupported --cnmf_export_kind: {export_kind}")
+
+    extra_flags = ""
+    if export_kind == "score":
+        extra_flags = "--score_transform signed --gmt_split_signed true"
+    selector_cmd_auto = _selector_call_line(args)
+    selector_cmd_manual = _selector_manual_call_line('"$K"')
+    k_is_auto = str(args.cnmf_k).strip().lower() == "auto"
+
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        'OUTDIR="$(pwd)/cnmf_out"',
+        f'NAME="{cnmf_name}"',
+        f'K_OVERRIDE="{args.cnmf_k}"',
+        f'EXPORT_KIND="{export_kind}"',
+        "",
+        'if [[ "$K_OVERRIDE" == "auto" ]]; then',
+        f'  K="$({selector_cmd_auto})"',
+        "else",
+        '  K="$K_OVERRIDE"',
+        (f"  {selector_cmd_manual} > /dev/null" if not k_is_auto else f"  {selector_cmd_auto} > /dev/null"),
+        "fi",
+        "",
+        "shopt -s nullglob",
+        'MATCHES=( "$OUTDIR/$NAME.gene_spectra_${EXPORT_KIND}.k_${K}.dt_"*.txt )',
+        "shopt -u nullglob",
+        'if [[ ${#MATCHES[@]} -eq 0 ]]; then',
+        '  echo "error: no gene spectra file matched kind=${EXPORT_KIND}, k=${K}. Run consensus first." >&2',
+        "  exit 2",
+        "fi",
+        'if [[ ${#MATCHES[@]} -gt 1 ]]; then',
+        '  echo "error: multiple spectra files matched for kind=${EXPORT_KIND}, k=${K}:" >&2',
+        '  printf "  %s\\n" "${MATCHES[@]}" >&2',
+        '  echo "Please keep one file or edit this script to pick a specific dt." >&2',
+        "  exit 2",
+        "fi",
+        'SPECTRA="${MATCHES[0]}"',
+        'OUT_GENESETS="$OUTDIR/omics2geneset_programs_k_${K}_${EXPORT_KIND}"',
+        "",
+        "omics2geneset convert rna_sc_programs \\",
+        '  --cnmf_gene_spectra_tsv "$SPECTRA" \\',
+        '  --out_dir "$OUT_GENESETS" \\',
+        f'  --organism {args.organism} --genome_build {args.genome_build}' + (f" {extra_flags}" if extra_flags else ""),
+    ]
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     script_path.chmod(0o755)
     return script_path
@@ -423,6 +569,11 @@ def run(args) -> dict[str, object]:
 
     min_total_per_cell = _detect_default_threshold(args.matrix_value_type, args.min_total_per_cell)
     min_total_per_gene = _detect_default_threshold(args.matrix_value_type, args.min_total_per_gene)
+    if str(args.cnmf_k).strip().lower() == "auto" and str(args.cnmf_select_strategy).strip().lower() == "manual":
+        raise ValueError(
+            "--cnmf_select_strategy manual requires explicit --cnmf_k <INT> for generated scripts "
+            "(or use a non-manual strategy with --cnmf_k auto)."
+        )
 
     requested_bucket_columns = _parse_csv_list(args.bucket_columns)
     allow_cell_types = set(_parse_csv_list(args.cell_type_allowlist))
@@ -660,14 +811,26 @@ def run(args) -> dict[str, object]:
                 file=sys.stderr,
             )
 
-        script_path = _write_cnmf_script(
+        k_tokens, _k_mode = _resolve_cnmf_k_list_tokens(args.cnmf_k_list, plan.n_cells_after_downsample)
+        plan.cnmf_k_list_resolved = k_tokens
+        plan.run_cnmf_script_path = _write_cnmf_prepare_script(
             subset_dir=plan.subset_dir,
             subset_id=subset_id,
             args=args,
             counts_filename=counts_path.name,
+            k_tokens=k_tokens,
         )
-        plan.run_script_path = script_path
-        _execute_script_if_requested(script_path, bool(args.execute))
+        plan.run_cnmf_consensus_auto_k_script_path = _write_cnmf_consensus_auto_k_script(
+            subset_dir=plan.subset_dir,
+            subset_id=subset_id,
+            args=args,
+        )
+        plan.run_omics2geneset_from_cnmf_script_path = _write_omics2geneset_from_cnmf_script(
+            subset_dir=plan.subset_dir,
+            subset_id=subset_id,
+            args=args,
+        )
+        _execute_script_if_requested(plan.run_cnmf_script_path, bool(args.execute))
 
     manifest_path = out_dir / "subsets_manifest.tsv"
     with manifest_path.open("w", encoding="utf-8", newline="") as fh:
@@ -680,9 +843,12 @@ def run(args) -> dict[str, object]:
                 "n_cells_after_filter",
                 "n_genes_before",
                 "n_genes_after_filter",
+                "cnmf_k_list_resolved",
                 "counts_path",
                 "meta_path",
                 "run_cnmf_script",
+                "run_cnmf_consensus_auto_k_script",
+                "run_omics2geneset_from_cnmf_script",
             ]
         )
         for subset_id in retained_subset_ids:
@@ -695,9 +861,12 @@ def run(args) -> dict[str, object]:
                     p.n_cells_after_filter,
                     p.n_genes_before,
                     p.n_genes_after_filter,
+                    " ".join(str(x) for x in (p.cnmf_k_list_resolved or [])),
                     str((p.counts_path or Path("")).relative_to(out_dir)),
                     str((p.meta_path or Path("")).relative_to(out_dir)),
-                    str((p.run_script_path or Path("")).relative_to(out_dir)),
+                    str((p.run_cnmf_script_path or Path("")).relative_to(out_dir)),
+                    str((p.run_cnmf_consensus_auto_k_script_path or Path("")).relative_to(out_dir)),
+                    str((p.run_omics2geneset_from_cnmf_script_path or Path("")).relative_to(out_dir)),
                 ]
             )
 
@@ -720,11 +889,20 @@ def run(args) -> dict[str, object]:
         "min_total_per_gene": float(min_total_per_gene),
         "cnmf": {
             "cnmf_name": args.cnmf_name,
-            "cnmf_k_list": _parse_k_list(args.cnmf_k_list),
+            "cnmf_k_list_input": str(args.cnmf_k_list),
+            "cnmf_k_input": str(args.cnmf_k),
+            "cnmf_select_strategy": str(args.cnmf_select_strategy),
+            "cnmf_select_stability_frac_of_max": float(args.cnmf_select_stability_frac_of_max),
+            "cnmf_select_min_stability_abs": float(args.cnmf_select_min_stability_abs),
+            "cnmf_select_require_local_max": bool(args.cnmf_select_require_local_max),
             "cnmf_n_iter": int(args.cnmf_n_iter),
             "cnmf_numgenes": int(args.cnmf_numgenes),
             "cnmf_total_workers": int(args.cnmf_total_workers),
             "cnmf_densify": bool(args.cnmf_densify),
+            "cnmf_local_density_threshold": float(args.cnmf_local_density_threshold),
+            "cnmf_local_neighborhood_size": float(args.cnmf_local_neighborhood_size),
+            "cnmf_show_clustering": bool(args.cnmf_show_clustering),
+            "cnmf_export_kind": str(args.cnmf_export_kind),
             "execute": bool(args.execute),
         },
         "matrix_summary": {
@@ -747,9 +925,16 @@ def run(args) -> dict[str, object]:
                 "n_genes_after_filter": plans[sid].n_genes_after_filter,
                 "n_genes_dropped_zero_total": plans[sid].n_genes_dropped_zero_total,
                 "n_non_numeric_values": plans[sid].n_non_numeric_values,
+                "cnmf_k_list_resolved": plans[sid].cnmf_k_list_resolved or [],
                 "counts_path": str((plans[sid].counts_path or Path("")).relative_to(out_dir)),
                 "meta_path": str((plans[sid].meta_path or Path("")).relative_to(out_dir)),
-                "run_cnmf_script": str((plans[sid].run_script_path or Path("")).relative_to(out_dir)),
+                "run_cnmf_script": str((plans[sid].run_cnmf_script_path or Path("")).relative_to(out_dir)),
+                "run_cnmf_consensus_auto_k_script": str(
+                    (plans[sid].run_cnmf_consensus_auto_k_script_path or Path("")).relative_to(out_dir)
+                ),
+                "run_omics2geneset_from_cnmf_script": str(
+                    (plans[sid].run_omics2geneset_from_cnmf_script_path or Path("")).relative_to(out_dir)
+                ),
             }
             for sid in retained_subset_ids
         ],
@@ -767,4 +952,3 @@ def run(args) -> dict[str, object]:
         "n_subsets": len(retained_subset_ids),
         "subsets_manifest": str(manifest_path),
     }
-

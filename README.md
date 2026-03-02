@@ -51,6 +51,11 @@ RNA-focused converters:
 - `rna_sc_programs`
 - `sc_rna_marker`
 
+RNA workflow commands:
+
+- `workflows scrna_cnmf_prepare` (downsample/split/filter + generate per-subset cNMF scripts)
+- `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
+
 DNA methylation converters:
 
 - `methylation_cpg_diff`

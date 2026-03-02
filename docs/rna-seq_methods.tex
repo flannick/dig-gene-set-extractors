@@ -293,6 +293,19 @@ For very large scRNA maps, upstream factorization choices usually dominate downs
 \end{itemize}
 To support practical workflows, this repo provides \texttt{omics2geneset workflows scrna\_cnmf\_prepare}, which performs deterministic downsampling, subset splitting, and zero-total filtering, and writes per-subset cNMF run scripts. Separately, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected during ingestion.
 
+\subsection*{Auto-selection of factor count ($K$)}
+For cNMF workflows, $K$ is selected from the cNMF stability/error diagnostics rather than fixed globally.
+The repo workflow command \texttt{omics2geneset workflows cnmf\_select\_k} reads the cNMF
+\texttt{k\_selection\_stats} output and applies a reproducible default heuristic:
+\begin{itemize}[leftmargin=2em]
+\item Strategy: \texttt{largest\_stable}
+\item Candidate rule: stability $\ge 0.95 \times \max(\text{stability})$
+\item Choice: largest $K$ among candidates
+\item Fallback: max-stability $K$ when no candidate passes thresholds
+\end{itemize}
+This preserves practical flexibility (no universal single criterion) while keeping the default automated and reproducible.
+Users can override with explicit fixed $K$ or stricter local-maximum constraints.
+
 \begin{thebibliography}{9}
 \bibitem{love2014deseq2}
 Love MI, Huber W, Anders S.

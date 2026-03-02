@@ -40,10 +40,40 @@ omics2geneset workflows scrna_cnmf_prepare \
   --split_by_cell_type true \
   --max_cells_per_bucket 200 \
   --max_cells_total 20000 \
+  --cnmf_k_list auto \
+  --cnmf_k auto \
   --seed 1 \
   --matrix_value_type logcounts \
   --out_dir results/scrna_cnmf_prepare
 ```
+
+## K selection (default auto)
+
+`K` is the number of cNMF components/programs. The recommended path is:
+
+1. run `cnmf prepare/factorize/combine/k_selection_plot` over a K grid
+2. select K from stability vs prediction-error tradeoff
+3. run `cnmf consensus` at selected K
+
+The default in this repo is reproducible auto-selection with:
+
+- strategy: `largest_stable`
+- threshold: `stability >= 0.95 * max(stability)`
+- tie-break: largest K among candidates
+- fallback: max stability when no candidate passes threshold
+
+You can run selector directly:
+
+```bash
+omics2geneset workflows cnmf_select_k \
+  --cnmf_output_dir results/scrna_cnmf_prepare/subsets/cell_type=<CT>/cnmf_out \
+  --name <RUN_NAME>
+```
+
+Artifacts written in the cNMF run directory:
+
+- `omics2geneset_k_selection.tsv`
+- `omics2geneset_selected_k.json`
 
 ## Output layout
 
@@ -53,6 +83,8 @@ omics2geneset workflows scrna_cnmf_prepare \
   - `cell_type=<CT>/counts_prefiltered.tsv`
   - `cell_type=<CT>/meta.tsv`
   - `cell_type=<CT>/run_cnmf.sh`
+  - `cell_type=<CT>/run_cnmf_consensus_auto_k.sh`
+  - `cell_type=<CT>/run_omics2geneset_from_cnmf.sh`
   - or `all/` when not splitting by cell type
 
 ## cNMF script generation
@@ -71,6 +103,49 @@ This repo does not require `cnmf` as a dependency. By default scripts are genera
 Optional:
 
 - `--execute true` attempts to execute generated scripts and fails early if `cnmf` is missing.
+
+Generated scripts:
+
+- `run_cnmf.sh`: prepare/factorize/combine/k_selection_plot
+- `run_cnmf_consensus_auto_k.sh`: selects K via `workflows cnmf_select_k` (or fixed `--cnmf_k`) and runs consensus
+- `run_omics2geneset_from_cnmf.sh`: finds consensus spectra file (`tpm` by default) and runs `convert rna_sc_programs`
+
+## Workflow flags and defaults
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--cnmf_k_list` | K grid for prepare (`auto` uses subset-size rule) | `auto` |
+| `--cnmf_k` | K for consensus script (`auto` or integer) | `auto` |
+| `--cnmf_n_iter` | cNMF iterations for prepare | `100` |
+| `--cnmf_numgenes` | Number of high-variance genes for cNMF | `2000` |
+| `--seed` | Reproducible downsampling and cNMF seed passthrough | `1` |
+| `--cnmf_total_workers` | Total workers for factorize command | `1` |
+| `--cnmf_local_density_threshold` | Consensus local density threshold | `0.5` |
+| `--cnmf_local_neighborhood_size` | Consensus local neighborhood size | `0.3` |
+
+Auto K-grid by subset size (`n_cells_after_downsampling`):
+
+- `<= 1500`: `5 8 10 12 15`
+- `1500-5000`: `10 15 20 25 30`
+- `> 5000`: `15 20 25 30 35 40 45 50`
+
+Override examples:
+
+```bash
+# fixed grid + fixed K
+omics2geneset workflows scrna_cnmf_prepare \
+  ... \
+  --cnmf_k_list "10 15 20 25" \
+  --cnmf_k 20
+
+# auto grid + stricter local-max K selection
+omics2geneset workflows cnmf_select_k \
+  --cnmf_output_dir <CNMF_OUTDIR> \
+  --name <RUN_NAME> \
+  --strategy largest_stable \
+  --stability_frac_of_max 0.95 \
+  --require_local_max true
+```
 
 ## Key tuning parameters
 

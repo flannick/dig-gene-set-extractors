@@ -12,6 +12,7 @@ license = {text = "MIT"}
 authors = [{name = "DIG"}]
 dependencies = [
   "jsonschema>=4.0",
+  "numpy>=1.23",
 ]
 
 [project.optional-dependencies]
