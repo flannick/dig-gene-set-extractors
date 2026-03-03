@@ -326,6 +326,11 @@ def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]], *, sample_id
                 f"warning: sample={sample_id} program={program} has marginal gene count (n_genes={n_genes}). {reason}",
                 file=sys.stderr,
             )
+        elif code == "require_symbol_heavy_drop":
+            print(
+                f"warning: sample={sample_id} program={program} GMT symbol requirement dropped many rows. {reason}",
+                file=sys.stderr,
+            )
         elif code == "no_positive_genes":
             print(
                 f"warning: sample={sample_id} program={program} has no positive genes after filtering; GMT not emitted.",

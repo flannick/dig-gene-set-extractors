@@ -489,6 +489,11 @@ def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> None:
             print(f"warning: emitted small GMT output for {base_name}; n_genes={n_genes}. {reason}", file=sys.stderr)
         elif code == "marginal_gene_count":
             print(f"warning: marginal GMT signal for {base_name}; n_genes={n_genes}. {reason}", file=sys.stderr)
+        elif code == "require_symbol_heavy_drop":
+            print(
+                f"warning: GMT symbol requirement dropped many rows for {base_name}. {reason}",
+                file=sys.stderr,
+            )
         else:
             continue
         if suggestion:

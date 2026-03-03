@@ -122,6 +122,49 @@ Placeholder resource IDs are included in `src/omics2geneset/resources/manifest.j
 
 Runtime metadata and summaries record whether probe mapping came from an explicit TSV or a resolved resource id/path.
 
+Important current behavior:
+
+- The bundled manifest entries for these methylation probe IDs are intentionally
+  "manual/bundle" entries (no default public URL in-repo).
+- `omics2geneset resources fetch --preset methylation_probe_manifests_human`
+  will skip them unless you provide URLs in an overlay manifest.
+
+Canonical path today:
+
+1. Put probe manifest files in a local resources directory with the expected filenames:
+   - `methylation_probe_manifest_450k_hg19.tsv.gz`
+   - `methylation_probe_manifest_epic_hg19.tsv.gz`
+   - `methylation_probe_manifest_450k_hg38.tsv.gz`
+   - `methylation_probe_manifest_epic_hg38.tsv.gz`
+2. Set `OMICS2GENESET_RESOURCES_DIR` (or pass `--resources_dir`).
+3. Run converter without `--probe_manifest_tsv`; it auto-resolves by `array_type` and `genome_build`.
+
+Example:
+
+```bash
+export OMICS2GENESET_RESOURCES_DIR=/path/to/methylation_resources
+
+omics2geneset convert methylation_cpg_diff \
+  --cpg_tsv path/to/cpg_probe_only.tsv \
+  --gtf path/to/genes.gtf.gz \
+  --organism human \
+  --genome_build hg38 \
+  --array_type 450k \
+  --out_dir results/methylation_cpg
+```
+
+### Probe manifest provenance and licensing notes
+
+When creating or sharing a local methylation manifest bundle, record at minimum:
+
+- upstream source package/dataset and version
+- genome build used for exported coordinates
+- transform steps (if any) from upstream format to `probe_id/chrom/pos` or `start/end`
+- license string you believe applies to the redistributed derived TSV
+
+Common source path is Bioconductor annotation packages; package license metadata is
+often Artistic-2.0, but verify and document the exact package/version used for your files.
+
 ### Enhancer restriction for distal programs
 
 Distal programs are non-promoter by default. To restrict to enhancer-overlapping regions:

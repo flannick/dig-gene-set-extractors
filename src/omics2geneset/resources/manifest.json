@@ -3,38 +3,38 @@
     {
       "id": "ccre_ubiquity_hg19",
       "description": "Reference cCRE ubiquity table for hg19 with columns chrom,start,end,idf_ref (or df_ref,n_ref)",
-      "provider": "user_or_zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:ccre_ubiquity_hg19",
       "version": "0.2.0",
       "genome_build": "hg19",
       "filename": "ccre_ubiquity_hg19.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "ccre_ubiquity_hg38",
       "description": "Reference cCRE ubiquity table for hg38 with columns chrom,start,end,idf_ref (or df_ref,n_ref)",
-      "provider": "user_or_zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:ccre_ubiquity_hg38",
       "version": "0.2.0",
       "genome_build": "hg38",
       "filename": "ccre_ubiquity_hg38.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "ccre_ubiquity_mm10",
       "description": "Reference cCRE ubiquity table for mm10 with columns chrom,start,end,idf_ref (or df_ref,n_ref)",
-      "provider": "user_or_zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:ccre_ubiquity_mm10",
       "version": "0.1.0",
       "genome_build": "mm10",
       "filename": "ccre_ubiquity_mm10.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "encode_ccre_hg19",
@@ -75,86 +75,86 @@
     {
       "id": "atac_reference_profiles_hg19",
       "description": "Optional precomputed ATAC gene-score reference profiles for hg19 residualization workflows",
-      "provider": "zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:atac_reference_profiles_hg19",
       "version": "0.2.0",
       "genome_build": "hg19",
       "filename": "atac_reference_profiles_hg19.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "atac_reference_profiles_hg38",
       "description": "Optional precomputed ATAC gene-score reference profiles for residualization workflows",
-      "provider": "zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:atac_reference_profiles_hg38",
       "version": "0.2.0",
       "genome_build": "hg38",
       "filename": "atac_reference_profiles_hg38.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "atac_reference_profiles_mm10",
       "description": "Optional precomputed ATAC gene-score reference profiles for mm10 residualization workflows",
-      "provider": "zenodo_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:atac_reference_profiles_mm10",
       "version": "0.1.0",
       "genome_build": "mm10",
       "filename": "atac_reference_profiles_mm10.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream reference resource license; document source/version in local bundle provenance"
     },
     {
       "id": "methylation_probe_manifest_450k_hg19",
       "description": "Probe manifest for Illumina 450k arrays on hg19 (probe_id -> genomic coordinates)",
-      "provider": "user_or_curated_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:methylation_probe_manifest_450k_hg19",
       "version": "0.1.0",
       "genome_build": "hg19",
       "filename": "methylation_probe_manifest_450k_hg19.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream annotation package license; document source/version in local bundle provenance"
     },
     {
       "id": "methylation_probe_manifest_epic_hg19",
       "description": "Probe manifest for Illumina EPIC arrays on hg19 (probe_id -> genomic coordinates)",
-      "provider": "user_or_curated_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:methylation_probe_manifest_epic_hg19",
       "version": "0.1.0",
       "genome_build": "hg19",
       "filename": "methylation_probe_manifest_epic_hg19.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream annotation package license; document source/version in local bundle provenance"
     },
     {
       "id": "methylation_probe_manifest_450k_hg38",
       "description": "Probe manifest for Illumina 450k arrays on hg38 (probe_id -> genomic coordinates)",
-      "provider": "user_or_curated_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:methylation_probe_manifest_450k_hg38",
       "version": "0.1.0",
       "genome_build": "hg38",
       "filename": "methylation_probe_manifest_450k_hg38.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream annotation package license; document source/version in local bundle provenance"
     },
     {
       "id": "methylation_probe_manifest_epic_hg38",
       "description": "Probe manifest for Illumina EPIC arrays on hg38 (probe_id -> genomic coordinates)",
-      "provider": "user_or_curated_placeholder",
-      "stable_id": "TODO",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:methylation_probe_manifest_epic_hg38",
       "version": "0.1.0",
       "genome_build": "hg38",
       "filename": "methylation_probe_manifest_epic_hg38.tsv.gz",
       "url": "",
       "sha256": "",
-      "license": "TBD"
+      "license": "Upstream annotation package license; document source/version in local bundle provenance"
     }
   ],
   "presets": {

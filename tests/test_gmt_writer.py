@@ -58,3 +58,25 @@ def test_build_gmt_sets_filters_by_biotype_allowlist():
     assert sets
     _, genes = sets[0]
     assert genes == ["GENEA", "GENEB"]
+
+
+def test_build_gmt_sets_emits_require_symbol_heavy_drop_diagnostic():
+    rows = [
+        {"gene_id": "ENSG000001.1", "gene_symbol": "", "score": 5.0},
+        {"gene_id": "ENSG000002.1", "gene_symbol": "", "score": 4.0},
+        {"gene_id": "ENSG000003.1", "gene_symbol": "TP53", "score": 3.0},
+    ]
+    diagnostics: list[dict[str, object]] = []
+    build_gmt_sets_from_rows(
+        rows=rows,
+        base_name="demo",
+        prefer_symbol=True,
+        min_genes=1,
+        max_genes=10,
+        topk_list=[10],
+        mass_list=[],
+        split_signed=False,
+        require_symbol=True,
+        diagnostics=diagnostics,
+    )
+    assert any(str(d.get("code")) == "require_symbol_heavy_drop" for d in diagnostics)

@@ -203,6 +203,31 @@ def build_gmt_sets_from_rows(
 
     for sign_suffix, variant_rows in variants:
         positive_rows = [r for r in variant_rows if float(r.get("score", 0.0)) > 0.0]
+        if require_symbol and positive_rows:
+            total_rows = len(positive_rows)
+            rows_with_symbol_token = 0
+            for row in positive_rows:
+                if _candidate_token(row, prefer_symbol, require_symbol=True):
+                    rows_with_symbol_token += 1
+            missing_rows = total_rows - rows_with_symbol_token
+            missing_frac = (float(missing_rows) / float(total_rows)) if total_rows else 0.0
+            if missing_rows > 0 and missing_frac >= 0.5:
+                _record_diag(
+                    {
+                        "level": "warning",
+                        "code": "require_symbol_heavy_drop",
+                        "base_name": base_name,
+                        "variant": (sign_suffix.lstrip("_") or "primary"),
+                        "n_rows_total_positive": total_rows,
+                        "n_rows_missing_symbol": missing_rows,
+                        "fraction_missing_symbol": missing_frac,
+                        "reason": "gmt_require_symbol removed many positive-scoring rows due to missing/invalid symbols",
+                        "suggestion": (
+                            "consider --gmt_require_symbol false, or provide gene_symbol/annotation mapping "
+                            "for this run"
+                        ),
+                    }
+                )
         positive_gene_tokens = choose_gene_tokens(
             positive_rows,
             prefer_symbol,
@@ -211,6 +236,12 @@ def build_gmt_sets_from_rows(
         n_positive_genes = len(positive_gene_tokens)
         variant_label = sign_suffix.lstrip("_") or "primary"
         if n_positive_genes == 0:
+            reason = "no genes with positive score after filtering"
+            if require_symbol:
+                reason = (
+                    "no genes with positive score after filtering "
+                    "(gmt_require_symbol removed all candidate tokens)"
+                )
             _record_diag(
                 {
                     "level": "warning",
@@ -218,7 +249,7 @@ def build_gmt_sets_from_rows(
                     "base_name": base_name,
                     "variant": variant_label,
                     "n_genes": 0,
-                    "reason": "no genes with positive score after filtering",
+                    "reason": reason,
                 }
             )
             continue
