@@ -5,7 +5,7 @@ import pytest
 
 from geneset_extractors.converters import rna_sc_programs
 from geneset_extractors.core.validate import validate_output_dir
-from geneset_extractors.rnaseq.sc_program_workflow import read_program_loadings
+from geneset_extractors.extractors.rnaseq.sc_program_workflow import read_program_loadings
 
 
 class Args:
