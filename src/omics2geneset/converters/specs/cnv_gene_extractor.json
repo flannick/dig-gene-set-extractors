@@ -67,8 +67,8 @@
     {"name": "cohort_min_samples", "type": "integer", "default": 5, "help": "Minimum samples required before cohort sets are emitted"}
   ],
   "outputs": [
-    {"name": "manifest.tsv", "description": "Grouped manifest with one row per sample/program output directory"},
-    {"name": "cnv_program_manifest.tsv", "description": "Flat per-sample/program QC manifest including emitted and skipped program rows"},
+    {"name": "manifest.tsv", "description": "Grouped manifest with one row per sample/program output directory; includes scored_ok/gmt_emitted/emit_reason"},
+    {"name": "cnv_program_manifest.tsv", "description": "Flat per-sample/program QC manifest including skipped_input/scored_only/suppressed_gmt/emitted_gmt status rows"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.tsv", "description": "Selected genes for one sample/program"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json", "description": "Metadata for one sample/program"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.full.tsv", "description": "Full nonzero score table (optional)"},

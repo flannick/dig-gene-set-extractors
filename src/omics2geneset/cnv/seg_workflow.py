@@ -341,6 +341,26 @@ def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]], *, sample_id
     return n_warnings
 
 
+def _gmt_emit_reason(
+    *,
+    emit_gmt: bool,
+    gmt_sets: list[tuple[str, list[str]]],
+    gmt_diagnostics: list[dict[str, object]],
+) -> str:
+    if not emit_gmt:
+        return "gmt_disabled"
+    if gmt_sets:
+        return ""
+    codes = [str(d.get("code", "")).strip() for d in gmt_diagnostics if str(d.get("code", "")).strip()]
+    if not codes:
+        return "no_gmt_output"
+    uniq = []
+    for code in codes:
+        if code not in uniq:
+            uniq.append(code)
+    return ",".join(uniq)
+
+
 def _map_chrom_to_gene_space(chrom: str, gene_chroms: set[str], chrom_prefix_mode: str) -> str | None:
     c = str(chrom).strip()
     if not c:
@@ -831,8 +851,11 @@ def run_cnv_workflow(
                         {
                             "sample_id": sample_id,
                             "program": output_program,
-                            "status": "skipped",
+                            "status": "skipped_input",
                             "emitted_or_skipped": "skipped",
+                            "scored_ok": False,
+                            "gmt_emitted": False,
+                            "emit_reason": reason_code,
                             "reason_code": reason_code,
                             "reason": reason,
                             "path": "",
@@ -972,6 +995,21 @@ def run_cnv_workflow(
                     )
 
                 n_genes_output = max((len(genes_out) for _name, genes_out in gmt_sets), default=0)
+                gmt_emitted = bool(profile_cfg.emit_gmt and gmt_sets)
+                emit_reason = _gmt_emit_reason(
+                    emit_gmt=bool(profile_cfg.emit_gmt),
+                    gmt_sets=gmt_sets,
+                    gmt_diagnostics=gmt_diagnostics,
+                )
+                if gmt_emitted:
+                    status_value = "emitted_gmt"
+                    emitted_or_skipped = "emitted"
+                elif profile_cfg.emit_gmt:
+                    status_value = "suppressed_gmt"
+                    emitted_or_skipped = "scored_only"
+                else:
+                    status_value = "scored_only"
+                    emitted_or_skipped = "scored_only"
                 top_seg = program_qc.get("top_contributing_segment") or {}
 
                 run_summary_payload: dict[str, object] = {
@@ -1098,6 +1136,9 @@ def run_cnv_workflow(
                             "skipped": False,
                             "reason_code": None,
                             "reason": None,
+                            "scored_ok": True,
+                            "gmt_emitted": bool(gmt_emitted),
+                            "emit_reason": (emit_reason or None),
                         },
                         "segment_stats": sample_stats,
                         "segment_filter_summary": segment_filter_summary,
@@ -1146,6 +1187,9 @@ def run_cnv_workflow(
                         "sample_id": sample_id,
                         "program": output_program,
                         "path": rel_path,
+                        "scored_ok": True,
+                        "gmt_emitted": bool(gmt_emitted),
+                        "emit_reason": emit_reason,
                         "n_segments": int(sample_stats["n_segments_total"]),
                         "n_segments_used": int(len(sample_segments)),
                         "n_genes_scored": int(len(program_scores)),
@@ -1156,8 +1200,11 @@ def run_cnv_workflow(
                     {
                         "sample_id": sample_id,
                         "program": output_program,
-                        "status": "emitted",
-                        "emitted_or_skipped": "emitted",
+                        "status": status_value,
+                        "emitted_or_skipped": emitted_or_skipped,
+                        "scored_ok": True,
+                        "gmt_emitted": bool(gmt_emitted),
+                        "emit_reason": emit_reason,
                         "reason_code": "",
                         "reason": "",
                         "path": rel_path,
@@ -1220,6 +1267,9 @@ def run_cnv_workflow(
                 "sample_id",
                 "program",
                 "path",
+                "scored_ok",
+                "gmt_emitted",
+                "emit_reason",
                 "n_segments",
                 "n_segments_used",
                 "n_genes_scored",
@@ -1240,6 +1290,9 @@ def run_cnv_workflow(
                 "program",
                 "status",
                 "emitted_or_skipped",
+                "scored_ok",
+                "gmt_emitted",
+                "emit_reason",
                 "reason_code",
                 "reason",
                 "path",

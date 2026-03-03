@@ -177,7 +177,9 @@ Outputs at `out_dir/cohort/genesets.gmt` when criteria are met.
 Grouped output root:
 
 - `manifest.tsv` with one row per sample/program directory
+- `manifest.tsv` also records `scored_ok`, `gmt_emitted`, and `emit_reason`
 - `cnv_program_manifest.tsv` with emitted + skipped program QC rows and tie diagnostics
+  (`status` in `skipped_input|scored_only|suppressed_gmt|emitted_gmt`)
 - `sample=<SAMPLE>/program=<PROGRAM>/geneset.tsv`
 - `sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json`
 - optional `geneset.full.tsv`, `genesets.gmt`, and run summaries per directory

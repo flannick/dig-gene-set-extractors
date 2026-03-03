@@ -317,6 +317,31 @@ def test_cnv_gene_extractor_skip_warning_includes_counts(tmp_path: Path, capsys:
     assert program_manifest.exists()
 
 
+def test_cnv_program_manifest_marks_suppressed_gmt_not_emitted(tmp_path: Path):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.out_dir = str(tmp_path / "cnv_suppressed_gmt")
+    args.program_methods = "amp"
+    args.emit_small_gene_sets = False
+    args.gmt_min_genes = 50
+    args.gmt_max_genes = 500
+    args.gmt_topk_list = "200"
+    cnv_gene_extractor.run(args)
+
+    manifest_rows = _manifest_rows(Path(args.out_dir))
+    assert manifest_rows
+    assert all(str(r.get("scored_ok", "")).lower() == "true" for r in manifest_rows)
+    assert any(str(r.get("gmt_emitted", "")).lower() == "false" for r in manifest_rows)
+    assert any(str(r.get("emit_reason", "")).strip() for r in manifest_rows)
+
+    program_rows = _program_manifest_rows(Path(args.out_dir))
+    assert any(str(r.get("status")) == "suppressed_gmt" for r in program_rows)
+    assert any(str(r.get("gmt_emitted", "")).lower() == "false" for r in program_rows)
+    assert all(str(r.get("status")) != "emitted_gmt" for r in program_rows if str(r.get("gmt_emitted", "")).lower() == "false")
+
+
 def test_cnv_gene_extractor_writes_skipped_programs_and_git_commit(tmp_path: Path):
     gtf_path = tmp_path / "toy_cnv.gtf"
     _write_toy_gtf(gtf_path)
