@@ -35,7 +35,7 @@ from omics2geneset.io.gtf import read_genes_from_gtf
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 CHROM_MISMATCH_WARN_FRACTION = 0.2
-BREADTH_MEDIAN_BP_WARN = 50_000_000
+BREADTH_MEDIAN_BP_WARN = 20_000_000
 BREADTH_MEAN_FOCAL_WARN = 0.10
 PREFLIGHT_CHROM_COMPAT_WARN_FRACTION = 0.2
 SAMPLE_GENE_OVERLAP_WARN_FRACTION = 0.2
@@ -241,11 +241,16 @@ def _program_segment_qc(
     n_pos = sum(1 for d in segment_details if float(d.get("segment_score", 0.0)) > 0.0)
     n_neg = sum(1 for d in segment_details if float(d.get("segment_score", 0.0)) < 0.0)
     amp_vals = [float(d.get("amplitude", 0.0)) for d in used]
+    amp_abs_vals = [abs(float(d.get("amplitude", 0.0))) for d in used]
     len_vals = [float(d.get("length_bp", 0.0)) for d in used]
     amp_min, amp_median, amp_max = _stats3(amp_vals)
     len_min, len_median, len_max = _stats3(len_vals)
     genes_overlapped: set[str] = set()
+    chrom_counts: dict[str, int] = {}
     for d in used:
+        chrom = str(d.get("chrom", "")).strip()
+        if chrom:
+            chrom_counts[chrom] = int(chrom_counts.get(chrom, 0)) + 1
         for gid in d.get("gene_ids", []):
             genes_overlapped.add(str(gid))
 
@@ -271,9 +276,15 @@ def _program_segment_qc(
         "amplitude_min_used": amp_min,
         "amplitude_median_used": amp_median,
         "amplitude_max_used": amp_max,
+        "max_abs_amp_used": (float(max(amp_abs_vals)) if amp_abs_vals else None),
         "segment_length_min_bp_used": len_min,
         "segment_length_median_bp_used": len_median,
         "segment_length_max_bp_used": len_max,
+        "primary_chrom": (
+            sorted(chrom_counts.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))[0][0]
+            if chrom_counts
+            else ""
+        ),
         "top_contributing_segment": top_segment,
         "n_genes_overlapped_by_used_segments": int(len(genes_overlapped)),
     }
@@ -821,19 +832,26 @@ def run_cnv_workflow(
                             "sample_id": sample_id,
                             "program": output_program,
                             "status": "skipped",
+                            "emitted_or_skipped": "skipped",
                             "reason_code": reason_code,
                             "reason": reason,
                             "path": "",
                             "n_segments_total": int(len(sample_segments_all)),
+                            "n_segments_used": int(len(sample_segments)),
                             "n_segments_after_basic_qc": int(len(sample_segments)),
+                            "n_pos_segments_used": int(program_qc.get("n_segments_pos_used", 0) or 0),
+                            "n_neg_segments_used": int(program_qc.get("n_segments_neg_used", 0) or 0),
                             "n_segments_pos_used": int(program_qc.get("n_segments_pos_used", 0) or 0),
                             "n_segments_neg_used": int(program_qc.get("n_segments_neg_used", 0) or 0),
                             "amplitude_min_used": program_qc.get("amplitude_min_used"),
                             "amplitude_median_used": program_qc.get("amplitude_median_used"),
                             "amplitude_max_used": program_qc.get("amplitude_max_used"),
+                            "max_abs_amp_used": program_qc.get("max_abs_amp_used"),
                             "segment_length_min_bp_used": program_qc.get("segment_length_min_bp_used"),
+                            "median_seg_len_used_bp": program_qc.get("segment_length_median_bp_used"),
                             "segment_length_median_bp_used": program_qc.get("segment_length_median_bp_used"),
                             "segment_length_max_bp_used": program_qc.get("segment_length_max_bp_used"),
+                            "primary_chrom": program_qc.get("primary_chrom", ""),
                             "top_segment_chrom": top_seg.get("chrom", ""),
                             "top_segment_start": top_seg.get("start"),
                             "top_segment_end": top_seg.get("end"),
@@ -1004,6 +1022,7 @@ def run_cnv_workflow(
                     "program_base": program,
                     "scoring_profile": profile_label,
                     "segments_format": profile_cfg.segments_format,
+                    "resolved_columns": parse_summary.get("columns", {}),
                     "program_preset": profile_cfg.program_preset,
                     "program_methods": program_methods,
                     "coord_system": profile_cfg.coord_system,
@@ -1063,9 +1082,23 @@ def run_cnv_workflow(
                             else 0.0
                         ),
                         "n_segments_used": int(len(sample_segments)),
+                        "n_segments_pos_input_raw": int(raw_pos),
+                        "n_segments_neg_input_raw": int(raw_neg),
+                        "n_segments_pos_after_basic_qc": int(qc_pos),
+                        "n_segments_neg_after_basic_qc": int(qc_neg),
                         "n_genes_scored": int(len(program_scores)),
                         "n_genes_selected": int(len(selected_rows)),
                         "n_genes_output": int(n_genes_output),
+                        "segment_length_summary_used": {
+                            "min_bp": program_qc.get("segment_length_min_bp_used"),
+                            "median_bp": program_qc.get("segment_length_median_bp_used"),
+                            "max_bp": program_qc.get("segment_length_max_bp_used"),
+                        },
+                        "program_status": {
+                            "skipped": False,
+                            "reason_code": None,
+                            "reason": None,
+                        },
                         "segment_stats": sample_stats,
                         "segment_filter_summary": segment_filter_summary,
                         "program_qc": program_qc,
@@ -1124,19 +1157,26 @@ def run_cnv_workflow(
                         "sample_id": sample_id,
                         "program": output_program,
                         "status": "emitted",
+                        "emitted_or_skipped": "emitted",
                         "reason_code": "",
                         "reason": "",
                         "path": rel_path,
                         "n_segments_total": int(len(sample_segments_all)),
+                        "n_segments_used": int(len(sample_segments)),
                         "n_segments_after_basic_qc": int(len(sample_segments)),
+                        "n_pos_segments_used": int(program_qc.get("n_segments_pos_used", 0) or 0),
+                        "n_neg_segments_used": int(program_qc.get("n_segments_neg_used", 0) or 0),
                         "n_segments_pos_used": int(program_qc.get("n_segments_pos_used", 0) or 0),
                         "n_segments_neg_used": int(program_qc.get("n_segments_neg_used", 0) or 0),
                         "amplitude_min_used": program_qc.get("amplitude_min_used"),
                         "amplitude_median_used": program_qc.get("amplitude_median_used"),
                         "amplitude_max_used": program_qc.get("amplitude_max_used"),
+                        "max_abs_amp_used": program_qc.get("max_abs_amp_used"),
                         "segment_length_min_bp_used": program_qc.get("segment_length_min_bp_used"),
+                        "median_seg_len_used_bp": program_qc.get("segment_length_median_bp_used"),
                         "segment_length_median_bp_used": program_qc.get("segment_length_median_bp_used"),
                         "segment_length_max_bp_used": program_qc.get("segment_length_max_bp_used"),
+                        "primary_chrom": program_qc.get("primary_chrom", ""),
                         "top_segment_chrom": top_seg.get("chrom", ""),
                         "top_segment_start": top_seg.get("start"),
                         "top_segment_end": top_seg.get("end"),
@@ -1199,19 +1239,26 @@ def run_cnv_workflow(
                 "sample_id",
                 "program",
                 "status",
+                "emitted_or_skipped",
                 "reason_code",
                 "reason",
                 "path",
                 "n_segments_total",
+                "n_segments_used",
                 "n_segments_after_basic_qc",
+                "n_pos_segments_used",
+                "n_neg_segments_used",
                 "n_segments_pos_used",
                 "n_segments_neg_used",
                 "amplitude_min_used",
                 "amplitude_median_used",
                 "amplitude_max_used",
+                "max_abs_amp_used",
                 "segment_length_min_bp_used",
+                "median_seg_len_used_bp",
                 "segment_length_median_bp_used",
                 "segment_length_max_bp_used",
+                "primary_chrom",
                 "top_segment_chrom",
                 "top_segment_start",
                 "top_segment_end",

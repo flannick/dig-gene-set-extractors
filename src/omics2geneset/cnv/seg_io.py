@@ -142,6 +142,12 @@ def _defaults_for_segments_format(segments_format: str) -> tuple[
     raise ValueError(f"Unsupported segments_format: {segments_format}")
 
 
+def _expected_columns_text() -> str:
+    cbio = "ID, chrom, loc.start, loc.end, seg.mean"
+    gdc = "Tumor_Sample_Barcode, Chromosome, Start, End, Segment_Mean (or close variants)"
+    return f"Expected cBio SEG columns: [{cbio}] ; expected GDC SEG columns: [{gdc}]"
+
+
 def _parse_int(raw: object) -> int | None:
     if raw is None:
         return None
@@ -237,6 +243,7 @@ def parse_segments_tsv(
                     "Could not auto-detect a unique segment format; header matches multiple known patterns. "
                     "Use --segments_format gdc_seg|cbio_seg or pass explicit --chrom_column/--start_column/"
                     "--end_column/--amplitude_column. "
+                    f"{_expected_columns_text()}. "
                     f"Available columns: {', '.join(fieldnames)}"
                 )
             else:
@@ -244,6 +251,7 @@ def parse_segments_tsv(
                     "Could not auto-detect segment format from header. "
                     "Use --segments_format gdc_seg|cbio_seg or pass explicit --chrom_column/--start_column/"
                     "--end_column/--amplitude_column. "
+                    f"{_expected_columns_text()}. "
                     f"Available columns: {', '.join(fieldnames)}"
                 )
         else:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from omics2geneset.cnv.seg_io import parse_segments_tsv, read_purity_tsv
 from omics2geneset.cnv.seg_workflow import CNVWorkflowConfig, run_cnv_workflow
@@ -21,6 +22,17 @@ def run(args) -> dict[str, object]:
         sample_id_column=args.sample_id_column,
         coord_system=args.coord_system,
         chrom_prefix_mode=args.chrom_prefix_mode,
+    )
+    cols = parse_summary.get("columns", {})
+    print(
+        "CNV: resolved columns: "
+        f"sample_id={cols.get('sample_id')} "
+        f"chrom={cols.get('chrom')} "
+        f"start={cols.get('start')} "
+        f"end={cols.get('end')} "
+        f"amplitude={cols.get('amplitude')} "
+        f"segments_format={parse_summary.get('segments_format_resolved')}",
+        file=sys.stderr,
     )
 
     purity_by_sample = None

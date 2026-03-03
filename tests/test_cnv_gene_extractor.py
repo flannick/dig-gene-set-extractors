@@ -88,6 +88,11 @@ def _read_geneset_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(fh, delimiter="\t"))
 
 
+def _program_manifest_rows(out_dir: Path) -> list[dict[str, str]]:
+    with (out_dir / "cnv_program_manifest.tsv").open("r", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh, delimiter="\t"))
+
+
 def test_cnv_gene_extractor_runs_with_focal_penalty_and_emits_gmt(tmp_path: Path):
     gtf_path = tmp_path / "toy_cnv.gtf"
     _write_toy_gtf(gtf_path)
@@ -101,6 +106,20 @@ def test_cnv_gene_extractor_runs_with_focal_penalty_and_emits_gmt(tmp_path: Path
     out_dir = Path(args.out_dir)
     rows = _manifest_rows(out_dir)
     assert len(rows) == 4
+    program_rows = _program_manifest_rows(out_dir)
+    assert program_rows
+    assert {
+        "emitted_or_skipped",
+        "n_segments_total",
+        "n_segments_used",
+        "n_pos_segments_used",
+        "n_neg_segments_used",
+        "median_seg_len_used_bp",
+        "max_abs_amp_used",
+        "n_genes_scored_nonzero",
+        "n_genes_output",
+        "primary_chrom",
+    }.issubset(set(program_rows[0].keys()))
     row_lookup = {(r["sample_id"], r["program"]): r for r in rows}
 
     amp_s1_path = out_dir / row_lookup[("S1", "amp")]["path"] / "geneset.tsv"
@@ -150,7 +169,7 @@ def test_cnv_gene_extractor_purity_correction_increases_scores(tmp_path: Path):
     assert score_yes > score_no
 
 
-def test_cnv_gene_extractor_cbio_seg_auto_detection(tmp_path: Path):
+def test_cnv_gene_extractor_cbio_seg_auto_detection(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     gtf_path = tmp_path / "toy_cnv.gtf"
     _write_toy_gtf(gtf_path)
     segments_path = tmp_path / "cbio.seg"
@@ -174,9 +193,67 @@ def test_cnv_gene_extractor_cbio_seg_auto_detection(tmp_path: Path):
     args.program_methods = "amp,del"
     args.segments_format = "auto"
     cnv_gene_extractor.run(args)
+    captured = capsys.readouterr()
+    assert "CNV: resolved columns:" in captured.err
+    assert "sample_id=ID" in captured.err
     rows = _manifest_rows(Path(args.out_dir))
     assert ("S1", "amp") in {(r["sample_id"], r["program"]) for r in rows}
     assert ("S1", "del") in {(r["sample_id"], r["program"]) for r in rows}
+
+
+def test_cnv_gene_extractor_gdc_seg_auto_detection(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "gdc.seg.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "Tumor_Sample_Barcode\tChromosome\tStart\tEnd\tSegment_Mean",
+                "S1\tchr1\t1100\t1300\t1.2",
+                "S1\tchr2\t5100\t5300\t-1.5",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.out_dir = str(tmp_path / "cnv_gdc")
+    args.gmt_topk_list = "1"
+    args.top_k = 1
+    args.program_methods = "amp,del"
+    args.segments_format = "auto"
+    cnv_gene_extractor.run(args)
+    captured = capsys.readouterr()
+    assert "CNV: resolved columns:" in captured.err
+    assert "sample_id=Tumor_Sample_Barcode" in captured.err
+    rows = _manifest_rows(Path(args.out_dir))
+    assert ("S1", "amp") in {(r["sample_id"], r["program"]) for r in rows}
+    assert ("S1", "del") in {(r["sample_id"], r["program"]) for r in rows}
+
+
+def test_cnv_gene_extractor_auto_ambiguous_mapping_fails(tmp_path: Path):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "ambiguous.seg.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "ID\tTumor_Sample_Barcode\tchrom\tChromosome\tloc.start\tStart\tloc.end\tEnd\tseg.mean\tSegment_Mean",
+                "S1\tS1\tchr1\tchr1\t1100\t1100\t1300\t1300\t1.2\t1.2",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.out_dir = str(tmp_path / "cnv_ambiguous")
+    args.segments_format = "auto"
+    with pytest.raises(ValueError, match="Expected cBio SEG columns"):
+        cnv_gene_extractor.run(args)
 
 
 def test_cnv_gene_extractor_chr_mismatch_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

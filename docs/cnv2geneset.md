@@ -190,6 +190,21 @@ Sign semantics:
 - `program=amp`: copy-gain direction
 - `program=del`: copy-loss direction
 
+## Interpreting CNV enrichments
+
+CNV-driven enrichments often contain strong positional/cytoband signals. This is expected.
+
+Recommended two-pass interpretation:
+
+1. QC pass: run enrichment with positional/cytoband collections enabled to confirm the CNV
+   signal is coherent with known loci.
+2. Mechanism pass: run enrichment with positional collections disabled (or deprioritized)
+   to focus on pathway and process-level hypotheses.
+
+Use `cnv_program_manifest.tsv` to pick representative samples/programs before deep
+interpretation (for example, compare `median_seg_len_used_bp`, `max_abs_amp_used`, and
+`n_genes_output`).
+
 ## Common pitfalls
 
 - Genome build mismatch between segment coordinates and `--gtf`
