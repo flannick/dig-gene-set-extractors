@@ -134,7 +134,7 @@ All decisions are written to metadata:
 - `gmt.skipped_outputs`
 - `gmt.diagnostics`
 
-## Conceptual model and mapping to atac-seq_methods.tex
+## Conceptual model and mapping to `docs/assays/atac/methods.tex`
 
 Shared ATAC pipeline stages:
 

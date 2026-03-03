@@ -9,6 +9,16 @@
 
 Theory and equations: `docs/assays/rnaseq/methods.tex`.
 
+## Resources
+
+RNA converters are dependency-light and do not require reference bundles.
+
+- Required: none beyond input DE/program tables.
+- Optional: `--gtf` to annotate `gene_symbol`/`gene_biotype` when those columns are absent.
+- Optional workflows: `workflows scrna_cnmf_prepare` generates cNMF-ready subset matrices and shell scripts; it does not download external resources.
+
+If you run without `--gtf`, GMT output may drop rows when `--gmt_require_symbol true` and symbols are missing.
+
 ## Install
 
 ```bash

@@ -30,6 +30,16 @@ omics2geneset validate results/cnv
 Common table columns are auto-detected (`Chromosome/chrom`, `Start/start`, `End/end`, `Segment_Mean/segmean`).
 Common cBioPortal SEG headers (`ID`, `chrom`, `loc.start`, `loc.end`, `seg.mean`) are also auto-detected.
 
+## Resources
+
+CNV extraction currently has no external bundle dependency.
+
+- Required: `--segments_tsv` plus `--gtf` for gene coordinates.
+- Optional: `--purity_tsv` for purity-adjusted amplitudes.
+- Optional future resources (not required in current defaults): centromere/gap masks, cancer-type reference panels.
+
+This means first runs are fully local as long as segment and GTF files are present.
+
 ## Inputs
 
 Required:
