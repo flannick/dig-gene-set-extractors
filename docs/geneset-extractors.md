@@ -19,16 +19,19 @@ All three CLI names currently dispatch to the same implementation.
 
 ## Practical guides
 
-- ATAC-seq: `docs/atac-seq2geneset.md`
-- RNA-seq: `docs/rna-seq-to-geneset.md`
-- scRNA cNMF prep workflow: `docs/scrna_cnmf_workflow.md`
-- DNA methylation: `docs/methylation2geneset.md`
-- CNV segments: `docs/cnv2geneset.md`
+- ATAC-seq: `docs/assays/atac/guide.md`
+- RNA-seq: `docs/assays/rnaseq/guide.md`
+- scRNA cNMF prep workflow: `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- DNA methylation: `docs/assays/methylation/guide.md`
+- DNA methylation resources: `docs/assays/methylation/resources.md`
+- CNV segments: `docs/assays/cnv/guide.md`
 
 ## Methods notes
 
-- ATAC-seq methods: `docs/atac-seq_methods.tex`
-- RNA-seq methods: `docs/rna-seq_methods.tex`
-- DNA methylation methods: `docs/methylation_methods.tex`
-- CNV methods: `docs/cnv_methods.tex`
+- ATAC-seq methods: `docs/assays/atac/methods.tex`
+- RNA-seq methods: `docs/assays/rnaseq/methods.tex`
+- DNA methylation methods: `docs/assays/methylation/methods.tex`
+- CNV methods: `docs/assays/cnv/methods.tex`
 - Methods index: `docs/methods.tex`
+
+Compatibility aliases remain at historical paths such as `docs/atac-seq2geneset.md` and `docs/rna-seq_methods.tex`.

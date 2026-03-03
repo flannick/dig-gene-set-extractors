@@ -19,10 +19,11 @@ This root README is intentionally framework-level:
 
 Detailed `omics2geneset` CLI and method behavior is split by assay:
 
-- `docs/atac-seq2geneset.md` (ATAC practical guide)
-- `docs/rna-seq-to-geneset.md` (RNA practical guide)
-- `docs/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
-- `docs/methylation2geneset.md` (DNA methylation practical guide)
+- `docs/assays/atac/guide.md` (ATAC practical guide)
+- `docs/assays/rnaseq/guide.md` (RNA practical guide)
+- `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
+- `docs/assays/methylation/guide.md` (DNA methylation practical guide)
+- `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
 - `docs/omics2geneset.md` (compatibility index)
 
@@ -84,25 +85,26 @@ CNV converter:
 
 Practical guides, CLI flags, inputs, modes, and examples:
 
-- `docs/atac-seq2geneset.md`
-- `docs/rna-seq-to-geneset.md`
-- `docs/scrna_cnmf_workflow.md`
-- `docs/methylation2geneset.md`
-- `docs/cnv2geneset.md`
+- `docs/assays/atac/guide.md`
+- `docs/assays/rnaseq/guide.md`
+- `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- `docs/assays/methylation/guide.md`
+- `docs/assays/methylation/resources.md`
+- `docs/assays/cnv/guide.md`
 - `docs/geneset-extractors.md` (index)
 - `docs/omics2geneset.md` (compatibility index)
 
 Method notes and equations (split by assay + index):
 
-- `docs/atac-seq_methods.tex`
-- `docs/rna-seq_methods.tex`
-- `docs/methylation_methods.tex`
-- `docs/cnv_methods.tex`
+- `docs/assays/atac/methods.tex`
+- `docs/assays/rnaseq/methods.tex`
+- `docs/assays/methylation/methods.tex`
+- `docs/assays/cnv/methods.tex`
 - `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
 
-- `docs/atac_reference_bundle.md`
+- `docs/assays/atac/reference_bundle.md`
 - primary workflow: download one build-specific tarball (`hg19` or `hg38`), extract, and point `--resources_dir` at bundle root (no extra fetch step)
 - current bundle version: `v1.1.0` split outputs: `...-atac-refdata-hg19-v1.1.0.tar.gz` and `...-atac-refdata-hg38-v1.1.0.tar.gz`
 - converters auto-select build-matched resource IDs from `--genome_build`
@@ -154,17 +156,33 @@ dig-gene-set-extractors/
   docs/
     geneset-extractors.md
     omics2geneset.md
-    atac-seq2geneset.md
-    rna-seq-to-geneset.md
-    scrna_cnmf_workflow.md
-    methylation2geneset.md
-    cnv2geneset.md
-    cnv_methods.tex
+    assays/
+      atac/
+        guide.md
+        methods.tex
+        reference_bundle.md
+      rnaseq/
+        guide.md
+        methods.tex
+        scrna_cnmf_workflow.md
+      methylation/
+        guide.md
+        methods.tex
+        resources.md
+      cnv/
+        guide.md
+        methods.tex
     methods.tex
-    atac-seq_methods.tex
-    rna-seq_methods.tex
-    methylation_methods.tex
-    atac_reference_bundle.md
+    atac-seq2geneset.md        # compatibility alias
+    rna-seq-to-geneset.md      # compatibility alias
+    methylation2geneset.md     # compatibility alias
+    cnv2geneset.md             # compatibility alias
+    atac-seq_methods.tex       # compatibility alias
+    rna-seq_methods.tex        # compatibility alias
+    methylation_methods.tex    # compatibility alias
+    cnv_methods.tex            # compatibility alias
+    scrna_cnmf_workflow.md     # compatibility alias
+    atac_reference_bundle.md   # compatibility alias
     air_gapped_install.md
   tests/
   scripts/
@@ -175,7 +193,7 @@ dig-gene-set-extractors/
 When adding another extractor family (for example proteomics):
 
 1. Add a new package under `src/<family_name>/`.
-2. Keep extractor-specific docs under `docs/<family_name>.md`.
+2. Keep extractor-specific docs under `docs/assays/<assay>/` with at least `guide.md` and `methods.tex`.
 3. Follow the shared output contract (`geneset.tsv` + `geneset.meta.json`).
 4. Add unit tests with toy fixtures under `tests/`.
 5. Register a CLI entry point (either family-specific CLI or shared top-level dispatch).
@@ -183,4 +201,4 @@ When adding another extractor family (for example proteomics):
 ## Development Notes
 
 - Do not commit large generated artifacts under `dist/` or `data/external/`.
-- For `omics2geneset` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/atac-seq2geneset.md` and `docs/atac_reference_bundle.md`.
+- For `omics2geneset` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/assays/atac/guide.md` and `docs/assays/atac/reference_bundle.md`.
