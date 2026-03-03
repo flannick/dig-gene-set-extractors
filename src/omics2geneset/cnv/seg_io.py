@@ -18,6 +18,14 @@ DEFAULT_AMPLITUDE_COLUMNS = (
 )
 DEFAULT_SAMPLE_COLUMNS = ("sample", "sample_id", "tumor_sample_barcode")
 
+CBIO_CHROM_COLUMNS = ("chrom",)
+CBIO_START_COLUMNS = ("loc.start",)
+CBIO_END_COLUMNS = ("loc.end",)
+CBIO_AMPLITUDE_COLUMNS = ("seg.mean",)
+CBIO_SAMPLE_COLUMNS = ("ID",)
+
+SUPPORTED_SEGMENT_FORMATS = {"auto", "gdc_seg", "cbio_seg"}
+
 
 @dataclass
 class CNVSegment:
@@ -78,6 +86,62 @@ def _resolve_column(
     return None
 
 
+def _can_resolve(fieldnames: list[str], defaults: tuple[str, ...]) -> bool:
+    low_map = {x.lower(): x for x in fieldnames}
+    for candidate in defaults:
+        if candidate in fieldnames:
+            return True
+        if low_map.get(candidate.lower()) is not None:
+            return True
+    return False
+
+
+def _is_cbio_seg_header(fieldnames: list[str]) -> bool:
+    required = {"id", "chrom", "loc.start", "loc.end", "seg.mean"}
+    observed = {str(x).strip().lower() for x in fieldnames}
+    return required.issubset(observed)
+
+
+def _detect_segments_format(fieldnames: list[str]) -> str:
+    cbio_like = _is_cbio_seg_header(fieldnames)
+    gdc_like = (
+        _can_resolve(fieldnames, DEFAULT_CHROM_COLUMNS)
+        and _can_resolve(fieldnames, DEFAULT_START_COLUMNS)
+        and _can_resolve(fieldnames, DEFAULT_END_COLUMNS)
+        and _can_resolve(fieldnames, DEFAULT_AMPLITUDE_COLUMNS)
+    )
+    if cbio_like and gdc_like:
+        return "ambiguous"
+    if cbio_like:
+        return "cbio_seg"
+    if gdc_like:
+        return "gdc_seg"
+    return "unknown"
+
+
+def _defaults_for_segments_format(segments_format: str) -> tuple[
+    tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]
+]:
+    fmt = str(segments_format).strip().lower()
+    if fmt == "cbio_seg":
+        return (
+            CBIO_CHROM_COLUMNS,
+            CBIO_START_COLUMNS,
+            CBIO_END_COLUMNS,
+            CBIO_AMPLITUDE_COLUMNS,
+            CBIO_SAMPLE_COLUMNS,
+        )
+    if fmt == "gdc_seg":
+        return (
+            DEFAULT_CHROM_COLUMNS,
+            DEFAULT_START_COLUMNS,
+            DEFAULT_END_COLUMNS,
+            DEFAULT_AMPLITUDE_COLUMNS,
+            DEFAULT_SAMPLE_COLUMNS,
+        )
+    raise ValueError(f"Unsupported segments_format: {segments_format}")
+
+
 def _parse_int(raw: object) -> int | None:
     if raw is None:
         return None
@@ -136,6 +200,7 @@ def _to_zero_based_half_open(start: int, end: int, coord_system: str) -> tuple[i
 def parse_segments_tsv(
     *,
     path: str | Path,
+    segments_format: str,
     chrom_column: str | None,
     start_column: str | None,
     end_column: str | None,
@@ -151,27 +216,51 @@ def parse_segments_tsv(
         if not reader.fieldnames:
             raise ValueError(f"Segments table has no header: {path}")
         fieldnames = [str(x) for x in reader.fieldnames]
-        chrom_col = _resolve_column(
-            fieldnames, chrom_column, DEFAULT_CHROM_COLUMNS, label="chrom", required=True
+        requested_format = str(segments_format).strip().lower() or "auto"
+        if requested_format not in SUPPORTED_SEGMENT_FORMATS:
+            raise ValueError(
+                "Unsupported --segments_format "
+                f"'{segments_format}'. Expected one of: {', '.join(sorted(SUPPORTED_SEGMENT_FORMATS))}"
+            )
+        has_explicit_columns = any(
+            (x is not None and str(x).strip())
+            for x in (chrom_column, start_column, end_column, amplitude_column, sample_id_column)
         )
-        start_col = _resolve_column(
-            fieldnames, start_column, DEFAULT_START_COLUMNS, label="start", required=True
-        )
-        end_col = _resolve_column(fieldnames, end_column, DEFAULT_END_COLUMNS, label="end", required=True)
-        amp_col = _resolve_column(
-            fieldnames,
-            amplitude_column,
-            DEFAULT_AMPLITUDE_COLUMNS,
-            label="amplitude",
-            required=True,
-        )
-        sample_col = _resolve_column(
-            fieldnames,
-            sample_id_column,
-            DEFAULT_SAMPLE_COLUMNS,
-            label="sample_id",
-            required=False,
-        )
+        detected_format = _detect_segments_format(fieldnames)
+        if requested_format == "auto":
+            if has_explicit_columns:
+                resolved_format = "gdc_seg"
+            elif detected_format in {"gdc_seg", "cbio_seg"}:
+                resolved_format = detected_format
+            elif detected_format == "ambiguous":
+                raise ValueError(
+                    "Could not auto-detect a unique segment format; header matches multiple known patterns. "
+                    "Use --segments_format gdc_seg|cbio_seg or pass explicit --chrom_column/--start_column/"
+                    "--end_column/--amplitude_column. "
+                    f"Available columns: {', '.join(fieldnames)}"
+                )
+            else:
+                raise ValueError(
+                    "Could not auto-detect segment format from header. "
+                    "Use --segments_format gdc_seg|cbio_seg or pass explicit --chrom_column/--start_column/"
+                    "--end_column/--amplitude_column. "
+                    f"Available columns: {', '.join(fieldnames)}"
+                )
+        else:
+            resolved_format = requested_format
+        (
+            default_chrom_cols,
+            default_start_cols,
+            default_end_cols,
+            default_amp_cols,
+            default_sample_cols,
+        ) = _defaults_for_segments_format(resolved_format)
+
+        chrom_col = _resolve_column(fieldnames, chrom_column, default_chrom_cols, label="chrom", required=True)
+        start_col = _resolve_column(fieldnames, start_column, default_start_cols, label="start", required=True)
+        end_col = _resolve_column(fieldnames, end_column, default_end_cols, label="end", required=True)
+        amp_col = _resolve_column(fieldnames, amplitude_column, default_amp_cols, label="amplitude", required=True)
+        sample_col = _resolve_column(fieldnames, sample_id_column, default_sample_cols, label="sample_id", required=False)
 
         n_rows = 0
         n_missing_required = 0
@@ -226,6 +315,9 @@ def parse_segments_tsv(
         "n_rows_invalid_coords": n_invalid_coords,
         "n_rows_negative_coords": n_negative_coords,
         "n_rows_non_numeric_amplitude": n_non_numeric_amplitude,
+        "segments_format_requested": requested_format,
+        "segments_format_resolved": resolved_format,
+        "segments_format_detected": detected_format,
         "coord_system": coord_system,
         "chrom_prefix_mode": chrom_prefix_mode,
         "columns": {
@@ -285,4 +377,3 @@ def read_purity_tsv(
         "n_rows_invalid": n_invalid,
     }
     return purity_by_sample, summary
-

@@ -5,6 +5,13 @@ This guide covers CNV segment extraction from segment tables to gene-level progr
 `cnv_gene_extractor` accepts tumor/germline CNV segments, maps them to genes via gene-body overlap,
 applies focality penalties to reduce broad-event dominance, and emits amplification/deletion programs.
 
+## Changelog (CNV extractor)
+
+- Added `--segments_format {auto,gdc_seg,cbio_seg}` with cBio SEG autodetection.
+- Added `cnv_program_manifest.tsv` with emitted/skipped program QC stats and tie diagnostics.
+- Added `focal` preset and expanded `qc` preset to emit focal+broad variants.
+- Added deterministic tie handling diagnostics at the top-k cutoff.
+
 ## Quickstart
 
 Single-sample or multi-sample segments table:
@@ -21,6 +28,7 @@ omics2geneset validate results/cnv
 ```
 
 Common table columns are auto-detected (`Chromosome/chrom`, `Start/start`, `End/end`, `Segment_Mean/segmean`).
+Common cBioPortal SEG headers (`ID`, `chrom`, `loc.start`, `loc.end`, `seg.mean`) are also auto-detected.
 
 ## Inputs
 
@@ -33,10 +41,37 @@ Required:
 Optional column overrides:
 
 - `--chrom_column`, `--start_column`, `--end_column`, `--amplitude_column`, `--sample_id_column`
+- `--segments_format {auto,gdc_seg,cbio_seg}` (default `auto`)
 - `--coord_system {one_based_closed,zero_based_half_open}` (default `one_based_closed`)
 - `--chrom_prefix_mode {auto,add_chr,drop_chr,none}` (default `auto`)
 
 If sample column is absent, the converter treats input as a single sample (`sample1`).
+
+### Segment format examples
+
+GDC-like segments (auto mode usually works):
+
+```bash
+omics2geneset convert cnv_gene_extractor \
+  --segments_tsv path/to/gdc_segments.tsv.gz \
+  --segments_format gdc_seg \
+  --gtf path/to/genes.gtf.gz \
+  --out_dir results/cnv_gdc \
+  --organism human \
+  --genome_build hg38
+```
+
+cBioPortal SEG (no manual column overrides needed):
+
+```bash
+omics2geneset convert cnv_gene_extractor \
+  --segments_tsv path/to/data_CNA.seg \
+  --segments_format cbio_seg \
+  --gtf path/to/genes.gtf.gz \
+  --out_dir results/cnv_cbio \
+  --organism human \
+  --genome_build hg38
+```
 
 ## Scoring model
 
@@ -107,8 +142,9 @@ If purity is missing for some samples, the converter warns and skips purity corr
 ## Presets
 
 - `--program_preset default` (default): focal penalties on, emits `amp` + `del`
+- `--program_preset focal`: stronger focal penalties and optional max segment-length cap
 - `--program_preset broad`: weaker focal penalties and no gene-count penalty (for arm-level/aneuploidy-heavy data)
-- `--program_preset qc`: adds `abs` program output
+- `--program_preset qc`: emits both focal and broad variants (`amp_focal`, `del_focal`, `amp_broad`, `del_broad`)
 - `--program_preset all`: includes `abs` and supports cohort output when enabled
 
 Explicit program override:
@@ -141,6 +177,7 @@ Outputs at `out_dir/cohort/genesets.gmt` when criteria are met.
 Grouped output root:
 
 - `manifest.tsv` with one row per sample/program directory
+- `cnv_program_manifest.tsv` with emitted + skipped program QC rows and tie diagnostics
 - `sample=<SAMPLE>/program=<PROGRAM>/geneset.tsv`
 - `sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json`
 - optional `geneset.full.tsv`, `genesets.gmt`, and run summaries per directory
@@ -160,7 +197,10 @@ Sign semantics:
 - Wrong coordinate convention (`one_based_closed` vs `zero_based_half_open`)
 - Thresholds too strict (`--min_abs_amplitude`, `--gmt_min_genes`)
 - Broad-event dominance: use `--program_preset broad` when arm-level CNV is expected
+- If broad events dominate but focal drivers are expected, try `--program_preset focal`
 - If no rows map to GTF chromosomes, CNV preflight fails fast with remediation hints.
+- Cytoband/region enrichments are expected QC in CNV runs; interpret them separately from
+  mechanism-level pathway interpretation.
 
 ## Documentation map
 

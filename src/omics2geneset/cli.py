@@ -655,6 +655,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_cnv.add_argument("--amplitude_column")
     p_cnv.add_argument("--sample_id_column")
     p_cnv.add_argument(
+        "--segments_format",
+        choices=["auto", "gdc_seg", "cbio_seg"],
+        default="auto",
+        help="Segment table format preset for column autodetection.",
+    )
+    p_cnv.add_argument(
         "--coord_system",
         choices=["one_based_closed", "zero_based_half_open"],
         default="one_based_closed",
@@ -693,13 +699,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_cnv.add_argument("--purity_floor", type=float, default=0.1)
     p_cnv.add_argument("--max_abs_amplitude", type=float, default=3.0)
     p_cnv.add_argument("--min_abs_amplitude", type=float, default=0.10)
+    p_cnv.add_argument(
+        "--max_segment_length_bp",
+        type=int,
+        default=0,
+        help="Optional hard cap on segment length after coordinate normalization (0 disables).",
+    )
     p_cnv.add_argument("--focal_length_scale_bp", type=float, default=10_000_000)
     p_cnv.add_argument("--focal_length_alpha", type=float, default=1.0)
     p_cnv.add_argument("--gene_count_penalty", choices=["none", "inv_sqrt", "inv"], default="inv_sqrt")
     p_cnv.add_argument("--aggregation", choices=["weighted_mean", "sum", "mean", "max_abs"], default="weighted_mean")
     p_cnv.add_argument(
         "--program_preset",
-        choices=["default", "connectable", "broad", "qc", "all", "none"],
+        choices=["default", "connectable", "focal", "broad", "qc", "all", "none"],
         default="default",
     )
     p_cnv.add_argument("--program_methods")

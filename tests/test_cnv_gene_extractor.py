@@ -38,6 +38,7 @@ class Args:
     end_column = None
     amplitude_column = None
     sample_id_column = None
+    segments_format = "auto"
     coord_system = "one_based_closed"
     chrom_prefix_mode = "auto"
     purity_tsv = None
@@ -47,6 +48,7 @@ class Args:
     purity_floor = 0.1
     max_abs_amplitude = 3.0
     min_abs_amplitude = 0.10
+    max_segment_length_bp = 0
     focal_length_scale_bp = 10_000_000
     focal_length_alpha = 1.0
     gene_count_penalty = "inv_sqrt"
@@ -148,6 +150,35 @@ def test_cnv_gene_extractor_purity_correction_increases_scores(tmp_path: Path):
     assert score_yes > score_no
 
 
+def test_cnv_gene_extractor_cbio_seg_auto_detection(tmp_path: Path):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "cbio.seg"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "ID\tchrom\tloc.start\tloc.end\tseg.mean",
+                "S1\tchr1\t1100\t1300\t1.2",
+                "S1\tchr2\t5100\t5300\t-1.5",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.out_dir = str(tmp_path / "cnv_cbio")
+    args.gmt_topk_list = "1"
+    args.top_k = 1
+    args.program_methods = "amp,del"
+    args.segments_format = "auto"
+    cnv_gene_extractor.run(args)
+    rows = _manifest_rows(Path(args.out_dir))
+    assert ("S1", "amp") in {(r["sample_id"], r["program"]) for r in rows}
+    assert ("S1", "del") in {(r["sample_id"], r["program"]) for r in rows}
+
+
 def test_cnv_gene_extractor_chr_mismatch_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     gtf_path = tmp_path / "toy_cnv.gtf"
     _write_toy_gtf(gtf_path)
@@ -178,6 +209,37 @@ def test_cnv_gene_extractor_chr_mismatch_warning(tmp_path: Path, capsys: pytest.
     assert "many segments could not be mapped to GTF chromosome names/genome build" in captured.err
 
 
+def test_cnv_gene_extractor_skip_warning_includes_counts(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    gtf_path = tmp_path / "toy_cnv.gtf"
+    _write_toy_gtf(gtf_path)
+    segments_path = tmp_path / "only_amp.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "sample_id\tChromosome\tStart\tEnd\tSegment_Mean",
+                "S1\tchr1\t1100\t1300\t1.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.gtf = str(gtf_path)
+    args.segments_tsv = str(segments_path)
+    args.program_methods = "amp,del"
+    args.gmt_topk_list = "1"
+    args.top_k = 1
+    args.out_dir = str(tmp_path / "cnv_skips_warn")
+    cnv_gene_extractor.run(args)
+    captured = capsys.readouterr()
+    assert "program=del skipped" in captured.err
+    assert "counts raw=" in captured.err
+    assert "after_qc=" in captured.err
+    assert "overlap=" in captured.err
+    program_manifest = Path(args.out_dir) / "cnv_program_manifest.tsv"
+    assert program_manifest.exists()
+
+
 def test_cnv_gene_extractor_writes_skipped_programs_and_git_commit(tmp_path: Path):
     gtf_path = tmp_path / "toy_cnv.gtf"
     _write_toy_gtf(gtf_path)
@@ -203,13 +265,67 @@ def test_cnv_gene_extractor_writes_skipped_programs_and_git_commit(tmp_path: Pat
 
     skipped_payload = json.loads((Path(args.out_dir) / "skipped_programs.json").read_text(encoding="utf-8"))
     assert int(skipped_payload["n_skipped"]) >= 1
-    assert any(str(item.get("reason_code")) == "no_positive_signal" for item in skipped_payload.get("items", []))
+    assert any(
+        str(item.get("reason_code")) in {"no_positive_signal", "no_directional_input_segments"}
+        for item in skipped_payload.get("items", [])
+    )
 
     rows = _manifest_rows(Path(args.out_dir))
     amp_meta = Path(args.out_dir) / {(r["sample_id"], r["program"]): r for r in rows}[("S1", "amp")]["path"] / "geneset.meta.json"
     meta = json.loads(amp_meta.read_text(encoding="utf-8"))
     assert str(meta["converter"]["code"]["git_commit"]).strip()
     assert meta["converter"]["code"]["git_commit"] != "null"
+
+
+def test_cnv_gene_extractor_tie_handling_is_deterministic(tmp_path: Path):
+    gtf_path = tmp_path / "tie.gtf"
+    gtf_path.write_text(
+        "\n".join(
+            [
+                'chr1\ttest\tgene\t1000\t2000\t.\t+\t.\tgene_id "GENE_B"; gene_name "BETA"; gene_type "protein_coding";',
+                'chr1\ttest\tgene\t3000\t4000\t.\t+\t.\tgene_id "GENE_A"; gene_name "ALPHA"; gene_type "protein_coding";',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    segments_path = tmp_path / "tie.tsv"
+    segments_path.write_text(
+        "\n".join(
+            [
+                "sample_id\tChromosome\tStart\tEnd\tSegment_Mean",
+                "S1\tchr1\t1000\t4000\t1.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def run_once(out_name: str) -> tuple[str, dict[str, object]]:
+        args = Args()
+        args.gtf = str(gtf_path)
+        args.segments_tsv = str(segments_path)
+        args.out_dir = str(tmp_path / out_name)
+        args.program_methods = "amp"
+        args.select = "top_k"
+        args.top_k = 1
+        args.gmt_topk_list = "1"
+        cnv_gene_extractor.run(args)
+        rows = _manifest_rows(Path(args.out_dir))
+        gs = Path(args.out_dir) / rows[0]["path"] / "geneset.tsv"
+        meta_path = Path(args.out_dir) / rows[0]["path"] / "geneset.meta.json"
+        first_gene = _read_geneset_rows(gs)[0]["gene_id"]
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        return first_gene, meta
+
+    g1, m1 = run_once("tie_run1")
+    g2, m2 = run_once("tie_run2")
+    assert g1 == g2
+    tie1 = m1.get("summary", {}).get("tie_diagnostics", {})
+    tie2 = m2.get("summary", {}).get("tie_diagnostics", {})
+    assert tie1 == tie2
+    assert bool(tie1.get("cutoff_intersects_tie_block")) is True
+    assert int(tie1.get("tie_block_size", 0) or 0) >= 2
 
 
 def test_cnv_gene_extractor_preflight_zero_compatibility_raises(tmp_path: Path):

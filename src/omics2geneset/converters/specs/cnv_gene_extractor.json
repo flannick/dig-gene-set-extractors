@@ -30,6 +30,7 @@
     {"name": "end_column", "type": "string", "default": "auto", "help": "End column (autodetect if unset)"},
     {"name": "amplitude_column", "type": "string", "default": "auto", "help": "Segment amplitude/log2-ratio column (autodetect if unset)"},
     {"name": "sample_id_column", "type": "string", "default": "auto", "help": "Sample id column (defaults to sample1 when absent)"},
+    {"name": "segments_format", "type": "string", "default": "auto", "enum": ["auto", "gdc_seg", "cbio_seg"], "help": "Segment format preset for column autodetection"},
     {"name": "coord_system", "type": "string", "default": "one_based_closed", "enum": ["one_based_closed", "zero_based_half_open"], "help": "Segment coordinate convention"},
     {"name": "chrom_prefix_mode", "type": "string", "default": "auto", "enum": ["auto", "add_chr", "drop_chr", "none"], "help": "Chromosome prefix handling before GTF matching"},
     {"name": "purity_sample_id_column", "type": "string", "default": "sample_id", "help": "Sample id column in purity_tsv"},
@@ -38,11 +39,12 @@
     {"name": "purity_floor", "type": "number", "default": 0.1, "help": "Lower bound used in purity correction denominator"},
     {"name": "max_abs_amplitude", "type": "number", "default": 3.0, "help": "Cap corrected absolute amplitudes"},
     {"name": "min_abs_amplitude", "type": "number", "default": 0.1, "help": "Drop segments with abs(amplitude) below this threshold"},
+    {"name": "max_segment_length_bp", "type": "integer", "default": 0, "help": "Optional hard cap on segment length after coordinate normalization (0 disables)"},
     {"name": "focal_length_scale_bp", "type": "number", "default": 10000000, "help": "Focal penalty length scale in base pairs"},
     {"name": "focal_length_alpha", "type": "number", "default": 1.0, "help": "Focal penalty exponent"},
     {"name": "gene_count_penalty", "type": "string", "default": "inv_sqrt", "enum": ["none", "inv_sqrt", "inv"], "help": "Penalty as function of genes hit per segment"},
     {"name": "aggregation", "type": "string", "default": "weighted_mean", "enum": ["weighted_mean", "sum", "mean", "max_abs"], "help": "Aggregation from segment contributions to gene score"},
-    {"name": "program_preset", "type": "string", "default": "default", "enum": ["default", "connectable", "broad", "qc", "all", "none"], "help": "CNV program preset controlling emitted program types"},
+    {"name": "program_preset", "type": "string", "default": "default", "enum": ["default", "connectable", "focal", "broad", "qc", "all", "none"], "help": "CNV program preset controlling emitted program types"},
     {"name": "program_methods", "type": "string", "default": "", "help": "Optional comma-separated explicit programs: amp,del,abs"},
     {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method per sample/program"},
     {"name": "top_k", "type": "integer", "default": 200, "help": "K for top_k selection"},
@@ -66,6 +68,7 @@
   ],
   "outputs": [
     {"name": "manifest.tsv", "description": "Grouped manifest with one row per sample/program output directory"},
+    {"name": "cnv_program_manifest.tsv", "description": "Flat per-sample/program QC manifest including emitted and skipped program rows"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.tsv", "description": "Selected genes for one sample/program"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.meta.json", "description": "Metadata for one sample/program"},
     {"name": "sample=<SAMPLE>/program=<PROGRAM>/geneset.full.tsv", "description": "Full nonzero score table (optional)"},
@@ -73,4 +76,3 @@
     {"name": "cohort/genesets.gmt", "description": "Optional cohort recurrence GMT output when emit_cohort_sets=true"}
   ]
 }
-

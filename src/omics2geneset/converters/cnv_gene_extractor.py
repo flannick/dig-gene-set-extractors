@@ -13,6 +13,7 @@ def run(args) -> dict[str, object]:
 
     segments, parse_summary = parse_segments_tsv(
         path=args.segments_tsv,
+        segments_format=args.segments_format,
         chrom_column=args.chrom_column,
         start_column=args.start_column,
         end_column=args.end_column,
@@ -48,6 +49,7 @@ def run(args) -> dict[str, object]:
         gtf_source=args.gtf_source,
         gtf_gene_id_field=args.gtf_gene_id_field,
         dataset_label=dataset_label,
+        segments_format=args.segments_format,
         program_preset=args.program_preset,
         program_methods=args.program_methods,
         select=args.select,
@@ -70,6 +72,7 @@ def run(args) -> dict[str, object]:
         coord_system=args.coord_system,
         chrom_prefix_mode=args.chrom_prefix_mode,
         min_abs_amplitude=float(args.min_abs_amplitude),
+        max_segment_length_bp=int(args.max_segment_length_bp),
         focal_length_scale_bp=float(args.focal_length_scale_bp),
         focal_length_alpha=float(args.focal_length_alpha),
         gene_count_penalty_mode=args.gene_count_penalty,
@@ -92,4 +95,3 @@ def run(args) -> dict[str, object]:
         input_files=files,
     )
     return result
-
