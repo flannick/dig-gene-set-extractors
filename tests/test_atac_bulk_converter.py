@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import atac_bulk
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import atac_bulk
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -84,7 +84,7 @@ def test_bulk_converter_end_to_end(tmp_path: Path):
     assert len(rows) == 1
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 

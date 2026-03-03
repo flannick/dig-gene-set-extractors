@@ -51,10 +51,10 @@ _MANIFEST_SCHEMA: dict[str, object] = {
 
 
 def default_resources_dir() -> Path:
-    env = os.getenv("OMICS2GENESET_RESOURCES_DIR")
+    env = os.getenv("GENESET_EXTRACTORS_RESOURCES_DIR") or os.getenv("OMICS2GENESET_RESOURCES_DIR")
     if env:
         return Path(env).expanduser()
-    return Path.home() / ".cache" / "omics2geneset" / "resources"
+    return Path.home() / ".cache" / "geneset_extractors" / "resources"
 
 
 def bundled_manifest_path() -> Path:
@@ -449,7 +449,7 @@ def fetch_resources(
             )
             continue
 
-        with tempfile.NamedTemporaryFile(prefix="omics2geneset_resource_", dir=root, delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(prefix="geneset_extractors_resource_", dir=root, delete=False) as tmp:
             tmp_path = Path(tmp.name)
         try:
             _download_to_path(url, tmp_path)

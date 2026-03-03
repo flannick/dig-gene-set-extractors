@@ -1,10 +1,10 @@
 from pathlib import Path
 import time
 
-from omics2geneset.core.models import Gene
-from omics2geneset.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
-from omics2geneset.io.bed import read_bed
-from omics2geneset.io.gtf import read_genes_from_gtf
+from geneset_extractors.core.models import Gene
+from geneset_extractors.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
+from geneset_extractors.io.bed import read_bed
+from geneset_extractors.io.gtf import read_genes_from_gtf
 
 
 def test_link_methods_basic():

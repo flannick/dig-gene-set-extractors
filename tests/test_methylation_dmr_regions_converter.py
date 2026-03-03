@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import methylation_dmr_regions
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import methylation_dmr_regions
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -71,7 +71,7 @@ def test_methylation_dmr_regions_basic(tmp_path: Path):
     assert result["n_peaks"] > 0
     assert result["n_genes"] > 0
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
     rows = list(csv.DictReader((Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8"), delimiter="\t"))

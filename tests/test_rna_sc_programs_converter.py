@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import rna_sc_programs
-from omics2geneset.core.validate import validate_output_dir
-from omics2geneset.rnaseq.sc_program_workflow import read_program_loadings
+from geneset_extractors.converters import rna_sc_programs
+from geneset_extractors.core.validate import validate_output_dir
+from geneset_extractors.rnaseq.sc_program_workflow import read_program_loadings
 
 
 class Args:
@@ -59,7 +59,7 @@ def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: p
     assert (out_dir / "manifest.tsv").exists()
     assert (out_dir / "genesets.gmt").exists()
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
 
     with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:

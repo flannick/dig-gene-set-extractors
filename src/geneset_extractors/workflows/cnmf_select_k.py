@@ -285,7 +285,7 @@ def run(args) -> dict[str, object]:
     else:
         raise ValueError(f"Unsupported strategy: {strategy}")
 
-    rows_path = run_dir / "omics2geneset_k_selection.tsv"
+    rows_path = run_dir / "geneset_extractors_k_selection.tsv"
     columns = _write_rows_tsv(rows_path, rows)
 
     payload = {
@@ -303,7 +303,7 @@ def run(args) -> dict[str, object]:
         "stats_columns": columns,
         "selection_summary": reason,
     }
-    json_path = run_dir / "omics2geneset_selected_k.json"
+    json_path = run_dir / "geneset_extractors_selected_k.json"
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
     # Must print a single integer only for shell scripting.

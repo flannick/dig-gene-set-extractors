@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.io.reference_tables import read_atlas_gene_stats_tsv, read_ref_ubiquity_tsv
+from geneset_extractors.io.reference_tables import read_atlas_gene_stats_tsv, read_ref_ubiquity_tsv
 
 
 def _write_gz(path: Path, text: str) -> None:

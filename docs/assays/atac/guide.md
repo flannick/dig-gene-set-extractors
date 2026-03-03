@@ -1,6 +1,6 @@
 # ATAC-seq to Gene Sets (Practical Guide)
 
-`omics2geneset` ATAC converters map peak-level accessibility signals to
+`geneset-extractors` ATAC converters map peak-level accessibility signals to
 gene-level programs and gene sets. This guide is the practical ATAC entrypoint;
 repository-wide framework guidance is in `README.md`.
 
@@ -9,48 +9,48 @@ repository-wide framework guidance is in `README.md`.
 ```bash
 python -m pip install -U pip
 python -m pip install -e ".[dev]"
-omics2geneset list
+geneset-extractors list
 ```
 
 Core CLI:
 
 ```bash
-omics2geneset list
-omics2geneset describe atac_bulk
-omics2geneset describe atac_bulk_matrix
-omics2geneset convert <converter_name> [flags]
-omics2geneset validate <output_dir>
-omics2geneset resources list
-omics2geneset resources status --fast
-omics2geneset resources status --check_schema --verify
-omics2geneset resources describe ccre_ubiquity_hg19
-omics2geneset resources describe ccre_ubiquity_hg38
-omics2geneset resources fetch --preset atac_default_optional_hg19
-omics2geneset resources fetch --preset atac_default_optional_hg38
-omics2geneset resources manifest-validate
+geneset-extractors list
+geneset-extractors describe atac_bulk
+geneset-extractors describe atac_bulk_matrix
+geneset-extractors convert <converter_name> [flags]
+geneset-extractors validate <output_dir>
+geneset-extractors resources list
+geneset-extractors resources status --fast
+geneset-extractors resources status --check_schema --verify
+geneset-extractors resources describe ccre_ubiquity_hg19
+geneset-extractors resources describe ccre_ubiquity_hg38
+geneset-extractors resources fetch --preset atac_default_optional_hg19
+geneset-extractors resources fetch --preset atac_default_optional_hg38
+geneset-extractors resources manifest-validate
 ```
 
 Quickstart (baseline bulk BED):
 
 ```bash
 # Optional reference resources:
-omics2geneset resources fetch --preset atac_default_optional_hg38
-# omics2geneset resources fetch --preset atac_default_optional_hg19
+geneset-extractors resources fetch --preset atac_default_optional_hg38
+# geneset-extractors resources fetch --preset atac_default_optional_hg19
 
-omics2geneset convert atac_bulk \
+geneset-extractors convert atac_bulk \
   --peaks <peaks.bed.gz> \
   --gtf <genes.gtf.gz> \
   --organism human \
   --genome_build hg38 \
   --out_dir <out>
 
-omics2geneset validate <out>
+geneset-extractors validate <out>
 ```
 
 Resource catalog notes:
 
 - Bundled manifest: `src/geneset_extractors/resources/manifest.json`
-- Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
+- Default cache: `~/.cache/geneset_extractors/resources` (override with `GENESET_EXTRACTORS_RESOURCES_DIR`; legacy `OMICS2GENESET_RESOURCES_DIR` is also accepted)
 - Preferred bundle workflow: extract a build-specific bundle (`hg19` or `hg38`), generate a local manifest with `--layout direct --genome-build <build>`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
 - Human build presets: `atac_default_optional_hg19`, `atac_default_optional_hg38`.
@@ -108,7 +108,7 @@ If resources are missing, methods are skipped by default (`--resource_policy ski
 
 ### Why you might see fewer gene sets now
 
-- `omics2geneset` now skips GMT entries smaller than `--gmt_min_genes` by default.
+- `geneset-extractors` now skips GMT entries smaller than `--gmt_min_genes` by default.
 - For `condition_within_group`, groups are skipped when they fail cell and donor support gates (`--min_cells_per_group`, `--min_cells_per_condition`, `--min_donors_per_condition`) or dataset-level donor coverage (`--min_total_donors_per_condition`).
 - Use `--emit_small_gene_sets true` only when you intentionally want small sets for debugging or toy runs.
 
@@ -166,9 +166,9 @@ CLI to theory crosswalk:
 | `--select`, `--top_k`, `--normalize` | Gene set extraction operator and normalization | Methods: Set extraction (`sec:set_extraction`), `eq:within_program_l1` |
 | `--emit_gmt`, `--gmt_topk_list`, `--gmt_min_genes`, `--gmt_max_genes` | GMT export of selected gene sets | Methods: GMT export (`sec:gmt_export`) |
 
-## Extending omics2geneset
+## Extending geneset-extractors
 
-### Add a new converter in omics2geneset
+### Add a new converter in geneset-extractors
 
 1. Add `src/geneset_extractors/extractors/converters/<name>.py` with `run(args) -> dict`.
 2. Add CLI parser wiring in `src/geneset_extractors/cli.py`.
@@ -177,7 +177,7 @@ CLI to theory crosswalk:
 5. Emit the contract files (`geneset.tsv`, `geneset.meta.json`, optional `geneset.full.tsv`).
 6. Add toy fixtures and tests in `tests/`.
 
-### Add a new mode to an existing omics2geneset converter
+### Add a new mode to an existing geneset-extractors converter
 
 1. Add CLI flags.
 2. Implement mode logic in converter/core modules.
@@ -262,7 +262,7 @@ Optional peak weights:
 ### Quickstart
 
 ```bash
-omics2geneset convert atac_bulk \
+geneset-extractors convert atac_bulk \
   --peaks tests/data/toy_peaks.bed \
   --gtf tests/data/toy.gtf \
   --out_dir tests/tmp/readme_bulk \
@@ -416,13 +416,13 @@ With groups:
 Top-level grouped validation:
 
 ```bash
-omics2geneset validate <out_dir>
+geneset-extractors validate <out_dir>
 ```
 
 ### Quickstart (cluster-specific programs)
 
 ```bash
-omics2geneset convert atac_sc_10x \
+geneset-extractors convert atac_sc_10x \
   --matrix_dir tests/data/toy_10x_mtx \
   --gtf tests/data/toy.gtf \
   --groups_tsv tests/data/barcode_groups.tsv \
@@ -439,7 +439,7 @@ omics2geneset convert atac_sc_10x \
 ### Quickstart (connectable condition-within-group OPEN/CLOSE)
 
 ```bash
-omics2geneset convert atac_sc_10x \
+geneset-extractors convert atac_sc_10x \
   --matrix_dir tests/data/toy_10x_mtx \
   --gtf tests/data/toy.gtf \
   --groups_tsv tests/data/barcode_groups.tsv \
@@ -494,7 +494,7 @@ Output directory also includes `run_summary.json` and `run_summary.txt` with lin
 Quickstart:
 
 ```bash
-omics2geneset convert atac_bulk_matrix \
+geneset-extractors convert atac_bulk_matrix \
   --peak_matrix_tsv tests/data/toy_bulk_peak_matrix.tsv \
   --peak_bed tests/data/toy_peaks.bed \
   --sample_metadata_tsv tests/data/toy_bulk_sample_metadata.tsv \

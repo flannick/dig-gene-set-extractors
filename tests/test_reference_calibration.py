@@ -1,4 +1,4 @@
-from omics2geneset.core.reference_calibration import peak_overlap_mask
+from geneset_extractors.core.reference_calibration import peak_overlap_mask
 
 
 def test_peak_overlap_mask_reports_overlaps_per_peak():

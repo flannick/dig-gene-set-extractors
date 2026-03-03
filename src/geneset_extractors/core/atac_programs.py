@@ -255,7 +255,7 @@ def calibration_method_enablement_hint(method: str, genome_build: str) -> str | 
         return (
             "Enable by providing a reference bundle via --resources_dir <bundle_root> "
             "(see docs/atac_reference_bundle.md), or fetch resources with "
-            f"`omics2geneset resources fetch --preset {preset}`."
+            f"`geneset-extractors resources fetch --preset {preset}`."
         )
     return (
         "Enable by providing a compatible reference bundle via --resources_dir <bundle_root> "

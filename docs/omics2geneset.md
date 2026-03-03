@@ -1,13 +1,10 @@
-# omics2geneset Documentation Index (Compatibility Page)
+# omics2geneset Docs Alias
 
-`omics2geneset` remains fully supported for backward compatibility.
+`docs/omics2geneset.md` is kept as a legacy path for compatibility.
 
-For new users and new extractor families, use the neutral repository index:
+Use the current documentation index:
 
 - `docs/geneset-extractors.md`
-
-That page points to the same assay guides and methods notes and documents the
-new neutral namespace/CLI aliases, including CNV segment extraction.
 
 Canonical assay docs:
 
@@ -22,5 +19,3 @@ Canonical assay docs:
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV practical guide: `docs/assays/cnv/guide.md`
 - CNV methods note: `docs/assays/cnv/methods.tex`
-
-Legacy compatibility aliases remain at older paths like `docs/cnv2geneset.md` and `docs/cnv_methods.tex`.

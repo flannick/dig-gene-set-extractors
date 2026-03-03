@@ -23,7 +23,7 @@ def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description=(
             "Quick helper: downsample a scRNA matrix and fit sklearn NMF, "
-            "then write genes-by-program loadings TSV for omics2geneset rna_sc_programs."
+            "then write genes-by-program loadings TSV for geneset-extractors rna_sc_programs."
         )
     )
     ap.add_argument("--matrix_tsv", required=True, help="Cell x gene matrix TSV (rows=cells, columns=genes)")

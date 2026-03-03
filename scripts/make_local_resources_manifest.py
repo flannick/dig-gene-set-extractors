@@ -87,7 +87,7 @@ def _resource_genome_build(resource_row: dict[str, object], resource_id: str) ->
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    default_base_manifest = repo_root / "src" / "omics2geneset" / "resources" / "manifest.json"
+    default_base_manifest = repo_root / "src" / "geneset_extractors" / "resources" / "manifest.json"
     ap = argparse.ArgumentParser(
         description=(
             "Create a local resource manifest from an extracted ATAC reference bundle. "
@@ -212,7 +212,7 @@ def main() -> int:
     if args.layout == "direct":
         print(f"Use this at runtime with --resources_manifest {out_path} --resources_dir {bundle_root}")
     else:
-        print("Use this with `omics2geneset resources fetch` to stage files into cache.")
+        print("Use this with `geneset-extractors resources fetch` to stage files into cache.")
     if resolved:
         print("Resolved resource ids:")
         for rid in sorted(resolved):

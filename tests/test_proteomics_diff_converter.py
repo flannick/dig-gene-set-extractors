@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from omics2geneset.converters import proteomics_diff
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import proteomics_diff
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -19,5 +19,5 @@ def test_proteomics_diff_converter(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "prot")
     proteomics_diff.run(args)
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)

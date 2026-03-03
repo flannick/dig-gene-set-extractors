@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from omics2geneset.core.gmt import build_gmt_sets_from_rows, choose_gene_tokens, sanitize_gmt_name, write_gmt
+from geneset_extractors.core.gmt import build_gmt_sets_from_rows, choose_gene_tokens, sanitize_gmt_name, write_gmt
 
 
 def test_choose_gene_tokens_deduplicates_with_symbol_preference():

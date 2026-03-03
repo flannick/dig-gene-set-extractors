@@ -1,6 +1,6 @@
 # ATAC Reference Bundle Setup
 
-This guide covers how to use versioned ATAC reference bundles with `omics2geneset`.
+This guide covers how to use versioned ATAC reference bundles with `geneset-extractors`.
 The primary workflow is direct bundle usage (no separate resource fetch step).
 Recommended default: use a build-specific bundle (`hg19` or `hg38`).
 
@@ -44,24 +44,24 @@ python scripts/make_local_resources_manifest.py \
   --bundle-root /tmp/dig-atac-refdata-hg19/bundle \
   --layout direct \
   --genome-build hg19 \
-  --out /tmp/omics2geneset.local_resources.hg19.json
+  --out /tmp/geneset_extractors.local_resources.hg19.json
 
 # hg38
 python scripts/make_local_resources_manifest.py \
   --bundle-root /tmp/dig-atac-refdata-hg38/bundle \
   --layout direct \
   --genome-build hg38 \
-  --out /tmp/omics2geneset.local_resources.hg38.json
+  --out /tmp/geneset_extractors.local_resources.hg38.json
 ```
 
-Use the manifest matching your `--genome_build` in `omics2geneset convert`.
+Use the manifest matching your `--genome_build` in `geneset-extractors convert`.
 
 ## 3) Run directly against the extracted bundle directory
 
 ```bash
 # hg19 example
-omics2geneset resources status \
-  --manifest /tmp/omics2geneset.local_resources.hg19.json \
+geneset-extractors resources status \
+  --manifest /tmp/geneset_extractors.local_resources.hg19.json \
   --manifest_mode replace \
   --resources_dir /tmp/dig-atac-refdata-hg19/bundle \
   --check_schema \
@@ -70,7 +70,7 @@ omics2geneset resources status \
 
 ```bash
 # hg19 example
-omics2geneset convert atac_bulk \
+geneset-extractors convert atac_bulk \
   --peaks <peaks.bed> \
   --gtf <genes.gtf> \
   --out_dir <out_dir> \
@@ -78,7 +78,7 @@ omics2geneset convert atac_bulk \
   --genome_build hg19 \
   --program_preset default \
   --resource_policy fail \
-  --resources_manifest /tmp/omics2geneset.local_resources.hg19.json \
+  --resources_manifest /tmp/geneset_extractors.local_resources.hg19.json \
   --resources_dir /tmp/dig-atac-refdata-hg19/bundle
 ```
 
@@ -88,7 +88,7 @@ The converter auto-selects `*_hg19` or `*_hg38` resource IDs from `--genome_buil
 Optional environment variable:
 
 ```bash
-export OMICS2GENESET_RESOURCES_DIR=/tmp/dig-atac-refdata-hg19/bundle
+export GENESET_EXTRACTORS_RESOURCES_DIR=/tmp/dig-atac-refdata-hg19/bundle
 ```
 
 ## 4) Optional cache staging workflow
@@ -101,10 +101,10 @@ python scripts/make_local_resources_manifest.py \
   --bundle-root /tmp/dig-atac-refdata-hg19/bundle \
   --layout cache \
   --genome-build hg19 \
-  --out /tmp/omics2geneset.local_resources.hg19.cache.json
+  --out /tmp/geneset_extractors.local_resources.hg19.cache.json
 
-omics2geneset resources fetch \
-  --manifest /tmp/omics2geneset.local_resources.hg19.cache.json \
+geneset-extractors resources fetch \
+  --manifest /tmp/geneset_extractors.local_resources.hg19.cache.json \
   --manifest_mode replace \
   --preset atac_default_optional_hg19
 ```
@@ -115,10 +115,10 @@ python scripts/make_local_resources_manifest.py \
   --bundle-root /tmp/dig-atac-refdata-hg38/bundle \
   --layout cache \
   --genome-build hg38 \
-  --out /tmp/omics2geneset.local_resources.hg38.cache.json
+  --out /tmp/geneset_extractors.local_resources.hg38.cache.json
 
-omics2geneset resources fetch \
-  --manifest /tmp/omics2geneset.local_resources.hg38.cache.json \
+geneset-extractors resources fetch \
+  --manifest /tmp/geneset_extractors.local_resources.hg38.cache.json \
   --manifest_mode replace \
   --preset atac_default_optional_hg38
 ```

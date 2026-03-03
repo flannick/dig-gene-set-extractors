@@ -17,14 +17,14 @@ applies focality penalties to reduce broad-event dominance, and emits amplificat
 Single-sample or multi-sample segments table:
 
 ```bash
-omics2geneset convert cnv_gene_extractor \
+geneset-extractors convert cnv_gene_extractor \
   --segments_tsv path/to/segments.tsv \
   --gtf path/to/genes.gtf.gz \
   --out_dir results/cnv \
   --organism human \
   --genome_build hg38
 
-omics2geneset validate results/cnv
+geneset-extractors validate results/cnv
 ```
 
 Common table columns are auto-detected (`Chromosome/chrom`, `Start/start`, `End/end`, `Segment_Mean/segmean`).
@@ -62,7 +62,7 @@ If sample column is absent, the converter treats input as a single sample (`samp
 GDC-like segments (auto mode usually works):
 
 ```bash
-omics2geneset convert cnv_gene_extractor \
+geneset-extractors convert cnv_gene_extractor \
   --segments_tsv path/to/gdc_segments.tsv.gz \
   --segments_format gdc_seg \
   --gtf path/to/genes.gtf.gz \
@@ -74,7 +74,7 @@ omics2geneset convert cnv_gene_extractor \
 cBioPortal SEG (no manual column overrides needed):
 
 ```bash
-omics2geneset convert cnv_gene_extractor \
+geneset-extractors convert cnv_gene_extractor \
   --segments_tsv path/to/data_CNA.seg \
   --segments_format cbio_seg \
   --gtf path/to/genes.gtf.gz \
@@ -117,7 +117,7 @@ GMT defaults:
 Purity correction is opt-in:
 
 ```bash
-omics2geneset convert cnv_gene_extractor \
+geneset-extractors convert cnv_gene_extractor \
   --segments_tsv path/to/segments.tsv \
   --gtf path/to/genes.gtf.gz \
   --out_dir results/cnv \
@@ -165,7 +165,7 @@ Explicit program override:
 ## Cohort recurrence sets (optional)
 
 ```bash
-omics2geneset convert cnv_gene_extractor \
+geneset-extractors convert cnv_gene_extractor \
   --segments_tsv path/to/segments.tsv \
   --gtf path/to/genes.gtf.gz \
   --out_dir results/cnv \
@@ -232,6 +232,6 @@ interpretation (for example, compare `median_seg_len_used_bp`, `max_abs_amp_used
 ## Documentation map
 
 - repository docs index: `docs/geneset-extractors.md`
-- compatibility index: `docs/omics2geneset.md`
+- compatibility index: `docs/geneset-extractors.md`
 - CNV methods note: `docs/assays/cnv/methods.tex`
 - methods index: `docs/methods.tex`

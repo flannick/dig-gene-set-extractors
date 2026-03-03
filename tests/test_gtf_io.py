@@ -1,7 +1,7 @@
 import gzip
 from pathlib import Path
 
-from omics2geneset.io.gtf import read_genes_from_gtf
+from geneset_extractors.io.gtf import read_genes_from_gtf
 
 
 def test_read_genes_from_gtf_accepts_gzip(tmp_path: Path):

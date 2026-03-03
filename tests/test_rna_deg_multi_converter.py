@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import rna_deg_multi
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import rna_deg_multi
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -63,7 +63,7 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
     assert any("__pos__" in line for line in gmt_lines)
     assert any("__neg__" in line for line in gmt_lines)
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
 
 

@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from omics2geneset.cli import main
-from omics2geneset.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_prepare
+from geneset_extractors.cli import main
+from geneset_extractors.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_prepare
 
 
 def _make_args(out_dir: Path) -> SimpleNamespace:
@@ -85,7 +85,7 @@ def test_scrna_cnmf_prepare_creates_split_subsets_and_filters_zero_totals(tmp_pa
         meta_path = subset_dir / "meta.tsv"
         script_path = subset_dir / "run_cnmf.sh"
         script_consensus = subset_dir / "run_cnmf_consensus_auto_k.sh"
-        script_convert = subset_dir / "run_omics2geneset_from_cnmf.sh"
+        script_convert = subset_dir / "run_geneset_extractors_from_cnmf.sh"
         assert counts_path.exists()
         assert meta_path.exists()
         assert script_path.exists()

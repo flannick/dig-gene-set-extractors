@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Offline installer for omics2geneset.
+Offline installer for geneset_extractors.
 
 Usage:
   scripts/install_offline.sh --wheelhouse /path/to/wheels [--python /path/to/python] [--no-dev] [--wheel-install]
@@ -88,7 +88,7 @@ if importlib.util.find_spec("wheel") is None:
     raise SystemExit(2)
 PY
 
-echo "Installing omics2geneset from local source..."
+echo "Installing geneset_extractors from local source..."
 if [[ "$EDITABLE" -eq 1 ]]; then
   "$PY_BIN" -m pip install --no-index --find-links "$WHEELHOUSE" -e "$TARGET" --no-build-isolation
 else
@@ -96,5 +96,5 @@ else
 fi
 
 echo "Install complete. Verifying CLI..."
-"$PY_BIN" -m omics2geneset.cli list >/dev/null
+"$PY_BIN" -m geneset_extractors.cli list >/dev/null
 echo "Verification passed."

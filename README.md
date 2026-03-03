@@ -5,9 +5,9 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `omics2geneset` (ATAC-seq, RNA-seq, and DNA methylation extractors)
+- `geneset_extractors` (ATAC-seq, RNA-seq, and DNA methylation extractors)
   - includes CNV segment extraction (`cnv_gene_extractor`)
-  - exposed via neutral aliases `geneset-extractors`/`geneset_extractors`
+  - exposed via CLI names `geneset-extractors` / `geneset_extractors`
 
 ## Repository Scope
 
@@ -17,7 +17,7 @@ This root README is intentionally framework-level:
 - common output contract expectations
 - where to find package-specific documentation
 
-Detailed `omics2geneset` CLI and method behavior is split by assay:
+Detailed `geneset_extractors` CLI and method behavior is split by assay:
 
 - `docs/assays/atac/guide.md` (ATAC practical guide)
 - `docs/assays/rnaseq/guide.md` (RNA practical guide)
@@ -25,7 +25,6 @@ Detailed `omics2geneset` CLI and method behavior is split by assay:
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
-- `docs/omics2geneset.md` (compatibility index)
 
 ## Quick Start (Common Case)
 
@@ -47,13 +46,12 @@ If `pip install -e ".[dev]"` fails in DNS-restricted environments:
 
 ## Implemented Extractor Family
 
-### `omics2geneset`
+### `geneset_extractors`
 
 CLI aliases (same implementation):
 
 - `geneset-extractors`
 - `geneset_extractors`
-- `omics2geneset`
 
 ATAC-focused converters:
 
@@ -92,7 +90,6 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
 - `docs/geneset-extractors.md` (index)
-- `docs/omics2geneset.md` (compatibility index)
 
 Method notes and equations (split by assay + index):
 
@@ -108,7 +105,7 @@ ATAC reference bundle setup:
 - primary workflow: download one build-specific tarball (`hg19` or `hg38`), extract, and point `--resources_dir` at bundle root (no extra fetch step)
 - current bundle version: `v1.1.0` split outputs: `...-atac-refdata-hg19-v1.1.0.tar.gz` and `...-atac-refdata-hg38-v1.1.0.tar.gz`
 - converters auto-select build-matched resource IDs from `--genome_build`
-- `omics2geneset` defaults to `--use_reference_bundle true` (opt out with `--use_reference_bundle false`)
+- `geneset_extractors` defaults to `--use_reference_bundle true` (opt out with `--use_reference_bundle false`)
 - default ATAC preset is `connectable` and emits only high-value outputs:
   - `linked_activity` with `nearest_tss`
   - `distal_activity` with `distance_decay`
@@ -152,10 +149,8 @@ dig-gene-set-extractors/
   pyproject.toml
   src/
     geneset_extractors/
-    omics2geneset/            # compatibility shim
   docs/
     geneset-extractors.md
-    omics2geneset.md
     assays/
       atac/
         guide.md
@@ -201,4 +196,4 @@ When adding another extractor family (for example proteomics):
 ## Development Notes
 
 - Do not commit large generated artifacts under `dist/` or `data/external/`.
-- For `omics2geneset` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/assays/atac/guide.md` and `docs/assays/atac/reference_bundle.md`.
+- For `geneset_extractors` reference resources, prefer the manifest-driven resource manager workflow documented in `docs/assays/atac/guide.md` and `docs/assays/atac/reference_bundle.md`.

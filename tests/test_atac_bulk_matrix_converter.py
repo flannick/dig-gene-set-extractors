@@ -2,8 +2,8 @@ import csv
 import json
 from pathlib import Path
 
-from omics2geneset.converters import atac_bulk_matrix
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import atac_bulk_matrix
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -95,7 +95,7 @@ def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: P
     assert contrast["n_samples_a"] == 2
     assert contrast["n_samples_b"] == 2
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 

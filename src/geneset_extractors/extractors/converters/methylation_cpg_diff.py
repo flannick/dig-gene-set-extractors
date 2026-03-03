@@ -50,6 +50,7 @@ def run(args) -> dict[str, object]:
     has_resource_location = bool(
         args.resources_dir
         or args.resources_manifest
+        or os.getenv("GENESET_EXTRACTORS_RESOURCES_DIR")
         or os.getenv("OMICS2GENESET_RESOURCES_DIR")
     )
     need_resources = bool(

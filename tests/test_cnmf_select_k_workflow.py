@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from omics2geneset.cli import main
-from omics2geneset.workflows.cnmf_select_k import run as run_cnmf_select_k
+from geneset_extractors.cli import main
+from geneset_extractors.workflows.cnmf_select_k import run as run_cnmf_select_k
 
 
 def _write_stats_npz(base_dir: Path, name: str, *, use_silhouette: bool = False) -> Path:
@@ -64,10 +64,10 @@ def test_cnmf_select_k_largest_stable_writes_artifacts(tmp_path: Path, capsys):
     assert captured.out == "20\n"
 
     run_dir = out / name
-    assert (run_dir / "omics2geneset_k_selection.tsv").exists()
-    assert (run_dir / "omics2geneset_selected_k.json").exists()
+    assert (run_dir / "geneset_extractors_k_selection.tsv").exists()
+    assert (run_dir / "geneset_extractors_selected_k.json").exists()
 
-    payload = json.loads((run_dir / "omics2geneset_selected_k.json").read_text(encoding="utf-8"))
+    payload = json.loads((run_dir / "geneset_extractors_selected_k.json").read_text(encoding="utf-8"))
     assert payload["selected_k"] == 20
     assert payload["strategy"] == "largest_stable"
     assert "selection_summary" in payload
@@ -99,7 +99,7 @@ def test_cnmf_select_k_manual_fixed_k(tmp_path: Path, capsys):
     captured = capsys.readouterr()
     assert captured.out == "42\n"
 
-    payload = json.loads((out / name / "omics2geneset_selected_k.json").read_text(encoding="utf-8"))
+    payload = json.loads((out / name / "geneset_extractors_selected_k.json").read_text(encoding="utf-8"))
     assert payload["strategy"] == "manual"
     assert payload["thresholds"]["fixed_k"] == 42
 

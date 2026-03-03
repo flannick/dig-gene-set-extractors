@@ -4,12 +4,12 @@ from pathlib import Path
 import subprocess
 import sys
 
-from omics2geneset.cli import build_parser
+from geneset_extractors.cli import build_parser
 
 
 def _run(*args: str):
     return subprocess.run(
-        [sys.executable, "-m", "omics2geneset.cli", *args],
+        [sys.executable, "-m", "geneset_extractors.cli", *args],
         capture_output=True,
         text=True,
         env={**__import__("os").environ, "PYTHONPATH": "src"},

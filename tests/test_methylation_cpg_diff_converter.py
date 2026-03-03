@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import methylation_cpg_diff
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import methylation_cpg_diff
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -86,7 +86,7 @@ def test_methylation_cpg_diff_runs_and_emits_gmt(tmp_path: Path):
     assert result["n_peaks"] > 0
     assert result["n_genes"] > 0
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")

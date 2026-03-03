@@ -27,7 +27,7 @@ will skip them unless URLs are supplied in an overlay manifest.
 Canonical usage today is local bundle/direct mode:
 
 1. Place manifest files under a local `--resources_dir`.
-2. Set `OMICS2GENESET_RESOURCES_DIR` or pass `--resources_dir`.
+2. Set `GENESET_EXTRACTORS_RESOURCES_DIR` or pass `--resources_dir` (legacy `OMICS2GENESET_RESOURCES_DIR` is also accepted).
 3. Run converter without `--probe_manifest_tsv` and let auto-resolution select
    the build/array-specific id.
 

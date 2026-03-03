@@ -291,11 +291,11 @@ For very large scRNA maps, upstream factorization choices usually dominate downs
 \item \textbf{Choose moderate factor count first.} Start with conservative $K$, then increase only if resulting programs remain interpretable.
 \item \textbf{Respect cNMF input constraints.} Remove zero-total cells and zero-total genes before factorization; cNMF warnings on these inputs usually indicate unstable factorization setup.
 \end{itemize}
-To support practical workflows, this repo provides \texttt{omics2geneset workflows scrna\_cnmf\_prepare}, which performs deterministic downsampling, subset splitting, and zero-total filtering, and writes per-subset cNMF run scripts. Separately, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected during ingestion.
+To support practical workflows, this repo provides \texttt{geneset-extractors workflows scrna\_cnmf\_prepare}, which performs deterministic downsampling, subset splitting, and zero-total filtering, and writes per-subset cNMF run scripts. Separately, \texttt{rna\_sc\_programs} emits non-fatal warnings when very large numbers of programs or parsed loading values are detected during ingestion.
 
 \subsection*{Auto-selection of factor count ($K$)}
 For cNMF workflows, $K$ is selected from the cNMF stability/error diagnostics rather than fixed globally.
-The repo workflow command \texttt{omics2geneset workflows cnmf\_select\_k} reads the cNMF
+The repo workflow command \texttt{geneset-extractors workflows cnmf\_select\_k} reads the cNMF
 \texttt{k\_selection\_stats} output and applies a reproducible default heuristic:
 \begin{itemize}[leftmargin=2em]
 \item Strategy: \texttt{largest\_stable}

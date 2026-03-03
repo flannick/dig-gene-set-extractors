@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import rna_deg
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import rna_deg
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -57,7 +57,7 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     result = rna_deg.run(args)
     assert result["resolved_score_mode"] == "stat"
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
     geneset = Path(args.out_dir) / "geneset.tsv"

@@ -5,8 +5,8 @@ import csv
 
 import pytest
 
-from omics2geneset.converters import atac_sc_10x
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import atac_sc_10x
+from geneset_extractors.core.validate import validate_output_dir
 
 
 class Args:
@@ -91,7 +91,7 @@ def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     assert "__link_method=promoter_overlap__" not in gmt_text
     assert (Path(args.out_dir) / "run_summary.json").exists()
     assert (Path(args.out_dir) / "run_summary.txt").exists()
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 
@@ -103,7 +103,7 @@ def test_sc_converter_with_groups_validates_root_and_groups(tmp_path: Path):
     atac_sc_10x.run(args)
     manifest = Path(args.out_dir) / "manifest.tsv"
     assert manifest.exists()
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
     validate_output_dir(Path(args.out_dir) / "group=g1", schema)
     validate_output_dir(Path(args.out_dir) / "group=g2", schema)
@@ -128,7 +128,7 @@ def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_pat
     args.link_method = "all"
     atac_sc_10x.run(args)
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
     combined_gmt = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "__study_contrast=condition_within_group" in combined_gmt
@@ -208,7 +208,7 @@ def test_sc_converter_supports_features_tsv_coords(tmp_path: Path):
     args.out_dir = str(tmp_path / "sc_features")
     args.groups_tsv = None
     atac_sc_10x.run(args)
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
 
 

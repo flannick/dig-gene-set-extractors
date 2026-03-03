@@ -5,7 +5,7 @@ This page documents the first-class in-repo preprocessing path for large scRNA a
 Command:
 
 ```bash
-omics2geneset workflows scrna_cnmf_prepare --help
+geneset-extractors workflows scrna_cnmf_prepare --help
 ```
 
 ## Purpose
@@ -37,7 +37,7 @@ Matrix orientation:
 ## Recommended command
 
 ```bash
-omics2geneset workflows scrna_cnmf_prepare \
+geneset-extractors workflows scrna_cnmf_prepare \
   --matrix_tsv path/to/cell_by_gene_logcounts.tsv \
   --meta_tsv path/to/cell_meta.tsv \
   --meta_cell_id_column cell_id \
@@ -71,15 +71,15 @@ The default in this repo is reproducible auto-selection with:
 You can run selector directly:
 
 ```bash
-omics2geneset workflows cnmf_select_k \
+geneset-extractors workflows cnmf_select_k \
   --cnmf_output_dir results/scrna_cnmf_prepare/subsets/cell_type=<CT>/cnmf_out \
   --name <RUN_NAME>
 ```
 
 Artifacts written in the cNMF run directory:
 
-- `omics2geneset_k_selection.tsv`
-- `omics2geneset_selected_k.json`
+- `geneset_extractors_k_selection.tsv`
+- `geneset_extractors_selected_k.json`
 
 ## Output layout
 
@@ -90,7 +90,7 @@ Artifacts written in the cNMF run directory:
   - `cell_type=<CT>/meta.tsv`
   - `cell_type=<CT>/run_cnmf.sh`
   - `cell_type=<CT>/run_cnmf_consensus_auto_k.sh`
-  - `cell_type=<CT>/run_omics2geneset_from_cnmf.sh`
+  - `cell_type=<CT>/run_geneset_extractors_from_cnmf.sh`
   - or `all/` when not splitting by cell type
 
 ## cNMF script generation
@@ -102,7 +102,7 @@ Each subset gets `run_cnmf.sh` with:
 3. `cnmf combine`
 4. `cnmf k_selection_plot`
 5. commented `cnmf consensus` template
-6. commented `omics2geneset convert rna_sc_programs ...` template
+6. commented `geneset-extractors convert rna_sc_programs ...` template
 
 This repo does not require `cnmf` as a dependency. By default scripts are generated only.
 
@@ -114,7 +114,7 @@ Generated scripts:
 
 - `run_cnmf.sh`: prepare/factorize/combine/k_selection_plot
 - `run_cnmf_consensus_auto_k.sh`: selects K via `workflows cnmf_select_k` (or fixed `--cnmf_k`) and runs consensus
-- `run_omics2geneset_from_cnmf.sh`: finds consensus spectra file (`tpm` by default) and runs `convert rna_sc_programs`
+- `run_geneset_extractors_from_cnmf.sh`: finds consensus spectra file (`tpm` by default) and runs `convert rna_sc_programs`
 
 ## Workflow flags and defaults
 
@@ -139,13 +139,13 @@ Override examples:
 
 ```bash
 # fixed grid + fixed K
-omics2geneset workflows scrna_cnmf_prepare \
+geneset-extractors workflows scrna_cnmf_prepare \
   ... \
   --cnmf_k_list "10 15 20 25" \
   --cnmf_k 20
 
 # auto grid + stricter local-max K selection
-omics2geneset workflows cnmf_select_k \
+geneset-extractors workflows cnmf_select_k \
   --cnmf_output_dir <CNMF_OUTDIR> \
   --name <RUN_NAME> \
   --strategy largest_stable \

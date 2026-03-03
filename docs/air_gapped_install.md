@@ -37,7 +37,7 @@ What this does:
 1. Validates required direct wheels exist.
 2. Bootstraps build prerequisites from the local wheelhouse.
 3. Installs the package with `--no-build-isolation`.
-4. Verifies CLI startup (`python -m omics2geneset.cli list`).
+4. Verifies CLI startup (`python -m geneset_extractors.cli list`).
 
 ## Manual Offline Commands
 

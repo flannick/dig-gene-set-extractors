@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from omics2geneset.converters import cnv_gene_extractor
-from omics2geneset.cli import build_parser
-from omics2geneset.core.validate import validate_output_dir
+from geneset_extractors.converters import cnv_gene_extractor
+from geneset_extractors.cli import build_parser
+from geneset_extractors.core.validate import validate_output_dir
 
 
 def _write_toy_gtf(path: Path) -> None:
@@ -136,7 +136,7 @@ def test_cnv_gene_extractor_runs_with_focal_penalty_and_emits_gmt(tmp_path: Path
     gmt_text = (out_dir / row_lookup[("S1", "amp")]["path"] / "genesets.gmt").read_text(encoding="utf-8")
     assert "__program=amp__topk=3" in gmt_text
 
-    schema = Path("src/omics2geneset/schemas/geneset_metadata.schema.json")
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
 
 

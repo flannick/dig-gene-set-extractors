@@ -161,7 +161,7 @@ class SubsetPlan:
     meta_path: Path | None = None
     run_cnmf_script_path: Path | None = None
     run_cnmf_consensus_auto_k_script_path: Path | None = None
-    run_omics2geneset_from_cnmf_script_path: Path | None = None
+    run_geneset_extractors_from_cnmf_script_path: Path | None = None
 
 
 def _load_meta_index(
@@ -409,7 +409,7 @@ def _parse_fixed_k_or_auto(raw_value: str) -> tuple[str, int | None]:
 
 def _selector_call_line(args, quote_fixed_k: str | None = None) -> str:
     cmd = (
-        'omics2geneset workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
+        'geneset-extractors workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
         f'--strategy {args.cnmf_select_strategy} '
         f'--stability_frac_of_max {float(args.cnmf_select_stability_frac_of_max)} '
         f'--min_stability_abs {float(args.cnmf_select_min_stability_abs)} '
@@ -422,7 +422,7 @@ def _selector_call_line(args, quote_fixed_k: str | None = None) -> str:
 
 def _selector_manual_call_line(quote_fixed_k: str) -> str:
     return (
-        'omics2geneset workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
+        'geneset-extractors workflows cnmf_select_k --cnmf_output_dir "$OUTDIR" --name "$NAME" '
         f"--strategy manual --fixed_k {quote_fixed_k}"
     )
 
@@ -521,13 +521,13 @@ def _write_cnmf_consensus_auto_k_script(
     return script_path
 
 
-def _write_omics2geneset_from_cnmf_script(
+def _write_geneset_extractors_from_cnmf_script(
     *,
     subset_dir: Path,
     subset_id: str,
     args,
 ) -> Path:
-    script_path = subset_dir / "run_omics2geneset_from_cnmf.sh"
+    script_path = subset_dir / "run_geneset_extractors_from_cnmf.sh"
     safe_subset = _safe_component(subset_id, "subset")
     cnmf_name = str(args.cnmf_name).strip() if args.cnmf_name else safe_subset
     export_kind = str(args.cnmf_export_kind).strip()
@@ -571,9 +571,9 @@ def _write_omics2geneset_from_cnmf_script(
         "  exit 2",
         "fi",
         'SPECTRA="${MATCHES[0]}"',
-        'OUT_GENESETS="$OUTDIR/omics2geneset_programs_k_${K}_${EXPORT_KIND}"',
+        'OUT_GENESETS="$OUTDIR/geneset_extractors_programs_k_${K}_${EXPORT_KIND}"',
         "",
-        "omics2geneset convert rna_sc_programs \\",
+        "geneset-extractors convert rna_sc_programs \\",
         '  --cnmf_gene_spectra_tsv "$SPECTRA" \\',
         '  --out_dir "$OUT_GENESETS" \\',
         f'  --organism {args.organism} --genome_build {args.genome_build}' + (f" {extra_flags}" if extra_flags else ""),
@@ -1013,7 +1013,7 @@ def run(args) -> dict[str, object]:
             subset_id=subset_id,
             args=args,
         )
-        plan.run_omics2geneset_from_cnmf_script_path = _write_omics2geneset_from_cnmf_script(
+        plan.run_geneset_extractors_from_cnmf_script_path = _write_geneset_extractors_from_cnmf_script(
             subset_dir=plan.subset_dir,
             subset_id=subset_id,
             args=args,
@@ -1036,7 +1036,7 @@ def run(args) -> dict[str, object]:
                 "meta_path",
                 "run_cnmf_script",
                 "run_cnmf_consensus_auto_k_script",
-                "run_omics2geneset_from_cnmf_script",
+                "run_geneset_extractors_from_cnmf_script",
             ]
         )
         for subset_id in retained_subset_ids:
@@ -1054,7 +1054,7 @@ def run(args) -> dict[str, object]:
                     str((p.meta_path or Path("")).relative_to(out_dir)),
                     str((p.run_cnmf_script_path or Path("")).relative_to(out_dir)),
                     str((p.run_cnmf_consensus_auto_k_script_path or Path("")).relative_to(out_dir)),
-                    str((p.run_omics2geneset_from_cnmf_script_path or Path("")).relative_to(out_dir)),
+                    str((p.run_geneset_extractors_from_cnmf_script_path or Path("")).relative_to(out_dir)),
                 ]
             )
 
@@ -1121,8 +1121,8 @@ def run(args) -> dict[str, object]:
                 "run_cnmf_consensus_auto_k_script": str(
                     (plans[sid].run_cnmf_consensus_auto_k_script_path or Path("")).relative_to(out_dir)
                 ),
-                "run_omics2geneset_from_cnmf_script": str(
-                    (plans[sid].run_omics2geneset_from_cnmf_script_path or Path("")).relative_to(out_dir)
+                "run_geneset_extractors_from_cnmf_script": str(
+                    (plans[sid].run_geneset_extractors_from_cnmf_script_path or Path("")).relative_to(out_dir)
                 ),
             }
             for sid in retained_subset_ids

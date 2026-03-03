@@ -1,4 +1,4 @@
-from omics2geneset.core.models import GeneWeights
+from geneset_extractors.core.models import GeneWeights
 
 
 def test_geneweights_sort_desc_tie_breaks_by_gene_id():

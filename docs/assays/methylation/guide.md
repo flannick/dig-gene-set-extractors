@@ -1,6 +1,6 @@
 # DNA Methylation to Gene Sets (Practical Guide)
 
-`omics2geneset` methylation converters start from differential methylation tables (not raw IDATs) and emit:
+`geneset-extractors` methylation converters start from differential methylation tables (not raw IDATs) and emit:
 
 - `geneset.tsv` (selected signed program)
 - `geneset.meta.json` (provenance + parameters)
@@ -19,7 +19,7 @@ Theory and equations: `docs/assays/methylation/methods.tex`.
 ## Quickstart: CpG/probe differential table
 
 ```bash
-omics2geneset convert methylation_cpg_diff \
+geneset-extractors convert methylation_cpg_diff \
   --cpg_tsv path/to/cpg_diff.tsv \
   --probe_manifest_tsv path/to/probe_manifest.tsv \
   --gtf path/to/genes.gtf.gz \
@@ -27,7 +27,7 @@ omics2geneset convert methylation_cpg_diff \
   --genome_build hg38 \
   --out_dir results/methylation_cpg
 
-omics2geneset validate results/methylation_cpg
+geneset-extractors validate results/methylation_cpg
 ```
 
 Required table columns:
@@ -45,9 +45,9 @@ Probe manifest format:
 Probe-only workflow with resources bundle defaults:
 
 ```bash
-export OMICS2GENESET_RESOURCES_DIR=/path/to/resources_bundle
+export GENESET_EXTRACTORS_RESOURCES_DIR=/path/to/resources_bundle
 
-omics2geneset convert methylation_cpg_diff \
+geneset-extractors convert methylation_cpg_diff \
   --cpg_tsv path/to/cpg_probe_only.tsv \
   --gtf path/to/genes.gtf.gz \
   --organism human \
@@ -56,19 +56,19 @@ omics2geneset convert methylation_cpg_diff \
   --out_dir results/methylation_cpg
 ```
 
-If `--probe_manifest_tsv` is omitted, the converter auto-tries a default manifest resource id from (`array_type`, `genome_build`) when resources are configured (`--resources_dir`, `--resources_manifest`, or `OMICS2GENESET_RESOURCES_DIR`).
+If `--probe_manifest_tsv` is omitted, the converter auto-tries a default manifest resource id from (`array_type`, `genome_build`) when resources are configured (`--resources_dir`, `--resources_manifest`, or `GENESET_EXTRACTORS_RESOURCES_DIR`; legacy `OMICS2GENESET_RESOURCES_DIR` also works).
 
 ## Quickstart: DMR region table
 
 ```bash
-omics2geneset convert methylation_dmr_regions \
+geneset-extractors convert methylation_dmr_regions \
   --dmr_tsv path/to/dmr.tsv \
   --gtf path/to/genes.gtf.gz \
   --organism human \
   --genome_build hg38 \
   --out_dir results/methylation_dmr
 
-omics2geneset validate results/methylation_dmr
+geneset-extractors validate results/methylation_dmr
 ```
 
 Required DMR columns:
@@ -126,7 +126,7 @@ Important current behavior:
 
 - The bundled manifest entries for these methylation probe IDs are intentionally
   "manual/bundle" entries (no default public URL in-repo).
-- `omics2geneset resources fetch --preset methylation_probe_manifests_human`
+- `geneset-extractors resources fetch --preset methylation_probe_manifests_human`
   will skip them unless you provide URLs in an overlay manifest.
 
 Canonical path today:
@@ -136,15 +136,15 @@ Canonical path today:
    - `methylation_probe_manifest_epic_hg19.tsv.gz`
    - `methylation_probe_manifest_450k_hg38.tsv.gz`
    - `methylation_probe_manifest_epic_hg38.tsv.gz`
-2. Set `OMICS2GENESET_RESOURCES_DIR` (or pass `--resources_dir`).
+2. Set `GENESET_EXTRACTORS_RESOURCES_DIR` (or pass `--resources_dir`).
 3. Run converter without `--probe_manifest_tsv`; it auto-resolves by `array_type` and `genome_build`.
 
 Example:
 
 ```bash
-export OMICS2GENESET_RESOURCES_DIR=/path/to/methylation_resources
+export GENESET_EXTRACTORS_RESOURCES_DIR=/path/to/methylation_resources
 
-omics2geneset convert methylation_cpg_diff \
+geneset-extractors convert methylation_cpg_diff \
   --cpg_tsv path/to/cpg_probe_only.tsv \
   --gtf path/to/genes.gtf.gz \
   --organism human \

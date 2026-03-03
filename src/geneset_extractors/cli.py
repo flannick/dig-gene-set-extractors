@@ -93,7 +93,13 @@ def _add_program_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_resource_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--resources_manifest", help="Optional resources manifest path (defaults to bundled manifest)")
-    parser.add_argument("--resources_dir", help="Optional resources cache directory (defaults to OMICS2GENESET_RESOURCES_DIR or ~/.cache)")
+    parser.add_argument(
+        "--resources_dir",
+        help=(
+            "Optional resources cache directory (defaults to "
+            "GENESET_EXTRACTORS_RESOURCES_DIR, then OMICS2GENESET_RESOURCES_DIR, then ~/.cache)"
+        ),
+    )
     parser.add_argument(
         "--use_reference_bundle",
         type=_parse_bool,

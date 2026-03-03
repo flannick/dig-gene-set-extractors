@@ -2,20 +2,17 @@
 
 This is the repository-level documentation entrypoint.
 
-For historical compatibility, many commands and modules still use the
-`omics2geneset` name. New integrations can use the neutral
-`geneset_extractors` namespace.
+Canonical Python package/module namespace is `geneset_extractors`.
+CLI entrypoint aliases are provided for convenience.
 
 ## Namespaces and CLI names
 
-- Neutral namespace: `geneset_extractors` (new)
-- Legacy namespace: `omics2geneset` (fully supported)
+- Python package namespace: `geneset_extractors`
 - CLI aliases:
   - `geneset-extractors`
   - `geneset_extractors`
-  - `omics2geneset`
 
-All three CLI names currently dispatch to the same implementation.
+Both CLI names dispatch to the same implementation.
 
 ## Practical guides
 

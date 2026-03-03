@@ -1,6 +1,6 @@
 # RNA-seq to Gene Sets (Practical Guide)
 
-`omics2geneset` RNA converters consume either differential expression (DE) tables or external scRNA program loadings and emit:
+`geneset-extractors` RNA converters consume either differential expression (DE) tables or external scRNA program loadings and emit:
 
 - `geneset.tsv` (selected signed gene program with nonnegative weights)
 - `geneset.meta.json` (provenance + parameters)
@@ -24,7 +24,7 @@ If you run without `--gtf`, GMT output may drop rows when `--gmt_require_symbol 
 ```bash
 python -m pip install -U pip
 python -m pip install -e ".[dev]"
-omics2geneset list
+geneset-extractors list
 ```
 
 ## Converters
@@ -37,13 +37,13 @@ omics2geneset list
 ## Quickstart: single contrast (`rna_deg`)
 
 ```bash
-omics2geneset convert rna_deg \
+geneset-extractors convert rna_deg \
   --deg_tsv path/to/deg.tsv \
   --out_dir results/rna_deg_example \
   --organism human \
   --genome_build hg38
 
-omics2geneset validate results/rna_deg_example
+geneset-extractors validate results/rna_deg_example
 ```
 
 Defaults for `rna_deg`:
@@ -60,14 +60,14 @@ Defaults for `rna_deg`:
 ## Quickstart: multi-contrast table (`rna_deg_multi`)
 
 ```bash
-omics2geneset convert rna_deg_multi \
+geneset-extractors convert rna_deg_multi \
   --deg_tsv path/to/deg_long.tsv \
   --comparison_column comparison_id \
   --out_dir results/rna_deg_multi_example \
   --organism human \
   --genome_build hg38
 
-omics2geneset validate results/rna_deg_multi_example
+geneset-extractors validate results/rna_deg_multi_example
 ```
 
 Grouped output layout:
@@ -87,7 +87,7 @@ This converter ingests precomputed gene loadings only. It does not downsample ce
 Use the workflow command to prepare cNMF-ready subsets and run scripts, then ingest the resulting gene spectra with `rna_sc_programs`:
 
 ```bash
-omics2geneset workflows scrna_cnmf_prepare \
+geneset-extractors workflows scrna_cnmf_prepare \
   --matrix_tsv path/to/cell_by_gene_logcounts.tsv \
   --meta_tsv path/to/cell_metadata.tsv \
   --meta_cell_id_column cell_id \
@@ -103,10 +103,10 @@ omics2geneset workflows scrna_cnmf_prepare \
 # Then run each generated subset script:
 #   results/scrna_cnmf_prepare/subsets/<subset>/run_cnmf.sh
 #   results/scrna_cnmf_prepare/subsets/<subset>/run_cnmf_consensus_auto_k.sh
-#   results/scrna_cnmf_prepare/subsets/<subset>/run_omics2geneset_from_cnmf.sh
+#   results/scrna_cnmf_prepare/subsets/<subset>/run_geneset_extractors_from_cnmf.sh
 
 # After cNMF consensus, ingest gene spectra:
-omics2geneset convert rna_sc_programs \
+geneset-extractors convert rna_sc_programs \
   --cnmf_gene_spectra_tsv path/to/<name>.gene_spectra_tpm.k_<K>.dt_<...>.txt \
   --out_dir results/rna_sc_programs_cnmf \
   --organism human \
@@ -125,7 +125,7 @@ Override examples:
 
 ```bash
 # Fixed K grid and fixed consensus K
-omics2geneset workflows scrna_cnmf_prepare \
+geneset-extractors workflows scrna_cnmf_prepare \
   ... \
   --cnmf_k_list "10 15 20 25" \
   --cnmf_k 20
@@ -134,20 +134,20 @@ omics2geneset workflows scrna_cnmf_prepare \
 ### Generic loadings TSV
 
 ```bash
-omics2geneset convert rna_sc_programs \
+geneset-extractors convert rna_sc_programs \
   --program_loadings_tsv path/to/program_loadings.tsv \
   --loadings_format wide_genes_by_program \
   --out_dir results/rna_sc_programs \
   --organism human \
   --genome_build hg38
 
-omics2geneset validate results/rna_sc_programs
+geneset-extractors validate results/rna_sc_programs
 ```
 
 ### cNMF convenience input
 
 ```bash
-omics2geneset convert rna_sc_programs \
+geneset-extractors convert rna_sc_programs \
   --cnmf_gene_spectra_tsv path/to/name.gene_spectra_tpm.k_20.dt_0_01.txt \
   --out_dir results/rna_sc_programs_cnmf \
   --organism human \
@@ -157,7 +157,7 @@ omics2geneset convert rna_sc_programs \
 ### scHPF convenience input
 
 ```bash
-omics2geneset convert rna_sc_programs \
+geneset-extractors convert rna_sc_programs \
   --schpf_gene_scores_tsv path/to/schpf_gene_scores.tsv \
   --out_dir results/rna_sc_programs_schpf \
   --organism human \
@@ -215,7 +215,7 @@ If you see warnings about very large numbers of programs or parsed values, split
 ### DESeq2-style table
 
 ```bash
-omics2geneset convert rna_deg \
+geneset-extractors convert rna_deg \
   --deg_tsv deseq2_results.tsv \
   --score_mode auto \
   --gene_id_column gene_id \
@@ -230,7 +230,7 @@ omics2geneset convert rna_deg \
 ### edgeR-style table
 
 ```bash
-omics2geneset convert rna_deg \
+geneset-extractors convert rna_deg \
   --deg_tsv edger_results.tsv \
   --score_mode auto \
   --gene_id_column gene_id \
@@ -245,7 +245,7 @@ omics2geneset convert rna_deg \
 ### limma-style table
 
 ```bash
-omics2geneset convert rna_deg \
+geneset-extractors convert rna_deg \
   --deg_tsv limma_results.tsv \
   --score_mode auto \
   --gene_id_column gene_id \
@@ -314,7 +314,7 @@ Then it:
 - fits sklearn NMF
 - writes a wide genes-by-program table compatible with `rna_sc_programs`
 
-Optional dependencies (not required for base `omics2geneset`):
+Optional dependencies (not required for base `geneset-extractors`):
 
 ```bash
 python -m pip install -e ".[scrna_tools]"
