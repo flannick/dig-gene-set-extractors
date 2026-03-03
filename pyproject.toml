@@ -38,8 +38,8 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-omics2geneset = [
+geneset_extractors = [
   "schemas/*.json",
-  "converters/specs/*.json",
+  "extractors/converters/specs/*.json",
   "resources/*.json",
 ]

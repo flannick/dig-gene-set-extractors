@@ -49,7 +49,7 @@ omics2geneset validate <out>
 
 Resource catalog notes:
 
-- Bundled manifest: `src/omics2geneset/resources/manifest.json`
+- Bundled manifest: `src/geneset_extractors/resources/manifest.json`
 - Default cache: `~/.cache/omics2geneset/resources` (override with `OMICS2GENESET_RESOURCES_DIR`)
 - Preferred bundle workflow: extract a build-specific bundle (`hg19` or `hg38`), generate a local manifest with `--layout direct --genome-build <build>`, and pass `--resources_dir <bundle_root>` directly (no `resources fetch` required).
 - `resources fetch` supports individual ids and presets.
@@ -170,10 +170,10 @@ CLI to theory crosswalk:
 
 ### Add a new converter in omics2geneset
 
-1. Add `src/omics2geneset/converters/<name>.py` with `run(args) -> dict`.
-2. Add CLI parser wiring in `src/omics2geneset/cli.py`.
-3. Register converter in `src/omics2geneset/registry.py`.
-4. Add converter spec JSON under `src/omics2geneset/converters/specs/<name>.json`.
+1. Add `src/geneset_extractors/extractors/converters/<name>.py` with `run(args) -> dict`.
+2. Add CLI parser wiring in `src/geneset_extractors/cli.py`.
+3. Register converter in `src/geneset_extractors/registry.py`.
+4. Add converter spec JSON under `src/geneset_extractors/extractors/converters/specs/<name>.json`.
 5. Emit the contract files (`geneset.tsv`, `geneset.meta.json`, optional `geneset.full.tsv`).
 6. Add toy fixtures and tests in `tests/`.
 

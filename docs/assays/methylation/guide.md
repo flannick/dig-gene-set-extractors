@@ -113,7 +113,7 @@ If you do not pass `--probe_manifest_tsv`, you can provide:
 - `--probe_manifest_resource_id`
 - `--resources_dir` (and optional `--resources_manifest`)
 
-Placeholder resource IDs are included in `src/omics2geneset/resources/manifest.json`:
+Placeholder resource IDs are included in `src/geneset_extractors/resources/manifest.json`:
 
 - `methylation_probe_manifest_450k_hg19`
 - `methylation_probe_manifest_epic_hg19`

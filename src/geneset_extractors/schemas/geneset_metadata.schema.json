@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "created_at",
+    "geneset_id",
+    "converter",
+    "input",
+    "gene_annotation",
+    "weights",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "created_at": {"type": "string"},
+    "geneset_id": {"type": "string"},
+    "converter": {
+      "type": "object",
+      "required": ["name", "version", "parameters", "code"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "parameters": {"type": "object"},
+        "code": {"type": "object"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["data_type", "assay", "organism", "genome_build", "files"],
+      "properties": {
+        "data_type": {"type": "string"},
+        "assay": {"type": "string"},
+        "organism": {"type": "string"},
+        "genome_build": {"type": "string", "minLength": 1},
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role", "sha256"],
+            "properties": {
+              "path": {"type": "string"},
+              "role": {"type": "string"},
+              "sha256": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "gene_annotation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode", "gtf_path", "source", "gene_id_field"],
+          "properties": {
+            "mode": {"const": "gtf"},
+            "gtf_path": {"type": "string", "minLength": 1},
+            "source": {"type": "string"},
+            "gene_id_field": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "source", "gene_id_field"],
+          "properties": {
+            "mode": {"const": "none"},
+            "source": {"type": "string"},
+            "gene_id_field": {"type": "string"}
+          }
+        }
+      ]
+    },
+    "weights": {
+      "type": "object",
+      "required": ["weight_type", "normalization", "aggregation"],
+      "properties": {
+        "weight_type": {"type": "string"},
+        "normalization": {"type": "object"},
+        "aggregation": {"type": "string"}
+      }
+    },
+    "program_extraction": {
+      "type": "object",
+      "required": ["selection_method", "selection_params", "normalize", "n_selected_genes", "score_definition"],
+      "properties": {
+        "selection_method": {"type": "string"},
+        "selection_params": {"type": "object"},
+        "normalize": {"type": "string"},
+        "n_selected_genes": {"type": "integer"},
+        "score_definition": {"type": "string"},
+        "study_contrast": {"type": "object"},
+        "contrast": {"type": "object"}
+      }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role"],
+            "properties": {
+              "path": {"type": "string"},
+              "role": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "gmt": {
+      "type": "object",
+      "required": ["written", "path", "prefer_symbol", "min_genes", "max_genes", "plans"],
+      "properties": {
+        "written": {"type": "boolean"},
+        "path": {"type": ["string", "null"]},
+        "prefer_symbol": {"type": "boolean"},
+        "min_genes": {"type": "integer"},
+        "max_genes": {"type": "integer"},
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "method", "parameters", "n_genes_emitted", "token_type", "n_duplicates_dropped"],
+            "properties": {
+              "name": {"type": "string"},
+              "method": {"type": "string"},
+              "parameters": {"type": "object"},
+              "n_genes_emitted": {"type": "integer"},
+              "token_type": {"type": "string"},
+              "n_duplicates_dropped": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["n_input_features", "n_genes", "n_features_assigned", "fraction_features_assigned"],
+      "properties": {
+        "n_input_features": {"type": "integer"},
+        "n_genes": {"type": "integer"},
+        "n_features_assigned": {"type": "integer"},
+        "fraction_features_assigned": {"type": "number"}
+      }
+    }
+  }
+}

@@ -36,7 +36,7 @@ All three CLI names currently dispatch to the same implementation.
 
 ## Resource ID conventions and presets
 
-Reference resources are managed via `src/omics2geneset/resources/manifest.json` and optional overlay manifests.
+Reference resources are managed via `src/geneset_extractors/resources/manifest.json` and optional overlay manifests.
 
 - ID naming convention: `<assay>_<resource_kind>_<build>[_v<version>]`
   - Examples: `ccre_ubiquity_hg38`, `atac_reference_profiles_hg19`, `methylation_probe_manifest_450k_hg38`

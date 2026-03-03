@@ -152,7 +152,7 @@ dig-gene-set-extractors/
   pyproject.toml
   src/
     geneset_extractors/
-    omics2geneset/
+    omics2geneset/            # compatibility shim
   docs/
     geneset-extractors.md
     omics2geneset.md
