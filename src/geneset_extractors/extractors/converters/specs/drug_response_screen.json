@@ -1,0 +1,78 @@
+{
+  "name": "drug_response_screen",
+  "description": "Drug response screen tables (generic or PRISM) to gene vulnerability programs and GMT gene sets",
+  "inputs": [
+    {
+      "name": "response_tsv",
+      "type": "tsv",
+      "description": "Generic long response table with sample_id, drug_id, response",
+      "required": false
+    },
+    {
+      "name": "drug_targets_tsv",
+      "type": "tsv",
+      "description": "Drug-to-target table with drug_id, gene_symbol, optional weight/source",
+      "required": false
+    },
+    {
+      "name": "prism_matrix_csv",
+      "type": "csv",
+      "description": "PRISM matrix (rows=row_name samples, columns=column_name compounds)",
+      "required": false
+    },
+    {
+      "name": "prism_treatment_info_csv",
+      "type": "csv",
+      "description": "PRISM treatment metadata with column_name, broad_id, and target text",
+      "required": false
+    },
+    {
+      "name": "prism_cell_line_info_csv",
+      "type": "csv",
+      "description": "PRISM cell-line metadata with row_name and lineage/tissue annotations",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {"name": "dataset_label", "type": "string", "default": "", "help": "Optional dataset label for metadata/GMT naming"},
+    {"name": "response_metric", "type": "string", "default": "logfold_change", "enum": ["logfold_change", "auc", "ic50", "other"], "help": "Response metric semantics"},
+    {"name": "response_direction", "type": "string", "default": "auto_by_metric", "enum": ["lower_is_more_sensitive", "higher_is_more_sensitive"], "help": "How raw response direction maps to sensitivity"},
+    {"name": "response_transform", "type": "string", "default": "robust_z_mad", "enum": ["robust_z_mad", "rank_normal_score", "none"], "help": "Per-drug normalization across samples"},
+    {"name": "contrast_method", "type": "string", "default": "auto", "enum": ["none", "group_mean", "group_vs_rest", "case_control"], "help": "Program contrast axis"},
+    {"name": "case_control_within_group", "type": "boolean", "default": false, "help": "For case_control mode, compute per-group case-vs-control programs"},
+    {"name": "scoring_model", "type": "string", "default": "target_weighted_sum", "enum": ["target_weighted_sum", "sparse_deconvolution"], "help": "Gene scoring model"},
+    {"name": "sparse_alpha", "type": "number", "default": 0.01, "help": "L1 penalty for sparse_deconvolution model"},
+    {"name": "ubiquity_penalty", "type": "string", "default": "fraction_active", "enum": ["none", "fraction_active"], "help": "Drug ubiquity penalty mode"},
+    {"name": "ubiquity_tau", "type": "number", "default": 1.0, "help": "Threshold used by fraction_active ubiquity penalty"},
+    {"name": "ubiquity_epsilon", "type": "number", "default": 0.05, "help": "Stabilizer for ubiquity penalty denominator"},
+    {"name": "polypharm_downweight", "type": "boolean", "default": true, "help": "Downweight very high target-count compounds"},
+    {"name": "polypharm_t0", "type": "integer", "default": 5, "help": "Target-count scale for polypharmacology downweighting"},
+    {"name": "max_programs", "type": "integer", "default": 50, "help": "Maximum number of emitted programs"},
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method"},
+    {"name": "top_k", "type": "integer", "default": 200, "help": "K for top_k selection"},
+    {"name": "quantile", "type": "number", "default": 0.01, "help": "Quantile fraction when select=quantile"},
+    {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold when select=threshold"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv per program"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write per-program and root combined GMT outputs"},
+    {"name": "gmt_split_signed", "type": "boolean", "default": "auto_by_contrast", "help": "Signed split for contrasts (auto true for group_vs_rest/case_control)"},
+    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
+    {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated mass GMT plans"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
+    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets smaller than gmt_min_genes (with warning)"},
+    {"name": "target_aliases_tsv", "type": "string", "default": "", "help": "Optional target alias map TSV"},
+    {"name": "drug_blacklist_tsv", "type": "string", "default": "", "help": "Optional list of compounds to exclude"},
+    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Missing optional resource behavior"}
+  ],
+  "outputs": [
+    {"name": "manifest.tsv", "description": "Program-level grouped output manifest"},
+    {"name": "program=<PROGRAM>/geneset.tsv", "description": "Selected genes for one drug-response program"},
+    {"name": "program=<PROGRAM>/geneset.meta.json", "description": "Metadata for one program"},
+    {"name": "program=<PROGRAM>/geneset.full.tsv", "description": "Full signed score table for one program (optional)"},
+    {"name": "program=<PROGRAM>/genesets.gmt", "description": "Per-program GMT output (optional)"},
+    {"name": "program=<PROGRAM>/run_summary.json", "description": "Per-program machine-readable run summary"},
+    {"name": "program=<PROGRAM>/run_summary.txt", "description": "Per-program human-readable run summary"},
+    {"name": "genesets.gmt", "description": "Combined GMT across emitted programs (optional)"}
+  ]
+}

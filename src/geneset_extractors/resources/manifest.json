@@ -155,6 +155,30 @@
       "url": "",
       "sha256": "",
       "license": "Upstream annotation package license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "drug_response_target_aliases_human",
+      "description": "Optional alias table for resolving drug target tokens to approved human gene symbols",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:drug_response_target_aliases_human",
+      "version": "0.1.0",
+      "genome_build": "human",
+      "filename": "drug_response_target_aliases_human.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated alias table license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "drug_response_blacklist_human",
+      "description": "Optional drug blacklist for broad positive-controls/pan-toxic compounds in human screens",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:drug_response_blacklist_human",
+      "version": "0.1.0",
+      "genome_build": "human",
+      "filename": "drug_response_blacklist_human.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated blacklist license; document source/version in local bundle provenance"
     }
   ],
   "presets": {
@@ -191,6 +215,10 @@
       "methylation_probe_manifest_epic_hg19",
       "methylation_probe_manifest_450k_hg38",
       "methylation_probe_manifest_epic_hg38"
+    ],
+    "drug_response_optional_human": [
+      "drug_response_target_aliases_human",
+      "drug_response_blacklist_human"
     ]
   }
 }

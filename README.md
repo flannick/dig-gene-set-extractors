@@ -5,8 +5,7 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `geneset_extractors` (ATAC-seq, RNA-seq, and DNA methylation extractors)
-  - includes CNV segment extraction (`cnv_gene_extractor`)
+- `geneset_extractors` (ATAC-seq, RNA-seq, DNA methylation, CNV, and drug response extractors)
   - exposed via CLI names `geneset-extractors` / `geneset_extractors`
 
 ## Repository Scope
@@ -24,6 +23,7 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
+- `docs/assays/drug_response/guide.md` (drug response practical guide)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
 
 ## Quick Start (Common Case)
@@ -81,6 +81,10 @@ CNV converter:
 
 - `cnv_gene_extractor`
 
+Drug response converter:
+
+- `drug_response_screen`
+
 Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/assays/atac/guide.md`
@@ -89,6 +93,7 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/methylation/guide.md`
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
+- `docs/assays/drug_response/guide.md`
 - `docs/geneset-extractors.md` (index)
 
 Method notes and equations (split by assay + index):
@@ -97,6 +102,7 @@ Method notes and equations (split by assay + index):
 - `docs/assays/rnaseq/methods.tex`
 - `docs/assays/methylation/methods.tex`
 - `docs/assays/cnv/methods.tex`
+- `docs/assays/drug_response/methods.tex`
 - `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
@@ -165,6 +171,9 @@ dig-gene-set-extractors/
         methods.tex
         resources.md
       cnv/
+        guide.md
+        methods.tex
+      drug_response/
         guide.md
         methods.tex
     methods.tex

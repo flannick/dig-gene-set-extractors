@@ -24,6 +24,7 @@ def test_cli_list():
     assert "methylation_cpg_diff" in p.stdout
     assert "methylation_dmr_regions" in p.stdout
     assert "cnv_gene_extractor" in p.stdout
+    assert "drug_response_screen" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
     assert "rna_sc_programs" in p.stdout
@@ -101,6 +102,17 @@ def test_cli_describe_cnv_gene_extractor():
     assert "focal_length_scale_bp" in param_names
     assert "gene_count_penalty" in param_names
     assert "use_purity_correction" in param_names
+
+
+def test_cli_describe_drug_response_screen():
+    p = _run("describe", "drug_response_screen")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "drug_response_screen"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "response_metric" in param_names
+    assert "contrast_method" in param_names
+    assert "scoring_model" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
@@ -300,6 +312,39 @@ def test_cli_convert_methylation_dmr_regions(tmp_path: Path):
         "tests/data/toy_methylation_dmr_regions.tsv",
         "--gtf",
         "tests/data/toy.gtf",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "10",
+        "--gmt_topk_list",
+        "2",
+        "--emit_small_gene_sets",
+        "true",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+
+
+def test_cli_convert_drug_response_screen(tmp_path: Path):
+    out = tmp_path / "drug_response_cli"
+    convert = _run(
+        "convert",
+        "drug_response_screen",
+        "--response_tsv",
+        "tests/data/toy_drug_response.tsv",
+        "--drug_targets_tsv",
+        "tests/data/toy_drug_targets.tsv",
+        "--groups_tsv",
+        "tests/data/toy_drug_groups.tsv",
+        "--contrast_method",
+        "group_vs_rest",
         "--out_dir",
         str(out),
         "--organism",

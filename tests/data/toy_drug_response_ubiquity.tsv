@@ -1,0 +1,9 @@
+sample_id	drug_id	response
+S1	Dsel	8.0
+S1	Dubi	10.0
+S2	Dsel	0.0
+S2	Dubi	9.0
+S3	Dsel	0.0
+S3	Dubi	9.0
+S4	Dsel	0.0
+S4	Dubi	9.0

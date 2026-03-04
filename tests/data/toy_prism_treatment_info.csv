@@ -1,0 +1,4 @@
+column_name,broad_id,name,target
+COL_A,BRD-A,DrugA,GENEA
+COL_B,BRD-B,DrugB,GENEB
+COL_C,BRD-C,DrugC,GENEC

@@ -1,0 +1,228 @@
+\documentclass[11pt]{article}
+
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\geometry{margin=1in}
+
+\title{Drug Response Screen to Gene Set Methods}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Drug response screens (PRISM, GDSC, CTRP-like)}
+\label{sec:drug_response}
+
+\subsection{Biological motivation and measurement model}
+High-throughput drug response screens measure the effect of chemical perturbations on cell viability or growth across many biological contexts (e.g., cancer cell lines). Each compound typically inhibits one or more protein targets (polypharmacology is common), and differential sensitivity across contexts often reflects differences in target dependence, pathway state, drug uptake/efflux, or compensatory mechanisms.
+
+Our goal is to convert drug response measurements into gene-weighted programs and gene sets that are connectable to other modalities (e.g., pathway enrichment, trait genetics, perturbational transcriptomics). Conceptually, we want gene sets that answer questions like:
+\begin{itemize}
+  \item ``Which target genes or pathways does this group of samples appear vulnerable to?''
+  \item ``Which genes plausibly mediate sensitivity differences between conditions or lineages?''
+  \item ``Which drug mechanisms appear specific vs broadly cytotoxic across contexts?''
+\end{itemize}
+
+\subsection{Inputs and notation}
+Let:
+\begin{itemize}
+  \item $s \in \{1,\dots,S\}$ index samples (e.g., cell lines).
+  \item $d \in \{1,\dots,D\}$ index compounds (drugs).
+  \item $g \in \{1,\dots,G\}$ index genes.
+\end{itemize}
+
+The observed drug response matrix is $Y \in \mathbb{R}^{S \times D}$, where $Y_{sd}$ is a response summary for sample $s$ under drug $d$.
+Common response summaries include:
+\begin{itemize}
+  \item PRISM primary: log fold change relative to DMSO (more negative often indicates more killing).
+  \item Dose-response summary: AUC (lower indicates more sensitive), IC50 (lower indicates more sensitive), or analogous metrics.
+\end{itemize}
+
+In addition, we require a drug-to-target annotation mapping, represented as a sparse matrix $A \in \mathbb{R}_{\ge 0}^{D \times G}$ where $A_{dg}$ is the weight that drug $d$ acts through gene $g$.
+This mapping can be supplied directly as a long table (drug, gene, weight), or derived from a compound metadata file containing a target field (e.g., semicolon-delimited gene symbols).
+
+\subsection{Response direction and normalization}
+Different sources use different conventions. We first convert raw response $Y_{sd}$ into an oriented sensitivity score $R_{sd}$ such that larger values mean ``more sensitive'' (stronger effect):
+\begin{equation}
+R_{sd} =
+\begin{cases}
+-Y_{sd} & \text{if lower is more sensitive (e.g., AUC, IC50, PRISM logFC)} \\
+Y_{sd} & \text{if higher is more sensitive}
+\end{cases}
+\end{equation}
+
+Because drugs have heterogeneous dynamic ranges and baseline potency, we normalize within each drug across samples to produce comparable scores:
+\begin{equation}
+Z_{sd} = \mathrm{robust\_zscore}(R_{\cdot d}) =
+\frac{R_{sd} - \mathrm{median}(R_{\cdot d})}{\mathrm{MAD}(R_{\cdot d}) + \epsilon}
+\end{equation}
+where $\mathrm{MAD}$ is the median absolute deviation and $\epsilon$ prevents division by zero.
+
+Optionally, rank-based transforms can be used:
+\begin{equation}
+Z_{sd} = \Phi^{-1}\left(\frac{\mathrm{rank}(R_{sd}) - 0.5}{S}\right),
+\end{equation}
+where $\Phi^{-1}$ is the standard normal inverse CDF.
+
+\subsection{Drug-to-target mapping and polypharmacology}
+Given a set of targets $T(d)$ for drug $d$, we define:
+\begin{equation}
+A_{dg} =
+\begin{cases}
+w_{dg} & \text{if } g \in T(d) \\
+0 & \text{otherwise}
+\end{cases}
+\end{equation}
+with within-drug normalization:
+\begin{equation}
+\sum_g A_{dg} = 1 \quad \text{for drugs with at least one mappable target.}
+\end{equation}
+
+If only an unweighted list is available, set $w_{dg} = 1 / |T(d)|$.
+If confidence tiers exist (primary vs secondary targets), weights can be set proportional to confidence then normalized.
+
+We treat extremely high-target-count drugs as less interpretable and optionally downweight them by a factor $c_d \in (0,1]$:
+\begin{equation}
+c_d = \frac{1}{1 + \log(1 + |T(d)| / t_0)}
+\end{equation}
+for a user-chosen $t_0$ (e.g., $t_0 = 5$).
+
+\subsection{Ubiquity penalty to reduce generic cytotoxic signals}
+Many compounds are broadly toxic and produce non-specific sensitivity patterns. We compute an ubiquity statistic per drug:
+\begin{equation}
+p_d = \frac{1}{S} \sum_{s=1}^S \mathbb{I}(Z_{sd} > \tau),
+\end{equation}
+where $\tau$ is a sensitivity threshold (e.g., $\tau = 1$ robust SDs above median).
+
+Define an ubiquity penalty weight:
+\begin{equation}
+u_d = \frac{1}{\epsilon + p_d},
+\end{equation}
+so drugs active in many samples are downweighted.
+
+Other choices include entropy- or variance-based selectivity weights; the implementation may offer multiple options.
+
+\subsection{Program axes and contrasts}
+Unlike ATAC-seq, there is no peak-to-gene linking. The natural axes are:
+\begin{itemize}
+  \item Sample programs: one program per sample $s$ (vulnerability profile).
+  \item Group programs: one program per group (e.g., lineage) defined by metadata.
+  \item Group contrasts: group-vs-rest or case-vs-control contrasts to emphasize differential vulnerabilities.
+  \item Drug programs: one program per drug, typically representing its target set (optionally adjusted by selectivity).
+\end{itemize}
+
+For group contrasts, let $G_1$ be a group of samples and $G_0$ be the complement (or a specified control group). Define a differential sensitivity vector across drugs:
+\begin{equation}
+\Delta_d = \overline{Z}_{G_1,d} - \overline{Z}_{G_0,d},
+\end{equation}
+with optional robust aggregation (median instead of mean) and optional shrinkage if $|G_1|$ is small.
+
+\subsection{Gene scoring models}
+\subsubsection{Model A: Target-weighted aggregation (default)}
+This model distributes sensitivity signal from drugs to their targets.
+
+\paragraph{Sample-level vulnerability scores.}
+Define positive-part sensitivity:
+\begin{equation}
+Z^+_{sd} = \max(Z_{sd}, 0).
+\end{equation}
+Then define gene scores for sample $s$:
+\begin{equation}
+S_{sg} = \sum_{d=1}^D \left(u_d \cdot c_d\right) Z^+_{sd} A_{dg}.
+\end{equation}
+
+\paragraph{Group contrast vulnerability scores.}
+For a contrast vector $\Delta_d$, define:
+\begin{equation}
+S_g = \sum_{d=1}^D \left(u_d \cdot c_d\right) \max(\Delta_d, 0) A_{dg}.
+\end{equation}
+
+\paragraph{Resistance-direction scores (optional).}
+Define negative-part:
+\begin{equation}
+Z^-_{sd} = \max(-Z_{sd}, 0),
+\end{equation}
+and analogously compute a resistance program. In practice, we typically emit signed gene sets by splitting $S$ into positive vs negative contributions when contrasts are used.
+
+\subsubsection{Model B: Sparse target deconvolution (optional advanced)}
+Target-weighted aggregation can smear signal across correlated drugs and polypharmacology. An alternative is to solve a sparse regression per program to infer a parsimonious set of gene targets that explain sensitivity.
+
+For a sample $s$, solve:
+\begin{equation}
+\min_{\beta_s \ge 0} \|Z^+_{s\cdot} - X \beta_s\|_2^2 + \lambda \|\beta_s\|_1,
+\end{equation}
+where $X \in \mathbb{R}^{D \times G}$ is constructed from $(u_d c_d A_{dg})$ (with optional column normalization), and $\beta_s$ are nonnegative gene coefficients.
+
+Similarly for contrasts, replace $Z^+_{s\cdot}$ by $\max(\Delta,0)$.
+
+The output gene weights are $\beta$ (or a calibrated transform thereof). This approach is more computationally expensive and should be optional; defaults should use Model A.
+
+\subsection{Calibration and conversion to gene sets}
+The extractor produces nonnegative gene weights $W_g$ for each program. We then emit gene sets using standardized selection rules shared across extractors.
+
+\subsubsection{Top-K selection with size bounds}
+Given descending ranks by weight, choose:
+\begin{equation}
+\mathcal{S} = \{g_{(1)}, \dots, g_{(K)}\},
+\end{equation}
+with $K$ constrained to lie within user-specified bounds (default 100--500).
+If $K$ falls outside bounds due to filtering, we either:
+\begin{itemize}
+  \item expand until minimum size is reached, or
+  \item skip the set and emit a warning (policy-dependent).
+\end{itemize}
+
+\subsubsection{Mass-based selection (HPD-like)}
+Let weights be normalized:
+\begin{equation}
+\tilde{W}_g = \frac{W_g}{\sum_{g'} W_{g'}}.
+\end{equation}
+Select the smallest set achieving cumulative mass $m$:
+\begin{equation}
+\mathcal{S}(m) = \min\left\{\mathcal{S} : \sum_{g \in \mathcal{S}} \tilde{W}_g \ge m\right\},
+\end{equation}
+then enforce size bounds by truncation or expansion with warnings.
+
+\subsubsection{Signed gene sets}
+When a program has signed structure (e.g., group-vs-rest contrasts), we emit:
+\begin{itemize}
+  \item a ``positive'' set for genes supported by $\max(\Delta,0)$
+  \item a ``negative'' set for genes supported by $\max(-\Delta,0)$
+\end{itemize}
+using the same 100--500 size bounds, with suffixes like \texttt{\_\_pos} and \texttt{\_\_neg}.
+
+\subsection{Practical QC and failure modes}
+We recommend the implementation emit explicit warnings and metadata fields for:
+\begin{itemize}
+  \item Fraction of drugs with usable target mappings (and reasons for dropping: empty target, unparsable target string).
+  \item Fraction of targets rejected as invalid gene symbols.
+  \item Dominance by broadly toxic compounds (high $p_d$) and effect of ubiquity penalty.
+  \item Very small groups or poorly populated contrasts.
+  \item Extremely multi-target drugs (large $|T(d)|$) that may reduce interpretability.
+\end{itemize}
+
+\subsection{Resources and bundles}
+The minimal extractor requires only:
+\begin{itemize}
+  \item a response matrix/table $Y$
+  \item drug target annotations sufficient to build $A$
+\end{itemize}
+
+Optional reference resources can improve robustness:
+\begin{itemize}
+  \item A gene symbol validation list and alias map for parsing target strings.
+  \item Curated lists of non-informative positive controls or pan-toxic compounds to exclude by default.
+  \item Optional external target databases for screens lacking target annotations.
+\end{itemize}
+
+The recommended packaging pattern matches other extractors:
+\begin{itemize}
+  \item Small resources may be shipped in-repo.
+  \item Larger resources should be released as a versioned tarball on Zenodo and downloaded via the repo's resource manager.
+\end{itemize}
+
+\end{document}

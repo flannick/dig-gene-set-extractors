@@ -19,3 +19,5 @@ Canonical assay docs:
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV practical guide: `docs/assays/cnv/guide.md`
 - CNV methods note: `docs/assays/cnv/methods.tex`
+- Drug response practical guide: `docs/assays/drug_response/guide.md`
+- Drug response methods note: `docs/assays/drug_response/methods.tex`

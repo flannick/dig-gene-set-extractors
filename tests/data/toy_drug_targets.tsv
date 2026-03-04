@@ -1,0 +1,4 @@
+drug_id	gene_symbol	weight	source
+D1	GENEA	1.0	curated
+D2	GENEB	1.0	curated
+D3	GENEC	1.0	curated

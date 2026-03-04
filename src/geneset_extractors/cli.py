@@ -453,6 +453,99 @@ def _add_methylation_common_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dataset_label")
+
+    parser.add_argument("--response_tsv")
+    parser.add_argument("--response_delimiter", default="\t")
+    parser.add_argument("--sample_id_column", default="sample_id")
+    parser.add_argument("--drug_id_column", default="drug_id")
+    parser.add_argument("--response_column", default="response")
+
+    parser.add_argument("--drug_targets_tsv")
+    parser.add_argument("--targets_delimiter", default="\t")
+    parser.add_argument("--targets_drug_id_column", default="drug_id")
+    parser.add_argument("--targets_gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--targets_weight_column", default="weight")
+    parser.add_argument("--targets_source_column", default="source")
+
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--sample_metadata_delimiter", default="\t")
+    parser.add_argument("--sample_metadata_sample_id_column", default="sample_id")
+    parser.add_argument("--group_column", default="group")
+
+    parser.add_argument("--groups_tsv")
+    parser.add_argument("--groups_delimiter", default="\t")
+    parser.add_argument("--groups_sample_id_column", default="sample_id")
+    parser.add_argument("--groups_group_column", default="group")
+
+    parser.add_argument("--case_control_tsv")
+    parser.add_argument("--case_control_delimiter", default="\t")
+    parser.add_argument("--case_control_sample_id_column", default="sample_id")
+    parser.add_argument("--case_control_is_case_column", default="is_case")
+    parser.add_argument("--case_control_within_group", type=_parse_bool, default=False)
+
+    parser.add_argument("--prism_matrix_csv")
+    parser.add_argument("--prism_treatment_info_csv")
+    parser.add_argument("--prism_cell_line_info_csv")
+    parser.add_argument("--prism_matrix_sample_id_column", default="row_name")
+    parser.add_argument("--prism_cell_line_sample_id_column", default="row_name")
+    parser.add_argument("--prism_column_name_column", default="column_name")
+    parser.add_argument("--prism_broad_id_column", default="broad_id")
+    parser.add_argument("--prism_target_column", default="target")
+
+    parser.add_argument("--response_metric", choices=["logfold_change", "auc", "ic50", "other"], default="logfold_change")
+    parser.add_argument(
+        "--response_direction",
+        choices=["lower_is_more_sensitive", "higher_is_more_sensitive"],
+        help="If omitted, defaults by response_metric (logfold_change/auc/ic50 -> lower_is_more_sensitive).",
+    )
+    parser.add_argument("--response_transform", choices=["robust_z_mad", "rank_normal_score", "none"], default="robust_z_mad")
+    parser.add_argument("--contrast_method", choices=["none", "group_mean", "group_vs_rest", "case_control"])
+    parser.add_argument("--scoring_model", choices=["target_weighted_sum", "sparse_deconvolution"], default="target_weighted_sum")
+    parser.add_argument("--sparse_alpha", type=float, default=0.01)
+    parser.add_argument("--ubiquity_penalty", choices=["none", "fraction_active"], default="fraction_active")
+    parser.add_argument("--ubiquity_tau", type=float, default=1.0)
+    parser.add_argument("--ubiquity_epsilon", type=float, default=0.05)
+    parser.add_argument("--polypharm_downweight", type=_parse_bool, default=True)
+    parser.add_argument("--polypharm_t0", type=int, default=5)
+    parser.add_argument("--max_programs", type=int, default=50)
+
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+
+    parser.add_argument("--target_aliases_tsv")
+    parser.add_argument("--alias_delimiter", default="\t")
+    parser.add_argument("--alias_column", default="alias")
+    parser.add_argument("--alias_gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--drug_blacklist_tsv")
+    parser.add_argument("--drug_blacklist_delimiter", default="\t")
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--target_aliases_resource_id")
+    parser.add_argument("--drug_blacklist_resource_id")
+
+    parser.add_argument("--gtf")
+    parser.add_argument("--gtf_source")
+    parser.add_argument("--gtf_gene_id_field", default="gene_id")
+
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=None,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        emit_small_gene_sets=False,
+        gmt_require_symbol=False,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     prog_name = Path(sys.argv[0]).name if sys.argv else "geneset-extractors"
     parser = argparse.ArgumentParser(prog=prog_name or "geneset-extractors")
@@ -763,6 +856,12 @@ def build_parser() -> argparse.ArgumentParser:
         gmt_max_genes=500,
         emit_small_gene_sets=False,
     )
+
+    p_drug = conv.add_parser("drug_response_screen")
+    p_drug.add_argument("--out_dir", required=True)
+    p_drug.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_drug.add_argument("--genome_build", required=True)
+    _add_drug_response_flags(p_drug)
 
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)

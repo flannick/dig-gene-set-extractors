@@ -1,0 +1,13 @@
+sample_id	drug_id	response
+S1	D1	-2.0
+S1	D2	-0.2
+S1	D3	-1.0
+S2	D1	-1.8
+S2	D2	-0.1
+S2	D3	-1.1
+S3	D1	-0.2
+S3	D2	-2.1
+S3	D3	-1.0
+S4	D1	-0.1
+S4	D2	-1.9
+S4	D3	-0.9

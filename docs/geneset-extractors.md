@@ -22,6 +22,7 @@ Both CLI names dispatch to the same implementation.
 - DNA methylation: `docs/assays/methylation/guide.md`
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV segments: `docs/assays/cnv/guide.md`
+- Drug response screens: `docs/assays/drug_response/guide.md`
 
 ## Methods notes
 
@@ -29,6 +30,7 @@ Both CLI names dispatch to the same implementation.
 - RNA-seq methods: `docs/assays/rnaseq/methods.tex`
 - DNA methylation methods: `docs/assays/methylation/methods.tex`
 - CNV methods: `docs/assays/cnv/methods.tex`
+- Drug response methods: `docs/assays/drug_response/methods.tex`
 - Methods index: `docs/methods.tex`
 
 ## Resource ID conventions and presets
@@ -44,6 +46,6 @@ Assay-specific resource instructions:
 
 - ATAC resources and bundles: `docs/assays/atac/reference_bundle.md`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
-- RNA and CNV are local-input-first (no required external bundle in current defaults).
+- RNA, CNV, and drug response are local-input-first (no required external bundle in current defaults).
 
 Compatibility aliases remain at historical paths such as `docs/atac-seq2geneset.md` and `docs/rna-seq_methods.tex`.
