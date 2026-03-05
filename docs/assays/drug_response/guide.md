@@ -63,6 +63,23 @@ geneset-extractors workflows prism_prepare \
   --out_dir results/prism_prepare
 ```
 
+Default file-id template is Figshare (`https://ndownloader.figshare.com/files/{file_id}`).
+`prism_prepare` performs content sniffing on downloads and warns/fails if content
+looks like portal metadata JSON/HTML instead of tabular PRISM data.
+
+Quick deterministic subset for fast iteration:
+
+```bash
+geneset-extractors workflows prism_prepare \
+  --out_dir results/prism_prepare_quick \
+  --subset_seed 7 \
+  --balance_by primary_tissue \
+  --min_per_balance_bin 5 \
+  --max_cell_lines_per_group 50 \
+  --max_cell_lines_total 500 \
+  --max_compounds_total 300
+```
+
 Then run the converter on standardized tables:
 
 ```bash
@@ -153,6 +170,8 @@ Bundled optional resource IDs:
 - Empty/small GMT output: lower `--gmt_min_genes` or set `--emit_small_gene_sets true` for diagnostics.
 - Promiscuous targets: adjust `--max_targets_per_drug` and `--target_promiscuity_policy`.
 - Broad GPCR/neuroactive signal: keep `--target_ubiquity_penalty idf` and inspect run summaries.
+- Downloaded JSON/HTML instead of PRISM tables: inspect `prepare_summary.json` `fetch.*.sniff`;
+  use Figshare template `https://ndownloader.figshare.com/files/{file_id}`.
 
 ## GMT format
 

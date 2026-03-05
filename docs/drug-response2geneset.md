@@ -68,12 +68,29 @@ geneset-extractors workflows prism_prepare \
   --out_dir out/prism_prepare
 ```
 
+Default file-id template is Figshare (`https://ndownloader.figshare.com/files/{file_id}`).
+If a template returns JSON/HTML metadata instead of tabular data, workflow
+summary and warnings make this explicit and suggest the Figshare template.
+
 This writes:
 
 - `response_long.tsv` with columns `sample_id`, `drug_id`, `response`
 - `groups.tsv` with columns `sample_id`, `group` (`primary_tissue`)
 - `drug_targets.tsv` with columns `drug_id`, `gene_symbol`, `weight`
 - `prepare_summary.json` with fetch and parse details
+
+Quick deterministic subset for rapid checks:
+
+```bash
+geneset-extractors workflows prism_prepare \
+  --out_dir out/prism_prepare_quick \
+  --subset_seed 11 \
+  --balance_by primary_tissue \
+  --min_per_balance_bin 5 \
+  --max_cell_lines_per_group 50 \
+  --max_cell_lines_total 500 \
+  --max_compounds_total 300
+```
 
 Then run extraction:
 
@@ -144,6 +161,9 @@ Classic format:
   check `geneset-extractors convert drug_response_screen --help` and align column flags.
 - Tiny groups:
   if a group is skipped, either increase group size or lower `--min_group_size`.
+- PRISM download produced JSON/HTML:
+  check `prepare_summary.json` fetch `sniff` fields; use
+  `--depmap_file_id_url_template https://ndownloader.figshare.com/files/{file_id}`.
 - Target table issues:
   missing targets or overly large target lists reduce specificity.
   Inspect `run_summary.json` target stats and adjust promiscuity settings.

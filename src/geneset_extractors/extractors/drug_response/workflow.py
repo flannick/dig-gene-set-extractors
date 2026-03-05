@@ -42,6 +42,15 @@ from geneset_extractors.io.gtf import read_genes_from_gtf
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _LOW_TARGET_COVERAGE_WARN = 0.5
+_BROAD_TARGET_PATTERNS = [
+    re.compile(r"^GPR[0-9A-Z]*$"),
+    re.compile(r"^HTR[0-9A-Z]*$"),
+    re.compile(r"^DRD[0-9A-Z]*$"),
+    re.compile(r"^ADRA[0-9A-Z]*$"),
+    re.compile(r"^ADRB[0-9A-Z]*$"),
+    re.compile(r"^CHRM[0-9A-Z]*$"),
+    re.compile(r"^OR[0-9A-Z]+$"),
+]
 
 
 @dataclass
@@ -190,6 +199,16 @@ def _mean(values: list[float]) -> float:
     if not values:
         return 0.0
     return float(sum(values) / float(len(values)))
+
+
+def _is_broad_pharmacology_gene(gene_symbol: str) -> bool:
+    token = str(gene_symbol).strip().upper()
+    if not token:
+        return False
+    for pat in _BROAD_TARGET_PATTERNS:
+        if pat.match(token):
+            return True
+    return False
 
 
 def _build_group_index(
@@ -664,6 +683,7 @@ def run_drug_response_workflow(
     set_size_values: list[int] = []
     n_pos_sets = 0
     n_neg_sets = 0
+    broad_dominance_programs: list[dict[str, object]] = []
 
     for program in programs:
         program_id = str(program["program_id"])
@@ -708,6 +728,38 @@ def run_drug_response_workflow(
             weights=weights,
             gene_meta=gene_meta,
         )
+        top_n = min(20, len(selected_rows))
+        if top_n > 0:
+            top_rows = selected_rows[:top_n]
+            broad_hits = 0
+            for row in top_rows:
+                symbol = str(row.get("gene_symbol", "") or row.get("gene_id", ""))
+                if _is_broad_pharmacology_gene(symbol):
+                    broad_hits += 1
+            frac = float(broad_hits) / float(top_n)
+            if frac >= 0.4:
+                message = (
+                    "top genes appear enriched for broad receptor-family targets "
+                    f"(program={program_id}, broad_fraction_top{top_n}={frac:.2f}). "
+                    "This can reflect library pharmacology; consider stronger target ubiquity "
+                    "penalty, high-confidence target filtering, and balanced sampling."
+                )
+                _warn(
+                    "broad_pharmacology_dominance",
+                    message,
+                    program_id=program_id,
+                    top_n=top_n,
+                    broad_hits=broad_hits,
+                    broad_fraction=frac,
+                )
+                broad_dominance_programs.append(
+                    {
+                        "program_id": program_id,
+                        "top_n": top_n,
+                        "broad_hits": broad_hits,
+                        "broad_fraction": frac,
+                    }
+                )
 
         safe_id = _safe_component(program_id, "program")
         dedup = safe_id
@@ -783,7 +835,10 @@ def run_drug_response_workflow(
             "scoring_model_requested": cfg.scoring_model,
             "scoring_model_used": scoring_info.get("model_used", cfg.scoring_model),
             "n_samples": n_samples,
+            "n_cell_lines": n_samples,
             "n_drugs": n_drugs,
+            "n_compounds": n_drugs,
+            "n_response_rows": int(aggregate_summary.get("n_input_records", 0) or 0),
             "n_drugs_with_targets": coverage_drugs,
             "fraction_drugs_with_targets": coverage_fraction,
             "ubiquity_penalty": {
@@ -880,6 +935,7 @@ def run_drug_response_workflow(
                 },
                 "scoring_info": scoring_info,
                 "target_ubiquity_summary": target_ubiquity_summary,
+                "broad_dominance_programs": broad_dominance_programs,
                 "groups_skipped": groups_skipped,
                 "warnings": run_warnings,
                 "program_truncation": {
@@ -1038,8 +1094,10 @@ def run_drug_response_workflow(
         "contrast_method": cfg.contrast_method,
         "scoring_model": cfg.scoring_model,
         "n_samples": n_samples,
+        "n_cell_lines": n_samples,
         "n_drugs": n_drugs,
-        "n_response_rows": int(aggregate_summary.get("n_records_input", 0) or 0),
+        "n_compounds": n_drugs,
+        "n_response_rows": int(aggregate_summary.get("n_input_records", 0) or 0),
         "n_groups_total": groups_total,
         "n_groups_emitted": groups_emitted,
         "n_groups_skipped": groups_skipped_count,
@@ -1052,6 +1110,7 @@ def run_drug_response_workflow(
             "p90_targets_per_drug": target_stats.get("p90", 0),
         },
         "target_summary": target_summary,
+        "broad_dominance_programs": broad_dominance_programs,
         "gene_set_emission": {
             "total_sets_emitted": total_sets_emitted,
             "size_summary": set_size_summary,

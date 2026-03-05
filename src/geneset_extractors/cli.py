@@ -380,10 +380,17 @@ def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--matrix_file_id", default="20237709")
     parser.add_argument("--treatment_info_file_id", default="20237715")
     parser.add_argument("--cell_line_info_file_id", default="20237718")
-    parser.add_argument("--depmap_file_id_url_template", default="https://depmap.org/portal/download/api/downloads?file_name={file_id}")
+    parser.add_argument("--depmap_file_id_url_template", default="https://ndownloader.figshare.com/files/{file_id}")
     parser.add_argument("--max_retries", type=int, default=5)
     parser.add_argument("--retry_backoff_sec", type=float, default=1.0)
     parser.add_argument("--user_agent", default="geneset-extractors/1.0 prism_prepare")
+    parser.add_argument("--subset_seed", type=int, default=0)
+    parser.add_argument("--max_cell_lines_total", type=int)
+    parser.add_argument("--max_compounds_total", type=int)
+    parser.add_argument("--max_cell_lines_per_group", type=int)
+    parser.add_argument("--balance_by")
+    parser.add_argument("--min_per_balance_bin", type=int, default=5)
+    parser.add_argument("--keep_raw_downloads", type=_parse_bool, default=False)
 
 
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:

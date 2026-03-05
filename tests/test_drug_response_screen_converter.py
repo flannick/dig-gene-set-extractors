@@ -124,6 +124,12 @@ def test_drug_response_generic_group_vs_rest_signed_gmt(tmp_path: Path):
     assert result["n_groups"] == 2
 
     out_dir = Path(args.out_dir)
+    root_summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert int(root_summary["n_response_rows"]) > 0
+    assert int(root_summary["n_cell_lines"]) > 0
+    assert int(root_summary["n_compounds"]) > 0
+    root_summary_txt = (out_dir / "run_summary.txt").read_text(encoding="utf-8")
+    assert "n_response_rows: 0" not in root_summary_txt
     rows = _read_manifest_rows(out_dir)
     assert len(rows) == 2
     for row in rows:
@@ -388,3 +394,50 @@ def test_target_ubiquity_penalty_idf_changes_weights(tmp_path: Path):
     gene_idf = _read_geneset_rows(Path(args_idf.out_dir) / row_idf["path"] / "geneset.tsv")[0]["gene_id"]
     assert gene_none == "GENEUB"
     assert gene_idf == "GENESEL"
+
+
+def test_broad_pharmacology_warning_emitted(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    response = tmp_path / "resp.tsv"
+    targets = tmp_path / "targets.tsv"
+    response.write_text(
+        "\n".join(
+            [
+                "sample_id\tdrug_id\tresponse",
+                "S1\tD1\t1.0",
+                "S1\tD2\t0.9",
+                "S1\tD3\t0.8",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    targets.write_text(
+        "\n".join(
+            [
+                "drug_id\tgene_symbol\tweight",
+                "D1\tGPR12\t1.0",
+                "D2\tHTR2A\t1.0",
+                "D3\tDRD2\t1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.out_dir = str(tmp_path / "broad_warning")
+    args.response_tsv = str(response)
+    args.drug_targets_tsv = str(targets)
+    args.groups_tsv = None
+    args.contrast_method = "none"
+    args.response_metric = "other"
+    args.response_direction = "higher_is_more_sensitive"
+    args.response_transform = "none"
+    args.max_programs = 1
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.emit_small_gene_sets = True
+    drug_response_screen.run(args)
+    captured = capsys.readouterr()
+    assert "broad receptor-family targets" in captured.err
