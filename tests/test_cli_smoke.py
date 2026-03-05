@@ -113,6 +113,9 @@ def test_cli_describe_drug_response_screen():
     assert "response_metric" in param_names
     assert "contrast_method" in param_names
     assert "scoring_model" in param_names
+    assert "min_group_size" in param_names
+    assert "target_ubiquity_penalty" in param_names
+    assert "gmt_format" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
@@ -345,6 +348,8 @@ def test_cli_convert_drug_response_screen(tmp_path: Path):
         "tests/data/toy_drug_groups.tsv",
         "--contrast_method",
         "group_vs_rest",
+        "--min_group_size",
+        "1",
         "--out_dir",
         str(out),
         "--organism",

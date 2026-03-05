@@ -332,6 +332,46 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
                     + f"expected_path={entry.get('expected_path','')}"
                 )
 
+    for key in ("n_samples", "n_drugs", "n_response_rows", "n_groups_total", "n_groups_emitted", "n_groups_skipped"):
+        if key in payload:
+            lines.append(f"{key}: {payload[key]}")
+
+    groups = payload.get("groups")
+    if isinstance(groups, list):
+        lines.append("groups:")
+        for row in groups:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                "  "
+                + f"group={row.get('group','')} "
+                + f"n_group={row.get('n_group',0)} "
+                + f"n_rest={row.get('n_rest',0)} "
+                + f"sets_emitted={row.get('sets_emitted',0)} "
+                + f"reason_if_skipped={row.get('reason_if_skipped','')}"
+            )
+
+    target_table_stats = payload.get("target_table_stats")
+    if isinstance(target_table_stats, dict):
+        lines.append("target_table_stats:")
+        for key in sorted(target_table_stats):
+            lines.append(f"  {key}: {target_table_stats[key]}")
+
+    gene_set_emission = payload.get("gene_set_emission")
+    if isinstance(gene_set_emission, dict):
+        lines.append("gene_set_emission:")
+        for key in sorted(gene_set_emission):
+            lines.append(f"  {key}: {gene_set_emission[key]}")
+
+    warnings_payload = payload.get("warnings")
+    if isinstance(warnings_payload, list):
+        lines.append(f"warnings: {len(warnings_payload)}")
+        for warning in warnings_payload:
+            if isinstance(warning, dict):
+                lines.append(f"  {warning.get('code','warning')}: {warning.get('message','')}")
+            else:
+                lines.append(f"  warning: {warning}")
+
     return "\n".join(lines) + "\n"
 
 

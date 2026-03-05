@@ -63,11 +63,53 @@ def compute_polypharm_weights(
     return out, {"enabled": True, "t0": threshold, "target_counts": target_counts}
 
 
+def compute_target_ubiquity_weights(
+    *,
+    drug_targets: dict[str, dict[str, float]],
+    method: str,
+) -> tuple[dict[str, float], dict[str, object]]:
+    mode = str(method).strip().lower()
+    gene_to_drug_count: dict[str, int] = {}
+    n_drugs = len(drug_targets)
+    for targets in drug_targets.values():
+        for gene_id in targets:
+            gene_to_drug_count[gene_id] = int(gene_to_drug_count.get(gene_id, 0)) + 1
+    if mode == "none":
+        return (
+            {gene_id: 1.0 for gene_id in gene_to_drug_count},
+            {
+                "method": "none",
+                "n_drugs": n_drugs,
+                "n_genes": len(gene_to_drug_count),
+                "n_genes_affected": 0,
+                "top_ubiquitous": [],
+            },
+        )
+    if mode != "idf":
+        raise ValueError(f"Unsupported target_ubiquity_penalty method: {method}")
+
+    gene_weights: dict[str, float] = {}
+    for gene_id, f_g in gene_to_drug_count.items():
+        gene_weights[gene_id] = float(math.log((float(n_drugs) + 1.0) / (float(f_g) + 1.0)))
+    top_ubiquitous = sorted(gene_to_drug_count.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))[:20]
+    return (
+        gene_weights,
+        {
+            "method": "idf",
+            "n_drugs": n_drugs,
+            "n_genes": len(gene_to_drug_count),
+            "n_genes_affected": sum(1 for f_g in gene_to_drug_count.values() if int(f_g) > 1),
+            "top_ubiquitous": [{"gene_id": gene_id, "f": int(f_g)} for gene_id, f_g in top_ubiquitous],
+        },
+    )
+
+
 def score_genes_target_weighted(
     *,
     program_drug_scores: dict[str, float],
     drug_targets: dict[str, dict[str, float]],
     drug_weights: dict[str, float],
+    target_gene_weights: dict[str, float] | None,
     signed: bool,
 ) -> tuple[dict[str, float], dict[str, object]]:
     gene_scores: dict[str, float] = {}
@@ -86,7 +128,8 @@ def score_genes_target_weighted(
         n_drugs_used += 1
         drug_weight = float(drug_weights.get(drug_id, 1.0))
         for gene_id, target_weight in targets.items():
-            delta = contribution * drug_weight * float(target_weight)
+            gene_weight = 1.0 if target_gene_weights is None else float(target_gene_weights.get(gene_id, 1.0))
+            delta = contribution * drug_weight * gene_weight * float(target_weight)
             gene_scores[gene_id] = float(gene_scores.get(gene_id, 0.0)) + delta
     return gene_scores, {
         "n_drugs_with_mapping": n_drugs_with_mapping,
@@ -100,6 +143,7 @@ def _score_genes_sparse_deconvolution(
     program_drug_scores: dict[str, float],
     drug_targets: dict[str, dict[str, float]],
     drug_weights: dict[str, float],
+    target_gene_weights: dict[str, float] | None,
     signed: bool,
     sparse_alpha: float,
 ) -> tuple[dict[str, float], str | None]:
@@ -125,7 +169,8 @@ def _score_genes_sparse_deconvolution(
         weighted = float(drug_weights.get(drug_id, 1.0))
         for gene_id, target_weight in drug_targets.get(drug_id, {}).items():
             col_idx = gene_index[gene_id]
-            X[row_idx, col_idx] = weighted * float(target_weight)
+            gene_weight = 1.0 if target_gene_weights is None else float(target_gene_weights.get(gene_id, 1.0))
+            X[row_idx, col_idx] = weighted * gene_weight * float(target_weight)
 
     if signed:
         y_pos = np.maximum(y, 0.0)
@@ -150,6 +195,7 @@ def score_genes(
     program_drug_scores: dict[str, float],
     drug_targets: dict[str, dict[str, float]],
     drug_weights: dict[str, float],
+    target_gene_weights: dict[str, float] | None,
     signed: bool,
     sparse_alpha: float = 0.01,
 ) -> tuple[dict[str, float], dict[str, object]]:
@@ -158,6 +204,7 @@ def score_genes(
             program_drug_scores=program_drug_scores,
             drug_targets=drug_targets,
             drug_weights=drug_weights,
+            target_gene_weights=target_gene_weights,
             signed=signed,
         )
         return scores, {"model_used": "target_weighted_sum", **info}
@@ -167,6 +214,7 @@ def score_genes(
             program_drug_scores=program_drug_scores,
             drug_targets=drug_targets,
             drug_weights=drug_weights,
+            target_gene_weights=target_gene_weights,
             signed=signed,
             sparse_alpha=float(sparse_alpha),
         )
@@ -176,6 +224,7 @@ def score_genes(
             program_drug_scores=program_drug_scores,
             drug_targets=drug_targets,
             drug_weights=drug_weights,
+            target_gene_weights=target_gene_weights,
             signed=signed,
         )
         payload = {"model_used": "target_weighted_sum", "fallback_from": "sparse_deconvolution", **info}

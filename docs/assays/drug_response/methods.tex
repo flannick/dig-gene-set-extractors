@@ -106,6 +106,15 @@ so drugs active in many samples are downweighted.
 
 Other choices include entropy- or variance-based selectivity weights; the implementation may offer multiple options.
 
+\subsection{Target-side ubiquity penalty (gene IDF)}
+To reduce broad target-family dominance (for example genes that appear in many compounds' target lists), we optionally apply a target-side inverse-frequency penalty:
+\begin{equation}
+f(g) = \sum_{d=1}^{D} \mathbb{I}(A_{dg} > 0), \qquad
+\mathrm{idf}(g) = \log\left(\frac{D+1}{f(g)+1}\right).
+\end{equation}
+When enabled, each drug-to-gene contribution is multiplied by $\mathrm{idf}(g)$.
+This is distinct from the response-side drug ubiquity penalty above: response-side penalizes \emph{drugs} that are active in many samples, whereas target-side penalizes \emph{genes} targeted by many drugs.
+
 \subsection{Program axes and contrasts}
 Unlike ATAC-seq, there is no peak-to-gene linking. The natural axes are:
 \begin{itemize}
@@ -203,6 +212,7 @@ We recommend the implementation emit explicit warnings and metadata fields for:
   \item Dominance by broadly toxic compounds (high $p_d$) and effect of ubiquity penalty.
   \item Very small groups or poorly populated contrasts.
   \item Extremely multi-target drugs (large $|T(d)|$) that may reduce interpretability.
+  \item Tiny group contrasts (for example small tissues/lineages); default workflows should skip groups below a minimum size threshold and report this explicitly.
 \end{itemize}
 
 \subsection{Resources and bundles}

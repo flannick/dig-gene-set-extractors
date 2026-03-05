@@ -4,6 +4,7 @@ import csv
 import gzip
 from pathlib import Path
 import re
+import statistics
 
 
 _SPLIT_RE = re.compile(r"[;,]")
@@ -215,3 +216,72 @@ def apply_drug_blacklist(
     blocked = {str(x).strip() for x in blacklist if str(x).strip()}
     out = {drug: genes for drug, genes in drug_targets.items() if drug not in blocked}
     return out, {"n_blacklisted": len(drug_targets) - len(out), "n_remaining": len(out)}
+
+
+def summarize_targets_per_drug(drug_targets: dict[str, dict[str, float]]) -> dict[str, object]:
+    counts = [len(genes) for genes in drug_targets.values()]
+    if not counts:
+        return {"n_drugs": 0}
+    counts_sorted = sorted(int(x) for x in counts)
+    p90_index = max(0, min(len(counts_sorted) - 1, int(round(0.9 * (len(counts_sorted) - 1)))))
+    return {
+        "n_drugs": len(counts_sorted),
+        "min": int(counts_sorted[0]),
+        "median": float(statistics.median(counts_sorted)),
+        "p90": int(counts_sorted[p90_index]),
+        "max": int(counts_sorted[-1]),
+    }
+
+
+def filter_promiscuous_targets(
+    *,
+    drug_targets: dict[str, dict[str, float]],
+    max_targets_per_drug: int,
+    policy: str,
+) -> tuple[dict[str, dict[str, float]], dict[str, object], list[str]]:
+    limit = max(1, int(max_targets_per_drug))
+    mode = str(policy).strip().lower()
+    if mode not in {"warn", "drop", "cap"}:
+        raise ValueError(f"Unsupported target_promiscuity_policy: {policy}")
+
+    out: dict[str, dict[str, float]] = {}
+    n_over_limit = 0
+    n_dropped = 0
+    n_capped = 0
+    warned: list[str] = []
+    for drug_id, targets in drug_targets.items():
+        n_targets = len(targets)
+        if n_targets <= limit:
+            out[drug_id] = dict(targets)
+            continue
+        n_over_limit += 1
+        warned.append(
+            f"warning: promiscuous target list for drug={drug_id}; n_targets={n_targets} exceeds max_targets_per_drug={limit}"
+        )
+        if mode == "warn":
+            out[drug_id] = dict(targets)
+            continue
+        if mode == "drop":
+            n_dropped += 1
+            continue
+        ranked = sorted(targets.items(), key=lambda kv: (-float(kv[1]), str(kv[0])))[:limit]
+        total = sum(float(w) for _, w in ranked)
+        if total > 0:
+            out[drug_id] = {gene: float(weight) / float(total) for gene, weight in ranked}
+        else:
+            out[drug_id] = {gene: 1.0 / float(len(ranked)) for gene, _ in ranked}
+        n_capped += 1
+        warned.append(
+            f"warning: capped targets for drug={drug_id} to top {limit} genes by weight."
+        )
+
+    summary = {
+        "max_targets_per_drug": limit,
+        "policy": mode,
+        "n_drugs_input": len(drug_targets),
+        "n_drugs_output": len(out),
+        "n_over_limit": n_over_limit,
+        "n_dropped": n_dropped,
+        "n_capped": n_capped,
+    }
+    return out, summary, warned

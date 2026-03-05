@@ -136,6 +136,7 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_topk_list", default="200")
     parser.add_argument("--gmt_mass_list", default="")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
+    parser.add_argument("--gmt_format", choices=["dig2col", "classic"], default="dig2col")
     parser.add_argument(
         "--emit_small_gene_sets",
         type=_parse_bool,
@@ -370,6 +371,21 @@ def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fixed_k", type=int)
 
 
+def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--release", default="24Q2")
+    parser.add_argument("--matrix_url")
+    parser.add_argument("--treatment_info_url")
+    parser.add_argument("--cell_line_info_url")
+    parser.add_argument("--matrix_file_id", default="20237709")
+    parser.add_argument("--treatment_info_file_id", default="20237715")
+    parser.add_argument("--cell_line_info_file_id", default="20237718")
+    parser.add_argument("--depmap_file_id_url_template", default="https://depmap.org/portal/download/api/downloads?file_name={file_id}")
+    parser.add_argument("--max_retries", type=int, default=5)
+    parser.add_argument("--retry_backoff_sec", type=float, default=1.0)
+    parser.add_argument("--user_agent", default="geneset-extractors/1.0 prism_prepare")
+
+
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--program_preset",
@@ -502,13 +518,22 @@ def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--response_transform", choices=["robust_z_mad", "rank_normal_score", "none"], default="robust_z_mad")
     parser.add_argument("--contrast_method", choices=["none", "group_mean", "group_vs_rest", "case_control"])
+    parser.add_argument("--min_group_size", type=int, default=5)
     parser.add_argument("--scoring_model", choices=["target_weighted_sum", "sparse_deconvolution"], default="target_weighted_sum")
     parser.add_argument("--sparse_alpha", type=float, default=0.01)
+    parser.add_argument(
+        "--response_ubiquity_penalty",
+        choices=["none", "fraction_active"],
+        help="Response-side ubiquity penalty (preferred flag; supersedes --ubiquity_penalty when set).",
+    )
     parser.add_argument("--ubiquity_penalty", choices=["none", "fraction_active"], default="fraction_active")
+    parser.add_argument("--target_ubiquity_penalty", choices=["none", "idf"], default="idf")
     parser.add_argument("--ubiquity_tau", type=float, default=1.0)
     parser.add_argument("--ubiquity_epsilon", type=float, default=0.05)
     parser.add_argument("--polypharm_downweight", type=_parse_bool, default=True)
     parser.add_argument("--polypharm_t0", type=int, default=5)
+    parser.add_argument("--max_targets_per_drug", type=int, default=50)
+    parser.add_argument("--target_promiscuity_policy", choices=["warn", "drop", "cap"], default="warn")
     parser.add_argument("--max_programs", type=int, default=50)
 
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
@@ -538,6 +563,7 @@ def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=None,
+        gmt_format="dig2col",
         gmt_topk_list="200",
         gmt_min_genes=100,
         gmt_max_genes=500,
@@ -568,6 +594,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scrna_cnmf_prepare_flags(p_scrna_cnmf_prepare)
     p_cnmf_select_k = wf_sub.add_parser("cnmf_select_k")
     _add_cnmf_select_k_flags(p_cnmf_select_k)
+    p_prism_prepare = wf_sub.add_parser("prism_prepare")
+    _add_prism_prepare_flags(p_prism_prepare)
 
     p_resources = sub.add_parser("resources")
     res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
@@ -1118,6 +1146,17 @@ def main(argv: list[str] | None = None) -> int:
                 from geneset_extractors.workflows.cnmf_select_k import run as run_cnmf_select_k
 
                 _ = run_cnmf_select_k(args)
+                return 0
+            if args.workflow_command == "prism_prepare":
+                from geneset_extractors.workflows.prism_prepare import run as run_prism_prepare
+
+                result = run_prism_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=prism_prepare n_rows={result.get('n_response_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
                 return 0
 
         if args.command == "convert":

@@ -24,6 +24,7 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/assays/drug_response/guide.md` (drug response practical guide)
+- `docs/drug-response2geneset.md` (drug response compatibility quickstart)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
 
 ## Quick Start (Common Case)
@@ -70,6 +71,7 @@ RNA workflow commands:
 
 - `workflows scrna_cnmf_prepare` (downsample/split/filter + generate per-subset cNMF scripts)
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
+- `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)
 
 DNA methylation converters:
 
@@ -94,6 +96,7 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
 - `docs/assays/drug_response/guide.md`
+- `docs/drug-response2geneset.md`
 - `docs/geneset-extractors.md` (index)
 
 Method notes and equations (split by assay + index):
@@ -181,6 +184,7 @@ dig-gene-set-extractors/
     rna-seq-to-geneset.md      # compatibility alias
     methylation2geneset.md     # compatibility alias
     cnv2geneset.md             # compatibility alias
+    drug-response2geneset.md   # compatibility alias
     atac-seq_methods.tex       # compatibility alias
     rna-seq_methods.tex        # compatibility alias
     methylation_methods.tex    # compatibility alias

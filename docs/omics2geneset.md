@@ -20,4 +20,5 @@ Canonical assay docs:
 - CNV practical guide: `docs/assays/cnv/guide.md`
 - CNV methods note: `docs/assays/cnv/methods.tex`
 - Drug response practical guide: `docs/assays/drug_response/guide.md`
+- Drug response compatibility guide: `docs/drug-response2geneset.md`
 - Drug response methods note: `docs/assays/drug_response/methods.tex`

@@ -11,6 +11,8 @@ into gene-weighted programs and GMT gene sets.
 and emits grouped outputs:
 
 - `manifest.tsv`
+- `group_qc.tsv` (all groups including skipped with reasons)
+- root `run_summary.json` / `run_summary.txt`
 - `program=<PROGRAM>/geneset.tsv`
 - `program=<PROGRAM>/geneset.meta.json`
 - optional per-program `geneset.full.tsv`, `genesets.gmt`, `run_summary.*`
@@ -43,13 +45,37 @@ Defaults:
 - `response_transform=robust_z_mad`
 - `contrast_method=none` unless groups are available (then defaults to `group_vs_rest`)
 - `scoring_model=target_weighted_sum`
-- `ubiquity_penalty=fraction_active`
+- `response_ubiquity_penalty=fraction_active` (legacy alias: `ubiquity_penalty`)
+- `target_ubiquity_penalty=idf`
 - `polypharm_downweight=true`
+- `min_group_size=5`
+- `max_targets_per_drug=50`, `target_promiscuity_policy=warn`
 - `max_programs=50`
 - `select=top_k`, `top_k=200`, `normalize=within_set_l1`
 - strict GMT bounds: `gmt_min_genes=100`, `gmt_max_genes=500`
 
 ## Quickstart: PRISM convenience mode
+
+Recommended first step (download + standardize into long tables):
+
+```bash
+geneset-extractors workflows prism_prepare \
+  --out_dir results/prism_prepare
+```
+
+Then run the converter on standardized tables:
+
+```bash
+geneset-extractors convert drug_response_screen \
+  --response_tsv results/prism_prepare/response_long.tsv \
+  --drug_targets_tsv results/prism_prepare/drug_targets.tsv \
+  --groups_tsv results/prism_prepare/groups.tsv \
+  --out_dir results/prism \
+  --organism human \
+  --genome_build hg38
+```
+
+Direct PRISM input mode is also supported:
 
 ```bash
 geneset-extractors convert drug_response_screen \
@@ -91,6 +117,14 @@ If more are requested, converter truncates and warns:
 - `group_vs_rest`/`case_control`/`group_mean`: rank by mean absolute drug contrast magnitude
 - `none`: rank by number of non-missing sample-drug measurements
 
+## Group and target QC defaults
+
+- `--min_group_size 5`: skip tiny groups by default with explicit warnings and metadata.
+- `--max_targets_per_drug 50` and `--target_promiscuity_policy {warn,drop,cap}`:
+  control very large target lists.
+- `--target_ubiquity_penalty idf`:
+  downweights genes targeted by many retained drugs.
+
 ## Optional resources and overrides
 
 Optional small resources:
@@ -114,8 +148,16 @@ Bundled optional resource IDs:
 - Low target coverage (`<50%` drugs mappable): provide better target annotations or alias mapping.
 - Many invalid target tokens: inspect source target strings; provide alias map.
 - Tiny groups in contrasts: increase group sample sizes or switch contrast mode.
+- Tiny groups skipped by default: lower `--min_group_size` only if biologically justified.
 - Program truncation by `--max_programs`: increase it for broader export.
 - Empty/small GMT output: lower `--gmt_min_genes` or set `--emit_small_gene_sets true` for diagnostics.
+- Promiscuous targets: adjust `--max_targets_per_drug` and `--target_promiscuity_policy`.
+- Broad GPCR/neuroactive signal: keep `--target_ubiquity_penalty idf` and inspect run summaries.
+
+## GMT format
+
+- Default: `--gmt_format dig2col` (`set_id<TAB>gene1 gene2 ...`)
+- Classic parser compatibility: `--gmt_format classic` (`set_id<TAB>na<TAB>gene1<TAB>gene2...`)
 
 ## Output interpretation
 
@@ -128,6 +170,8 @@ Bundled optional resource IDs:
 - `--response_metric`, `--response_direction`, `--response_transform` -> response orientation and normalization
 - `--contrast_method`, `--case_control_within_group` -> program axis
 - `--scoring_model` -> Model A / Model B
-- `--ubiquity_penalty`, `--ubiquity_tau`, `--ubiquity_epsilon` -> ubiquity downweight
+- `--response_ubiquity_penalty` / `--ubiquity_penalty`, `--ubiquity_tau`, `--ubiquity_epsilon` -> response-side ubiquity downweight
+- `--target_ubiquity_penalty` -> target-side ubiquity downweight
 - `--polypharm_downweight`, `--polypharm_t0` -> polypharmacology downweight
+- `--max_targets_per_drug`, `--target_promiscuity_policy` -> promiscuity handling
 - `--select`, `--top_k`, `--normalize`, `--emit_gmt`, GMT flags -> shared extraction/export

@@ -1,4 +1,5 @@
 import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -55,13 +56,18 @@ class Args:
     response_direction = None
     response_transform = "robust_z_mad"
     contrast_method = "group_vs_rest"
+    min_group_size = 1
     scoring_model = "target_weighted_sum"
     sparse_alpha = 0.01
+    response_ubiquity_penalty = None
     ubiquity_penalty = "fraction_active"
+    target_ubiquity_penalty = "idf"
     ubiquity_tau = 1.0
     ubiquity_epsilon = 0.05
     polypharm_downweight = True
     polypharm_t0 = 5
+    max_targets_per_drug = 50
+    target_promiscuity_policy = "warn"
     max_programs = 50
 
     select = "top_k"
@@ -97,6 +103,7 @@ class Args:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = None
+    gmt_format = "dig2col"
     emit_small_gene_sets = True
 
 
@@ -198,3 +205,186 @@ def test_drug_response_low_target_coverage_warning(tmp_path: Path, capsys: pytes
     drug_response_screen.run(args)
     captured = capsys.readouterr()
     assert "low drug-to-target coverage" in captured.err
+
+
+def _write_tiny_group_fixture(base: Path) -> tuple[Path, Path, Path]:
+    response = base / "response.tsv"
+    groups = base / "groups.tsv"
+    targets = base / "targets.tsv"
+    response.write_text(
+        "\n".join(
+            [
+                "sample_id\tdrug_id\tresponse",
+                "S1\tD1\t-2.0",
+                "S1\tD2\t-1.0",
+                "S1\tD3\t-0.5",
+                "S2\tD1\t-1.5",
+                "S2\tD2\t-0.8",
+                "S2\tD3\t-0.4",
+                "S3\tD1\t-1.4",
+                "S3\tD2\t-0.7",
+                "S3\tD3\t-0.3",
+                "S4\tD1\t-1.2",
+                "S4\tD2\t-0.6",
+                "S4\tD3\t-0.2",
+                "S5\tD1\t-0.2",
+                "S5\tD2\t-2.1",
+                "S5\tD3\t-0.7",
+                "S6\tD1\t-0.1",
+                "S6\tD2\t-2.0",
+                "S6\tD3\t-0.6",
+                "S7\tD1\t-0.2",
+                "S7\tD2\t-1.9",
+                "S7\tD3\t-0.5",
+                "S8\tD1\t-0.3",
+                "S8\tD2\t-1.8",
+                "S8\tD3\t-0.4",
+                "S9\tD1\t-0.2",
+                "S9\tD2\t-1.7",
+                "S9\tD3\t-0.3",
+                "S10\tD1\t-0.1",
+                "S10\tD2\t-1.6",
+                "S10\tD3\t-0.2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    groups.write_text(
+        "\n".join(
+            [
+                "sample_id\tgroup",
+                "S1\tG1",
+                "S2\tG2",
+                "S3\tG2",
+                "S4\tG2",
+                "S5\tG3",
+                "S6\tG3",
+                "S7\tG3",
+                "S8\tG3",
+                "S9\tG3",
+                "S10\tG3",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    target_lines = ["drug_id\tgene_symbol\tweight", "D1\tGENEA\t1.0", "D2\tGENEB\t1.0", "D3\tGENEC\t1.0", "D4\t\t1.0"]
+    for idx in range(1, 101):
+        target_lines.append(f"D5\tPROM{idx:03d}\t1.0")
+    targets.write_text("\n".join(target_lines) + "\n", encoding="utf-8")
+    return response, groups, targets
+
+
+def test_drug_response_default_min_group_size_skips_tiny_groups(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    response, groups, targets = _write_tiny_group_fixture(tmp_path)
+    args = Args()
+    args.out_dir = str(tmp_path / "drug_response_tiny_groups")
+    args.response_tsv = str(response)
+    args.groups_tsv = str(groups)
+    args.drug_targets_tsv = str(targets)
+    args.min_group_size = 5
+    args.target_promiscuity_policy = "warn"
+    args.max_targets_per_drug = 50
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 20
+    result = drug_response_screen.run(args)
+    assert result["n_groups"] == 1
+    out_dir = Path(args.out_dir)
+    manifest_rows = _read_manifest_rows(out_dir)
+    assert len(manifest_rows) == 1
+    assert manifest_rows[0]["group"] == "G3"
+    group_qc_rows = list(csv.DictReader((out_dir / "group_qc.tsv").open("r", encoding="utf-8"), delimiter="\t"))
+    skipped = [r for r in group_qc_rows if r["reason_if_skipped"] == "min_group_size"]
+    assert len(skipped) == 2
+    assert {r["group"] for r in skipped} == {"G1", "G2"}
+    run_summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert int(run_summary["n_groups_skipped"]) == 2
+    captured = capsys.readouterr()
+    assert "group_skipped group=G1 n=1 reason=min_group_size" in captured.err
+    assert "promiscuous target list for drug=D5" in captured.err
+
+
+def test_drug_response_gmt_classic_format(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "drug_response_classic_gmt")
+    args.gmt_format = "classic"
+    result = drug_response_screen.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    row = _read_manifest_rows(out_dir)[0]
+    gmt_path = out_dir / row["path"] / "genesets.gmt"
+    line = gmt_path.read_text(encoding="utf-8").strip().splitlines()[0]
+    assert len(line.split("\t")) >= 3
+
+
+def test_target_ubiquity_penalty_idf_changes_weights(tmp_path: Path):
+    response = tmp_path / "resp.tsv"
+    targets = tmp_path / "targets.tsv"
+    response.write_text(
+        "\n".join(
+            [
+                "sample_id\tdrug_id\tresponse",
+                "S1\tD1\t0.7",
+                "S1\tD2\t0.7",
+                "S1\tD3\t0.6",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    targets.write_text(
+        "\n".join(
+            [
+                "drug_id\tgene_symbol\tweight",
+                "D1\tGENEUB\t1.0",
+                "D2\tGENEUB\t1.0",
+                "D3\tGENESEL\t1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args_none = Args()
+    args_none.out_dir = str(tmp_path / "target_ubiq_none")
+    args_none.response_tsv = str(response)
+    args_none.drug_targets_tsv = str(targets)
+    args_none.groups_tsv = None
+    args_none.contrast_method = "none"
+    args_none.response_metric = "other"
+    args_none.response_direction = "higher_is_more_sensitive"
+    args_none.response_transform = "none"
+    args_none.response_ubiquity_penalty = "none"
+    args_none.ubiquity_penalty = "none"
+    args_none.target_ubiquity_penalty = "none"
+    args_none.max_programs = 1
+    args_none.top_k = 1
+    args_none.gmt_topk_list = "1"
+    drug_response_screen.run(args_none)
+
+    args_idf = Args()
+    args_idf.out_dir = str(tmp_path / "target_ubiq_idf")
+    args_idf.response_tsv = str(response)
+    args_idf.drug_targets_tsv = str(targets)
+    args_idf.groups_tsv = None
+    args_idf.contrast_method = "none"
+    args_idf.response_metric = "other"
+    args_idf.response_direction = "higher_is_more_sensitive"
+    args_idf.response_transform = "none"
+    args_idf.response_ubiquity_penalty = "none"
+    args_idf.ubiquity_penalty = "none"
+    args_idf.target_ubiquity_penalty = "idf"
+    args_idf.max_programs = 1
+    args_idf.top_k = 1
+    args_idf.gmt_topk_list = "1"
+    drug_response_screen.run(args_idf)
+
+    row_none = _read_manifest_rows(Path(args_none.out_dir))[0]
+    row_idf = _read_manifest_rows(Path(args_idf.out_dir))[0]
+    gene_none = _read_geneset_rows(Path(args_none.out_dir) / row_none["path"] / "geneset.tsv")[0]["gene_id"]
+    gene_idf = _read_geneset_rows(Path(args_idf.out_dir) / row_idf["path"] / "geneset.tsv")[0]["gene_id"]
+    assert gene_none == "GENEUB"
+    assert gene_idf == "GENESEL"

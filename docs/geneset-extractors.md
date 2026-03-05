@@ -23,6 +23,7 @@ Both CLI names dispatch to the same implementation.
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV segments: `docs/assays/cnv/guide.md`
 - Drug response screens: `docs/assays/drug_response/guide.md`
+- Drug response compatibility guide: `docs/drug-response2geneset.md`
 
 ## Methods notes
 
@@ -47,5 +48,6 @@ Assay-specific resource instructions:
 - ATAC resources and bundles: `docs/assays/atac/reference_bundle.md`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA, CNV, and drug response are local-input-first (no required external bundle in current defaults).
+- Drug response PRISM prep workflow: `geneset-extractors workflows prism_prepare` (see `docs/drug-response2geneset.md`)
 
 Compatibility aliases remain at historical paths such as `docs/atac-seq2geneset.md` and `docs/rna-seq_methods.tex`.

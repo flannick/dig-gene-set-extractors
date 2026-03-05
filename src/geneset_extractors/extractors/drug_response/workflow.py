@@ -32,6 +32,7 @@ from geneset_extractors.extractors.drug_response.normalize import (
 )
 from geneset_extractors.extractors.drug_response.scoring import (
     compute_polypharm_weights,
+    compute_target_ubiquity_weights,
     compute_ubiquity_weights,
     score_genes,
 )
@@ -55,9 +56,11 @@ class DrugResponseWorkflowConfig:
     response_transform: str
     contrast_method: str
     case_control_within_group: bool
+    min_group_size: int
     scoring_model: str
     sparse_alpha: float
-    ubiquity_penalty: str
+    response_ubiquity_penalty: str
+    target_ubiquity_penalty: str
     ubiquity_tau: float
     ubiquity_epsilon: float
     polypharm_downweight: bool
@@ -79,6 +82,7 @@ class DrugResponseWorkflowConfig:
     gmt_topk_list: str
     gmt_mass_list: str
     gmt_split_signed: bool | None
+    gmt_format: str
     emit_small_gene_sets: bool
     gtf: str | None
     gtf_source: str | None
@@ -129,25 +133,40 @@ def _selected_weights(scores: dict[str, float], selected_gene_ids: list[str], no
     raise ValueError(f"Unsupported normalization method: {normalize}")
 
 
-def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> None:
+def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> list[dict[str, object]]:
+    warnings_payload: list[dict[str, object]] = []
     for diag in gmt_diagnostics:
         code = str(diag.get("code", ""))
         base_name = str(diag.get("base_name", "unknown"))
         n_genes = int(diag.get("n_genes", 0) or 0)
         reason = str(diag.get("reason", "")).strip()
         suggestion = str(diag.get("suggestion", "")).strip()
+        message = ""
         if code in {"small_gene_set_skipped", "no_positive_genes"}:
-            print(f"warning: skipped GMT output for {base_name}; n_genes={n_genes}. {reason}", file=sys.stderr)
+            message = f"skipped GMT output for {base_name}; n_genes={n_genes}. {reason}"
+            print(f"warning: {message}", file=sys.stderr)
         elif code == "small_gene_set_emitted":
-            print(f"warning: emitted small GMT output for {base_name}; n_genes={n_genes}. {reason}", file=sys.stderr)
+            message = f"emitted small GMT output for {base_name}; n_genes={n_genes}. {reason}"
+            print(f"warning: {message}", file=sys.stderr)
         elif code == "marginal_gene_count":
-            print(f"warning: marginal GMT signal for {base_name}; n_genes={n_genes}. {reason}", file=sys.stderr)
+            message = f"marginal GMT signal for {base_name}; n_genes={n_genes}. {reason}"
+            print(f"warning: {message}", file=sys.stderr)
         elif code == "require_symbol_heavy_drop":
-            print(f"warning: GMT symbol requirement dropped many rows for {base_name}. {reason}", file=sys.stderr)
+            message = f"GMT symbol requirement dropped many rows for {base_name}. {reason}"
+            print(f"warning: {message}", file=sys.stderr)
         else:
             continue
+        warnings_payload.append(
+            {
+                "code": code,
+                "message": message,
+                "base_name": base_name,
+                "n_genes": n_genes,
+            }
+        )
         if suggestion:
             print(f"warning:   {suggestion}", file=sys.stderr)
+    return warnings_payload
 
 
 def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -198,10 +217,14 @@ def _build_programs(
     groups_by_sample: dict[str, str] | None,
     case_control_by_sample: dict[str, bool] | None,
     case_control_within_group: bool,
-) -> tuple[list[dict[str, object]], list[str]]:
+    min_group_size: int,
+) -> tuple[list[dict[str, object]], list[str], list[dict[str, object]], dict[str, dict[str, object]]]:
     warnings: list[str] = []
     programs: list[dict[str, object]] = []
     group_index = _build_group_index(samples=samples, groups_by_sample=groups_by_sample)
+    group_qc_rows: list[dict[str, object]] = []
+    groups_skipped: dict[str, dict[str, object]] = {}
+    min_n = max(1, int(min_group_size))
 
     if contrast_method == "none":
         for sample_id in samples:
@@ -218,16 +241,34 @@ def _build_programs(
                     "group": "",
                 }
             )
-        return programs, warnings
+        return programs, warnings, group_qc_rows, groups_skipped
 
     if contrast_method == "group_mean":
         if not group_index:
             raise ValueError("contrast_method=group_mean requires groups (use --groups_tsv or group metadata)")
         for group in sorted(group_index):
             members = group_index[group]
-            if len(members) < 2:
+            n_group = len(members)
+            n_rest = len(samples) - n_group
+            if n_group < min_n:
+                msg = f"group_skipped group={group} n={n_group} reason=min_group_size"
+                warnings.append(msg)
+                groups_skipped[group] = {"n": n_group, "reason": "min_group_size"}
+                group_qc_rows.append(
+                    {
+                        "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": 0,
+                        "n_control": 0,
+                        "sets_emitted": 0,
+                        "reason_if_skipped": "min_group_size",
+                    }
+                )
+                continue
+            if n_group < 2:
                 warnings.append(
-                    f"group={group} has only {len(members)} samples for group_mean; estimates may be unstable"
+                    f"group={group} has only {n_group} samples for group_mean; estimates may be unstable"
                 )
             scores: dict[str, float] = {}
             for drug in drugs:
@@ -242,22 +283,59 @@ def _build_programs(
                     "signed": False,
                     "contrast_method": "group_mean",
                     "drug_scores": scores,
-                    "n_samples": len(members),
+                    "n_samples": n_group,
                     "criterion": criterion,
                     "group": group,
+                    "group_qc": {
+                        "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": 0,
+                        "n_control": 0,
+                        "reason_if_skipped": "",
+                    },
                 }
             )
-        return programs, warnings
+            group_qc_rows.append(
+                {
+                    "group": group,
+                    "n_group": n_group,
+                    "n_rest": n_rest,
+                    "n_case": 0,
+                    "n_control": 0,
+                    "sets_emitted": 0,
+                    "reason_if_skipped": "",
+                }
+            )
+        return programs, warnings, group_qc_rows, groups_skipped
 
     if contrast_method == "group_vs_rest":
         if not group_index:
             raise ValueError("contrast_method=group_vs_rest requires groups (use --groups_tsv or group metadata)")
         for group in sorted(group_index):
             members = set(group_index[group])
+            n_group = len(members)
             rest = [sample for sample in samples if sample not in members]
-            if len(members) < 2 or len(rest) < 2:
+            n_rest = len(rest)
+            if n_group < min_n:
+                msg = f"group_skipped group={group} n={n_group} reason=min_group_size"
+                warnings.append(msg)
+                groups_skipped[group] = {"n": n_group, "reason": "min_group_size"}
+                group_qc_rows.append(
+                    {
+                        "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": 0,
+                        "n_control": 0,
+                        "sets_emitted": 0,
+                        "reason_if_skipped": "min_group_size",
+                    }
+                )
+                continue
+            if n_group < 2 or n_rest < 2:
                 warnings.append(
-                    f"group={group} has small contrast sizes (group={len(members)}, rest={len(rest)})"
+                    f"group={group} has small contrast sizes (group={n_group}, rest={n_rest})"
                 )
             scores: dict[str, float] = {}
             for drug in drugs:
@@ -273,12 +351,31 @@ def _build_programs(
                     "signed": True,
                     "contrast_method": "group_vs_rest",
                     "drug_scores": scores,
-                    "n_samples": len(members),
+                    "n_samples": n_group,
                     "criterion": criterion,
                     "group": group,
+                    "group_qc": {
+                        "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": 0,
+                        "n_control": 0,
+                        "reason_if_skipped": "",
+                    },
                 }
             )
-        return programs, warnings
+            group_qc_rows.append(
+                {
+                    "group": group,
+                    "n_group": n_group,
+                    "n_rest": n_rest,
+                    "n_case": 0,
+                    "n_control": 0,
+                    "sets_emitted": 0,
+                    "reason_if_skipped": "",
+                }
+            )
+        return programs, warnings, group_qc_rows, groups_skipped
 
     if contrast_method == "case_control":
         if case_control_by_sample is None:
@@ -290,11 +387,44 @@ def _build_programs(
                 )
             for group in sorted(group_index):
                 members = group_index[group]
+                n_group = len(members)
+                n_rest = len(samples) - n_group
+                if n_group < min_n:
+                    msg = f"group_skipped group={group} n={n_group} reason=min_group_size"
+                    warnings.append(msg)
+                    groups_skipped[group] = {"n": n_group, "reason": "min_group_size"}
+                    group_qc_rows.append(
+                        {
+                            "group": group,
+                            "n_group": n_group,
+                            "n_rest": n_rest,
+                            "n_case": 0,
+                            "n_control": 0,
+                            "sets_emitted": 0,
+                            "reason_if_skipped": "min_group_size",
+                        }
+                    )
+                    continue
                 case_samples = [s for s in members if bool(case_control_by_sample.get(s, False))]
                 control_samples = [s for s in members if s in case_control_by_sample and not case_control_by_sample[s]]
                 if len(case_samples) < 1 or len(control_samples) < 1:
                     warnings.append(
                         f"group={group} skipped for case_control: case={len(case_samples)} control={len(control_samples)}"
+                    )
+                    groups_skipped[group] = {
+                        "n": n_group,
+                        "reason": "missing_case_or_control",
+                    }
+                    group_qc_rows.append(
+                        {
+                            "group": group,
+                            "n_group": n_group,
+                            "n_rest": n_rest,
+                            "n_case": len(case_samples),
+                            "n_control": len(control_samples),
+                            "sets_emitted": 0,
+                            "reason_if_skipped": "missing_case_or_control",
+                        }
                     )
                     continue
                 if len(case_samples) < 2 or len(control_samples) < 2:
@@ -311,16 +441,35 @@ def _build_programs(
                 criterion = _mean([abs(v) for v in scores.values()]) if scores else 0.0
                 programs.append(
                     {
-                        "program_id": f"group={group}__case_vs_control",
-                        "signed": True,
-                        "contrast_method": "case_control",
-                        "drug_scores": scores,
-                        "n_samples": len(case_samples) + len(control_samples),
-                        "criterion": criterion,
+                    "program_id": f"group={group}__case_vs_control",
+                    "signed": True,
+                    "contrast_method": "case_control",
+                    "drug_scores": scores,
+                    "n_samples": len(case_samples) + len(control_samples),
+                    "criterion": criterion,
+                    "group": group,
+                    "group_qc": {
                         "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": len(case_samples),
+                        "n_control": len(control_samples),
+                        "reason_if_skipped": "",
+                    },
+                }
+            )
+                group_qc_rows.append(
+                    {
+                        "group": group,
+                        "n_group": n_group,
+                        "n_rest": n_rest,
+                        "n_case": len(case_samples),
+                        "n_control": len(control_samples),
+                        "sets_emitted": 0,
+                        "reason_if_skipped": "",
                     }
                 )
-            return programs, warnings
+            return programs, warnings, group_qc_rows, groups_skipped
 
         case_samples = [s for s in samples if bool(case_control_by_sample.get(s, False))]
         control_samples = [s for s in samples if s in case_control_by_sample and not case_control_by_sample[s]]
@@ -351,7 +500,7 @@ def _build_programs(
                 "group": "",
             }
         )
-        return programs, warnings
+        return programs, warnings, group_qc_rows, groups_skipped
 
     raise ValueError(f"Unsupported contrast_method: {contrast_method}")
 
@@ -425,23 +574,37 @@ def run_drug_response_workflow(
     drugs = sorted({drug for row in z_matrix.values() for drug in row})
     n_drugs = len(drugs)
     n_samples = len(samples)
+    run_warnings: list[dict[str, object]] = []
+
+    def _warn(code: str, message: str, **extra: object) -> None:
+        print(f"warning: {message}", file=sys.stderr)
+        payload: dict[str, object] = {"code": code, "message": message}
+        payload.update(extra)
+        run_warnings.append(payload)
 
     coverage_drugs = sum(1 for drug in drugs if drug in drug_targets and drug_targets[drug])
     coverage_fraction = float(coverage_drugs) / float(n_drugs) if n_drugs else 0.0
     if coverage_fraction < _LOW_TARGET_COVERAGE_WARN:
-        print(
-            "warning: low drug-to-target coverage: "
+        _warn(
+            "low_target_coverage",
+            "low drug-to-target coverage: "
             f"{coverage_drugs}/{n_drugs} drugs have target mappings "
             f"(fraction={coverage_fraction:.3f}).",
-            file=sys.stderr,
+            coverage_drugs=coverage_drugs,
+            n_drugs=n_drugs,
+            fraction=coverage_fraction,
         )
 
     ubiq_weights, ubiq_summary = compute_ubiquity_weights(
         z_matrix=z_matrix,
         drugs=drugs,
-        method=cfg.ubiquity_penalty,
+        method=cfg.response_ubiquity_penalty,
         tau=float(cfg.ubiquity_tau),
         epsilon=float(cfg.ubiquity_epsilon),
+    )
+    target_gene_weights, target_ubiquity_summary = compute_target_ubiquity_weights(
+        drug_targets=drug_targets,
+        method=cfg.target_ubiquity_penalty,
     )
     poly_weights, poly_summary = compute_polypharm_weights(
         drug_targets=drug_targets,
@@ -453,7 +616,7 @@ def run_drug_response_workflow(
         for drug in drugs
     }
 
-    programs, program_warnings = _build_programs(
+    programs, program_warnings, group_qc_rows, groups_skipped = _build_programs(
         contrast_method=cfg.contrast_method,
         z_matrix=z_matrix,
         samples=samples,
@@ -461,9 +624,10 @@ def run_drug_response_workflow(
         groups_by_sample=groups_by_sample,
         case_control_by_sample=case_control_by_sample,
         case_control_within_group=bool(cfg.case_control_within_group),
+        min_group_size=int(cfg.min_group_size),
     )
     for warning in program_warnings:
-        print(f"warning: {warning}", file=sys.stderr)
+        _warn("program_construction", warning)
 
     requested_program_count = len(programs)
     truncated = False
@@ -473,10 +637,12 @@ def run_drug_response_workflow(
             key=lambda p: (-float(p.get("criterion", 0.0)), str(p.get("program_id", ""))),
         )[: int(cfg.max_programs)]
         truncated = True
-        print(
-            f"warning: requested {requested_program_count} programs but max_programs={cfg.max_programs}; "
+        _warn(
+            "program_truncated",
+            f"requested {requested_program_count} programs but max_programs={cfg.max_programs}; "
             "truncating to top programs by selection criterion. Increase --max_programs to keep more.",
-            file=sys.stderr,
+            requested=requested_program_count,
+            max_programs=int(cfg.max_programs),
         )
 
     gtf_symbol_to_biotype: dict[str, str] = {}
@@ -494,6 +660,10 @@ def run_drug_response_workflow(
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     safe_ids_seen: set[str] = set()
     n_sparse_fallback = 0
+    total_sets_emitted = 0
+    set_size_values: list[int] = []
+    n_pos_sets = 0
+    n_neg_sets = 0
 
     for program in programs:
         program_id = str(program["program_id"])
@@ -504,12 +674,13 @@ def run_drug_response_workflow(
             program_drug_scores=program_scores,
             drug_targets=drug_targets,
             drug_weights=combined_drug_weights,
+            target_gene_weights=target_gene_weights,
             signed=signed,
             sparse_alpha=float(cfg.sparse_alpha),
         )
         warning = str(scoring_info.get("warning", "")).strip()
         if warning:
-            print(f"warning: program={program_id}: {warning}", file=sys.stderr)
+            _warn("scoring_warning", f"program={program_id}: {warning}", program_id=program_id)
             n_sparse_fallback += 1
 
         if signed:
@@ -584,9 +755,16 @@ def run_drug_response_workflow(
                 },
             )
             if gmt_sets:
-                write_gmt(gmt_sets, gmt_path)
+                write_gmt(gmt_sets, gmt_path, gmt_format=cfg.gmt_format)
                 combined_gmt_sets.extend(gmt_sets)
-        _warn_gmt_diagnostics(gmt_diagnostics)
+                total_sets_emitted += len(gmt_sets)
+                for set_name, genes in gmt_sets:
+                    set_size_values.append(len(genes))
+                    if "__pos__" in set_name:
+                        n_pos_sets += 1
+                    elif "__neg__" in set_name:
+                        n_neg_sets += 1
+        run_warnings.extend(_warn_gmt_diagnostics(gmt_diagnostics))
 
         output_files: list[dict[str, object]] = [{"path": str(program_dir / "geneset.tsv"), "role": "selected_program"}]
         if cfg.emit_full:
@@ -609,10 +787,11 @@ def run_drug_response_workflow(
             "n_drugs_with_targets": coverage_drugs,
             "fraction_drugs_with_targets": coverage_fraction,
             "ubiquity_penalty": {
-                "method": cfg.ubiquity_penalty,
+                "method": cfg.response_ubiquity_penalty,
                 "tau": cfg.ubiquity_tau,
                 "epsilon": cfg.ubiquity_epsilon,
             },
+            "target_ubiquity_penalty": target_ubiquity_summary,
             "polypharm_downweight": {
                 "enabled": cfg.polypharm_downweight,
                 "t0": cfg.polypharm_t0,
@@ -620,6 +799,7 @@ def run_drug_response_workflow(
             "n_genes_selected": len(selected_rows),
             "requested_gmt_outputs": [{"name": p.get("name", "")} for p in gmt_plans],
             "skipped_gmt_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
+            "warnings": run_warnings,
         }
         run_json_path, run_txt_path = write_run_summary_files(program_dir, run_summary_payload)
         output_files.append({"path": str(run_json_path), "role": "run_summary_json"})
@@ -634,11 +814,14 @@ def run_drug_response_workflow(
             "case_control_within_group": cfg.case_control_within_group,
             "scoring_model": cfg.scoring_model,
             "sparse_alpha": cfg.sparse_alpha,
-            "ubiquity_penalty": cfg.ubiquity_penalty,
+            "ubiquity_penalty": cfg.response_ubiquity_penalty,
+            "response_ubiquity_penalty": cfg.response_ubiquity_penalty,
+            "target_ubiquity_penalty": cfg.target_ubiquity_penalty,
             "ubiquity_tau": cfg.ubiquity_tau,
             "ubiquity_epsilon": cfg.ubiquity_epsilon,
             "polypharm_downweight": cfg.polypharm_downweight,
             "polypharm_t0": cfg.polypharm_t0,
+            "min_group_size": cfg.min_group_size,
             "max_programs": cfg.max_programs,
             "program_id": program_id,
             "selection_method": cfg.select,
@@ -649,6 +832,7 @@ def run_drug_response_workflow(
             "emit_full": cfg.emit_full,
             "emit_gmt": cfg.emit_gmt,
             "gmt_split_signed": split_signed,
+            "gmt_format": cfg.gmt_format,
         }
 
         meta = make_metadata(
@@ -695,6 +879,9 @@ def run_drug_response_workflow(
                     "fraction_values_present": normalize_summary.get("fraction_values_present"),
                 },
                 "scoring_info": scoring_info,
+                "target_ubiquity_summary": target_ubiquity_summary,
+                "groups_skipped": groups_skipped,
+                "warnings": run_warnings,
                 "program_truncation": {
                     "requested": requested_program_count,
                     "emitted": len(programs),
@@ -736,43 +923,162 @@ def run_drug_response_workflow(
                 "skipped_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
                 "diagnostics": gmt_diagnostics,
                 "plans": gmt_plans,
+                "format": cfg.gmt_format,
             },
         )
         write_metadata(program_dir / "geneset.meta.json", meta)
 
+        group_qc = dict(program.get("group_qc", {}))
+        group_name = str(program.get("group", "")).strip()
+        if group_name:
+            for row in group_qc_rows:
+                if str(row.get("group", "")) == group_name and not str(row.get("reason_if_skipped", "")):
+                    row["sets_emitted"] = int(row.get("sets_emitted", 0) or 0) + int(len(gmt_sets))
+
         manifest_rows.append(
             {
                 "program_id": program_id,
+                "group": group_name,
                 "contrast_method": cfg.contrast_method,
                 "signed": str(signed).lower(),
                 "n_samples": int(program.get("n_samples", 0) or 0),
+                "n_group": int(group_qc.get("n_group", 0) or 0),
+                "n_rest": int(group_qc.get("n_rest", 0) or 0),
+                "n_case": int(group_qc.get("n_case", 0) or 0),
+                "n_control": int(group_qc.get("n_control", 0) or 0),
                 "criterion": float(program.get("criterion", 0.0) or 0.0),
+                "sets_emitted": int(len(gmt_sets)),
                 "path": str(program_dir.relative_to(out_dir)),
             }
         )
 
-    if not manifest_rows:
-        raise ValueError("No programs were emitted. Check contrast settings and input coverage.")
-
     manifest_path = out_dir / "manifest.tsv"
+    if not manifest_rows:
+        raise ValueError(
+            "No programs were emitted after filtering/contrast setup. "
+            "Check group sizes, contrast_method, target coverage, and min_group_size."
+        )
+
     with manifest_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(
             fh,
             delimiter="\t",
-            fieldnames=["program_id", "contrast_method", "signed", "n_samples", "criterion", "path"],
+            fieldnames=[
+                "program_id",
+                "group",
+                "contrast_method",
+                "signed",
+                "n_samples",
+                "n_group",
+                "n_rest",
+                "n_case",
+                "n_control",
+                "criterion",
+                "sets_emitted",
+                "path",
+            ],
         )
         writer.writeheader()
         for row in manifest_rows:
             writer.writerow(row)
 
+    group_qc_path = out_dir / "group_qc.tsv"
+    with group_qc_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=["group", "n_group", "n_rest", "n_case", "n_control", "sets_emitted", "reason_if_skipped"],
+        )
+        writer.writeheader()
+        for row in sorted(group_qc_rows, key=lambda x: str(x.get("group", ""))):
+            writer.writerow(
+                {
+                    "group": str(row.get("group", "")),
+                    "n_group": int(row.get("n_group", 0) or 0),
+                    "n_rest": int(row.get("n_rest", 0) or 0),
+                    "n_case": int(row.get("n_case", 0) or 0),
+                    "n_control": int(row.get("n_control", 0) or 0),
+                    "sets_emitted": int(row.get("sets_emitted", 0) or 0),
+                    "reason_if_skipped": str(row.get("reason_if_skipped", "")),
+                }
+            )
+
     if cfg.emit_gmt and combined_gmt_sets:
-        write_gmt(combined_gmt_sets, out_dir / "genesets.gmt")
+        write_gmt(combined_gmt_sets, out_dir / "genesets.gmt", gmt_format=cfg.gmt_format)
+
+    target_stats = target_summary.get("targets_per_drug", {}) if isinstance(target_summary, dict) else {}
+    promisc_stats = target_summary.get("promiscuity", {}) if isinstance(target_summary, dict) else {}
+    groups_total = len(group_qc_rows)
+    groups_emitted = sum(1 for row in group_qc_rows if not str(row.get("reason_if_skipped", "")).strip())
+    groups_skipped_count = groups_total - groups_emitted
+    emitted_rows = list(manifest_rows)
+    group_rows_payload = [
+        {
+            "group": str(row.get("group", "")),
+            "n_group": int(row.get("n_group", 0) or 0),
+            "n_rest": int(row.get("n_rest", 0) or 0),
+            "n_case": int(row.get("n_case", 0) or 0),
+            "n_control": int(row.get("n_control", 0) or 0),
+            "sets_emitted": int(row.get("sets_emitted", 0) or 0),
+            "reason_if_skipped": str(row.get("reason_if_skipped", "")),
+        }
+        for row in sorted(group_qc_rows, key=lambda x: str(x.get("group", "")))
+    ]
+    set_size_summary = {
+        "min": min(set_size_values) if set_size_values else 0,
+        "median": statistics.median(set_size_values) if set_size_values else 0,
+        "max": max(set_size_values) if set_size_values else 0,
+    }
+    root_summary_payload = {
+        "converter": cfg.converter_name,
+        "dataset_label": cfg.dataset_label,
+        "response_metric": cfg.response_metric,
+        "response_direction": cfg.response_direction,
+        "response_transform": cfg.response_transform,
+        "contrast_method": cfg.contrast_method,
+        "scoring_model": cfg.scoring_model,
+        "n_samples": n_samples,
+        "n_drugs": n_drugs,
+        "n_response_rows": int(aggregate_summary.get("n_records_input", 0) or 0),
+        "n_groups_total": groups_total,
+        "n_groups_emitted": groups_emitted,
+        "n_groups_skipped": groups_skipped_count,
+        "groups": group_rows_payload,
+        "target_table_stats": {
+            "drugs_retained": coverage_drugs,
+            "drugs_dropped_missing_targets": max(0, n_drugs - coverage_drugs),
+            "drugs_dropped_promisc": int(promisc_stats.get("n_dropped", 0) or 0),
+            "drugs_capped_promisc": int(promisc_stats.get("n_capped", 0) or 0),
+            "p90_targets_per_drug": target_stats.get("p90", 0),
+        },
+        "target_summary": target_summary,
+        "gene_set_emission": {
+            "total_sets_emitted": total_sets_emitted,
+            "size_summary": set_size_summary,
+            "n_pos_sets": n_pos_sets,
+            "n_neg_sets": n_neg_sets,
+        },
+        "warnings": run_warnings,
+    }
+    run_json_path, run_txt_path = write_run_summary_files(out_dir, root_summary_payload)
+    print(
+        "group\tn_group\tn_rest\tsets_emitted\treason_if_skipped",
+        file=sys.stdout,
+    )
+    for row in group_rows_payload:
+        print(
+            f"{row['group']}\t{row['n_group']}\t{row['n_rest']}\t{row['sets_emitted']}\t{row['reason_if_skipped']}",
+            file=sys.stdout,
+        )
 
     return {
-        "n_groups": len(manifest_rows),
+        "n_groups": groups_emitted,
         "out_dir": str(out_dir),
         "n_sparse_fallback": n_sparse_fallback,
         "n_programs_requested": requested_program_count,
-        "n_programs_emitted": len(manifest_rows),
+        "n_programs_emitted": len(emitted_rows),
         "programs_truncated": bool(truncated),
+        "n_groups_skipped": groups_skipped_count,
+        "run_summary_json": str(run_json_path),
+        "run_summary_txt": str(run_txt_path),
     }

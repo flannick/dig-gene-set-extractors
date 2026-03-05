@@ -26,7 +26,9 @@ from geneset_extractors.extractors.drug_response.targets import (
     apply_drug_blacklist,
     build_drug_targets_from_table_rows,
     build_drug_targets_from_target_text,
+    filter_promiscuous_targets,
     load_target_aliases_tsv,
+    summarize_targets_per_drug,
 )
 from geneset_extractors.extractors.drug_response.workflow import (
     DrugResponseWorkflowConfig,
@@ -306,6 +308,17 @@ def run(args) -> dict[str, object]:
         target_summary["aliases"] = aliases_summary
         files.append(input_file_record(target_aliases_path, "target_aliases_tsv"))
 
+    drug_targets, promisc_summary, promisc_warnings = filter_promiscuous_targets(
+        drug_targets=drug_targets,
+        max_targets_per_drug=int(args.max_targets_per_drug),
+        policy=str(args.target_promiscuity_policy),
+    )
+    for msg in promisc_warnings:
+        print(msg, file=sys.stderr)
+    target_summary["promiscuity"] = promisc_summary
+    target_summary["targets_per_drug"] = summarize_targets_per_drug(drug_targets)
+    target_summary["n_drugs_zero_targets_after_cleaning"] = sum(1 for v in drug_targets.values() if not v)
+
     contrast_method = _resolve_contrast_method(args, groups_by_sample)
     if contrast_method in {"group_mean", "group_vs_rest"} and not groups_by_sample:
         raise ValueError(
@@ -318,6 +331,7 @@ def run(args) -> dict[str, object]:
         response_metric=args.response_metric,
         response_direction=args.response_direction,
     )
+    response_ubiquity_penalty = str(args.response_ubiquity_penalty or args.ubiquity_penalty)
     gmt_split_signed = args.gmt_split_signed
     if gmt_split_signed is None:
         gmt_split_signed = bool(contrast_method in {"group_vs_rest", "case_control"})
@@ -344,9 +358,11 @@ def run(args) -> dict[str, object]:
         response_transform=args.response_transform,
         contrast_method=contrast_method,
         case_control_within_group=bool(args.case_control_within_group),
+        min_group_size=int(args.min_group_size),
         scoring_model=args.scoring_model,
         sparse_alpha=float(args.sparse_alpha),
-        ubiquity_penalty=args.ubiquity_penalty,
+        response_ubiquity_penalty=response_ubiquity_penalty,
+        target_ubiquity_penalty=str(args.target_ubiquity_penalty),
         ubiquity_tau=float(args.ubiquity_tau),
         ubiquity_epsilon=float(args.ubiquity_epsilon),
         polypharm_downweight=bool(args.polypharm_downweight),
@@ -368,6 +384,7 @@ def run(args) -> dict[str, object]:
         gmt_topk_list=args.gmt_topk_list,
         gmt_mass_list=args.gmt_mass_list,
         gmt_split_signed=gmt_split_signed,
+        gmt_format=str(args.gmt_format),
         emit_small_gene_sets=bool(args.emit_small_gene_sets),
         gtf=args.gtf,
         gtf_source=args.gtf_source,

@@ -45,12 +45,24 @@ def choose_gene_tokens(rows, prefer_symbol: bool, require_symbol: bool = False) 
     return out
 
 
-def write_gmt(gene_sets: list[tuple[str, list[str]]], out_path: str | Path) -> None:
+def write_gmt(
+    gene_sets: list[tuple[str, list[str]]],
+    out_path: str | Path,
+    *,
+    gmt_format: str = "dig2col",
+) -> None:
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    fmt = str(gmt_format).strip().lower() or "dig2col"
+    if fmt not in {"dig2col", "classic"}:
+        raise ValueError(f"Unsupported gmt_format: {gmt_format}")
     with p.open("w", encoding="utf-8", newline="") as fh:
         for name, genes in gene_sets:
-            fh.write(f"{sanitize_gmt_name(name)}\t{' '.join(genes)}\n")
+            sanitized = sanitize_gmt_name(name)
+            if fmt == "classic":
+                fh.write("\t".join([sanitized, "na", *genes]) + "\n")
+            else:
+                fh.write(f"{sanitized}\t{' '.join(genes)}\n")
 
 
 def parse_int_list_csv(value: str) -> list[int]:
