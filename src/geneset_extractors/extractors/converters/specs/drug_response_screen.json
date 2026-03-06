@@ -34,6 +34,7 @@
     }
   ],
   "parameters": [
+    {"name": "program_preset", "type": "string", "default": "connectable", "enum": ["default", "connectable", "broad_pharmacology"], "help": "Drug-response preset. connectable (default) uses bundle priors/QC when available; broad_pharmacology is lighter-touch."},
     {"name": "dataset_label", "type": "string", "default": "", "help": "Optional dataset label for metadata/GMT naming"},
     {"name": "response_metric", "type": "string", "default": "logfold_change", "enum": ["logfold_change", "auc", "ic50", "other"], "help": "Response metric semantics"},
     {"name": "response_direction", "type": "string", "default": "auto_by_metric", "enum": ["lower_is_more_sensitive", "higher_is_more_sensitive"], "help": "How raw response direction maps to sensitivity"},
@@ -69,7 +70,17 @@
     {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets smaller than gmt_min_genes (with warning)"},
     {"name": "target_aliases_tsv", "type": "string", "default": "", "help": "Optional target alias map TSV"},
     {"name": "drug_blacklist_tsv", "type": "string", "default": "", "help": "Optional list of compounds to exclude"},
-    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Missing optional resource behavior"}
+    {"name": "use_compound_qc_bundle", "type": "boolean_or_none", "default": null, "help": "Use compound_qc_human_v1 bundle annotations when available (default: on in connectable preset)."},
+    {"name": "include_blacklisted_compounds", "type": "boolean", "default": false, "help": "Retain compounds marked drop/pan_toxic in the compound QC bundle."},
+    {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resource manifest override/overlay"},
+    {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional resources directory or extracted bundle root"},
+    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Missing optional resource behavior"},
+    {"name": "target_aliases_resource_id", "type": "string_or_none", "default": null, "help": "Optional target-alias resource id"},
+    {"name": "drug_blacklist_resource_id", "type": "string_or_none", "default": null, "help": "Optional blacklist resource id"},
+    {"name": "drug_alias_map_resource_id", "type": "string_or_none", "default": null, "help": "Optional drug alias-map bundle resource id"},
+    {"name": "target_edges_resource_id", "type": "string_or_none", "default": null, "help": "Optional bundle target-edge resource id"},
+    {"name": "target_ubiquity_resource_id", "type": "string_or_none", "default": null, "help": "Optional bundle target-ubiquity resource id"},
+    {"name": "compound_qc_resource_id", "type": "string_or_none", "default": null, "help": "Optional bundle compound-QC resource id"}
   ],
   "outputs": [
     {"name": "manifest.tsv", "description": "Program-level grouped output manifest"},

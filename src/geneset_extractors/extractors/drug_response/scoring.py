@@ -67,6 +67,7 @@ def compute_target_ubiquity_weights(
     *,
     drug_targets: dict[str, dict[str, float]],
     method: str,
+    precomputed_weights: dict[str, float] | None = None,
 ) -> tuple[dict[str, float], dict[str, object]]:
     mode = str(method).strip().lower()
     gene_to_drug_count: dict[str, int] = {}
@@ -88,6 +89,23 @@ def compute_target_ubiquity_weights(
     if mode != "idf":
         raise ValueError(f"Unsupported target_ubiquity_penalty method: {method}")
 
+    if precomputed_weights is not None:
+        gene_weights: dict[str, float] = {}
+        for gene_id in gene_to_drug_count:
+            gene_weights[gene_id] = float(precomputed_weights.get(gene_id, 1.0))
+        top_ubiquitous = sorted(gene_to_drug_count.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))[:20]
+        return (
+            gene_weights,
+            {
+                "method": "idf",
+                "source": "bundle",
+                "n_drugs": n_drugs,
+                "n_genes": len(gene_to_drug_count),
+                "n_genes_affected": sum(1 for gene_id in gene_to_drug_count if gene_id in precomputed_weights),
+                "top_ubiquitous": [{"gene_id": gene_id, "f": int(f_g)} for gene_id, f_g in top_ubiquitous],
+            },
+        )
+
     gene_weights: dict[str, float] = {}
     for gene_id, f_g in gene_to_drug_count.items():
         gene_weights[gene_id] = float(math.log((float(n_drugs) + 1.0) / (float(f_g) + 1.0)))
@@ -96,6 +114,7 @@ def compute_target_ubiquity_weights(
         gene_weights,
         {
             "method": "idf",
+            "source": "subset_derived",
             "n_drugs": n_drugs,
             "n_genes": len(gene_to_drug_count),
             "n_genes_affected": sum(1 for f_g in gene_to_drug_count.values() if int(f_g) > 1),

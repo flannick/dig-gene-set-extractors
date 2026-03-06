@@ -477,6 +477,12 @@ def _add_methylation_common_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--program_preset",
+        choices=["default", "connectable", "broad_pharmacology"],
+        default="connectable",
+        help="Drug-response preset. connectable (default) uses bundle priors/QC when available; broad_pharmacology is lighter-touch.",
+    )
     parser.add_argument("--dataset_label")
 
     parser.add_argument("--response_tsv")
@@ -556,11 +562,17 @@ def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--alias_gene_symbol_column", default="gene_symbol")
     parser.add_argument("--drug_blacklist_tsv")
     parser.add_argument("--drug_blacklist_delimiter", default="\t")
+    parser.add_argument("--use_compound_qc_bundle", type=_parse_bool)
+    parser.add_argument("--include_blacklisted_compounds", type=_parse_bool, default=False)
     parser.add_argument("--resources_manifest")
     parser.add_argument("--resources_dir")
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
     parser.add_argument("--target_aliases_resource_id")
     parser.add_argument("--drug_blacklist_resource_id")
+    parser.add_argument("--drug_alias_map_resource_id")
+    parser.add_argument("--target_edges_resource_id")
+    parser.add_argument("--target_ubiquity_resource_id")
+    parser.add_argument("--compound_qc_resource_id")
 
     parser.add_argument("--gtf")
     parser.add_argument("--gtf_source")

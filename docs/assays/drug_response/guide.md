@@ -19,6 +19,7 @@ and emits grouped outputs:
 - optional root `genesets.gmt` (combined)
 
 Methods and equations: `docs/assays/drug_response/methods.tex`.
+Optional local bundle: `docs/assays/drug_response/reference_bundle.md`.
 
 ## Quickstart: generic long tables
 
@@ -40,6 +41,7 @@ Minimal generic columns:
 
 Defaults:
 
+- `program_preset=connectable`
 - `response_metric=logfold_change`
 - `response_direction=auto` (`logfold_change` -> `lower_is_more_sensitive`)
 - `response_transform=robust_z_mad`
@@ -53,6 +55,14 @@ Defaults:
 - `max_programs=50`
 - `select=top_k`, `top_k=200`, `normalize=within_set_l1`
 - strict GMT bounds: `gmt_min_genes=100`, `gmt_max_genes=500`
+
+If a local bundle is available via `--resources_dir` (or `GENESET_EXTRACTORS_RESOURCES_DIR`),
+`connectable` will also try to:
+
+- normalize drug IDs through `drug_alias_map_human_v1`
+- use `drug_target_edges_human_v1` when `--drug_targets_tsv` is omitted
+- use `target_ubiquity_human_v1` instead of deriving target IDF from the current subset
+- apply `compound_qc_human_v1` nuisance-compound filtering/warnings
 
 ## Quickstart: PRISM convenience mode
 
@@ -90,6 +100,18 @@ geneset-extractors convert drug_response_screen \
   --out_dir results/prism \
   --organism human \
   --genome_build hg38
+```
+
+With a local bundle for more robust defaults:
+
+```bash
+geneset-extractors convert drug_response_screen \
+  --response_tsv results/prism_prepare/response_long.tsv \
+  --groups_tsv results/prism_prepare/groups.tsv \
+  --out_dir results/prism_connectable \
+  --organism human \
+  --genome_build hg38 \
+  --resources_dir /path/to/drug_response_bundle
 ```
 
 Direct PRISM input mode is also supported:
@@ -160,6 +182,15 @@ Bundled optional resource IDs:
 - `drug_response_target_aliases_human`
 - `drug_response_blacklist_human`
 
+Drug-response reference bundle IDs:
+
+- `drug_target_edges_human_v1`
+- `drug_alias_map_human_v1`
+- `target_ubiquity_human_v1`
+- `compound_qc_human_v1`
+
+See `docs/assays/drug_response/reference_bundle.md` for the expected bundle layout and fallback behavior.
+
 ## Common warnings and fixes
 
 - Low target coverage (`<50%` drugs mappable): provide better target annotations or alias mapping.
@@ -170,6 +201,7 @@ Bundled optional resource IDs:
 - Empty/small GMT output: lower `--gmt_min_genes` or set `--emit_small_gene_sets true` for diagnostics.
 - Promiscuous targets: adjust `--max_targets_per_drug` and `--target_promiscuity_policy`.
 - Broad GPCR/neuroactive signal: keep `--target_ubiquity_penalty idf` and inspect run summaries.
+- Without the bundle, outputs can be broader and more library-driven because target ubiquity and nuisance compound handling are subset-derived or absent.
 - Downloaded JSON/HTML instead of PRISM tables: inspect `prepare_summary.json` `fetch.*.sniff`;
   use Figshare template `https://ndownloader.figshare.com/files/{file_id}`.
 

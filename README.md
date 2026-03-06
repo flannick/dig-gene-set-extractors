@@ -24,6 +24,7 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/assays/drug_response/guide.md` (drug response practical guide)
+- `docs/assays/drug_response/reference_bundle.md` (drug response bundle guide)
 - `docs/drug-response2geneset.md` (drug response compatibility quickstart)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
 
@@ -87,6 +88,9 @@ Drug response converter:
 
 - `drug_response_screen`
 
+Drug response defaults support an optional local annotation/prior bundle via `--resources_dir`
+for more connectable target annotations, target ubiquity priors, and nuisance compound QC.
+
 Practical guides, CLI flags, inputs, modes, and examples:
 
 - `docs/assays/atac/guide.md`
@@ -96,6 +100,7 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
 - `docs/assays/drug_response/guide.md`
+- `docs/assays/drug_response/reference_bundle.md`
 - `docs/drug-response2geneset.md`
 - `docs/geneset-extractors.md` (index)
 

@@ -74,6 +74,7 @@ class DrugResponseWorkflowConfig:
     ubiquity_epsilon: float
     polypharm_downweight: bool
     polypharm_t0: int
+    external_drug_weights: dict[str, float] | None
     max_programs: int
     select: str
     top_k: int
@@ -574,6 +575,7 @@ def run_drug_response_workflow(
     cfg: DrugResponseWorkflowConfig,
     response_records: list[ResponseRecord],
     drug_targets: dict[str, dict[str, float]],
+    target_ubiquity_bundle: dict[str, float] | None,
     response_summary: dict[str, object],
     target_summary: dict[str, object],
     groups_by_sample: dict[str, str] | None,
@@ -624,6 +626,7 @@ def run_drug_response_workflow(
     target_gene_weights, target_ubiquity_summary = compute_target_ubiquity_weights(
         drug_targets=drug_targets,
         method=cfg.target_ubiquity_penalty,
+        precomputed_weights=target_ubiquity_bundle,
     )
     poly_weights, poly_summary = compute_polypharm_weights(
         drug_targets=drug_targets,
@@ -634,6 +637,11 @@ def run_drug_response_workflow(
         drug: float(ubiq_weights.get(drug, 1.0)) * float(poly_weights.get(drug, 1.0))
         for drug in drugs
     }
+    if cfg.external_drug_weights:
+        for drug in drugs:
+            combined_drug_weights[drug] = float(combined_drug_weights.get(drug, 1.0)) * float(
+                cfg.external_drug_weights.get(drug, 1.0)
+            )
 
     programs, program_warnings, group_qc_rows, groups_skipped = _build_programs(
         contrast_method=cfg.contrast_method,

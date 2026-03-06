@@ -13,6 +13,7 @@ class Args:
     organism = "human"
     genome_build = "hg38"
     dataset_label = "toy_drug_response"
+    program_preset = "connectable"
 
     response_tsv = "tests/data/toy_drug_response.tsv"
     response_delimiter = "\t"
@@ -88,6 +89,12 @@ class Args:
     resource_policy = "skip"
     target_aliases_resource_id = None
     drug_blacklist_resource_id = None
+    drug_alias_map_resource_id = None
+    target_edges_resource_id = None
+    target_ubiquity_resource_id = None
+    compound_qc_resource_id = None
+    use_compound_qc_bundle = None
+    include_blacklisted_compounds = False
 
     gtf = None
     gtf_source = None
@@ -441,3 +448,90 @@ def test_broad_pharmacology_warning_emitted(tmp_path: Path, capsys: pytest.Captu
     drug_response_screen.run(args)
     captured = capsys.readouterr()
     assert "broad receptor-family targets" in captured.err
+
+
+def test_drug_response_bundle_resources_are_used(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    response = tmp_path / "resp.tsv"
+    response.write_text(
+        "\n".join(
+            [
+                "sample_id\tdrug_id\tresponse",
+                "S1\tDrug A\t0.8",
+                "S1\tDrug B\t0.8",
+                "S1\tDrug Warn\t0.9",
+                "S1\tDrug Drop\t0.7",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.out_dir = str(tmp_path / "bundle_run")
+    args.response_tsv = str(response)
+    args.drug_targets_tsv = None
+    args.groups_tsv = None
+    args.contrast_method = "none"
+    args.response_metric = "other"
+    args.response_direction = "higher_is_more_sensitive"
+    args.response_transform = "none"
+    args.max_programs = 1
+    args.top_k = 2
+    args.gmt_topk_list = "2"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.emit_small_gene_sets = True
+    args.resources_dir = "tests/data/drug_response_bundle"
+    result = drug_response_screen.run(args)
+    assert result["out_dir"] == str(out_dir := Path(args.out_dir))
+    row = _read_manifest_rows(out_dir)[0]
+    genes = _read_geneset_rows(out_dir / row["path"] / "geneset.tsv")
+    assert genes[0]["gene_id"] == "GENESEL"
+    meta = json.loads((out_dir / row["path"] / "geneset.meta.json").read_text(encoding="utf-8"))
+    resources = meta["summary"]["target_summary"]["resources"]
+    used_ids = {entry["id"] for entry in resources["used"]}
+    assert "drug_target_edges_human_v1" in used_ids
+    assert "drug_alias_map_human_v1" in used_ids
+    assert "target_ubiquity_human_v1" in used_ids
+    assert "compound_qc_human_v1" in used_ids
+    root_summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert root_summary["target_summary"]["target_source"] == "bundle:drug_target_edges_human_v1"
+    captured = capsys.readouterr()
+    assert "recommended_use=warn" in captured.err
+
+
+def test_drug_response_prism_fallback_without_bundle_targets_warns(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    args = Args()
+    args.out_dir = str(tmp_path / "prism_fallback")
+    args.response_tsv = None
+    args.drug_targets_tsv = None
+    args.groups_tsv = None
+    args.contrast_method = None
+    args.prism_matrix_csv = "tests/data/toy_prism_matrix.csv"
+    args.prism_treatment_info_csv = "tests/data/toy_prism_treatment_info.csv"
+    args.prism_cell_line_info_csv = "tests/data/toy_prism_cell_line_info.csv"
+    args.resources_dir = str(tmp_path / "empty_resources")
+    Path(args.resources_dir).mkdir(parents=True, exist_ok=True)
+    result = drug_response_screen.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["target_summary"]["target_source"] == "prism_treatment_info"
+    captured = capsys.readouterr()
+    assert "bundle_resource_missing resource=drug_target_edges_human_v1" in captured.err
+
+
+def test_drug_response_metadata_records_missing_bundle_resources(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "missing_bundle")
+    args.groups_tsv = None
+    args.contrast_method = "none"
+    args.resources_dir = str(tmp_path / "empty_resources")
+    Path(args.resources_dir).mkdir(parents=True, exist_ok=True)
+    drug_response_screen.run(args)
+    out_dir = Path(args.out_dir)
+    row = _read_manifest_rows(out_dir)[0]
+    meta = json.loads((out_dir / row["path"] / "geneset.meta.json").read_text(encoding="utf-8"))
+    resources = meta["summary"]["target_summary"]["resources"]
+    missing_ids = {entry["resource_id"] for entry in resources["missing"]}
+    assert "drug_alias_map_human_v1" in missing_ids
+    assert "target_ubiquity_human_v1" in missing_ids

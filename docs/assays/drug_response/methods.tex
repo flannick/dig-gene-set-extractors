@@ -227,12 +227,15 @@ Optional reference resources can improve robustness:
   \item A gene symbol validation list and alias map for parsing target strings.
   \item Curated lists of non-informative positive controls or pan-toxic compounds to exclude by default.
   \item Optional external target databases for screens lacking target annotations.
+  \item A stable target ubiquity prior $\mathrm{idf}(g)$ computed from a curated drug-target universe rather than the current subset alone.
+  \item A drug ID alias map so platform-specific identifiers can be normalized to canonical bundle IDs before scoring.
 \end{itemize}
 
 The recommended packaging pattern matches other extractors:
 \begin{itemize}
-  \item Small resources may be shipped in-repo.
-  \item Larger resources should be released as a versioned tarball on Zenodo and downloaded via the repo's resource manager.
+  \item Small text resources may be shipped as a local extracted bundle resolved from \texttt{--resources\_dir}.
+  \item The current drug-response bundle concept is lightweight and bundle-root based, parallel to ATAC direct-bundle mode.
+  \item Bundle-aware defaults should remain optional: the extractor must still run without a bundle, but connectable defaults are more robust when one is present.
 \end{itemize}
 
 \end{document}

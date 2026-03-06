@@ -179,6 +179,54 @@
       "url": "",
       "sha256": "",
       "license": "Curated blacklist license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "drug_target_edges_human_v1",
+      "description": "Drug-to-target edge table for human drug-response screens with columns drug_id,gene_symbol,weight,confidence,source",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:drug_target_edges_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "drug_target_edges_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated target-edge bundle license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "drug_alias_map_human_v1",
+      "description": "Drug identifier alias map for human drug-response screens with columns input_drug_id,canonical_drug_id,namespace,source",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:drug_alias_map_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "drug_alias_map_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated alias-map bundle license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "target_ubiquity_human_v1",
+      "description": "Target ubiquity prior for human drug-response screens with columns gene_symbol,n_drugs,idf[,family]",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:target_ubiquity_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "target_ubiquity_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated target-ubiquity bundle license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "compound_qc_human_v1",
+      "description": "Compound QC annotations for human drug-response screens with columns drug_id,n_targets,polypharm_flag,pan_toxic_flag,recommended_use,blacklist_reason",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:compound_qc_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "compound_qc_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Curated compound-QC bundle license; document source/version in local bundle provenance"
     }
   ],
   "presets": {
@@ -219,6 +267,12 @@
     "drug_response_optional_human": [
       "drug_response_target_aliases_human",
       "drug_response_blacklist_human"
+    ],
+    "drug_response_connectable_human": [
+      "drug_target_edges_human_v1",
+      "drug_alias_map_human_v1",
+      "target_ubiquity_human_v1",
+      "compound_qc_human_v1"
     ]
   }
 }

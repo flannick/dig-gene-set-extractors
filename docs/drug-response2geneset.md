@@ -8,6 +8,7 @@ Primary CLI:
 - `omics2geneset` is a compatibility alias in this repo
 
 Methods note: `docs/assays/drug_response/methods.tex`.
+Bundle guide: `docs/assays/drug_response/reference_bundle.md`.
 
 ## Minimal long-table run
 
@@ -101,6 +102,18 @@ geneset-extractors convert drug_response_screen \
   --groups_tsv out/prism_prepare/groups.tsv \
   --organism human \
   --genome_build hg38 \
+  --out_dir out/prism_programs
+```
+
+With an optional local bundle for more connectable defaults:
+
+```bash
+geneset-extractors convert drug_response_screen \
+  --response_tsv out/prism_prepare/response_long.tsv \
+  --groups_tsv out/prism_prepare/groups.tsv \
+  --organism human \
+  --genome_build hg38 \
+  --resources_dir /path/to/drug_response_bundle \
   --out_dir out/prism_programs
 ```
 
