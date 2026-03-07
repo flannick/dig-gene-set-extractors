@@ -58,14 +58,20 @@ def validate_gmt(gmt_path: Path) -> None:
             line = raw.rstrip("\n")
             if not line:
                 raise ValueError(f"{gmt_path}: line {line_no} is empty")
-            if line.count("\t") != 1:
-                raise ValueError(f"{gmt_path}: line {line_no} must contain exactly one tab separator")
-            name, genes_field = line.split("\t")
+            parts = line.split("\t")
+            if len(parts) == 2:
+                name, genes_field = parts
+                tokens = genes_field.split(" ")
+            elif len(parts) >= 3:
+                name = parts[0]
+                genes_field = "\t".join(parts[2:])
+                tokens = parts[2:]
+            else:
+                raise ValueError(f"{gmt_path}: line {line_no} must contain at least one set name and one gene token")
             if not name.strip():
                 raise ValueError(f"{gmt_path}: line {line_no} has empty set name")
             if not genes_field:
                 raise ValueError(f"{gmt_path}: line {line_no} has empty gene list")
-            tokens = genes_field.split(" ")
             if any(tok == "" for tok in tokens):
                 raise ValueError(f"{gmt_path}: line {line_no} has empty gene token")
 

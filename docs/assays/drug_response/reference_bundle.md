@@ -55,6 +55,10 @@ export GENESET_EXTRACTORS_RESOURCES_DIR=/path/to/drug_response_bundle
 
 Then run the converter without repeating `--resources_dir`.
 
+Use the current CLI binary in examples:
+
+- `geneset-extractors`
+
 ## What changes when the bundle is present
 
 Default preset is `--program_preset connectable`.

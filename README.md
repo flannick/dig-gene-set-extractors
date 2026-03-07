@@ -90,6 +90,7 @@ Drug response converter:
 
 Drug response defaults support an optional local annotation/prior bundle via `--resources_dir`
 for more connectable target annotations, target ubiquity priors, and nuisance compound QC.
+Drug response also defaults to classic GMT output for downstream compatibility, while still supporting the DIG two-column format via `--gmt_format dig2col`.
 
 Practical guides, CLI flags, inputs, modes, and examples:
 

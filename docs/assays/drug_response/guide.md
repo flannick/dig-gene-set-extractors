@@ -3,6 +3,10 @@
 This guide covers conversion of drug response screens (PRISM, GDSC/CTRP-like long tables)
 into gene-weighted programs and GMT gene sets.
 
+Use the current CLI binary in examples:
+
+- `geneset-extractors`
+
 `drug_response_screen` builds gene programs from:
 
 - response values per sample and drug
@@ -54,6 +58,7 @@ Defaults:
 - `max_targets_per_drug=50`, `target_promiscuity_policy=warn`
 - `max_programs=50`
 - `select=top_k`, `top_k=200`, `normalize=within_set_l1`
+- `gmt_format=classic`
 - strict GMT bounds: `gmt_min_genes=100`, `gmt_max_genes=500`
 
 If a local bundle is available via `--resources_dir` (or `GENESET_EXTRACTORS_RESOURCES_DIR`),
@@ -76,6 +81,8 @@ geneset-extractors workflows prism_prepare \
 Default file-id template is Figshare (`https://ndownloader.figshare.com/files/{file_id}`).
 `prism_prepare` performs content sniffing on downloads and warns/fails if content
 looks like portal metadata JSON/HTML instead of tabular PRISM data.
+It also handles retry/backoff and sets a default user-agent so users do not need
+ad hoc download scripts for common PRISM fetch failures.
 
 Quick deterministic subset for fast iteration:
 
@@ -207,8 +214,10 @@ See `docs/assays/drug_response/reference_bundle.md` for the expected bundle layo
 
 ## GMT format
 
-- Default: `--gmt_format dig2col` (`set_id<TAB>gene1 gene2 ...`)
-- Classic parser compatibility: `--gmt_format classic` (`set_id<TAB>na<TAB>gene1<TAB>gene2...`)
+- Default: `--gmt_format classic` (`set_id<TAB>na<TAB>gene1<TAB>gene2...`)
+- Optional DIG two-column format: `--gmt_format dig2col` (`set_id<TAB>gene1 gene2 ...`)
+
+Use the classic default unless you specifically need the compact DIG two-column format.
 
 ## Output interpretation
 

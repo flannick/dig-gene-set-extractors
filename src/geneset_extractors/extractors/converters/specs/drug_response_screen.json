@@ -62,7 +62,7 @@
     {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv per program"},
     {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write per-program and root combined GMT outputs"},
     {"name": "gmt_split_signed", "type": "boolean", "default": "auto_by_contrast", "help": "Signed split for contrasts (auto true for group_vs_rest/case_control)"},
-    {"name": "gmt_format", "type": "string", "default": "dig2col", "enum": ["dig2col", "classic"], "help": "GMT output format"},
+    {"name": "gmt_format", "type": "string", "default": "classic", "enum": ["dig2col", "classic"], "help": "GMT output format (classic is default for downstream compatibility)"},
     {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
     {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated mass GMT plans"},
     {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},

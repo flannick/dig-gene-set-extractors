@@ -582,7 +582,7 @@ def _add_drug_response_flags(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=None,
-        gmt_format="dig2col",
+        gmt_format="classic",
         gmt_topk_list="200",
         gmt_min_genes=100,
         gmt_max_genes=500,

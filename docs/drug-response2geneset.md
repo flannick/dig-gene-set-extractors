@@ -5,7 +5,6 @@ This is the practical runbook for drug-response extraction.
 Primary CLI:
 
 - `geneset-extractors`
-- `omics2geneset` is a compatibility alias in this repo
 
 Methods note: `docs/assays/drug_response/methods.tex`.
 Bundle guide: `docs/assays/drug_response/reference_bundle.md`.
@@ -154,19 +153,19 @@ The run summary reports:
 
 ## GMT compatibility mode
 
-Default format is DIG 2-column:
-
-- `set_id<TAB>gene1 gene2 ...`
-
-For classic GMT parsers use:
-
-```bash
---gmt_format classic
-```
-
-Classic format:
+Default format is classic GMT:
 
 - `set_id<TAB>na<TAB>gene1<TAB>gene2...`
+
+Optional compact DIG format:
+
+```bash
+--gmt_format dig2col
+```
+
+DIG two-column format:
+
+- `set_id<TAB>gene1 gene2 ...`
 
 ## Common failure modes
 
