@@ -25,6 +25,7 @@ def test_cli_list():
     assert "methylation_dmr_regions" in p.stdout
     assert "cnv_gene_extractor" in p.stdout
     assert "drug_response_screen" in p.stdout
+    assert "morphology_profile_query" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
     assert "rna_sc_programs" in p.stdout
@@ -116,6 +117,17 @@ def test_cli_describe_drug_response_screen():
     assert "min_group_size" in param_names
     assert "target_ubiquity_penalty" in param_names
     assert "gmt_format" in param_names
+
+
+def test_cli_describe_morphology_profile_query():
+    p = _run("describe", "morphology_profile_query")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "morphology_profile_query"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "reference_bundle_id" in param_names
+    assert "similarity_metric" in param_names
+    assert "polarity" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):

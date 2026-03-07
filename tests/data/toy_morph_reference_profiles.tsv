@@ -1,0 +1,6 @@
+perturbation_id	Metadata_Source	feat1	feat2	feat3
+CMP_A	ref	1.0	0.0	0.2
+CMP_B	ref	0.0	1.0	0.2
+ORF_GENE3	ref	0.95	0.05	0.1
+CRISPR_GENE4	ref	0.05	0.95	0.1
+CTRL_1	ref	1.0	1.0	1.0

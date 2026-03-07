@@ -1,0 +1,6 @@
+perturbation_id	perturbation_type	cell_type_or_line	timepoint	gene_symbol	compound_id	is_control	control_type	qc_weight	replicate_count
+CMP_A	compound	U2OS	48		CMP_A	false		1.0	3
+CMP_B	compound	U2OS	48		CMP_B	false		1.0	3
+ORF_GENE3	orf	U2OS	48	GENE3		false		1.0	2
+CRISPR_GENE4	crispr	U2OS	48	GENE4		false		1.0	2
+CTRL_1	compound	U2OS	48		CTRL_1	true	negcon	1.0	4

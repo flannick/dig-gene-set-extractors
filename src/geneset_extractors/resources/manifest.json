@@ -227,6 +227,30 @@
       "url": "",
       "sha256": "",
       "license": "Curated compound-QC bundle license; document source/version in local bundle provenance"
+    },
+    {
+      "id": "morphology_jump_target_pilot_u2os_48h_v1",
+      "description": "Morphology reference bundle manifest for JUMP target pilot U2OS 48h consensus profiles",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:morphology_jump_target_pilot_u2os_48h_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "morphology_jump_target_pilot_u2os_48h_v1.bundle.json",
+      "url": "",
+      "sha256": "",
+      "license": "JUMP-derived bundle provenance documented in local bundle manifest"
+    },
+    {
+      "id": "morphology_jump_target_pilot_a549_48h_v1",
+      "description": "Morphology reference bundle manifest for JUMP target pilot A549 48h consensus profiles",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:morphology_jump_target_pilot_a549_48h_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "morphology_jump_target_pilot_a549_48h_v1.bundle.json",
+      "url": "",
+      "sha256": "",
+      "license": "JUMP-derived bundle provenance documented in local bundle manifest"
     }
   ],
   "presets": {
@@ -273,6 +297,10 @@
       "drug_alias_map_human_v1",
       "target_ubiquity_human_v1",
       "compound_qc_human_v1"
+    ],
+    "morphology_optional_human": [
+      "morphology_jump_target_pilot_u2os_48h_v1",
+      "morphology_jump_target_pilot_a549_48h_v1"
     ]
   }
 }

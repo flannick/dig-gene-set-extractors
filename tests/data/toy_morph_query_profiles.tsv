@@ -1,0 +1,4 @@
+sample_id	Metadata_Plate	feat1	feat2	feat3
+Q1_rep1	P1	1.0	0.0	0.2
+Q1_rep2	P1	0.9	0.1	0.1
+Q2_rep1	P2	0.0	1.0	0.2

@@ -1,0 +1,15 @@
+{
+  "bundle_id": "morphology_jump_target_pilot_u2os_48h_v1",
+  "version": "v1",
+  "files": {
+    "reference_profiles": "reference_profiles.tsv.gz",
+    "reference_metadata": "reference_metadata.tsv.gz",
+    "compound_targets": "compound_targets.tsv.gz",
+    "feature_schema": "feature_schema.tsv.gz",
+    "feature_stats": "feature_stats.tsv.gz"
+  },
+  "summary": {
+    "n_reference_profiles": 5,
+    "n_features": 3
+  }
+}

@@ -1,0 +1,255 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,longtable,enumitem,hyperref}
+\usepackage[T1]{fontenc}
+
+\title{Morphological Profiling to Gene Programs and Gene Sets}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Overview}
+This note defines a morphology-based extractor for converting Cell Painting or other imaging-derived morphological profiles into gene-level weights and gene sets. The central use case is a \emph{query profile} measured in a user experiment, which is compared against a \emph{reference library} of profiles from perturbations with semantic handles (compounds, CRISPR knockouts, ORF overexpression). The reference library provides a route from profile similarity to gene hypotheses, and finally to ranked gene sets.
+
+The intended implementation follows the same design principles as other extractors in the repository:
+\begin{itemize}[leftmargin=2em]
+\item a clear separation between raw assay processing and extractor logic,
+\item conservative defaults that produce interpretable outputs,
+\item optional resource bundles for reusable references,
+\item and explicit metadata, warnings, and GMT output.
+\end{itemize}
+
+\section{Biological rationale}
+Morphological profiling captures downstream consequences of perturbing cellular systems. A query profile can therefore be interpreted by asking which \emph{known perturbations} in a reference library induce similar morphologies. If the similar reference perturbations are genetic (CRISPR or ORF), the mapping to genes is direct. If they are compounds, the mapping is mediated by a compound-to-target table.
+
+This yields a natural posterior-like gene scoring model:
+\begin{enumerate}[leftmargin=2em]
+\item compare a query morphology profile to reference perturbation profiles,
+\item convert similarity to a perturbation evidence weight,
+\item route perturbation evidence to genes through direct or target-based mappings,
+\item aggregate evidence across perturbations and modalities,
+\item convert the resulting gene weights to one or more gene sets.
+\end{enumerate}
+
+In practice, Cell Painting references such as JUMP are especially attractive because they contain large collections of compounds and genetic perturbations with strong metadata, including matched compound/target and gene perturbation panels. Public JUMP resources include a pilot set of 300+ compounds and 160+ genes in A549 and U2OS, a very large production set with over 116,000 compounds and 15,000+ genes in U2OS, and a curated JUMP-Target metadata resource linking compounds, ORFs, and CRISPR reagents to target genes. These resources are publicly documented by the JUMP consortium and the Cell Painting Gallery. \cite{jump_main,jump_gallery,jump_target,jump_pilot,jump_morphmap}
+
+\section{Inputs and notation}
+Let
+\begin{itemize}[leftmargin=2em]
+\item $f \in \{1,\dots,F\}$ index morphology features,
+\item $q \in \{1,\dots,Q\}$ index query profiles or query groups,
+\item $r \in \{1,\dots,R\}$ index reference perturbation profiles,
+\item $g \in \{1,\dots,G\}$ index genes.
+\end{itemize}
+
+The query profile matrix is $X^{(Q)} \in \mathbb{R}^{Q \times F}$.
+The reference profile matrix is $X^{(R)} \in \mathbb{R}^{R \times F}$.
+The extractor assumes these profiles are already computed and aggregated at the appropriate level (for example, well-level normalized and feature-selected profiles from a CellProfiler or pycytominer workflow).
+
+Reference metadata provides:
+\begin{itemize}[leftmargin=2em]
+\item perturbation type $t_r \in \{\mathrm{compound}, \mathrm{crispr}, \mathrm{orf}\}$,
+\item a perturbation identifier $p_r$,
+\item optional QC weight $c_r \in [0,1]$,
+\item optional cell line, timepoint, and batch labels.
+\end{itemize}
+
+Compound target metadata provides a sparse mapping $A \in \mathbb{R}_{\ge 0}^{R \times G}$ where $A_{rg}$ is the weight by which compound perturbation $r$ implicates gene $g$. For genetic perturbations, a direct one-hot mapping $B \in \mathbb{R}_{\ge 0}^{R \times G}$ is used:
+\[
+B_{rg} =
+\begin{cases}
+1 & \text{if perturbation } r \text{ directly perturbs gene } g, \\
+0 & \text{otherwise.}
+\end{cases}
+\]
+
+\section{Feature alignment and standardization}
+\subsection{Feature intersection}
+Let $\mathcal{F}$ be the intersection of features present in the query and reference profiles. Only these features are used. The extractor should warn if the fraction of reference features recovered in the query is low.
+
+\subsection{Reference-based scaling}
+If the reference bundle provides feature means and scales (or robust medians and MADs), define standardized query and reference values:
+\[
+\tilde{X}^{(Q)}_{qf} = \frac{X^{(Q)}_{qf} - \mu_f}{\sigma_f + \epsilon}, \qquad
+\tilde{X}^{(R)}_{rf} = \frac{X^{(R)}_{rf} - \mu_f}{\sigma_f + \epsilon}.
+\]
+If no explicit statistics are supplied, the implementation may assume the profiles are already normalized in a common feature space and leave them unchanged.
+
+\section{Query aggregation}
+If multiple query rows correspond to the same biological unit (for example, replicate wells or a user-supplied group), aggregate them before similarity calculation. A robust default is the componentwise median:
+\[
+\bar{X}^{(Q)}_{uf} = \mathrm{median}\{ \tilde{X}^{(Q)}_{qf} : q \in \mathcal{Q}(u) \},
+\]
+where $\mathcal{Q}(u)$ is the set of query profiles assigned to unit $u$.
+This produces one extracted program per query unit $u$.
+
+\section{Similarity model}
+\subsection{Base similarity}
+The default similarity between query unit $u$ and reference perturbation $r$ is cosine similarity:
+\[
+\mathrm{sim}(u,r) = \frac{\bar{X}^{(Q)}_u \cdot \tilde{X}^{(R)}_r}{\|\bar{X}^{(Q)}_u\|_2 \, \|\tilde{X}^{(R)}_r\|_2 + \epsilon}.
+\]
+An optional alternative is Pearson correlation. The implementation should support both.
+
+\subsection{Polarity}
+Morphological similarity can be interpreted in at least two ways:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{similar} (default): retrieve perturbations with similar morphology,
+\item \textbf{opposite}: retrieve perturbations with anti-correlated morphology,
+\item \textbf{both}: emit both directions as separate programs.
+\end{itemize}
+
+Define positive and negative evidence:
+\[
+s^+_{ur} = \max(\mathrm{sim}(u,r), 0)^\gamma, \qquad
+s^-_{ur} = \max(-\mathrm{sim}(u,r), 0)^\gamma,
+\]
+where $\gamma \ge 1$ is a similarity sharpness parameter.
+
+\subsection{Perturbation QC weights}
+If a perturbation-level QC weight $c_r$ is provided (for example, replicate consistency or profile activity), define:
+\[
+w^{+}_{ur} = c_r s^+_{ur}, \qquad
+w^{-}_{ur} = c_r s^-_{ur}.
+\]
+If no QC weights are supplied, set $c_r = 1$.
+
+\section{Routing perturbation evidence to genes}
+\subsection{Compound perturbations}
+For compounds, evidence is distributed across targets according to the compound target map:
+\[
+C_{rg} = A_{rg}.
+\]
+If only an unweighted target list is available, use uniform weights within each compound:
+\[
+\sum_g A_{rg} = 1 \quad \text{for each compound } r \text{ with at least one target.}
+\]
+
+\subsection{Genetic perturbations}
+For genetic perturbations, evidence maps directly to the perturbed gene:
+\[
+G_{rg} = B_{rg}.
+\]
+
+\subsection{Modality-specific gene scores}
+For query unit $u$, define the positive similarity gene evidence from compounds and genetics separately:
+\[
+E^{+,\mathrm{compound}}_{ug} = \sum_{r : t_r = \mathrm{compound}} w^+_{ur} C_{rg},
+\]
+\[
+E^{+,\mathrm{genetic}}_{ug} = \sum_{r : t_r \in \{\mathrm{crispr}, \mathrm{orf}\}} w^+_{ur} G_{rg}.
+\]
+
+To prevent one modality from dominating simply because it has more perturbations, normalize each by its total evidence mass:
+\[
+\hat{E}^{+,\mathrm{compound}}_{ug} = \frac{E^{+,\mathrm{compound}}_{ug}}{\sum_h E^{+,\mathrm{compound}}_{uh} + \epsilon},
+\]
+\[
+\hat{E}^{+,\mathrm{genetic}}_{ug} = \frac{E^{+,\mathrm{genetic}}_{ug}}{\sum_h E^{+,\mathrm{genetic}}_{uh} + \epsilon}.
+\]
+
+Then combine modalities with weights $\lambda_c$ and $\lambda_g$:
+\begin{equation}
+S^{+}_{ug} = \lambda_c \hat{E}^{+,\mathrm{compound}}_{ug} + \lambda_g \hat{E}^{+,\mathrm{genetic}}_{ug},
+\label{eq:morph_positive_score}
+\end{equation}
+where by default $\lambda_c = \lambda_g = 1/2$ if both are available, and $\lambda=1$ for the available modality if only one exists.
+
+An analogous score $S^-_{ug}$ is constructed from negative similarity evidence $w^-_{ur}$.
+
+\section{Gene program extraction}
+\subsection{Program families}
+Each query unit $u$ yields one or more gene programs:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{similar}: based on $S^+_{ug}$,
+\item \texttt{opposite}: based on $S^-_{ug}$ if requested.
+\end{itemize}
+The default is to emit only the similar program.
+
+\subsection{Selection}
+Given a nonnegative gene score vector $S_{ug}$ for a chosen polarity, select genes by:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{top-k} (default): choose the $K$ highest-scoring genes,
+\item \textbf{quantile}: choose genes above a quantile threshold,
+\item \textbf{threshold}: choose genes above a minimum score.
+\end{itemize}
+As in other extractors, the implementation should enforce default size bounds of 100--500 genes for GMT emission and warn when fewer genes are available.
+
+\subsection{Within-set normalization}
+For the selected set $\mathcal{S}_u$, define within-set weights:
+\[
+W_{ug} =
+\begin{cases}
+\displaystyle \frac{S_{ug}}{\sum_{h \in \mathcal{S}_u} S_{uh} + \epsilon} & g \in \mathcal{S}_u, \\
+0 & \text{otherwise.}
+\end{cases}
+\]
+This yields a probability-like distribution over selected genes, suitable for weighted enrichment tools.
+
+\section{Reference bundles}
+A morphology extractor is most useful when paired with a reusable reference bundle. The recommended v1 bundle pattern is:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{reference\_profiles.parquet}: consensus perturbation profiles (one row per perturbation/context),
+\item \texttt{reference\_metadata.tsv.gz}: perturbation type, cell line, timepoint, QC, control labels,
+\item \texttt{compound\_targets.tsv.gz}: compound-to-gene target map with weights,
+\item \texttt{feature\_schema.tsv.gz}: ordered feature list,
+\item \texttt{feature\_stats.tsv.gz}: per-feature center and scale,
+\item \texttt{bundle.json}: version, provenance, source URLs, checksums.
+\end{itemize}
+
+A practical first bundle should be derived from the JUMP pilot data in a single cell line and timepoint (for example, U2OS 48h or A549 48h), because those datasets contain matched compounds, CRISPR knockouts, and ORF overexpression perturbations with strong metadata and manageable scale compared to the full JUMP production release. \cite{jump_gallery,jump_pilot,jump_target}
+
+\section{QC and failure modes}
+Important warnings to implement:
+\begin{itemize}[leftmargin=2em]
+\item Low feature overlap between query and reference.
+\item Query profiles dominated by metadata columns or non-numeric fields.
+\item Reference control profiles accidentally included as retrieval candidates.
+\item Low perturbation QC or very low number of usable reference matches.
+\item Gene families dominating selected sets (for example, a broad receptor family), reported as warnings but not filtered by default.
+\end{itemize}
+
+\section{Recommended defaults}
+A sensible initial default is:
+\begin{itemize}[leftmargin=2em]
+\item reference bundle: JUMP pilot, matched cell line and timepoint,
+\item query aggregation: median within user-supplied group,
+\item similarity metric: cosine,
+\item polarity: similar only,
+\item modality balance: equal across available modalities,
+\item selection: top-k with $K=200$,
+\item normalization: within-set $\ell_1$,
+\item GMT emission with 100--500 size bounds.
+\end{itemize}
+
+\begin{thebibliography}{9}
+
+\bibitem{jump_main}
+JUMP-Cell Painting Consortium.
+JUMP-Cell Painting Consortium public portal.
+\url{https://jump-cellpainting.broadinstitute.org/}
+
+\bibitem{jump_gallery}
+Cell Painting Gallery documentation: complete datasets.
+\url{https://broadinstitute.github.io/cellpainting-gallery/complete_datasets.html}
+
+\bibitem{jump_target}
+JUMP-Target metadata repository.
+\url{https://github.com/jump-cellpainting/JUMP-Target}
+
+\bibitem{jump_pilot}
+Chandrasekaran et al.
+Three million images and morphological profiles of cells treated with matched chemical and genetic perturbations.
+Nature Methods (2024).
+
+\bibitem{jump_morphmap}
+Chandrasekaran et al.
+Morphological map of under- and overexpression of genes in human cells.
+Nature Methods (2025).
+
+\end{thebibliography}
+
+\end{document}

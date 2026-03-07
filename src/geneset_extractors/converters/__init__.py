@@ -9,6 +9,7 @@ from geneset_extractors.extractors.converters import drug_response_screen
 from geneset_extractors.extractors.converters import methylation_cpg_diff
 from geneset_extractors.extractors.converters import methylation_dmr
 from geneset_extractors.extractors.converters import methylation_dmr_regions
+from geneset_extractors.extractors.converters import morphology_profile_query
 from geneset_extractors.extractors.converters import proteomics_diff
 from geneset_extractors.extractors.converters import rna_deg
 from geneset_extractors.extractors.converters import rna_deg_multi
@@ -25,6 +26,7 @@ __all__ = [
     "methylation_cpg_diff",
     "methylation_dmr",
     "methylation_dmr_regions",
+    "morphology_profile_query",
     "proteomics_diff",
     "rna_deg",
     "rna_deg_multi",

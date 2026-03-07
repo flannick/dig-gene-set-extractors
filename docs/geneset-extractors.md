@@ -25,6 +25,9 @@ Both CLI names dispatch to the same implementation.
 - Drug response screens: `docs/assays/drug_response/guide.md`
 - Drug response reference bundle: `docs/assays/drug_response/reference_bundle.md`
 - Drug response compatibility guide: `docs/drug-response2geneset.md`
+- Morphology profiling: `docs/assays/morphology/guide.md`
+- Morphology reference bundle: `docs/assays/morphology/reference_bundle.md`
+- Morphology compatibility guide: `docs/morphology2geneset.md`
 
 ## Methods notes
 
@@ -33,6 +36,7 @@ Both CLI names dispatch to the same implementation.
 - DNA methylation methods: `docs/assays/methylation/methods.tex`
 - CNV methods: `docs/assays/cnv/methods.tex`
 - Drug response methods: `docs/assays/drug_response/methods.tex`
+- Morphology methods: `docs/assays/morphology/methods.tex`
 - Methods index: `docs/methods.tex`
 
 ## Resource ID conventions and presets
@@ -50,6 +54,8 @@ Assay-specific resource instructions:
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
+- Morphology supports an optional local reference bundle for reusable perturbation profiles, metadata, and feature stats.
 - Drug response PRISM prep workflow: `geneset-extractors workflows prism_prepare` (see `docs/drug-response2geneset.md`)
+- Morphology bundle builder workflow: `geneset-extractors workflows jump_prepare_reference_bundle`
 
 Compatibility aliases remain at historical paths such as `docs/atac-seq2geneset.md` and `docs/rna-seq_methods.tex`.

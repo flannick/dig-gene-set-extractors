@@ -22,3 +22,6 @@ Canonical assay docs:
 - Drug response practical guide: `docs/assays/drug_response/guide.md`
 - Drug response compatibility guide: `docs/drug-response2geneset.md`
 - Drug response methods note: `docs/assays/drug_response/methods.tex`
+- Morphology practical guide: `docs/assays/morphology/guide.md`
+- Morphology reference bundle: `docs/assays/morphology/reference_bundle.md`
+- Morphology methods note: `docs/assays/morphology/methods.tex`

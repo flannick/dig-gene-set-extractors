@@ -25,6 +25,8 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/assays/drug_response/guide.md` (drug response practical guide)
 - `docs/assays/drug_response/reference_bundle.md` (drug response bundle guide)
+- `docs/assays/morphology/guide.md` (morphology practical guide)
+- `docs/assays/morphology/reference_bundle.md` (morphology bundle guide)
 - `docs/drug-response2geneset.md` (drug response compatibility quickstart)
 - `docs/geneset-extractors.md` (neutral index/entrypoint)
 
@@ -73,6 +75,7 @@ RNA workflow commands:
 - `workflows scrna_cnmf_prepare` (downsample/split/filter + generate per-subset cNMF scripts)
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
 - `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)
+- `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
 
 DNA methylation converters:
 
@@ -88,6 +91,10 @@ Drug response converter:
 
 - `drug_response_screen`
 
+Morphology converter:
+
+- `morphology_profile_query`
+
 Drug response defaults support an optional local annotation/prior bundle via `--resources_dir`
 for more connectable target annotations, target ubiquity priors, and nuisance compound QC.
 Drug response also defaults to classic GMT output for downstream compatibility, while still supporting the DIG two-column format via `--gmt_format dig2col`.
@@ -102,6 +109,8 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/cnv/guide.md`
 - `docs/assays/drug_response/guide.md`
 - `docs/assays/drug_response/reference_bundle.md`
+- `docs/assays/morphology/guide.md`
+- `docs/assays/morphology/reference_bundle.md`
 - `docs/drug-response2geneset.md`
 - `docs/geneset-extractors.md` (index)
 
@@ -112,6 +121,7 @@ Method notes and equations (split by assay + index):
 - `docs/assays/methylation/methods.tex`
 - `docs/assays/cnv/methods.tex`
 - `docs/assays/drug_response/methods.tex`
+- `docs/assays/morphology/methods.tex`
 - `docs/methods.tex` (index)
 
 ATAC reference bundle setup:
@@ -185,16 +195,22 @@ dig-gene-set-extractors/
       drug_response/
         guide.md
         methods.tex
+      morphology/
+        guide.md
+        methods.tex
+        reference_bundle.md
     methods.tex
     atac-seq2geneset.md        # compatibility alias
     rna-seq-to-geneset.md      # compatibility alias
     methylation2geneset.md     # compatibility alias
     cnv2geneset.md             # compatibility alias
     drug-response2geneset.md   # compatibility alias
+    morphology2geneset.md      # compatibility alias
     atac-seq_methods.tex       # compatibility alias
     rna-seq_methods.tex        # compatibility alias
     methylation_methods.tex    # compatibility alias
     cnv_methods.tex            # compatibility alias
+    morphology_methods.tex     # compatibility alias
     scrna_cnmf_workflow.md     # compatibility alias
     atac_reference_bundle.md   # compatibility alias
     air_gapped_install.md

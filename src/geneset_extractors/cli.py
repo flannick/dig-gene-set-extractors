@@ -393,6 +393,94 @@ def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--keep_raw_downloads", type=_parse_bool, default=False)
 
 
+def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--profile_paths", required=True, help="Comma-separated morphology profile TSV/CSV paths.")
+    parser.add_argument("--experimental_metadata_tsv", required=True)
+    parser.add_argument("--compound_targets_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--bundle_id")
+    parser.add_argument("--profile_id_column", default="sample_id")
+    parser.add_argument("--metadata_join_id_column", default="sample_id")
+    parser.add_argument("--perturbation_id_column", default="perturbation_id")
+    parser.add_argument("--perturbation_type_column", default="perturbation_type")
+    parser.add_argument("--cell_type_column", default="cell_type_or_line")
+    parser.add_argument("--timepoint_column", default="timepoint")
+    parser.add_argument("--gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--compound_id_column", default="compound_id")
+    parser.add_argument("--is_control_column", default="is_control")
+    parser.add_argument("--control_type_column", default="control_type")
+    parser.add_argument("--cell_type_filter")
+    parser.add_argument("--timepoint_filter")
+    parser.add_argument("--profile_kind", default="normalized_feature_select_negcon_plate")
+    parser.add_argument("--consensus_aggregate", choices=["median", "mean"], default="median")
+    parser.add_argument("--profile_delimiter", default="\t")
+    parser.add_argument("--metadata_delimiter", default="\t")
+    parser.add_argument("--compound_targets_delimiter", default="\t")
+    parser.add_argument("--compound_target_gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--compound_target_weight_column", default="weight")
+
+
+def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--query_profiles_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--genome_build", required=True)
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--signature_name")
+
+    parser.add_argument("--query_id_column", default="sample_id")
+    parser.add_argument("--query_profiles_delimiter", default="\t")
+    parser.add_argument("--query_metadata_tsv")
+    parser.add_argument("--query_metadata_id_column", default="sample_id")
+    parser.add_argument("--query_metadata_delimiter", default="\t")
+    parser.add_argument("--group_query_by")
+    parser.add_argument("--query_aggregate", choices=["none", "median", "mean"], default="median")
+    parser.add_argument("--exclude_query_ids_from_reference", type=_parse_bool, default=False)
+
+    parser.add_argument("--reference_profiles_tsv")
+    parser.add_argument("--reference_profiles_parquet")
+    parser.add_argument("--reference_profiles_delimiter", default="\t")
+    parser.add_argument("--reference_id_column", default="perturbation_id")
+    parser.add_argument("--reference_metadata_tsv")
+    parser.add_argument("--reference_metadata_id_column", default="perturbation_id")
+    parser.add_argument("--reference_metadata_delimiter", default="\t")
+    parser.add_argument("--compound_targets_tsv")
+    parser.add_argument("--compound_targets_delimiter", default="\t")
+    parser.add_argument("--compound_id_column", default="compound_id")
+    parser.add_argument("--compound_target_gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--compound_target_weight_column", default="weight")
+    parser.add_argument("--feature_stats_tsv")
+    parser.add_argument("--feature_schema_tsv")
+
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--reference_bundle_id")
+
+    parser.add_argument("--similarity_metric", choices=["cosine", "pearson"], default="cosine")
+    parser.add_argument("--similarity_power", type=float, default=1.0)
+    parser.add_argument("--polarity", choices=["similar", "opposite", "both"], default="similar")
+    parser.add_argument("--compound_weight", type=float, default=0.5)
+    parser.add_argument("--genetic_weight", type=float, default=0.5)
+
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        gmt_split_signed=False,
+        gmt_require_symbol=False,
+        emit_small_gene_sets=False,
+    )
+
+
 def _add_methylation_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--program_preset",
@@ -615,6 +703,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cnmf_select_k_flags(p_cnmf_select_k)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
+    p_jump_prepare = wf_sub.add_parser("jump_prepare_reference_bundle")
+    _add_jump_prepare_reference_bundle_flags(p_jump_prepare)
 
     p_resources = sub.add_parser("resources")
     res_sub = p_resources.add_subparsers(dest="resources_command", required=True)
@@ -910,6 +1000,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_drug.add_argument("--genome_build", required=True)
     _add_drug_response_flags(p_drug)
 
+    p_morph = conv.add_parser("morphology_profile_query")
+    _add_morphology_profile_query_flags(p_morph)
+
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)
     p_chip.add_argument("--gtf", required=True)
@@ -1174,6 +1267,17 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=prism_prepare n_rows={result.get('n_response_rows')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "jump_prepare_reference_bundle":
+                from geneset_extractors.workflows.jump_prepare_reference_bundle import run as run_jump_prepare_reference_bundle
+
+                result = run_jump_prepare_reference_bundle(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=jump_prepare_reference_bundle n_profiles={result.get('n_profiles')} "
+                    f"out={result.get('bundle_manifest')}",
                     file=sys.stderr,
                 )
                 return 0

@@ -1,0 +1,7 @@
+sample_id	perturbation_id	perturbation_type	cell_type_or_line	timepoint	gene_symbol	compound_id	is_control	control_type
+well_cmp_a_1	CMP_A	compound	U2OS	48		CMP_A	false	
+well_cmp_a_2	CMP_A	compound	U2OS	48		CMP_A	false	
+well_cmp_b_1	CMP_B	compound	U2OS	48		CMP_B	false	
+well_orf_1	ORF_GENE3	orf	U2OS	48	GENE3		false	
+well_crispr_1	CRISPR_GENE4	crispr	U2OS	48	GENE4		false	
+well_ctrl_1	CTRL_1	compound	U2OS	48		CTRL_1	true	negcon

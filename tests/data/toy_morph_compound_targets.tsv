@@ -1,0 +1,4 @@
+compound_id	gene_symbol	weight
+CMP_A	GENE1	1.0
+CMP_B	GENE2	1.0
+CTRL_1	GENECTRL	1.0
