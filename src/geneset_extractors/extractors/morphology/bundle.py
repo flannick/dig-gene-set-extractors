@@ -38,6 +38,24 @@ def resolve_bundle_manifest(
     resource_policy: str,
 ) -> tuple[Path | None, dict[str, object] | None]:
     rid = str(bundle_id).strip()
+    if ctx.resources_dir is not None:
+        local_path = ctx.resources_dir / f"{rid}.bundle.json"
+        if local_path.exists():
+            ctx.used.append(
+                {
+                    "id": rid,
+                    "method": "reference_bundle_local",
+                    "path": str(local_path),
+                    "provider": "local_resources_dir",
+                    "stable_id": rid,
+                    "version": "",
+                    "sha256": "",
+                    "license": "",
+                }
+            )
+            payload = json.loads(local_path.read_text(encoding="utf-8"))
+            payload["_bundle_resolution"] = "local_resources_dir"
+            return local_path, payload
     if rid not in ctx.resources:
         raise ValueError(f"Unknown morphology bundle resource id: {rid}")
     entry = ctx.resources[rid]
@@ -51,6 +69,7 @@ def resolve_bundle_manifest(
         return None, None
     ctx.used.append(resource_metadata_record(resource_id=rid, entry=entry, local_path=path, method="reference_bundle"))
     payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["_bundle_resolution"] = "resource_manifest"
     return path, payload
 
 

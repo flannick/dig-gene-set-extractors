@@ -4,6 +4,7 @@ import csv
 import gzip
 import json
 from pathlib import Path
+import re
 from statistics import mean, median
 from typing import Callable
 
@@ -202,6 +203,108 @@ def read_compound_targets_tsv(
             continue
         normalized[compound_id] = {gene: float(value) / total for gene, value in mapping.items()}
     return normalized, {"path": str(path), "n_rows": len(rows), "n_compounds": len(normalized), "n_missing_required": missing}
+
+
+def read_compound_targets_auto(
+    path: str | Path,
+    *,
+    compound_id_column: str | None = None,
+    gene_symbol_column: str | None = None,
+    weight_column: str | None = None,
+    delimiter: str = "\t",
+) -> tuple[dict[str, dict[str, float]], dict[str, object]]:
+    p = Path(path)
+    with _open_text(p) as fh:
+        reader = csv.DictReader(fh, delimiter=delimiter)
+        if not reader.fieldnames:
+            raise ValueError(f"Compound target table has no header: {p}")
+        fieldnames = [str(f) for f in reader.fieldnames]
+        rows = list(reader)
+
+    compound_candidates = [
+        compound_id_column,
+        "compound_id",
+        "broad_id",
+        "broad_sample",
+        "perturbation_id",
+        "pert_iname",
+        "name",
+    ]
+    gene_candidates = [
+        gene_symbol_column,
+        "gene_symbol",
+        "target",
+        "targets",
+        "targets_list",
+        "moa_targets",
+        "gene_targets",
+        "target_gene",
+        "target_genes",
+    ]
+    weight_candidates = [weight_column, "weight", "target_weight"]
+
+    resolved_compound = next((c for c in compound_candidates if c and c in fieldnames), None)
+    if resolved_compound is None:
+        raise ValueError(
+            f"Could not identify compound id column in {p}. Available columns: {', '.join(fieldnames)}"
+        )
+    resolved_gene = next((c for c in gene_candidates if c and c in fieldnames), None)
+    if resolved_gene is None:
+        raise ValueError(
+            f"Could not identify target gene column in {p}. Available columns: {', '.join(fieldnames)}"
+        )
+    resolved_weight = next((c for c in weight_candidates if c and c in fieldnames), None)
+
+    raw: dict[str, dict[str, float]] = {}
+    n_missing_required = 0
+    n_multi_target_rows = 0
+    fallback_used = resolved_gene != "gene_symbol"
+    for row in rows:
+        compound_id = str(row.get(resolved_compound, "")).strip()
+        target_value = str(row.get(resolved_gene, "")).strip()
+        if not compound_id or not target_value:
+            n_missing_required += 1
+            continue
+        targets = [
+            token.strip().upper()
+            for token in re.split(r"[;,|]", target_value)
+            if token and token.strip()
+        ]
+        targets = [token for token in targets if token not in {"NA", "NAN", "NONE", "NULL"}]
+        if not targets:
+            n_missing_required += 1
+            continue
+        if len(targets) > 1:
+            n_multi_target_rows += 1
+        weight = _parse_float(row.get(resolved_weight)) if resolved_weight else None
+        if weight is not None and weight > 0.0 and len(targets) == 1:
+            per_target_weight = float(weight)
+        else:
+            per_target_weight = 1.0 / float(len(targets))
+        raw.setdefault(compound_id, {})
+        for target in targets:
+            raw[compound_id][target] = float(raw[compound_id].get(target, 0.0)) + float(per_target_weight)
+
+    normalized: dict[str, dict[str, float]] = {}
+    zero_target_compounds = 0
+    for compound_id, mapping in raw.items():
+        total = sum(mapping.values())
+        if total <= 0.0:
+            zero_target_compounds += 1
+            continue
+        normalized[compound_id] = {gene: float(value) / total for gene, value in mapping.items()}
+    return normalized, {
+        "path": str(path),
+        "n_rows": len(rows),
+        "n_compounds": len(normalized),
+        "n_missing_required": n_missing_required,
+        "n_zero_target_compounds": zero_target_compounds,
+        "resolved_compound_id_column": resolved_compound,
+        "resolved_gene_symbol_column": resolved_gene,
+        "resolved_weight_column": resolved_weight,
+        "fallback_used": fallback_used,
+        "n_multi_target_rows": n_multi_target_rows,
+    }
 
 
 def read_feature_schema_tsv(path: str | Path, *, feature_column: str = "feature", delimiter: str = "\t") -> tuple[list[str], dict[str, object]]:

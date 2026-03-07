@@ -95,6 +95,9 @@ Morphology converter:
 
 - `morphology_profile_query`
 
+Morphology defaults support an optional local reference bundle via `--resources_dir`.
+Bundles can be discovered directly from `<bundle_id>.bundle.json` in that directory without a separate overlay manifest.
+
 Drug response defaults support an optional local annotation/prior bundle via `--resources_dir`
 for more connectable target annotations, target ubiquity priors, and nuisance compound QC.
 Drug response also defaults to classic GMT output for downstream compatibility, while still supporting the DIG two-column format via `--gmt_format dig2col`.

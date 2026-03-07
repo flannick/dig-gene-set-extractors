@@ -411,6 +411,9 @@ def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--control_type_column", default="control_type")
     parser.add_argument("--cell_type_filter")
     parser.add_argument("--timepoint_filter")
+    parser.add_argument("--require_same_timepoint_across_modalities", type=_parse_bool, default=True)
+    parser.add_argument("--allow_missing_modalities", type=_parse_bool, default=True)
+    parser.add_argument("--allow_mixed_timepoints", type=_parse_bool, default=False)
     parser.add_argument("--profile_kind", default="normalized_feature_select_negcon_plate")
     parser.add_argument("--consensus_aggregate", choices=["median", "mean"], default="median")
     parser.add_argument("--profile_delimiter", default="\t")
@@ -460,6 +463,8 @@ def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None
     parser.add_argument("--similarity_metric", choices=["cosine", "pearson"], default="cosine")
     parser.add_argument("--similarity_power", type=float, default=1.0)
     parser.add_argument("--polarity", choices=["similar", "opposite", "both"], default="similar")
+    parser.add_argument("--max_reference_neighbors", type=int, default=50)
+    parser.add_argument("--min_similarity", type=float, default=0.0)
     parser.add_argument("--compound_weight", type=float, default=0.5)
     parser.add_argument("--genetic_weight", type=float, default=0.5)
 

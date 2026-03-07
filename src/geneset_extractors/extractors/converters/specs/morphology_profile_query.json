@@ -52,56 +52,326 @@
     }
   ],
   "parameters": [
-    {"name": "dataset_label", "type": "string", "default": "", "help": "Optional dataset label for metadata/GMT naming"},
-    {"name": "signature_name", "type": "string", "default": "", "help": "Optional signature label for metadata/GMT naming"},
-    {"name": "query_id_column", "type": "string", "default": "sample_id", "help": "ID column in query_profiles_tsv"},
-    {"name": "query_profiles_delimiter", "type": "string", "default": "\\t", "help": "Delimiter for query_profiles_tsv"},
-    {"name": "query_metadata_id_column", "type": "string", "default": "sample_id", "help": "ID column in query_metadata_tsv"},
-    {"name": "query_metadata_delimiter", "type": "string", "default": "\\t", "help": "Delimiter for query_metadata_tsv"},
-    {"name": "group_query_by", "type": "string_or_none", "default": null, "help": "Optional query metadata column used to aggregate replicate profiles"},
-    {"name": "query_aggregate", "type": "string", "default": "median", "enum": ["none", "median", "mean"], "help": "Aggregation for grouped query profiles"},
-    {"name": "exclude_query_ids_from_reference", "type": "boolean", "default": false, "help": "Drop reference perturbations whose IDs overlap query IDs"},
-    {"name": "reference_id_column", "type": "string", "default": "perturbation_id", "help": "ID column in reference profile table"},
-    {"name": "reference_profiles_delimiter", "type": "string", "default": "\\t", "help": "Delimiter for reference profile TSV/CSV"},
-    {"name": "reference_metadata_id_column", "type": "string", "default": "perturbation_id", "help": "ID column in reference_metadata_tsv"},
-    {"name": "reference_metadata_delimiter", "type": "string", "default": "\\t", "help": "Delimiter for reference_metadata_tsv"},
-    {"name": "compound_targets_delimiter", "type": "string", "default": "\\t", "help": "Delimiter for compound_targets_tsv"},
-    {"name": "compound_id_column", "type": "string", "default": "compound_id", "help": "Compound id column in compound_targets_tsv"},
-    {"name": "compound_target_gene_symbol_column", "type": "string", "default": "gene_symbol", "help": "Target gene symbol column in compound_targets_tsv"},
-    {"name": "compound_target_weight_column", "type": "string", "default": "weight", "help": "Optional target weight column in compound_targets_tsv"},
-    {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resource manifest override/overlay"},
-    {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional resources directory containing morphology bundle files"},
-    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Missing bundle/resource behavior"},
-    {"name": "reference_bundle_id", "type": "string_or_none", "default": null, "help": "Bundle resource id providing reference_profiles/reference_metadata/compound_targets and optional schema/stats"},
-    {"name": "similarity_metric", "type": "string", "default": "cosine", "enum": ["cosine", "pearson"], "help": "Similarity metric between query and reference profiles"},
-    {"name": "similarity_power", "type": "number", "default": 1.0, "help": "Evidence sharpness exponent applied to positive or negative similarities"},
-    {"name": "polarity", "type": "string", "default": "similar", "enum": ["similar", "opposite", "both"], "help": "Emit similar matches, opposite matches, or both as separate programs"},
-    {"name": "compound_weight", "type": "number", "default": 0.5, "help": "Modality weight for compound-derived evidence when both modalities are present"},
-    {"name": "genetic_weight", "type": "number", "default": 0.5, "help": "Modality weight for genetic-derived evidence when both modalities are present"},
-    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method"},
-    {"name": "top_k", "type": "integer", "default": 200, "help": "K for top_k selection"},
-    {"name": "quantile", "type": "number", "default": 0.01, "help": "Quantile fraction when select=quantile"},
-    {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold when select=threshold"},
-    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization mode"},
-    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv for each morphology program"},
-    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write per-program and combined GMT outputs"},
-    {"name": "gmt_format", "type": "string", "default": "dig2col", "enum": ["dig2col", "classic"], "help": "GMT output format"},
-    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
-    {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated mass GMT plans"},
-    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
-    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
-    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets smaller than gmt_min_genes with warning"}
+    {
+      "name": "dataset_label",
+      "type": "string",
+      "default": "",
+      "help": "Optional dataset label for metadata/GMT naming"
+    },
+    {
+      "name": "signature_name",
+      "type": "string",
+      "default": "",
+      "help": "Optional signature label for metadata/GMT naming"
+    },
+    {
+      "name": "query_id_column",
+      "type": "string",
+      "default": "sample_id",
+      "help": "ID column in query_profiles_tsv"
+    },
+    {
+      "name": "query_profiles_delimiter",
+      "type": "string",
+      "default": "\\t",
+      "help": "Delimiter for query_profiles_tsv"
+    },
+    {
+      "name": "query_metadata_id_column",
+      "type": "string",
+      "default": "sample_id",
+      "help": "ID column in query_metadata_tsv"
+    },
+    {
+      "name": "query_metadata_delimiter",
+      "type": "string",
+      "default": "\\t",
+      "help": "Delimiter for query_metadata_tsv"
+    },
+    {
+      "name": "group_query_by",
+      "type": "string_or_none",
+      "default": null,
+      "help": "Optional query metadata column used to aggregate replicate profiles"
+    },
+    {
+      "name": "query_aggregate",
+      "type": "string",
+      "default": "median",
+      "enum": [
+        "none",
+        "median",
+        "mean"
+      ],
+      "help": "Aggregation for grouped query profiles"
+    },
+    {
+      "name": "exclude_query_ids_from_reference",
+      "type": "boolean",
+      "default": false,
+      "help": "Drop reference perturbations whose IDs overlap query IDs"
+    },
+    {
+      "name": "reference_id_column",
+      "type": "string",
+      "default": "perturbation_id",
+      "help": "ID column in reference profile table"
+    },
+    {
+      "name": "reference_profiles_delimiter",
+      "type": "string",
+      "default": "\\t",
+      "help": "Delimiter for reference profile TSV/CSV"
+    },
+    {
+      "name": "reference_metadata_id_column",
+      "type": "string",
+      "default": "perturbation_id",
+      "help": "ID column in reference_metadata_tsv"
+    },
+    {
+      "name": "reference_metadata_delimiter",
+      "type": "string",
+      "default": "\\t",
+      "help": "Delimiter for reference_metadata_tsv"
+    },
+    {
+      "name": "compound_targets_delimiter",
+      "type": "string",
+      "default": "\\t",
+      "help": "Delimiter for compound_targets_tsv"
+    },
+    {
+      "name": "compound_id_column",
+      "type": "string",
+      "default": "compound_id",
+      "help": "Compound id column in compound_targets_tsv"
+    },
+    {
+      "name": "compound_target_gene_symbol_column",
+      "type": "string",
+      "default": "gene_symbol",
+      "help": "Target gene symbol column in compound_targets_tsv"
+    },
+    {
+      "name": "compound_target_weight_column",
+      "type": "string",
+      "default": "weight",
+      "help": "Optional target weight column in compound_targets_tsv"
+    },
+    {
+      "name": "resources_manifest",
+      "type": "string_or_none",
+      "default": null,
+      "help": "Optional resource manifest override/overlay"
+    },
+    {
+      "name": "resources_dir",
+      "type": "string_or_none",
+      "default": null,
+      "help": "Optional resources directory containing morphology bundle files"
+    },
+    {
+      "name": "resource_policy",
+      "type": "string",
+      "default": "skip",
+      "enum": [
+        "skip",
+        "fail"
+      ],
+      "help": "Missing bundle/resource behavior"
+    },
+    {
+      "name": "reference_bundle_id",
+      "type": "string_or_none",
+      "default": null,
+      "help": "Bundle resource id providing reference_profiles/reference_metadata/compound_targets and optional schema/stats"
+    },
+    {
+      "name": "similarity_metric",
+      "type": "string",
+      "default": "cosine",
+      "enum": [
+        "cosine",
+        "pearson"
+      ],
+      "help": "Similarity metric between query and reference profiles"
+    },
+    {
+      "name": "similarity_power",
+      "type": "number",
+      "default": 1.0,
+      "help": "Evidence sharpness exponent applied to positive or negative similarities"
+    },
+    {
+      "name": "polarity",
+      "type": "string",
+      "default": "similar",
+      "enum": [
+        "similar",
+        "opposite",
+        "both"
+      ],
+      "help": "Emit similar matches, opposite matches, or both as separate programs"
+    },
+    {
+      "name": "max_reference_neighbors",
+      "type": "integer",
+      "default": 50,
+      "help": "Retain at most this many reference neighbors per query and polarity (0 disables truncation)."
+    },
+    {
+      "name": "min_similarity",
+      "type": "number",
+      "default": 0.0,
+      "help": "Ignore retained neighbors below this similarity threshold after polarity transform."
+    },
+    {
+      "name": "compound_weight",
+      "type": "number",
+      "default": 0.5,
+      "help": "Modality weight for compound-derived evidence when both modalities are present"
+    },
+    {
+      "name": "genetic_weight",
+      "type": "number",
+      "default": 0.5,
+      "help": "Modality weight for genetic-derived evidence when both modalities are present"
+    },
+    {
+      "name": "select",
+      "type": "string",
+      "default": "top_k",
+      "enum": [
+        "none",
+        "top_k",
+        "quantile",
+        "threshold"
+      ],
+      "help": "Gene selection method"
+    },
+    {
+      "name": "top_k",
+      "type": "integer",
+      "default": 200,
+      "help": "K for top_k selection"
+    },
+    {
+      "name": "quantile",
+      "type": "number",
+      "default": 0.01,
+      "help": "Quantile fraction when select=quantile"
+    },
+    {
+      "name": "min_score",
+      "type": "number",
+      "default": 0.0,
+      "help": "Threshold when select=threshold"
+    },
+    {
+      "name": "normalize",
+      "type": "string",
+      "default": "within_set_l1",
+      "enum": [
+        "none",
+        "l1",
+        "within_set_l1"
+      ],
+      "help": "Weight normalization mode"
+    },
+    {
+      "name": "emit_full",
+      "type": "boolean",
+      "default": true,
+      "help": "Write geneset.full.tsv for each morphology program"
+    },
+    {
+      "name": "emit_gmt",
+      "type": "boolean",
+      "default": true,
+      "help": "Write per-program and combined GMT outputs"
+    },
+    {
+      "name": "gmt_format",
+      "type": "string",
+      "default": "dig2col",
+      "enum": [
+        "dig2col",
+        "classic"
+      ],
+      "help": "GMT output format"
+    },
+    {
+      "name": "gmt_topk_list",
+      "type": "string",
+      "default": "200",
+      "help": "Comma-separated top-K GMT plans"
+    },
+    {
+      "name": "gmt_mass_list",
+      "type": "string",
+      "default": "",
+      "help": "Comma-separated mass GMT plans"
+    },
+    {
+      "name": "gmt_min_genes",
+      "type": "integer",
+      "default": 100,
+      "help": "Minimum genes per GMT set"
+    },
+    {
+      "name": "gmt_max_genes",
+      "type": "integer",
+      "default": 500,
+      "help": "Maximum genes per GMT set"
+    },
+    {
+      "name": "emit_small_gene_sets",
+      "type": "boolean",
+      "default": false,
+      "help": "Emit sets smaller than gmt_min_genes with warning"
+    }
   ],
   "outputs": [
-    {"name": "manifest.tsv", "description": "Program-level grouped output manifest across query programs"},
-    {"name": "program=<PROGRAM>/geneset.tsv", "description": "Selected gene weights for one morphology query program"},
-    {"name": "program=<PROGRAM>/geneset.meta.json", "description": "Metadata and provenance for one query program"},
-    {"name": "program=<PROGRAM>/geneset.full.tsv", "description": "Full ranked score table for one query program (optional)"},
-    {"name": "program=<PROGRAM>/genesets.gmt", "description": "Per-program GMT output (optional)"},
-    {"name": "program=<PROGRAM>/run_summary.json", "description": "Per-program machine-readable QC summary"},
-    {"name": "program=<PROGRAM>/run_summary.txt", "description": "Per-program human-readable QC summary"},
-    {"name": "genesets.gmt", "description": "Combined GMT across emitted programs (optional)"},
-    {"name": "run_summary.json", "description": "Root run-level machine-readable QC summary"},
-    {"name": "run_summary.txt", "description": "Root run-level human-readable QC summary"}
+    {
+      "name": "manifest.tsv",
+      "description": "Program-level grouped output manifest across query programs"
+    },
+    {
+      "name": "program=<PROGRAM>/geneset.tsv",
+      "description": "Selected gene weights for one morphology query program"
+    },
+    {
+      "name": "program=<PROGRAM>/geneset.meta.json",
+      "description": "Metadata and provenance for one query program"
+    },
+    {
+      "name": "program=<PROGRAM>/geneset.full.tsv",
+      "description": "Full ranked score table for one query program (optional)"
+    },
+    {
+      "name": "program=<PROGRAM>/genesets.gmt",
+      "description": "Per-program GMT output (optional)"
+    },
+    {
+      "name": "program=<PROGRAM>/run_summary.json",
+      "description": "Per-program machine-readable QC summary"
+    },
+    {
+      "name": "program=<PROGRAM>/run_summary.txt",
+      "description": "Per-program human-readable QC summary"
+    },
+    {
+      "name": "genesets.gmt",
+      "description": "Combined GMT across emitted programs (optional)"
+    },
+    {
+      "name": "run_summary.json",
+      "description": "Root run-level machine-readable QC summary"
+    },
+    {
+      "name": "run_summary.txt",
+      "description": "Root run-level human-readable QC summary"
+    }
   ]
 }

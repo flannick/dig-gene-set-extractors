@@ -1,0 +1,5 @@
+sample_id	feat1	feat2	feat3
+well_cmp_a_48	1.0	0.0	0.2
+well_cmp_b_48	0.0	1.0	0.2
+well_orf_48	0.9	0.1	0.1
+well_crispr_96	0.1	0.9	0.1

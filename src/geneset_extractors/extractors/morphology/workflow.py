@@ -29,6 +29,8 @@ class MorphologyWorkflowConfig:
     similarity_metric: str
     similarity_power: float
     polarity: str
+    max_reference_neighbors: int
+    min_similarity: float
     compound_weight: float
     genetic_weight: float
     select: str
@@ -128,6 +130,44 @@ def _artifact_family_fraction(rows: list[dict[str, object]], top_n: int = 20) ->
     return float(hits) / float(len(top_rows))
 
 
+def _retained_neighbors(
+    query_sim: dict[str, float],
+    *,
+    polarity: str,
+    max_reference_neighbors: int,
+    min_similarity: float,
+) -> list[tuple[str, float]]:
+    retained: list[tuple[str, float]] = []
+    for ref_id, sim in query_sim.items():
+        sim_value = float(sim)
+        if polarity == "similar":
+            if sim_value < float(min_similarity):
+                continue
+            score = sim_value
+        else:
+            score = -sim_value
+            if score < float(min_similarity):
+                continue
+        if score <= 0.0:
+            continue
+        retained.append((ref_id, score))
+    retained.sort(key=lambda item: (-float(item[1]), str(item[0])))
+    if int(max_reference_neighbors) > 0:
+        retained = retained[: int(max_reference_neighbors)]
+    return retained
+
+
+def _retrieval_confidence(
+    n_positive_neighbors: int,
+    neg_similarity_fraction: float,
+) -> str:
+    if n_positive_neighbors >= 10 and neg_similarity_fraction < 0.4:
+        return "high"
+    if n_positive_neighbors >= 5 and neg_similarity_fraction < 0.7:
+        return "medium"
+    return "low"
+
+
 def run_morphology_workflow(
     *,
     cfg: MorphologyWorkflowConfig,
@@ -221,19 +261,32 @@ def run_morphology_workflow(
             )
         for polarity in polarities:
             program_warnings: list[dict[str, object]] = []
+            retained_neighbors = _retained_neighbors(
+                query_sim,
+                polarity=polarity,
+                max_reference_neighbors=int(cfg.max_reference_neighbors),
+                min_similarity=float(cfg.min_similarity),
+            )
             evidence_by_ref: dict[str, float] = {}
-            for ref_id, sim in query_sim.items():
-                base = max(float(sim), 0.0) if polarity == "similar" else max(-float(sim), 0.0)
-                if base <= 0.0:
-                    continue
-                evidence_by_ref[ref_id] = float((base ** float(cfg.similarity_power)) * float(qc_weights.get(ref_id, 1.0)))
+            for ref_id, base in retained_neighbors:
+                evidence_by_ref[ref_id] = float((float(base) ** float(cfg.similarity_power)) * float(qc_weights.get(ref_id, 1.0)))
+            retained_by_modality: dict[str, int] = {}
+            for ref_id, _score in retained_neighbors:
+                modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() or "unknown"
+                retained_by_modality[modality] = int(retained_by_modality.get(modality, 0)) + 1
             compound_scores = accumulate_gene_scores(evidence_by_ref=evidence_by_ref, ref_to_gene=compound_map)
             genetic_scores = accumulate_gene_scores(evidence_by_ref=evidence_by_ref, ref_to_gene=genetic_map)
             compound_norm = l1_normalize_scores(compound_scores)
             genetic_norm = l1_normalize_scores(genetic_scores)
+            compound_neighbors = int(retained_by_modality.get("compound", 0))
+            genetic_neighbors = int(retained_by_modality.get("orf", 0) + retained_by_modality.get("crispr", 0))
             if compound_norm and genetic_norm:
                 cw = float(cfg.compound_weight)
                 gw = float(cfg.genetic_weight)
+                if compound_neighbors < 5 <= genetic_neighbors:
+                    cw *= 0.25
+                if genetic_neighbors < 5 <= compound_neighbors:
+                    gw *= 0.25
                 total = cw + gw
                 cw = cw / total if total > 0.0 else 0.5
                 gw = gw / total if total > 0.0 else 0.5
@@ -273,6 +326,33 @@ def run_morphology_workflow(
                     "polarity": polarity,
                     "fraction": frac_artifact,
                 }
+                program_warnings.append(warning_payload)
+                root_warnings.append(warning_payload)
+
+            top_neighbor_ids = [ref_id for ref_id, _score in retained_neighbors[:5]]
+            top_neighbor_sims = [float(score) for _ref_id, score in retained_neighbors[:5]]
+            top_neighbor_modalities = [
+                str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower()
+                for ref_id in top_neighbor_ids
+            ]
+            total_evidence = sum(float(v) for v in evidence_by_ref.values())
+            top5_mass = 0.0
+            if total_evidence > 0.0:
+                top5_mass = sum(float(evidence_by_ref.get(ref_id, 0.0)) for ref_id in top_neighbor_ids) / total_evidence
+            n_positive_neighbors = sum(1 for value in query_sim.values() if float(value) > 0.0)
+            n_negative_neighbors = sum(1 for value in query_sim.values() if float(value) < 0.0)
+            retrieval_confidence = _retrieval_confidence(n_positive_neighbors, neg_frac)
+            if retrieval_confidence == "low":
+                warning_payload = {
+                    "code": "low_retrieval_confidence",
+                    "query_id": query_id,
+                    "polarity": polarity,
+                    "suggestion": "try --polarity both, verify cell line/timepoint coherence, and use a same-timepoint bundle",
+                }
+                print(
+                    f"warning: query={query_id} polarity={polarity} has low retrieval confidence; check context matching and polarity",
+                    file=sys.stderr,
+                )
                 program_warnings.append(warning_payload)
                 root_warnings.append(warning_payload)
 
@@ -328,6 +408,16 @@ def run_morphology_workflow(
                 "selected_direction": polarity,
                 "n_query_profiles": len(query_membership.get(query_id, [])),
                 "n_reference_profiles": len(ref_vectors),
+                "n_positive_neighbors": n_positive_neighbors,
+                "n_negative_neighbors": n_negative_neighbors,
+                "n_retained_neighbors": len(retained_neighbors),
+                "retained_neighbors_by_modality": retained_by_modality,
+                "neg_similarity_fraction": neg_frac,
+                "top_neighbor_ids": top_neighbor_ids,
+                "top_neighbor_modalities": top_neighbor_modalities,
+                "top_neighbor_similarities": top_neighbor_sims,
+                "top5_neighbor_score_mass_fraction": top5_mass,
+                "retrieval_confidence": retrieval_confidence,
                 "parse_summary": parse_summary,
                 "feature_alignment": feature_summary,
                 "query_standardization": query_scale_summary,
@@ -347,6 +437,8 @@ def run_morphology_workflow(
                     "similarity_metric": cfg.similarity_metric,
                     "similarity_power": cfg.similarity_power,
                     "polarity": polarity,
+                    "max_reference_neighbors": cfg.max_reference_neighbors,
+                    "min_similarity": cfg.min_similarity,
                     "compound_weight": cfg.compound_weight,
                     "genetic_weight": cfg.genetic_weight,
                     "select": cfg.select,
@@ -374,6 +466,7 @@ def run_morphology_workflow(
                     "mapping_summary": mapping_summary,
                     "resources": resources_info,
                     "warnings": program_warnings,
+                    "retrieval_confidence": retrieval_confidence,
                 },
                 program_extraction={
                     "selection_method": cfg.select,
@@ -407,6 +500,8 @@ def run_morphology_workflow(
                 "polarity": polarity,
                 "n_query_profiles": len(query_membership.get(query_id, [])),
                 "n_reference_profiles": len(ref_vectors),
+                "n_retained_neighbors": len(retained_neighbors),
+                "retrieval_confidence": retrieval_confidence,
                 "n_genes_selected": len(selected_rows),
                 "path": str(program_dir.relative_to(out_dir)),
             })
@@ -414,7 +509,21 @@ def run_morphology_workflow(
     if not manifest_rows:
         raise ValueError("No morphology programs were emitted. Check feature overlap, mappings, and input tables.")
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["program_id", "query_id", "polarity", "n_query_profiles", "n_reference_profiles", "n_genes_selected", "path"])
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=[
+                "program_id",
+                "query_id",
+                "polarity",
+                "n_query_profiles",
+                "n_reference_profiles",
+                "n_retained_neighbors",
+                "retrieval_confidence",
+                "n_genes_selected",
+                "path",
+            ],
+        )
         writer.writeheader()
         for row in manifest_rows:
             writer.writerow(row)

@@ -3,8 +3,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from statistics import mean, median
+import sys
 
-from geneset_extractors.extractors.morphology.io import read_compound_targets_tsv, read_metadata_tsv, read_profiles_table, write_bundle_manifest
+from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, write_bundle_manifest
 
 
 def _safe_value(value: str) -> str:
@@ -29,13 +30,20 @@ def run(args) -> dict[str, object]:
     if not profile_paths:
         raise ValueError("Provide at least one profile file via --profile_paths")
     experimental_metadata, exp_summary = read_metadata_tsv(args.experimental_metadata_tsv, id_column=args.metadata_join_id_column, delimiter=args.metadata_delimiter)
-    compound_targets, targets_summary = read_compound_targets_tsv(
+    compound_targets, targets_summary = read_compound_targets_auto(
         args.compound_targets_tsv,
         compound_id_column=args.compound_id_column,
         gene_symbol_column=args.compound_target_gene_symbol_column,
         weight_column=args.compound_target_weight_column,
         delimiter=args.compound_targets_delimiter,
     )
+    if bool(targets_summary.get("fallback_used")):
+        print("warning: compound target parsing used fallback public-JUMP target interpretation", file=sys.stderr)
+    if int(targets_summary.get("n_zero_target_compounds", 0)) > 0:
+        print(
+            f"warning: {targets_summary['n_zero_target_compounds']} compounds had zero parsed targets in target metadata",
+            file=sys.stderr,
+        )
     all_profiles: dict[str, dict[str, float]] = {}
     n_rows = 0
     for profile_path in profile_paths:
@@ -43,12 +51,72 @@ def run(args) -> dict[str, object]:
         all_profiles.update(profiles)
         n_rows += len(profiles)
 
-    filtered_ids = []
+    modality_timepoint_counts: dict[str, dict[str, int]] = {}
+    filtered_ids: list[str] = []
+    rows_by_modality_timepoint: dict[tuple[str, str], list[str]] = {}
+    for profile_id in all_profiles:
+        meta = experimental_metadata.get(profile_id, {})
+        cell_type = str(meta.get(args.cell_type_column, "")).strip()
+        timepoint = str(meta.get(args.timepoint_column, "")).strip()
+        modality = str(meta.get(args.perturbation_type_column, "")).strip().lower()
+        if args.cell_type_filter and cell_type != str(args.cell_type_filter):
+            continue
+        rows_by_modality_timepoint.setdefault((modality, timepoint), []).append(profile_id)
+        modality_timepoint_counts.setdefault(modality, {})
+        modality_timepoint_counts[modality][timepoint] = int(modality_timepoint_counts[modality].get(timepoint, 0)) + 1
+
+    valid_modalities = [m for m in sorted(modality_timepoint_counts) if m in {"compound", "orf", "crispr"}]
+    requested_timepoint = str(args.timepoint_filter or "").strip()
+    chosen_timepoint = requested_timepoint
+    if bool(args.allow_mixed_timepoints):
+        chosen_contexts = {
+            modality: (requested_timepoint if requested_timepoint in modality_timepoint_counts.get(modality, {}) else max(modality_timepoint_counts.get(modality, {}), key=lambda tp: modality_timepoint_counts[modality][tp], default=""))
+            for modality in valid_modalities
+        }
+    else:
+        if not chosen_timepoint:
+            candidate_timepoints = sorted({tp for counts in modality_timepoint_counts.values() for tp in counts})
+            chosen_timepoint = max(
+                candidate_timepoints,
+                key=lambda tp: (
+                    sum(1 for modality in valid_modalities if tp in modality_timepoint_counts.get(modality, {})),
+                    sum(int(modality_timepoint_counts.get(modality, {}).get(tp, 0)) for modality in valid_modalities),
+                ),
+                default="",
+            )
+        chosen_contexts = {modality: chosen_timepoint for modality in valid_modalities}
+
+    included_modalities: list[str] = []
+    missing_modalities: list[str] = []
+    for modality in valid_modalities:
+        context_timepoint = chosen_contexts.get(modality, "")
+        if not context_timepoint or context_timepoint not in modality_timepoint_counts.get(modality, {}):
+            missing_modalities.append(modality)
+            continue
+        included_modalities.append(modality)
+
+    if bool(args.require_same_timepoint_across_modalities) and not bool(args.allow_mixed_timepoints) and chosen_timepoint:
+        if missing_modalities:
+            print(
+                "warning: requested coherent same-timepoint morphology bundle is missing modalities at "
+                f"timepoint={chosen_timepoint}; included={included_modalities} missing={missing_modalities}",
+                file=sys.stderr,
+            )
+    if missing_modalities and not bool(args.allow_missing_modalities):
+        raise ValueError(
+            f"Missing required modalities for morphology bundle: included={included_modalities} missing={missing_modalities}"
+        )
+
     for profile_id in all_profiles:
         meta = experimental_metadata.get(profile_id, {})
         if args.cell_type_filter and str(meta.get(args.cell_type_column, "")).strip() != str(args.cell_type_filter):
             continue
-        if args.timepoint_filter and str(meta.get(args.timepoint_column, "")).strip() != str(args.timepoint_filter):
+        modality = str(meta.get(args.perturbation_type_column, "")).strip().lower()
+        timepoint = str(meta.get(args.timepoint_column, "")).strip()
+        if modality not in valid_modalities:
+            continue
+        chosen = chosen_contexts.get(modality, "")
+        if chosen and timepoint != chosen:
             continue
         filtered_ids.append(profile_id)
     grouped: dict[str, list[dict[str, float]]] = {}
@@ -130,8 +198,37 @@ def run(args) -> dict[str, object]:
             "feature_schema": feature_schema_path.name,
             "feature_stats": feature_stats_path.name,
         },
-        "filters": {"cell_type_filter": args.cell_type_filter, "timepoint_filter": args.timepoint_filter, "profile_kind": args.profile_kind},
-        "summary": {"n_input_profiles": n_rows, "n_consensus_profiles": len(consensus_profiles), "n_features": len(feature_names), "experimental_metadata": exp_summary, "compound_targets": targets_summary},
+        "filters": {
+            "cell_type_filter": args.cell_type_filter,
+            "timepoint_filter": args.timepoint_filter,
+            "profile_kind": args.profile_kind,
+            "require_same_timepoint_across_modalities": bool(args.require_same_timepoint_across_modalities),
+            "allow_missing_modalities": bool(args.allow_missing_modalities),
+            "allow_mixed_timepoints": bool(args.allow_mixed_timepoints),
+        },
+        "contexts": {
+            modality: {
+                "cell_type_or_line": args.cell_type_filter,
+                "timepoint": chosen_contexts.get(modality, ""),
+                "n_profiles": int(modality_timepoint_counts.get(modality, {}).get(chosen_contexts.get(modality, ""), 0)),
+                "n_consensus_profiles": sum(
+                    1
+                    for perturbation_id, row in metadata_rows.items()
+                    if str(row.get("perturbation_type", "")).strip().lower() == modality
+                ),
+            }
+            for modality in valid_modalities
+            if chosen_contexts.get(modality, "")
+        },
+        "summary": {
+            "n_input_profiles": n_rows,
+            "n_consensus_profiles": len(consensus_profiles),
+            "n_features": len(feature_names),
+            "experimental_metadata": exp_summary,
+            "compound_targets": targets_summary,
+            "included_modalities": included_modalities,
+            "missing_modalities": missing_modalities,
+        },
     }
     bundle_manifest_path = out_dir / f"{bundle_id}.bundle.json"
     write_bundle_manifest(bundle_manifest_path, bundle_manifest)

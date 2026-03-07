@@ -178,6 +178,14 @@ Given a nonnegative gene score vector $S_{ug}$ for a chosen polarity, select gen
 \end{itemize}
 As in other extractors, the implementation should enforce default size bounds of 100--500 genes for GMT emission and warn when fewer genes are available.
 
+\subsection{Neighbor restriction for specificity}
+In practice, morphology retrieval can become too diffuse if all weakly similar references are allowed to contribute. A robust default is therefore to retain only the top $K_{\mathrm{nbr}}$ reference neighbors per query and polarity after thresholding:
+\[
+\mathcal{N}_u^+ = \operatorname{TopK}\{r : \mathrm{sim}(u,r) \ge \tau\},
+\]
+and analogously for the opposite-polarity case using $-\mathrm{sim}(u,r)$.
+Only retained neighbors contribute to $E_{ug}$. This improves specificity by preventing a long tail of weak matches from dominating the routed gene evidence.
+
 \subsection{Within-set normalization}
 For the selected set $\mathcal{S}_u$, define within-set weights:
 \[
@@ -202,6 +210,8 @@ A morphology extractor is most useful when paired with a reusable reference bund
 
 A practical first bundle should be derived from the JUMP pilot data in a single cell line and timepoint (for example, U2OS 48h or A549 48h), because those datasets contain matched compounds, CRISPR knockouts, and ORF overexpression perturbations with strong metadata and manageable scale compared to the full JUMP production release. \cite{jump_gallery,jump_pilot,jump_target}
 
+The practical default should prefer coherent same-timepoint bundles. If a public context does not contain all modalities at one timepoint, the workflow should keep a coherent same-timepoint reference from the available modalities and warn explicitly about missing modalities. Mixed-timepoint bundles should require explicit user intent.
+
 \section{QC and failure modes}
 Important warnings to implement:
 \begin{itemize}[leftmargin=2em]
@@ -210,6 +220,7 @@ Important warnings to implement:
 \item Reference control profiles accidentally included as retrieval candidates.
 \item Low perturbation QC or very low number of usable reference matches.
 \item Gene families dominating selected sets (for example, a broad receptor family), reported as warnings but not filtered by default.
+\item Low retrieval confidence, for example when few positive neighbors are retained or the negative-similarity fraction is high.
 \end{itemize}
 
 \section{Recommended defaults}
@@ -219,11 +230,14 @@ A sensible initial default is:
 \item query aggregation: median within user-supplied group,
 \item similarity metric: cosine,
 \item polarity: similar only,
+\item neighbor restriction: top 50 reference neighbors with nonnegative similarity retained by default,
 \item modality balance: equal across available modalities,
 \item selection: top-k with $K=200$,
 \item normalization: within-set $\ell_1$,
 \item GMT emission with 100--500 size bounds.
 \end{itemize}
+
+Opposite-polarity programs remain useful as a secondary exploratory view, but should be treated as experimental unless retrieval confidence and context matching are strong.
 
 \begin{thebibliography}{9}
 

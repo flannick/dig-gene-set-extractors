@@ -37,6 +37,12 @@ geneset-extractors convert morphology_profile_query \
 
 the converter resolves `morphology_jump_target_pilot_u2os_48h_v1.bundle.json` from `--resources_dir`, then loads the referenced files relative to that manifest.
 
+No separate resource-manifest overlay is required when the bundle manifest is present directly in `--resources_dir`.
+Resolution order is:
+
+1. local `--resources_dir/<bundle_id>.bundle.json`
+2. resource-manager manifest lookup
+
 ## Resource ids
 
 Current built-in manual/local bundle resource ids:
@@ -61,13 +67,18 @@ Use the helper workflow:
 geneset-extractors workflows jump_prepare_reference_bundle \
   --profile_paths path/to/profiles.tsv \
   --experimental_metadata_tsv path/to/experimental_metadata.tsv \
-  --compound_targets_tsv path/to/compound_targets.tsv \
+  --compound_targets_tsv path/to/jump_target_compound_metadata.tsv \
   --cell_type_filter U2OS \
   --timepoint_filter 48 \
   --out_dir results/jump_u2os_48h_bundle
 ```
 
 This creates a local bundle manifest plus the referenced files.
+
+The workflow accepts either:
+
+- an already standardized `compound_targets.tsv`, or
+- common public JUMP target metadata TSVs, which it normalizes internally to `compound_id,gene_symbol,weight,source`.
 
 ## Missing-bundle behavior
 
@@ -77,3 +88,13 @@ This creates a local bundle manifest plus the referenced files.
   - missing bundle is a hard error.
 
 Bundle usage and missing-resource information are recorded in `geneset.meta.json` and run summaries.
+
+## Context coherence defaults
+
+The bundle workflow defaults to same-timepoint coherence:
+
+- `--require_same_timepoint_across_modalities true`
+- `--allow_mixed_timepoints false`
+- `--allow_missing_modalities true`
+
+This means the builder will keep a coherent cell-type/timepoint context and warn if some modalities are unavailable, rather than silently mixing 48h and 96h references.

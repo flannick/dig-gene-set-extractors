@@ -55,6 +55,7 @@ Assay-specific resource instructions:
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
 - Morphology supports an optional local reference bundle for reusable perturbation profiles, metadata, and feature stats.
+- Morphology bundles can be resolved directly from `--resources_dir/<bundle_id>.bundle.json` without a separate overlay manifest.
 - Drug response PRISM prep workflow: `geneset-extractors workflows prism_prepare` (see `docs/drug-response2geneset.md`)
 - Morphology bundle builder workflow: `geneset-extractors workflows jump_prepare_reference_bundle`
 

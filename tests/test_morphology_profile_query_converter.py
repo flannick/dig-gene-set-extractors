@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from geneset_extractors.converters import morphology_profile_query
 from geneset_extractors.core.validate import validate_output_dir
 
@@ -46,6 +48,8 @@ class Args:
     similarity_metric = "cosine"
     similarity_power = 1.0
     polarity = "both"
+    max_reference_neighbors = 50
+    min_similarity = 0.0
     compound_weight = 0.5
     genetic_weight = 0.5
 
@@ -125,6 +129,7 @@ def test_morphology_profile_query_bundle_mode(tmp_path: Path):
     assert resources is not None
     used_ids = {row["id"] for row in resources["used"]}
     assert "morphology_jump_target_pilot_u2os_48h_v1" in used_ids
+    assert meta["summary"]["parse_summary"]["bundle_manifest"]["_bundle_resolution"] == "local_resources_dir"
 
 
 def test_morphology_profile_query_missing_bundle_warns_or_fails(tmp_path: Path):
@@ -144,3 +149,34 @@ def test_morphology_profile_query_missing_bundle_warns_or_fails(tmp_path: Path):
         assert "Could not resolve morphology reference bundle" in str(exc)
     else:
         raise AssertionError("Expected missing bundle resolution to fail")
+
+
+def test_morphology_profile_query_neighbor_restriction_changes_output(tmp_path: Path):
+    args_full = Args()
+    args_full.out_dir = str(tmp_path / "morph_full")
+    args_full.max_reference_neighbors = 0
+    morphology_profile_query.run(args_full)
+
+    args_limited = Args()
+    args_limited.out_dir = str(tmp_path / "morph_limited")
+    args_limited.max_reference_neighbors = 1
+    morphology_profile_query.run(args_limited)
+
+    full_rows = _geneset_rows(Path(args_full.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    limited_rows = _geneset_rows(Path(args_limited.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    assert [row["gene_id"] for row in full_rows] != [row["gene_id"] for row in limited_rows]
+
+
+def test_morphology_profile_query_low_confidence_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    args = Args()
+    args.query_profiles_tsv = "tests/data/toy_morph_query_profiles_lowconf.tsv"
+    args.out_dir = str(tmp_path / "morph_lowconf")
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.polarity = "similar"
+    result = morphology_profile_query.run(args)
+    assert result["n_groups"] == 1
+    captured = capsys.readouterr()
+    assert "low retrieval confidence" in captured.err
+    meta = json.loads((Path(args.out_dir) / "program=Q_LOW__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["retrieval_confidence"] == "low"

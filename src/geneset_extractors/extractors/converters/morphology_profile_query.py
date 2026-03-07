@@ -127,6 +127,8 @@ def run(args) -> dict[str, object]:
         similarity_metric=args.similarity_metric,
         similarity_power=float(args.similarity_power),
         polarity=args.polarity,
+        max_reference_neighbors=int(args.max_reference_neighbors),
+        min_similarity=float(args.min_similarity),
         compound_weight=float(args.compound_weight),
         genetic_weight=float(args.genetic_weight),
         select=args.select,

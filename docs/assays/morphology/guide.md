@@ -112,6 +112,8 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--similarity_metric cosine`
 - `--similarity_power 1.0`
 - `--polarity similar`
+- `--max_reference_neighbors 50`
+- `--min_similarity 0.0`
 - `--compound_weight 0.5 --genetic_weight 0.5`
 - `--select top_k --top_k 200`
 - `--normalize within_set_l1`
@@ -137,10 +139,33 @@ The workflow command creates a local reusable bundle from well-level morphology 
 geneset-extractors workflows jump_prepare_reference_bundle \
   --profile_paths path/to/profiles_plate1.tsv,path/to/profiles_plate2.tsv \
   --experimental_metadata_tsv path/to/experimental_metadata.tsv \
-  --compound_targets_tsv path/to/compound_targets.tsv \
+  --compound_targets_tsv path/to/jump_target_compound_metadata.tsv \
+  --cell_type_filter U2OS \
+  --timepoint_filter 48 \
+  --require_same_timepoint_across_modalities true \
+  --out_dir results/jump_u2os_48h_bundle
+```
+
+Minimal working bundle-to-converter path:
+
+```bash
+geneset-extractors workflows jump_prepare_reference_bundle \
+  --profile_paths path/to/profiles.tsv \
+  --experimental_metadata_tsv path/to/experimental_metadata.tsv \
+  --compound_targets_tsv path/to/jump_target_compound_metadata.tsv \
   --cell_type_filter U2OS \
   --timepoint_filter 48 \
   --out_dir results/jump_u2os_48h_bundle
+
+geneset-extractors convert morphology_profile_query \
+  --query_profiles_tsv path/to/query_profiles.tsv \
+  --query_metadata_tsv path/to/query_metadata.tsv \
+  --group_query_by query_group \
+  --reference_bundle_id morphology_jump_target_pilot_u2os_48h_v1 \
+  --resources_dir results/jump_u2os_48h_bundle \
+  --out_dir results/morphology_query \
+  --organism human \
+  --genome_build hg38
 ```
 
 It writes:
@@ -174,6 +199,9 @@ Grouped output layout mirrors other multi-program extractors:
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.
   - rerun with `--polarity both` if you want both directions.
+- Low retrieval confidence:
+  - the retained morphology neighbors are weak or internally inconsistent.
+  - check `run_summary.txt`, use a matched same-timepoint bundle, and inspect `top_neighbor_ids`.
 - Small or skipped GMT sets:
   - fewer than `--gmt_min_genes` genes survived selection.
   - for toy runs, use smaller `--gmt_min_genes` or `--emit_small_gene_sets true`.
@@ -186,6 +214,24 @@ Grouped output layout mirrors other multi-program extractors:
 For a first pass on Cell Painting data:
 
 - use a bundle matched to the same cell line and timepoint,
+- keep same-timepoint coherence unless you explicitly need a mixed-timepoint reference,
 - aggregate replicate query wells,
 - keep `--polarity similar`,
+- treat `--polarity opposite` as experimental / secondary,
 - inspect `run_summary.txt` before over-interpreting GMT enrichments.
+
+## Common mismatch: public JUMP contexts
+
+Public JUMP pilot contexts do not always contain compound, ORF, and CRISPR perturbations at the same cell line and timepoint.
+
+Default workflow behavior:
+
+- do not silently mix timepoints,
+- build a coherent same-timepoint bundle from the modalities that are actually available,
+- warn explicitly about missing modalities.
+
+If you intentionally want a mixed-timepoint bundle, opt in with:
+
+```bash
+--allow_mixed_timepoints true --require_same_timepoint_across_modalities false
+```
