@@ -115,6 +115,7 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--max_reference_neighbors 20`
 - `--min_similarity 0.0`
 - `--hubness_penalty inverse_rank`
+- `--min_specificity_confidence_to_emit_opposite medium`
 - `--compound_weight 0.5 --genetic_weight 0.5`
 - `--select top_k --top_k 200`
 - `--normalize within_set_l1`
@@ -205,7 +206,8 @@ Grouped output layout mirrors other multi-program extractors:
   - check `run_summary.txt`, use a matched same-timepoint bundle, and inspect `top_neighbor_ids`.
 - High retrieval confidence but low specificity confidence:
   - morphology neighbors are geometrically coherent, but the routed gene evidence is diffuse.
-  - inspect `specificity_confidence`, `top10_gene_mass`, `neighbor_target_concentration`, `neighbor_primary_target_agreement`, and `high_hub_mass_fraction` in `geneset.meta.json`.
+  - inspect `specificity_confidence`, `top10_gene_mass`, `neighbor_target_concentration`, `neighbor_primary_target_agreement`, `neighbor_top3_target_agreement`, and `high_hub_mass_fraction` in `geneset.meta.json`.
+  - for opposite-polarity runs, low-specificity programs are suppressed by default unless you lower `--min_specificity_confidence_to_emit_opposite`.
 - Small or skipped GMT sets:
   - fewer than `--gmt_min_genes` genes survived selection.
   - for toy runs, use smaller `--gmt_min_genes` or `--emit_small_gene_sets true`.
@@ -226,6 +228,7 @@ For a first pass on Cell Painting data:
 - treat `--polarity opposite` as experimental / secondary,
 - keep the default hubness penalty on unless you are explicitly studying broad/generic morphological states,
 - keep the neighborhood narrow by default; increasing `--max_reference_neighbors` usually makes outputs broader and less specific,
+- if you explicitly want exploratory opposite-polarity outputs, use `--min_specificity_confidence_to_emit_opposite low`,
 - inspect `run_summary.txt` before over-interpreting GMT enrichments.
 
 ## Common mismatch: public JUMP contexts

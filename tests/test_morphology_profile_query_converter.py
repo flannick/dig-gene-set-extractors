@@ -51,6 +51,7 @@ class Args:
     max_reference_neighbors = 20
     min_similarity = 0.0
     hubness_penalty = "inverse_rank"
+    min_specificity_confidence_to_emit_opposite = "medium"
     compound_weight = 0.5
     genetic_weight = 0.5
 
@@ -89,11 +90,11 @@ def test_morphology_profile_query_explicit_files(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "morph_explicit")
     result = morphology_profile_query.run(args)
-    assert result["n_groups"] == 4
+    assert result["n_groups"] == 2
 
     out_dir = Path(args.out_dir)
     manifest = _manifest_rows(out_dir / "manifest.tsv")
-    assert len(manifest) == 4
+    assert len(manifest) == 2
     assert (out_dir / "genesets.gmt").exists()
 
     q1_similar = out_dir / "program=Q1__polarity=similar" / "geneset.tsv"
@@ -125,7 +126,7 @@ def test_morphology_profile_query_bundle_mode(tmp_path: Path):
     args.resources_dir = "tests/data/morphology_bundle"
     args.reference_bundle_id = "morphology_jump_target_pilot_u2os_48h_v1"
     result = morphology_profile_query.run(args)
-    assert result["n_groups"] == 4
+    assert result["n_groups"] == 2
 
     out_dir = Path(args.out_dir)
     meta = json.loads((out_dir / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
@@ -304,9 +305,33 @@ def test_morphology_profile_query_opposite_experimental_warning(tmp_path: Path, 
     args = Args()
     args.out_dir = str(tmp_path / "opposite_warning")
     args.polarity = "opposite"
+    args.min_specificity_confidence_to_emit_opposite = "low"
     morphology_profile_query.run(args)
     captured = capsys.readouterr()
     assert "opposite-polarity morphology programs are experimental" in captured.err
+
+
+def test_morphology_profile_query_low_specificity_opposite_is_suppressed(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    args = Args()
+    args.out_dir = str(tmp_path / "opposite_suppressed")
+    args.polarity = "both"
+    morphology_profile_query.run(args)
+    captured = capsys.readouterr()
+    assert "suppressed because specificity_confidence" in captured.err
+    manifest = _manifest_rows(Path(args.out_dir) / "manifest.tsv")
+    assert {row["polarity"] for row in manifest} == {"similar"}
+    root_summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert any(row["reason"] == "low_specificity_opposite_suppressed" for row in root_summary["skipped_programs"])
+
+
+def test_morphology_profile_query_can_force_opposite_emission(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "opposite_forced")
+    args.polarity = "both"
+    args.min_specificity_confidence_to_emit_opposite = "low"
+    morphology_profile_query.run(args)
+    manifest = _manifest_rows(Path(args.out_dir) / "manifest.tsv")
+    assert {row["polarity"] for row in manifest} == {"similar", "opposite"}
 
 
 def test_morphology_profile_query_small_gene_set_warning_includes_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

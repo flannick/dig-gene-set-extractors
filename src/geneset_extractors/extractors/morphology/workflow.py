@@ -52,6 +52,7 @@ class MorphologyWorkflowConfig:
     gmt_mass_list: str
     gmt_format: str
     emit_small_gene_sets: bool
+    min_specificity_confidence_to_emit_opposite: str
 
 
 def _safe_component(value: str, fallback: str) -> str:
@@ -80,6 +81,10 @@ def _selected_weights(scores: dict[str, float], selected_gene_ids: list[str], no
     if normalize == "within_set_l1":
         return within_set_l1_weights(scores, selected_gene_ids)
     raise ValueError(f"Unsupported normalization method: {normalize}")
+
+
+def _confidence_rank(level: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(str(level).strip().lower(), -1)
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -184,23 +189,28 @@ def _specificity_confidence(
     gene_scores: dict[str, float],
     *,
     neighbor_primary_target_agreement: float,
+    neighbor_top3_target_agreement: float,
     high_hub_mass_fraction: float,
-) -> tuple[str, float, float, float, float]:
+) -> tuple[str, float, float, float, float, float]:
     if not selected_rows or not gene_scores:
-        return "low", 0.0, 0.0, 0.0, 0.0
+        return "low", 0.0, 0.0, 0.0, 0.0, 0.0
     top10_gene_mass = sum(float(row.get("weight", 0.0)) for row in selected_rows[:10])
     total_gene_mass = sum(float(v) for v in gene_scores.values())
     neighbor_target_concentration = 0.0
     if total_gene_mass > 0.0:
         neighbor_target_concentration = max(float(v) for v in gene_scores.values()) / total_gene_mass
     strong_gene_concentration = top10_gene_mass >= 0.65
-    strong_target_agreement = neighbor_target_concentration >= 0.25 or neighbor_primary_target_agreement >= 0.35
+    strong_target_agreement = (
+        neighbor_target_concentration >= 0.25
+        or neighbor_primary_target_agreement >= 0.35
+        or neighbor_top3_target_agreement >= 0.5
+    )
     low_hub_dominance = high_hub_mass_fraction <= 0.5
     if strong_gene_concentration and strong_target_agreement and low_hub_dominance:
-        return "high", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
+        return "high", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction
     if (strong_gene_concentration or strong_target_agreement) and high_hub_mass_fraction <= 0.75:
-        return "medium", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
-    return "low", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
+        return "medium", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction
+    return "low", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction
 
 
 def _hubness_weight(
@@ -249,6 +259,38 @@ def _routed_primary_target_agreement(
     if total_mass <= 0.0 or not target_mass:
         return 0.0
     return max(float(v) for v in target_mass.values()) / total_mass
+
+
+def _routed_topk_target_agreement(
+    *,
+    retained_neighbors: list[tuple[str, float]],
+    evidence_by_ref: dict[str, float],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    top_k: int,
+) -> float:
+    target_mass: dict[str, float] = {}
+    total_mass = 0.0
+    for ref_id, _base in retained_neighbors:
+        evidence = float(evidence_by_ref.get(ref_id, 0.0))
+        if evidence <= 0.0:
+            continue
+        mapping = compound_map.get(ref_id) or genetic_map.get(ref_id)
+        if not mapping:
+            continue
+        ordered = sorted(mapping.items(), key=lambda item: (-float(item[1]), str(item[0])))[: max(1, int(top_k))]
+        denom = sum(float(weight) for _gene, weight in ordered) or float(len(ordered))
+        for gene, weight in ordered:
+            share = evidence * (float(weight) / float(denom))
+            target_mass[gene] = float(target_mass.get(gene, 0.0)) + share
+        total_mass += evidence
+    if total_mass <= 0.0 or not target_mass:
+        return 0.0
+    top_mass = sum(
+        float(weight)
+        for _gene, weight in sorted(target_mass.items(), key=lambda item: (-float(item[1]), str(item[0])))[: max(1, int(top_k))]
+    )
+    return top_mass / total_mass
 
 
 def _high_hub_mass_fraction(
@@ -366,6 +408,7 @@ def run_morphology_workflow(
     manifest_rows: list[dict[str, object]] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     root_warnings: list[dict[str, object]] = []
+    skipped_programs: list[dict[str, object]] = []
     gmt_topk_list = parse_int_list_csv(str(cfg.gmt_topk_list))
     gmt_mass_list = parse_mass_list_csv(str(cfg.gmt_mass_list))
     gmt_biotype_allowlist = parse_str_list_csv(str(cfg.gmt_biotype_allowlist))
@@ -509,14 +552,22 @@ def run_morphology_workflow(
                 compound_map=compound_map,
                 genetic_map=genetic_map,
             )
+            neighbor_top3_target_agreement = _routed_topk_target_agreement(
+                retained_neighbors=retained_neighbors,
+                evidence_by_ref=evidence_by_ref,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                top_k=3,
+            )
             high_hub_mass_fraction = _high_hub_mass_fraction(
                 evidence_by_ref=evidence_by_ref,
                 reference_metadata=reference_metadata_effective,
             )
-            specificity_confidence, top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction = _specificity_confidence(
+            specificity_confidence, top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction = _specificity_confidence(
                 selected_rows,
                 gene_scores,
                 neighbor_primary_target_agreement=neighbor_primary_target_agreement,
+                neighbor_top3_target_agreement=neighbor_top3_target_agreement,
                 high_hub_mass_fraction=high_hub_mass_fraction,
             )
             if retrieval_confidence == "high" and specificity_confidence == "low":
@@ -545,6 +596,31 @@ def run_morphology_workflow(
                 )
                 program_warnings.append(warning_payload)
                 root_warnings.append(warning_payload)
+            if polarity == "opposite" and _confidence_rank(specificity_confidence) < _confidence_rank(cfg.min_specificity_confidence_to_emit_opposite):
+                warning_payload = {
+                    "code": "opposite_program_suppressed_low_specificity",
+                    "query_id": query_id,
+                    "polarity": polarity,
+                    "specificity_confidence": specificity_confidence,
+                    "min_required": cfg.min_specificity_confidence_to_emit_opposite,
+                    "suggestion": "rerun with --min_specificity_confidence_to_emit_opposite low if you explicitly want exploratory opposite-polarity outputs",
+                }
+                print(
+                    f"warning: query={query_id} polarity={polarity} suppressed because specificity_confidence={specificity_confidence} < {cfg.min_specificity_confidence_to_emit_opposite}",
+                    file=sys.stderr,
+                )
+                program_warnings.append(warning_payload)
+                root_warnings.append(warning_payload)
+                skipped_programs.append(
+                    {
+                        "query_id": query_id,
+                        "polarity": polarity,
+                        "reason": "low_specificity_opposite_suppressed",
+                        "specificity_confidence": specificity_confidence,
+                        "min_required": cfg.min_specificity_confidence_to_emit_opposite,
+                    }
+                )
+                continue
 
             safe_program_id = _safe_component(f"{query_id}__polarity={polarity}", "program")
             program_dir = out_dir / f"program={safe_program_id}"
@@ -612,6 +688,7 @@ def run_morphology_workflow(
                 "top10_gene_mass": top10_gene_mass,
                 "neighbor_target_concentration": neighbor_target_concentration,
                 "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                 "high_hub_mass_fraction": high_hub_mass_fraction,
                 "hubness_penalty": cfg.hubness_penalty,
                 "hub_score_present": bool(hub_scores_present > 0),
@@ -644,6 +721,7 @@ def run_morphology_workflow(
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
                     "hubness_penalty": cfg.hubness_penalty,
+                    "min_specificity_confidence_to_emit_opposite": cfg.min_specificity_confidence_to_emit_opposite,
                     "compound_weight": cfg.compound_weight,
                     "genetic_weight": cfg.genetic_weight,
                     "select": cfg.select,
@@ -682,6 +760,7 @@ def run_morphology_workflow(
                     "top10_gene_mass": top10_gene_mass,
                     "neighbor_target_concentration": neighbor_target_concentration,
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                    "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                     "high_hub_mass_fraction": high_hub_mass_fraction,
                     "hubness_penalty": cfg.hubness_penalty,
                     "hub_score_present": bool(hub_scores_present > 0),
@@ -702,6 +781,7 @@ def run_morphology_workflow(
                     "retrieval_confidence": retrieval_confidence,
                     "specificity_confidence": specificity_confidence,
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                    "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                     "high_hub_mass_fraction": high_hub_mass_fraction,
                 },
                 output_files=output_files,
@@ -733,6 +813,7 @@ def run_morphology_workflow(
                 "retrieval_confidence": retrieval_confidence,
                 "specificity_confidence": specificity_confidence,
                 "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                 "high_hub_mass_fraction": high_hub_mass_fraction,
                 "n_genes_selected": len(selected_rows),
                 "path": str(program_dir.relative_to(out_dir)),
@@ -754,6 +835,7 @@ def run_morphology_workflow(
                 "retrieval_confidence",
                 "specificity_confidence",
                 "neighbor_primary_target_agreement",
+                "neighbor_top3_target_agreement",
                 "high_hub_mass_fraction",
                 "n_genes_selected",
                 "path",
@@ -775,6 +857,7 @@ def run_morphology_workflow(
         "bundle_summary": parse_summary.get("bundle_manifest", {}).get("summary") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
         "resources": resources_info,
         "warnings": root_warnings,
+        "skipped_programs": skipped_programs,
     }
     run_json_path, run_txt_path = write_run_summary_files(out_dir, root_summary)
     return {"n_groups": len(manifest_rows), "out_dir": str(out_dir), "run_summary_json": str(run_json_path), "run_summary_txt": str(run_txt_path)}

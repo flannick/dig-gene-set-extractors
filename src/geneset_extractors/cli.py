@@ -467,6 +467,7 @@ def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None
     parser.add_argument("--max_reference_neighbors", type=int, default=20)
     parser.add_argument("--min_similarity", type=float, default=0.0)
     parser.add_argument("--hubness_penalty", choices=["none", "inverse_linear", "inverse_rank"], default="inverse_rank")
+    parser.add_argument("--min_specificity_confidence_to_emit_opposite", choices=["low", "medium", "high"], default="medium")
     parser.add_argument("--compound_weight", type=float, default=0.5)
     parser.add_argument("--genetic_weight", type=float, default=0.5)
 

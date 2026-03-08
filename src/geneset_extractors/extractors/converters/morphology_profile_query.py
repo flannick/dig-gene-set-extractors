@@ -131,6 +131,7 @@ def run(args) -> dict[str, object]:
         max_reference_neighbors=int(args.max_reference_neighbors),
         min_similarity=float(args.min_similarity),
         hubness_penalty=str(args.hubness_penalty),
+        min_specificity_confidence_to_emit_opposite=str(args.min_specificity_confidence_to_emit_opposite),
         compound_weight=float(args.compound_weight),
         genetic_weight=float(args.genetic_weight),
         select=args.select,

@@ -117,5 +117,6 @@ The bundle builder computes a `hub_score` for each reference perturbation from w
 The extractor also keeps only a narrow local neighborhood by default:
 
 - `--max_reference_neighbors 20`
+- `--min_specificity_confidence_to_emit_opposite medium`
 
 This is deliberate. Morphology retrieval becomes much less specific when weak long-tail neighbors are allowed to contribute.

@@ -238,6 +238,17 @@
       "help": "Downweight generic hub-like reference perturbations when hub_score is available in reference metadata. inverse_rank is the stronger, more stable default."
     },
     {
+      "name": "min_specificity_confidence_to_emit_opposite",
+      "type": "string",
+      "default": "medium",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "help": "Opposite-polarity programs are experimental; suppress them unless specificity_confidence reaches at least this level."
+    },
+    {
       "name": "compound_weight",
       "type": "number",
       "default": 0.5,

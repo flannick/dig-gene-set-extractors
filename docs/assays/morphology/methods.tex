@@ -232,6 +232,8 @@ Important warnings to implement:
 \item High retrieval confidence with low specificity confidence, which indicates a stable morphology neighborhood that still does not concentrate on target-like routed gene evidence.
 \end{itemize}
 
+In practice, the implementation can use specificity confidence as a guardrail rather than a passive annotation. In particular, opposite-polarity programs remain experimental and may be suppressed by default unless routed gene evidence reaches at least a moderate specificity level.
+
 \section{Recommended defaults}
 A sensible initial default is:
 \begin{itemize}[leftmargin=2em]
