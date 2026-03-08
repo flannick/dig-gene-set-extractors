@@ -26,6 +26,7 @@ class Args:
     require_same_timepoint_across_modalities = True
     allow_missing_modalities = True
     allow_mixed_timepoints = False
+    hubness_k = 50
     profile_kind = "normalized_feature_select_negcon_plate"
     consensus_aggregate = "median"
     profile_delimiter = "\t"
@@ -47,11 +48,15 @@ def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
     payload = json.loads(bundle_manifest.read_text(encoding="utf-8"))
     assert payload["files"]["reference_profiles"] == "reference_profiles.tsv.gz"
     assert payload["summary"]["n_consensus_profiles"] == 5
+    assert "hub_score_summary" in payload["summary"]
 
     with gzip.open(out_dir / "reference_metadata.tsv.gz", "rt", encoding="utf-8") as fh:
         text = fh.read()
     assert "CMP_A" in text
     assert "ORF_GENE3" in text
+    assert "hub_score" in text
+    assert (out_dir / "bundle_summary.json").exists()
+    assert (out_dir / "bundle_summary.txt").exists()
 
 
 def test_jump_prepare_reference_bundle_same_timepoint_default_does_not_mix(tmp_path: Path, capsys):

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from statistics import mean, median
 import sys
 
 from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, write_bundle_manifest
+from geneset_extractors.extractors.morphology.similarity import cosine_similarity
 
 
 def _safe_value(value: str) -> str:
@@ -20,6 +22,28 @@ def _aggregate_consensus(rows: list[dict[str, float]], *, aggregate: str) -> dic
         if not vals:
             continue
         out[feat] = float(median(vals) if aggregate == "median" else mean(vals))
+    return out
+
+
+def _hub_scores(consensus_profiles: dict[str, dict[str, float]], *, k: int) -> dict[str, float]:
+    ids = sorted(consensus_profiles)
+    features = sorted({feat for row in consensus_profiles.values() for feat in row})
+    vectors = {
+        perturbation_id: [float(consensus_profiles[perturbation_id].get(feat, 0.0)) for feat in features]
+        for perturbation_id in ids
+    }
+    out: dict[str, float] = {}
+    for perturbation_id in ids:
+        sims: list[float] = []
+        for other_id in ids:
+            if other_id == perturbation_id:
+                continue
+            sim = cosine_similarity(vectors[perturbation_id], vectors[other_id])
+            if sim > 0.0:
+                sims.append(float(sim))
+        sims.sort(reverse=True)
+        kept = sims[: max(1, int(k))] if sims else []
+        out[perturbation_id] = float(sum(kept) / float(len(kept))) if kept else 0.0
     return out
 
 
@@ -151,6 +175,9 @@ def run(args) -> dict[str, object]:
     for perturbation_id, rows in grouped.items():
         metadata_rows[perturbation_id]["replicate_count"] = str(len(rows))
         metadata_rows[perturbation_id]["qc_weight"] = str(min(1.0, max(0.1, float(len(rows)) / 3.0)))
+    hub_scores = _hub_scores(consensus_profiles, k=int(args.hubness_k))
+    for perturbation_id, hub_score in hub_scores.items():
+        metadata_rows[perturbation_id]["hub_score"] = str(hub_score)
 
     profiles_path = out_dir / "reference_profiles.tsv.gz"
     metadata_path = out_dir / "reference_metadata.tsv.gz"
@@ -165,7 +192,7 @@ def run(args) -> dict[str, object]:
         for perturbation_id in sorted(consensus_profiles):
             writer.writerow([perturbation_id, *[consensus_profiles[perturbation_id].get(feat, 0.0) for feat in feature_names]])
     with gzip.open(metadata_path, "wt", encoding="utf-8", newline="") as fh:
-        fieldnames = ["perturbation_id", "perturbation_type", "cell_type_or_line", "timepoint", "gene_symbol", "compound_id", "is_control", "control_type", "qc_weight", "replicate_count"]
+        fieldnames = ["perturbation_id", "perturbation_type", "cell_type_or_line", "timepoint", "gene_symbol", "compound_id", "is_control", "control_type", "qc_weight", "replicate_count", "hub_score"]
         writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames)
         writer.writeheader()
         for perturbation_id in sorted(metadata_rows):
@@ -205,6 +232,7 @@ def run(args) -> dict[str, object]:
             "require_same_timepoint_across_modalities": bool(args.require_same_timepoint_across_modalities),
             "allow_missing_modalities": bool(args.allow_missing_modalities),
             "allow_mixed_timepoints": bool(args.allow_mixed_timepoints),
+            "hubness_k": int(args.hubness_k),
         },
         "contexts": {
             modality: {
@@ -228,8 +256,46 @@ def run(args) -> dict[str, object]:
             "compound_targets": targets_summary,
             "included_modalities": included_modalities,
             "missing_modalities": missing_modalities,
+            "hub_score_summary": {
+                "min": min(hub_scores.values()) if hub_scores else None,
+                "median": median(hub_scores.values()) if hub_scores else None,
+                "max": max(hub_scores.values()) if hub_scores else None,
+            },
         },
     }
     bundle_manifest_path = out_dir / f"{bundle_id}.bundle.json"
     write_bundle_manifest(bundle_manifest_path, bundle_manifest)
+    bundle_summary = {
+        "bundle_id": bundle_id,
+        "cell_type_or_line": args.cell_type_filter,
+        "timepoint": args.timepoint_filter,
+        "n_consensus_profiles_total": len(consensus_profiles),
+        "included_modalities": included_modalities,
+        "missing_modalities": missing_modalities,
+        "contexts": bundle_manifest["contexts"],
+        "blocked_modalities": [
+            {
+                "modality": modality,
+                "reason": f"no matching profiles in selected context at timepoint={chosen_contexts.get(modality, chosen_timepoint)}",
+            }
+            for modality in missing_modalities
+        ],
+    }
+    (out_dir / "bundle_summary.json").write_text(json.dumps(bundle_summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    lines = [
+        f"bundle_id: {bundle_id}",
+        f"cell_type_or_line: {args.cell_type_filter}",
+        f"timepoint: {args.timepoint_filter}",
+        f"n_consensus_profiles_total: {len(consensus_profiles)}",
+        f"included_modalities: {included_modalities}",
+        f"missing_modalities: {missing_modalities}",
+    ]
+    for modality, context in bundle_manifest["contexts"].items():
+        lines.append(
+            f"modality={modality} included=yes timepoint={context['timepoint']} "
+            f"n_profiles_raw={context['n_profiles']} n_consensus_profiles={context['n_consensus_profiles']}"
+        )
+    for row in bundle_summary["blocked_modalities"]:
+        lines.append(f"blocked_modality={row['modality']} reason={row['reason']}")
+    (out_dir / "bundle_summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"bundle_id": bundle_id, "bundle_manifest": str(bundle_manifest_path), "n_profiles": len(consensus_profiles)}

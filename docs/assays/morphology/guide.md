@@ -114,6 +114,7 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--polarity similar`
 - `--max_reference_neighbors 50`
 - `--min_similarity 0.0`
+- `--hubness_penalty inverse_linear`
 - `--compound_weight 0.5 --genetic_weight 0.5`
 - `--select top_k --top_k 200`
 - `--normalize within_set_l1`
@@ -202,9 +203,14 @@ Grouped output layout mirrors other multi-program extractors:
 - Low retrieval confidence:
   - the retained morphology neighbors are weak or internally inconsistent.
   - check `run_summary.txt`, use a matched same-timepoint bundle, and inspect `top_neighbor_ids`.
+- High retrieval confidence but low specificity confidence:
+  - morphology neighbors are geometrically coherent, but the routed gene evidence is diffuse.
+  - inspect `specificity_confidence`, `top10_gene_mass`, and `neighbor_target_concentration` in `geneset.meta.json`.
 - Small or skipped GMT sets:
   - fewer than `--gmt_min_genes` genes survived selection.
   - for toy runs, use smaller `--gmt_min_genes` or `--emit_small_gene_sets true`.
+  - warning format includes the actual gene count and threshold, for example:
+    - `warning: small_gene_set_skipped program=Q1 polarity=similar n_genes=42 min_required=100`
 - Artifact-family dominance:
   - top genes are dominated by broad receptor-family patterns.
   - advisory only; interpret cautiously and inspect the underlying matches.
@@ -218,6 +224,7 @@ For a first pass on Cell Painting data:
 - aggregate replicate query wells,
 - keep `--polarity similar`,
 - treat `--polarity opposite` as experimental / secondary,
+- keep the default hubness penalty on unless you are explicitly studying broad/generic morphological states,
 - inspect `run_summary.txt` before over-interpreting GMT enrichments.
 
 ## Common mismatch: public JUMP contexts

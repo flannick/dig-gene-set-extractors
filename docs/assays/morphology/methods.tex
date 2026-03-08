@@ -212,6 +212,13 @@ A practical first bundle should be derived from the JUMP pilot data in a single 
 
 The practical default should prefer coherent same-timepoint bundles. If a public context does not contain all modalities at one timepoint, the workflow should keep a coherent same-timepoint reference from the available modalities and warn explicitly about missing modalities. Mixed-timepoint bundles should require explicit user intent.
 
+\subsection{Reference hubness penalty}
+Some reference perturbations are generic morphology hubs: they are moderately similar to many unrelated queries and can dominate routed gene evidence. Let $h_r$ denote a precomputed hubness score for reference perturbation $r$, estimated from within-bundle reference-reference similarities. A default penalty rescales evidence before routing:
+\[
+\tilde{w}_{ur} = \frac{w_{ur}}{\epsilon + h_r}.
+\]
+An alternative rank-based penalty may be used, but the intent is the same: reduce the influence of generic hub-like references and increase specificity of routed gene evidence.
+
 \section{QC and failure modes}
 Important warnings to implement:
 \begin{itemize}[leftmargin=2em]
@@ -221,6 +228,7 @@ Important warnings to implement:
 \item Low perturbation QC or very low number of usable reference matches.
 \item Gene families dominating selected sets (for example, a broad receptor family), reported as warnings but not filtered by default.
 \item Low retrieval confidence, for example when few positive neighbors are retained or the negative-similarity fraction is high.
+\item Low specificity confidence, for example when retained neighbors are geometrically coherent but routed gene evidence remains diffuse across many unrelated genes.
 \end{itemize}
 
 \section{Recommended defaults}
@@ -231,6 +239,7 @@ A sensible initial default is:
 \item similarity metric: cosine,
 \item polarity: similar only,
 \item neighbor restriction: top 50 reference neighbors with nonnegative similarity retained by default,
+\item hubness penalty: inverse-linear downweighting when the bundle provides hub scores,
 \item modality balance: equal across available modalities,
 \item selection: top-k with $K=200$,
 \item normalization: within-set $\ell_1$,

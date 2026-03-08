@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from geneset_extractors.core.metadata import input_file_record
 from geneset_extractors.extractors.morphology.bundle import bundle_resources_info, load_bundle_context, resolve_bundle_manifest
-from geneset_extractors.extractors.morphology.io import aggregate_profiles, read_compound_targets_tsv, read_feature_schema_tsv, read_feature_stats_tsv, read_metadata_tsv, read_profiles_table
+from geneset_extractors.extractors.morphology.io import aggregate_profiles, read_compound_targets_auto, read_feature_schema_tsv, read_feature_stats_tsv, read_metadata_tsv, read_profiles_table
 from geneset_extractors.extractors.morphology.workflow import MorphologyWorkflowConfig, run_morphology_workflow
 
 
@@ -92,7 +93,7 @@ def run(args) -> dict[str, object]:
         id_column=args.reference_metadata_id_column,
         delimiter=args.reference_metadata_delimiter,
     )
-    compound_targets, compound_targets_summary = read_compound_targets_tsv(
+    compound_targets, compound_targets_summary = read_compound_targets_auto(
         reference_inputs["compound_targets"],
         compound_id_column=args.compound_id_column,
         gene_symbol_column=args.compound_target_gene_symbol_column,
@@ -129,6 +130,7 @@ def run(args) -> dict[str, object]:
         polarity=args.polarity,
         max_reference_neighbors=int(args.max_reference_neighbors),
         min_similarity=float(args.min_similarity),
+        hubness_penalty=str(args.hubness_penalty),
         compound_weight=float(args.compound_weight),
         genetic_weight=float(args.genetic_weight),
         select=args.select,
@@ -160,6 +162,21 @@ def run(args) -> dict[str, object]:
         "feature_stats": feature_stats_summary,
         "bundle_manifest": bundle_manifest,
     }
+    if query_metadata is not None and isinstance(bundle_manifest, dict):
+        bundle_contexts = bundle_manifest.get("contexts", {})
+        if isinstance(bundle_contexts, dict):
+            bundle_modalities = {str(key).strip().lower() for key in bundle_contexts}
+            query_modalities = {
+                str(row.get("perturbation_type", "")).strip().lower()
+                for row in query_metadata.values()
+                if str(row.get("perturbation_type", "")).strip()
+            }
+            missing_modalities = sorted(query_modalities - bundle_modalities)
+            if missing_modalities:
+                print(
+                    f"warning: query metadata contains modalities absent from bundle: {missing_modalities}",
+                    file=sys.stderr,
+                )
     result = run_morphology_workflow(
         cfg=cfg,
         query_profiles=aggregated_queries,

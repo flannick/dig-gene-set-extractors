@@ -50,6 +50,7 @@ class Args:
     polarity = "both"
     max_reference_neighbors = 50
     min_similarity = 0.0
+    hubness_penalty = "inverse_linear"
     compound_weight = 0.5
     genetic_weight = 0.5
 
@@ -105,6 +106,9 @@ def test_morphology_profile_query_explicit_files(tmp_path: Path):
     assert meta["input"]["assay"] == "morphology"
     assert meta["summary"]["mapping_summary"]["n_compound_refs_with_targets"] == 2
     assert meta["gmt"]["written"] is True
+    assert meta["summary"]["retrieval_confidence"] is not None
+    assert meta["summary"]["specificity_confidence"] is not None
+    assert isinstance(meta["summary"]["top_neighbor_ids"], list)
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
@@ -180,3 +184,81 @@ def test_morphology_profile_query_low_confidence_warning(tmp_path: Path, capsys:
     assert "low retrieval confidence" in captured.err
     meta = json.loads((Path(args.out_dir) / "program=Q_LOW__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["summary"]["retrieval_confidence"] == "low"
+
+
+def test_morphology_profile_query_hubness_penalty_prefers_specific_neighbor(tmp_path: Path):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profiles.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "HUB\t1.0\t0.01\n"
+        "SPEC\t0.8\t0.2\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "HUB\tcompound\tHUB\t10.0\t1.0\tfalse\n"
+        "SPEC\tcompound\tSPEC\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "HUB\tGENE_HUB\t1.0\n"
+        "SPEC\tGENE_SPEC\t1.0\n",
+        encoding="utf-8",
+    )
+
+    args_none = Args()
+    args_none.query_profiles_tsv = str(query_path)
+    args_none.query_metadata_tsv = None
+    args_none.group_query_by = None
+    args_none.reference_profiles_tsv = str(ref_profiles)
+    args_none.reference_metadata_tsv = str(ref_meta)
+    args_none.compound_targets_tsv = str(targets)
+    args_none.feature_stats_tsv = None
+    args_none.feature_schema_tsv = None
+    args_none.out_dir = str(tmp_path / "hub_none")
+    args_none.polarity = "similar"
+    args_none.top_k = 1
+    args_none.gmt_topk_list = "1"
+    args_none.hubness_penalty = "none"
+    morphology_profile_query.run(args_none)
+
+    args_pen = Args()
+    args_pen.query_profiles_tsv = str(query_path)
+    args_pen.query_metadata_tsv = None
+    args_pen.group_query_by = None
+    args_pen.reference_profiles_tsv = str(ref_profiles)
+    args_pen.reference_metadata_tsv = str(ref_meta)
+    args_pen.compound_targets_tsv = str(targets)
+    args_pen.feature_stats_tsv = None
+    args_pen.feature_schema_tsv = None
+    args_pen.out_dir = str(tmp_path / "hub_pen")
+    args_pen.polarity = "similar"
+    args_pen.top_k = 1
+    args_pen.gmt_topk_list = "1"
+    args_pen.hubness_penalty = "inverse_linear"
+    morphology_profile_query.run(args_pen)
+
+    gene_none = _geneset_rows(Path(args_none.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
+    gene_pen = _geneset_rows(Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
+    assert gene_none == "GENE_HUB"
+    assert gene_pen == "GENE_SPEC"
+
+
+def test_morphology_profile_query_small_gene_set_warning_includes_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    args = Args()
+    args.out_dir = str(tmp_path / "small_warning")
+    args.polarity = "similar"
+    args.gmt_min_genes = 100
+    args.gmt_max_genes = 500
+    args.gmt_topk_list = "200"
+    args.emit_small_gene_sets = False
+    morphology_profile_query.run(args)
+    captured = capsys.readouterr()
+    assert "small_gene_set_skipped" in captured.err
+    assert "n_genes=" in captured.err
+    assert "min_required=100" in captured.err

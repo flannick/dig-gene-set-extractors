@@ -227,6 +227,17 @@
       "help": "Ignore retained neighbors below this similarity threshold after polarity transform."
     },
     {
+      "name": "hubness_penalty",
+      "type": "string",
+      "default": "inverse_linear",
+      "enum": [
+        "none",
+        "inverse_linear",
+        "inverse_rank"
+      ],
+      "help": "Downweight generic hub-like reference perturbations when hub_score is available in reference metadata."
+    },
+    {
       "name": "compound_weight",
       "type": "number",
       "default": 0.5,

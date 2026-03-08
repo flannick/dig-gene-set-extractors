@@ -80,6 +80,13 @@ The workflow accepts either:
 - an already standardized `compound_targets.tsv`, or
 - common public JUMP target metadata TSVs, which it normalizes internally to `compound_id,gene_symbol,weight,source`.
 
+Bundle outputs now also include:
+
+- `bundle_summary.json`
+- `bundle_summary.txt`
+
+These summarize which modalities were included, which were omitted, and why.
+
 ## Missing-bundle behavior
 
 - `--resource_policy skip`:
@@ -98,3 +105,11 @@ The bundle workflow defaults to same-timepoint coherence:
 - `--allow_missing_modalities true`
 
 This means the builder will keep a coherent cell-type/timepoint context and warn if some modalities are unavailable, rather than silently mixing 48h and 96h references.
+
+## Hubness penalty support
+
+The bundle builder computes a `hub_score` for each reference perturbation from within-bundle reference-reference similarities. The extractor can use this score to downweight generic hub-like references:
+
+- `--hubness_penalty inverse_linear` (default)
+- `--hubness_penalty inverse_rank`
+- `--hubness_penalty none`

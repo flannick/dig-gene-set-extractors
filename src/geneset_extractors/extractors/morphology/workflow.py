@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import sys
+from statistics import median
 
 from geneset_extractors.core.gmt import build_gmt_sets_from_rows, parse_int_list_csv, parse_mass_list_csv, parse_str_list_csv, resolve_gmt_out_path, write_gmt
 from geneset_extractors.core.metadata import make_metadata, write_metadata
@@ -31,6 +32,7 @@ class MorphologyWorkflowConfig:
     polarity: str
     max_reference_neighbors: int
     min_similarity: float
+    hubness_penalty: str
     compound_weight: float
     genetic_weight: float
     select: str
@@ -101,8 +103,21 @@ def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> list[dict
         if code not in {"small_gene_set_skipped", "small_gene_set_emitted", "marginal_gene_count", "no_positive_genes", "require_symbol_heavy_drop"}:
             continue
         message = f"{code}: {diag.get('base_name','unknown')}"
+        if code == "small_gene_set_skipped":
+            message = (
+                f"{code} program={diag.get('query_id', 'unknown')} polarity={diag.get('polarity', 'unknown')} "
+                f"n_genes={int(diag.get('n_genes', 0) or 0)} min_required={int(diag.get('min_genes', 0) or 0)}"
+            )
         print(f"warning: {message}", file=sys.stderr)
-        warnings_payload.append({"code": code, "message": message, "n_genes": int(diag.get("n_genes", 0) or 0)})
+        warnings_payload.append(
+            {
+                "code": code,
+                "message": message,
+                "n_genes": int(diag.get("n_genes", 0) or 0),
+                "min_genes": int(diag.get("min_genes", 0) or 0),
+                "reason": str(diag.get("reason", "")),
+            }
+        )
     return warnings_payload
 
 
@@ -166,6 +181,45 @@ def _retrieval_confidence(
     if n_positive_neighbors >= 5 and neg_similarity_fraction < 0.7:
         return "medium"
     return "low"
+
+
+def _specificity_confidence(
+    selected_rows: list[dict[str, object]],
+    gene_scores: dict[str, float],
+) -> tuple[str, float, float]:
+    if not selected_rows or not gene_scores:
+        return "low", 0.0, 0.0
+    top10_gene_mass = sum(float(row.get("weight", 0.0)) for row in selected_rows[:10])
+    total_gene_mass = sum(float(v) for v in gene_scores.values())
+    neighbor_target_concentration = 0.0
+    if total_gene_mass > 0.0:
+        neighbor_target_concentration = max(float(v) for v in gene_scores.values()) / total_gene_mass
+    if top10_gene_mass >= 0.7 and neighbor_target_concentration >= 0.35:
+        return "high", top10_gene_mass, neighbor_target_concentration
+    if top10_gene_mass >= 0.7 or neighbor_target_concentration >= 0.35:
+        return "medium", top10_gene_mass, neighbor_target_concentration
+    return "low", top10_gene_mass, neighbor_target_concentration
+
+
+def _hubness_weight(
+    *,
+    ref_id: str,
+    reference_metadata: dict[str, dict[str, str]],
+    mode: str,
+    hub_rank_penalties: dict[str, float],
+) -> float:
+    if mode == "none":
+        return 1.0
+    if mode == "inverse_rank":
+        return float(hub_rank_penalties.get(ref_id, 1.0))
+    raw = reference_metadata.get(ref_id, {}).get("hub_score")
+    try:
+        hub_score = float(raw) if raw not in {None, ""} else None
+    except ValueError:
+        hub_score = None
+    if hub_score is None:
+        return 1.0
+    return 1.0 / max(1e-6, float(hub_score))
 
 
 def run_morphology_workflow(
@@ -233,6 +287,24 @@ def run_morphology_workflow(
         reference_metadata=reference_metadata_effective,
         compound_targets=compound_targets,
     )
+    hub_scores_present = 0
+    hub_rank_penalties: dict[str, float] = {}
+    hub_order: list[tuple[str, float]] = []
+    for ref_id, row in reference_metadata_effective.items():
+        raw = row.get("hub_score")
+        try:
+            hub_score = float(raw) if raw not in {None, ""} else None
+        except ValueError:
+            hub_score = None
+        if hub_score is None:
+            continue
+        hub_scores_present += 1
+        hub_order.append((ref_id, hub_score))
+    if hub_order:
+        hub_order.sort(key=lambda item: (float(item[1]), str(item[0])))
+        n_hubs = len(hub_order)
+        for rank, (ref_id, _score) in enumerate(hub_order, start=1):
+            hub_rank_penalties[ref_id] = 1.0 / (float(rank) / float(n_hubs))
 
     manifest_rows: list[dict[str, object]] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
@@ -241,6 +313,9 @@ def run_morphology_workflow(
     gmt_mass_list = parse_mass_list_csv(str(cfg.gmt_mass_list))
     gmt_biotype_allowlist = parse_str_list_csv(str(cfg.gmt_biotype_allowlist))
     polarities = [cfg.polarity] if cfg.polarity in {"similar", "opposite"} else ["similar", "opposite"]
+    if cfg.hubness_penalty != "none" and hub_scores_present == 0:
+        print("warning: hub_score not present in reference metadata; proceeding without hubness penalty", file=sys.stderr)
+        root_warnings.append({"code": "hub_score_missing", "mode": cfg.hubness_penalty})
 
     for query_id in sorted(query_vectors):
         query_sim = similarities.get(query_id, {})
@@ -269,7 +344,17 @@ def run_morphology_workflow(
             )
             evidence_by_ref: dict[str, float] = {}
             for ref_id, base in retained_neighbors:
-                evidence_by_ref[ref_id] = float((float(base) ** float(cfg.similarity_power)) * float(qc_weights.get(ref_id, 1.0)))
+                hub_penalty = _hubness_weight(
+                    ref_id=ref_id,
+                    reference_metadata=reference_metadata_effective,
+                    mode=cfg.hubness_penalty,
+                    hub_rank_penalties=hub_rank_penalties,
+                )
+                evidence_by_ref[ref_id] = float(
+                    (float(base) ** float(cfg.similarity_power))
+                    * float(qc_weights.get(ref_id, 1.0))
+                    * float(hub_penalty)
+                )
             retained_by_modality: dict[str, int] = {}
             for ref_id, _score in retained_neighbors:
                 modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() or "unknown"
@@ -335,6 +420,15 @@ def run_morphology_workflow(
                 str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower()
                 for ref_id in top_neighbor_ids
             ]
+            retained_hub_scores: list[float] = []
+            for ref_id, _score in retained_neighbors:
+                raw_hub = reference_metadata_effective.get(ref_id, {}).get("hub_score")
+                try:
+                    parsed_hub = float(raw_hub) if raw_hub not in {None, ""} else None
+                except ValueError:
+                    parsed_hub = None
+                if parsed_hub is not None:
+                    retained_hub_scores.append(parsed_hub)
             total_evidence = sum(float(v) for v in evidence_by_ref.values())
             top5_mass = 0.0
             if total_evidence > 0.0:
@@ -342,6 +436,23 @@ def run_morphology_workflow(
             n_positive_neighbors = sum(1 for value in query_sim.values() if float(value) > 0.0)
             n_negative_neighbors = sum(1 for value in query_sim.values() if float(value) < 0.0)
             retrieval_confidence = _retrieval_confidence(n_positive_neighbors, neg_frac)
+            specificity_confidence, top10_gene_mass, neighbor_target_concentration = _specificity_confidence(
+                selected_rows,
+                gene_scores,
+            )
+            if retrieval_confidence == "high" and specificity_confidence == "low":
+                warning_payload = {
+                    "code": "diffuse_gene_evidence",
+                    "query_id": query_id,
+                    "polarity": polarity,
+                    "suggestion": "neighbors are geometrically coherent but gene evidence is diffuse; inspect hubness/context and target routing",
+                }
+                print(
+                    f"warning: query={query_id} polarity={polarity} neighbors are geometrically coherent but gene evidence is diffuse",
+                    file=sys.stderr,
+                )
+                program_warnings.append(warning_payload)
+                root_warnings.append(warning_payload)
             if retrieval_confidence == "low":
                 warning_payload = {
                     "code": "low_retrieval_confidence",
@@ -418,6 +529,18 @@ def run_morphology_workflow(
                 "top_neighbor_similarities": top_neighbor_sims,
                 "top5_neighbor_score_mass_fraction": top5_mass,
                 "retrieval_confidence": retrieval_confidence,
+                "specificity_confidence": specificity_confidence,
+                "top10_gene_mass": top10_gene_mass,
+                "neighbor_target_concentration": neighbor_target_concentration,
+                "hubness_penalty": cfg.hubness_penalty,
+                "hub_score_present": bool(hub_scores_present > 0),
+                "hub_score_summary_retained": {
+                    "min": min(retained_hub_scores) if retained_hub_scores else None,
+                    "median": median(retained_hub_scores) if retained_hub_scores else None,
+                    "max": max(retained_hub_scores) if retained_hub_scores else None,
+                },
+                "bundle_contexts": parse_summary.get("bundle_manifest", {}).get("contexts") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
+                "bundle_summary": parse_summary.get("bundle_manifest", {}).get("summary") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
                 "parse_summary": parse_summary,
                 "feature_alignment": feature_summary,
                 "query_standardization": query_scale_summary,
@@ -439,6 +562,7 @@ def run_morphology_workflow(
                     "polarity": polarity,
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
+                    "hubness_penalty": cfg.hubness_penalty,
                     "compound_weight": cfg.compound_weight,
                     "genetic_weight": cfg.genetic_weight,
                     "select": cfg.select,
@@ -467,6 +591,24 @@ def run_morphology_workflow(
                     "resources": resources_info,
                     "warnings": program_warnings,
                     "retrieval_confidence": retrieval_confidence,
+                    "specificity_confidence": specificity_confidence,
+                    "n_positive_neighbors": n_positive_neighbors,
+                    "n_negative_neighbors": n_negative_neighbors,
+                    "neg_similarity_fraction": neg_frac,
+                    "top_neighbor_ids": top_neighbor_ids,
+                    "top_neighbor_modalities": top_neighbor_modalities,
+                    "top_neighbor_similarities": top_neighbor_sims,
+                    "top10_gene_mass": top10_gene_mass,
+                    "neighbor_target_concentration": neighbor_target_concentration,
+                    "hubness_penalty": cfg.hubness_penalty,
+                    "hub_score_present": bool(hub_scores_present > 0),
+                    "hub_score_summary_retained": {
+                        "min": min(retained_hub_scores) if retained_hub_scores else None,
+                        "median": median(retained_hub_scores) if retained_hub_scores else None,
+                        "max": max(retained_hub_scores) if retained_hub_scores else None,
+                    },
+                    "bundle_contexts": parse_summary.get("bundle_manifest", {}).get("contexts") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
+                    "bundle_summary": parse_summary.get("bundle_manifest", {}).get("summary") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
                 },
                 program_extraction={
                     "selection_method": cfg.select,
@@ -474,6 +616,8 @@ def run_morphology_workflow(
                     "normalize": cfg.normalize,
                     "n_selected_genes": len(selected_rows),
                     "score_definition": f"morphology reference similarity polarity={polarity}",
+                    "retrieval_confidence": retrieval_confidence,
+                    "specificity_confidence": specificity_confidence,
                 },
                 output_files=output_files,
                 gmt={
@@ -502,6 +646,7 @@ def run_morphology_workflow(
                 "n_reference_profiles": len(ref_vectors),
                 "n_retained_neighbors": len(retained_neighbors),
                 "retrieval_confidence": retrieval_confidence,
+                "specificity_confidence": specificity_confidence,
                 "n_genes_selected": len(selected_rows),
                 "path": str(program_dir.relative_to(out_dir)),
             })
@@ -520,6 +665,7 @@ def run_morphology_workflow(
                 "n_reference_profiles",
                 "n_retained_neighbors",
                 "retrieval_confidence",
+                "specificity_confidence",
                 "n_genes_selected",
                 "path",
             ],
@@ -536,6 +682,8 @@ def run_morphology_workflow(
         "parse_summary": parse_summary,
         "feature_alignment": feature_summary,
         "mapping_summary": mapping_summary,
+        "bundle_contexts": parse_summary.get("bundle_manifest", {}).get("contexts") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
+        "bundle_summary": parse_summary.get("bundle_manifest", {}).get("summary") if isinstance(parse_summary.get("bundle_manifest"), dict) else None,
         "resources": resources_info,
         "warnings": root_warnings,
     }
