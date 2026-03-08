@@ -39,9 +39,11 @@ Current retrieval modes:
 - `--mode mechanism`
   - family/mechanism-aware reranking and expansion
   - best when morphology is class-correct but not exact-target-correct
+  - reaches its intended behavior only when the bundle or explicit inputs include `target_annotations`
 - `--mode hybrid`
   - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
   - keeps `geneset.tsv` as the preferred variant for downstream compatibility
+  - without target annotations, hybrid is mostly a strict core plus a broad fallback rather than full family-aware expansion
 
 Default interpretation:
 

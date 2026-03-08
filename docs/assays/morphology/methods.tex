@@ -197,6 +197,8 @@ For direct-target retrieval, the practical implementation does not immediately m
 \subsection{Mechanism-aware expansion}
 If the bundle includes optional target annotations such as \texttt{target\_family}, \texttt{target\_class}, or \texttt{mechanism\_label}, mechanism mode can estimate family-level or mechanism-level posterior support from the pooled routed gene evidence. When exact target support is weak but family support is coherent, the expanded output boosts genes carrying the supported family/mechanism labels. This yields broader, enrichment-ready outputs without pretending that exact-target recovery is stronger than it is.
 
+If these annotations are absent, mechanism mode remains runnable but should be interpreted as a broad target-routing fallback rather than as full family-aware inference. In that setting the implementation should warn explicitly so users do not mistake missing annotation support for a negative biological result.
+
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.
 

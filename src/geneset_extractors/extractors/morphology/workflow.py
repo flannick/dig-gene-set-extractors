@@ -826,6 +826,12 @@ def run_morphology_workflow(
     if cfg.polarity in {"opposite", "both"}:
         print("warning: opposite-polarity morphology programs are experimental and should be interpreted cautiously", file=sys.stderr)
         root_warnings.append({"code": "opposite_polarity_experimental"})
+    if cfg.mode in {"mechanism", "hybrid"} and not target_annotations:
+        print(
+            f"warning: mode={cfg.mode} requested without target annotations; mechanism expansion will be limited to broad target aggregation",
+            file=sys.stderr,
+        )
+        root_warnings.append({"code": "target_annotations_missing_for_mode", "mode": cfg.mode})
 
     for query_id in sorted(query_vectors):
         query_sim = similarities.get(query_id, {})
@@ -1006,40 +1012,49 @@ def run_morphology_workflow(
             genetic_norm = l1_normalize_scores(genetic_scores)
             compound_neighbors = int(retained_by_modality.get("compound", 0))
             genetic_neighbors = int(retained_by_modality.get("orf", 0) + retained_by_modality.get("crispr", 0))
-            if compound_norm and genetic_norm:
-                cw = float(cfg.compound_weight)
-                gw = float(cfg.genetic_weight)
-                if query_modality == "compound":
-                    cw *= 1.5
-                    gw *= 0.5
-                elif query_modality in {"orf", "crispr"}:
-                    gw *= 1.5
-                    cw *= 0.5
-                if compound_neighbors < 5 <= genetic_neighbors:
-                    cw *= 0.25
-                if genetic_neighbors < 5 <= compound_neighbors:
-                    gw *= 0.25
-                total = cw + gw
-                cw = cw / total if total > 0.0 else 0.5
-                gw = gw / total if total > 0.0 else 0.5
-            elif compound_norm:
-                cw, gw = 1.0, 0.0
-            elif genetic_norm:
-                cw, gw = 0.0, 1.0
-            else:
-                cw, gw = 0.0, 0.0
-            genes = sorted(set(compound_norm) | set(genetic_norm))
-            core_gene_scores = {
-                gene: float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0))
-                for gene in genes
-                if float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0)) > 0.0
-            }
-            if cfg.gene_recurrence_penalty != "none":
+            if cfg.mode == "direct_target":
+                direct_scores = {gene: float(target_support_weighted.get(gene, 0.0)) for gene in top_target_genes if float(target_support_weighted.get(gene, 0.0)) > 0.0}
+                total_direct = sum(float(v) for v in direct_scores.values())
                 core_gene_scores = {
-                    gene: float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0))
-                    for gene, score in core_gene_scores.items()
-                    if float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0)) > 0.0
+                    gene: float(score) / total_direct
+                    for gene, score in direct_scores.items()
+                    if total_direct > 0.0 and float(score) > 0.0
                 }
+            else:
+                if compound_norm and genetic_norm:
+                    cw = float(cfg.compound_weight)
+                    gw = float(cfg.genetic_weight)
+                    if query_modality == "compound":
+                        cw *= 1.5
+                        gw *= 0.5
+                    elif query_modality in {"orf", "crispr"}:
+                        gw *= 1.5
+                        cw *= 0.5
+                    if compound_neighbors < 5 <= genetic_neighbors:
+                        cw *= 0.25
+                    if genetic_neighbors < 5 <= compound_neighbors:
+                        gw *= 0.25
+                    total = cw + gw
+                    cw = cw / total if total > 0.0 else 0.5
+                    gw = gw / total if total > 0.0 else 0.5
+                elif compound_norm:
+                    cw, gw = 1.0, 0.0
+                elif genetic_norm:
+                    cw, gw = 0.0, 1.0
+                else:
+                    cw, gw = 0.0, 0.0
+                genes = sorted(set(compound_norm) | set(genetic_norm))
+                core_gene_scores = {
+                    gene: float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0))
+                    for gene in genes
+                    if float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0)) > 0.0
+                }
+                if cfg.gene_recurrence_penalty != "none":
+                    core_gene_scores = {
+                        gene: float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0))
+                        for gene, score in core_gene_scores.items()
+                        if float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0)) > 0.0
+                    }
             top_family, top_family_mass, family_support = _top_label_support(
                 core_gene_scores,
                 target_annotations=target_annotations,

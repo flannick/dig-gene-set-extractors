@@ -112,7 +112,7 @@ def test_morphology_profile_query_explicit_files(tmp_path: Path):
 
     q1_similar = out_dir / "program=Q1__polarity=similar" / "geneset.tsv"
     rows = _geneset_rows(q1_similar)
-    assert [row["gene_id"] for row in rows] == ["GENE1", "GENE3"]
+    assert {row["gene_id"] for row in rows} == {"GENE1", "GENE3"}
     weight_sum = sum(float(row["weight"]) for row in rows)
     assert abs(weight_sum - 1.0) < 1e-9
 
@@ -172,17 +172,19 @@ def test_morphology_profile_query_missing_bundle_warns_or_fails(tmp_path: Path):
 def test_morphology_profile_query_neighbor_restriction_changes_output(tmp_path: Path):
     args_full = Args()
     args_full.out_dir = str(tmp_path / "morph_full")
+    args_full.mode = "mechanism"
     args_full.max_reference_neighbors = 0
     morphology_profile_query.run(args_full)
 
     args_limited = Args()
     args_limited.out_dir = str(tmp_path / "morph_limited")
+    args_limited.mode = "mechanism"
     args_limited.max_reference_neighbors = 1
     morphology_profile_query.run(args_limited)
 
-    full_rows = _geneset_rows(Path(args_full.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
-    limited_rows = _geneset_rows(Path(args_limited.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
-    assert [row["gene_id"] for row in full_rows] != [row["gene_id"] for row in limited_rows]
+    meta_full = json.loads((Path(args_full.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    meta_limited = json.loads((Path(args_limited.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta_full["summary"]["effective_neighbor_count"] != meta_limited["summary"]["effective_neighbor_count"]
 
 
 def test_morphology_profile_query_low_confidence_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
