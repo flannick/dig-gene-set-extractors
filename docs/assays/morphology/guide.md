@@ -31,6 +31,18 @@ Current specificity defaults are retrieval-oriented:
 - treat `--max_reference_neighbors` as an upper bound rather than a fixed count,
 - penalize genes that recur across many reference perturbations.
 
+Current retrieval modes:
+
+- `--mode direct_target`
+  - strict target-first pooling
+  - best when distributed same-target support exists
+- `--mode mechanism`
+  - family/mechanism-aware reranking and expansion
+  - best when morphology is class-correct but not exact-target-correct
+- `--mode hybrid`
+  - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
+  - keeps `geneset.tsv` as the preferred variant for downstream compatibility
+
 Default interpretation:
 
 - `--polarity similar` asks which known perturbations induce similar morphology.
@@ -59,6 +71,7 @@ Optional:
 - `--group_query_by`
 - `--feature_schema_tsv`
 - `--feature_stats_tsv`
+- `--target_annotations_tsv`
 
 ### Bundle-driven mode
 
@@ -115,6 +128,7 @@ If the bundle is missing and `--resource_policy skip`, the converter warns and s
 
 Default converter behavior is conservative and designed to produce interpretable outputs:
 
+- `--mode direct_target`
 - `--query_aggregate median`
 - `--similarity_metric cosine`
 - `--similarity_power 1.0`
@@ -190,6 +204,7 @@ It writes:
 - `reference_profiles.tsv.gz`
 - `reference_metadata.tsv.gz`
 - `compound_targets.tsv.gz`
+- optional `target_annotations.tsv.gz`
 - `feature_schema.tsv.gz`
 - `feature_stats.tsv.gz`
 - `<bundle_id>.bundle.json`
@@ -200,6 +215,8 @@ Grouped output layout mirrors other multi-program extractors:
 
 - `manifest.tsv`
 - `program=<QUERY>__polarity=<POLARITY>/geneset.tsv`
+- optional `program=<QUERY>__polarity=<POLARITY>/geneset.core.tsv`
+- optional `program=<QUERY>__polarity=<POLARITY>/geneset.expanded.tsv`
 - `program=<QUERY>__polarity=<POLARITY>/geneset.meta.json`
 - optional `program=<...>/geneset.full.tsv`
 - optional `program=<...>/genesets.gmt`
@@ -218,6 +235,10 @@ Grouped output layout mirrors other multi-program extractors:
   - `--control_calibration mean_center` subtracts only the control mean.
   - `--control_calibration residualize_controls` subtracts the control mean and then projects query/reference vectors off the top control-derived nuisance axes.
   - if too few controls are available for residualization, the workflow falls back to mean-centering and records that fallback in summaries and metadata.
+- Direct target versus mechanism mode:
+  - `direct_target` pools positive evidence by target before hard neighbor truncation.
+  - `mechanism` uses optional target annotations to back off to family or mechanism support when exact-target support is weak.
+  - `hybrid` emits both strict and expanded outputs and records which one is preferred.
   - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.

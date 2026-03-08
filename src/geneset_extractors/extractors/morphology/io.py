@@ -352,6 +352,42 @@ def read_feature_stats_tsv(
     return out, {"path": str(path), "n_rows": len(rows), "n_features": len(out), "n_missing_required": missing}
 
 
+def read_target_annotations_tsv(
+    path: str | Path,
+    *,
+    gene_symbol_column: str = "gene_symbol",
+    delimiter: str = "\t",
+) -> tuple[dict[str, dict[str, str]], dict[str, object]]:
+    p = Path(path)
+    with _open_text(p) as fh:
+        reader = csv.DictReader(fh, delimiter=delimiter)
+        if not reader.fieldnames:
+            raise ValueError(f"Target annotation table has no header: {p}")
+        fieldnames = [str(f) for f in reader.fieldnames]
+        if gene_symbol_column not in fieldnames:
+            raise ValueError(f"Target annotation table missing column '{gene_symbol_column}'. Available columns: {', '.join(fieldnames)}")
+        rows = list(reader)
+    out: dict[str, dict[str, str]] = {}
+    missing = 0
+    for row in rows:
+        gene_symbol = str(row.get(gene_symbol_column, "")).strip().upper()
+        if not gene_symbol:
+            missing += 1
+            continue
+        out[gene_symbol] = {
+            str(key): "" if value is None else str(value).strip()
+            for key, value in row.items()
+            if key is not None and str(key) != gene_symbol_column
+        }
+    return out, {
+        "path": str(path),
+        "n_rows": len(rows),
+        "n_genes": len(out),
+        "n_missing_gene_symbol": missing,
+        "fields": [field for field in fieldnames if field != gene_symbol_column],
+    }
+
+
 def aggregate_profiles(
     profiles: dict[str, dict[str, float]],
     metadata: dict[str, dict[str, str]] | None,

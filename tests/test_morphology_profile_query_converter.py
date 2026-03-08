@@ -38,6 +38,7 @@ class Args:
     compound_id_column = "compound_id"
     compound_target_gene_symbol_column = "gene_symbol"
     compound_target_weight_column = "weight"
+    target_annotations_tsv = None
     feature_stats_tsv = "tests/data/toy_morph_feature_stats.tsv"
     feature_schema_tsv = "tests/data/toy_morph_feature_schema.tsv"
 
@@ -46,6 +47,7 @@ class Args:
     resource_policy = "skip"
     reference_bundle_id = None
 
+    mode = "direct_target"
     similarity_metric = "cosine"
     similarity_power = 1.0
     polarity = "both"
@@ -390,6 +392,62 @@ def test_morphology_profile_query_control_residualization_falls_back_when_contro
     assert calibration["requested_mode"] == "residualize_controls"
 
 
+def test_morphology_profile_query_hybrid_writes_core_and_expanded_outputs(tmp_path: Path):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profiles.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "FAM1\t0.80\t0.20\n"
+        "FAM2\t0.79\t0.21\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "FAM1\tcompound\tFAM1\t0.1\t1.0\tfalse\n"
+        "FAM2\tcompound\tFAM2\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nFAM1\tKCNN2\t1.0\nFAM2\tKCNMA1\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN2\tIon channel\tPotassium channel\tChannel signaling\tK1\n"
+        "KCNMA1\tIon channel\tPotassium channel\tChannel signaling\tK2\n"
+        "KCNN4\tIon channel\tPotassium channel\tChannel signaling\tK3\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query_path)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(ref_profiles)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "hybrid")
+    args.mode = "hybrid"
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+
+    program_dir = Path(args.out_dir) / "program=Q1__polarity=similar"
+    assert (program_dir / "geneset.core.tsv").exists()
+    assert (program_dir / "geneset.expanded.tsv").exists()
+    core_genes = [row["gene_id"] for row in _geneset_rows(program_dir / "geneset.core.tsv")]
+    expanded_genes = [row["gene_id"] for row in _geneset_rows(program_dir / "geneset.expanded.tsv")]
+    assert set(core_genes).issubset(set(expanded_genes))
+    meta = json.loads((program_dir / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["mode"] == "hybrid"
+    assert meta["program_extraction"]["preferred_variant"] in {"core", "expanded"}
+
+
 def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "meta_specificity")
@@ -429,6 +487,7 @@ def test_morphology_profile_query_high_retrieval_low_specificity_warns(tmp_path:
     args.feature_stats_tsv = None
     args.feature_schema_tsv = None
     args.out_dir = str(tmp_path / "diffuse")
+    args.mode = "mechanism"
     args.polarity = "similar"
     args.hubness_penalty = "none"
     args.top_k = 20

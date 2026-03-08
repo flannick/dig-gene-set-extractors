@@ -167,7 +167,12 @@ Each query unit $u$ yields one or more gene programs:
 \item \texttt{similar}: based on $S^+_{ug}$,
 \item \texttt{opposite}: based on $S^-_{ug}$ if requested.
 \end{itemize}
-The default is to emit only the similar program.
+The default is to emit only the similar program. Beyond polarity, the current implementation supports three retrieval objectives:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{direct\_target}: strict target-first pooling before hard reference truncation,
+\item \texttt{mechanism}: family/mechanism-aware reranking and expansion,
+\item \texttt{hybrid}: emit both a strict core output and a broader expanded output, while marking one as preferred for downstream use.
+\end{itemize}
 
 \subsection{Selection}
 Given a nonnegative gene score vector $S_{ug}$ for a chosen polarity, select genes by:
@@ -185,6 +190,12 @@ In practice, morphology retrieval can become too diffuse if all weakly similar r
 \]
 and analogously for the opposite-polarity case using $-\mathrm{sim}(u,r)$.
 Only retained neighbors contribute to $E_{ug}$. This improves specificity by preventing a long tail of weak matches from dominating the routed gene evidence. In the practical implementation, hubness-adjusted evidence is computed first and the retained neighborhood is then truncated to a narrow local panel.
+
+\subsection{Target-first aggregation}
+For direct-target retrieval, the practical implementation does not immediately map query $\rightarrow$ top references $\rightarrow$ genes. Instead it first forms a positive evidence pool over references, aggregates that evidence by routed target gene, and only then restricts the retained references to those supporting the strongest target candidates. If $T_{ug}$ denotes pooled target support, direct-target mode ranks candidate targets by $T_{ug}$ before the final reference cap is applied. This is designed to rescue weak distributed same-target support that would otherwise be lost when one off-target reference has the single highest similarity.
+
+\subsection{Mechanism-aware expansion}
+If the bundle includes optional target annotations such as \texttt{target\_family}, \texttt{target\_class}, or \texttt{mechanism\_label}, mechanism mode can estimate family-level or mechanism-level posterior support from the pooled routed gene evidence. When exact target support is weak but family support is coherent, the expanded output boosts genes carrying the supported family/mechanism labels. This yields broader, enrichment-ready outputs without pretending that exact-target recovery is stronger than it is.
 
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.
@@ -209,6 +220,7 @@ A morphology extractor is most useful when paired with a reusable reference bund
 \item \texttt{reference\_profiles.parquet}: consensus perturbation profiles (one row per perturbation/context),
 \item \texttt{reference\_metadata.tsv.gz}: perturbation type, cell line, timepoint, QC, control labels,
 \item \texttt{compound\_targets.tsv.gz}: compound-to-gene target map with weights,
+\item optional \texttt{target\_annotations.tsv.gz}: gene-level \texttt{target\_family}, \texttt{target\_class}, \texttt{mechanism\_label}, and \texttt{pathway\_seed} annotations,
 \item \texttt{feature\_schema.tsv.gz}: ordered feature list,
 \item \texttt{feature\_stats.tsv.gz}: per-feature center and scale,
 \item \texttt{bundle.json}: version, provenance, source URLs, checksums.

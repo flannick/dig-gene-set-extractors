@@ -28,6 +28,7 @@ class MorphologyWorkflowConfig:
     genome_build: str
     dataset_label: str
     signature_name: str
+    mode: str
     similarity_metric: str
     similarity_power: float
     polarity: str
@@ -223,6 +224,100 @@ def _specificity_confidence(
     if (strong_gene_concentration or strong_target_agreement) and high_hub_mass_fraction <= 0.75:
         return "medium", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction
     return "low", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, neighbor_top3_target_agreement, high_hub_mass_fraction
+
+
+def _top_label_support(
+    gene_scores: dict[str, float],
+    *,
+    target_annotations: dict[str, dict[str, str]] | None,
+    field: str,
+) -> tuple[str | None, float, dict[str, float]]:
+    if not target_annotations:
+        return None, 0.0, {}
+    support: dict[str, float] = {}
+    total = 0.0
+    for gene, score in gene_scores.items():
+        label = str((target_annotations.get(gene, {}) or {}).get(field, "")).strip()
+        if not label or float(score) <= 0.0:
+            continue
+        support[label] = float(support.get(label, 0.0)) + float(score)
+        total += float(score)
+    if not support or total <= 0.0:
+        return None, 0.0, support
+    best_label, best_score = sorted(support.items(), key=lambda item: (-float(item[1]), str(item[0])))[0]
+    return best_label, float(best_score) / total, support
+
+
+def _refs_supporting_any_gene(
+    *,
+    penalized_neighbors: list[tuple[str, float, float]],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    allowed_genes: set[str],
+) -> list[tuple[str, float, float]]:
+    supported: list[tuple[str, float, float]] = []
+    for ref_id, base, evidence in penalized_neighbors:
+        mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
+        if allowed_genes & set(mapping):
+            supported.append((ref_id, base, evidence))
+    return supported
+
+
+def _target_support_from_neighbors(
+    *,
+    penalized_neighbors: list[tuple[str, float, float]],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+) -> tuple[dict[str, float], dict[str, int], dict[str, dict[str, int]], dict[str, float]]:
+    target_support: dict[str, float] = {}
+    target_count: dict[str, int] = {}
+    target_by_modality: dict[str, dict[str, int]] = {}
+    best_similarity: dict[str, float] = {}
+    for ref_id, base, evidence in penalized_neighbors:
+        mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
+        if not mapping:
+            continue
+        modality = "genetic" if ref_id in genetic_map else "compound"
+        for gene, weight in mapping.items():
+            contribution = float(evidence) * float(weight)
+            if contribution <= 0.0:
+                continue
+            target_support[gene] = float(target_support.get(gene, 0.0)) + contribution
+            target_count[gene] = int(target_count.get(gene, 0)) + 1
+            target_by_modality.setdefault(gene, {})
+            target_by_modality[gene][modality] = int(target_by_modality[gene].get(modality, 0)) + 1
+            best_similarity[gene] = max(float(best_similarity.get(gene, 0.0)), float(base))
+    return target_support, target_count, target_by_modality, best_similarity
+
+
+def _family_boost_scores(
+    *,
+    base_gene_scores: dict[str, float],
+    target_annotations: dict[str, dict[str, str]] | None,
+    family_label: str | None,
+    mechanism_label: str | None,
+) -> tuple[dict[str, float], list[str]]:
+    if not target_annotations:
+        return dict(base_gene_scores), []
+    boosted = dict(base_gene_scores)
+    expanded_genes: list[str] = []
+    base_total = sum(float(v) for v in base_gene_scores.values())
+    family_genes = [
+        gene
+        for gene, row in target_annotations.items()
+        if (
+            (family_label and str(row.get("target_family", "")).strip() == family_label)
+            or (mechanism_label and str(row.get("mechanism_label", "")).strip() == mechanism_label)
+        )
+    ]
+    if not family_genes:
+        return boosted, []
+    prior_mass = max(1e-6, 0.25 * base_total)
+    per_gene = prior_mass / float(len(family_genes))
+    for gene in family_genes:
+        boosted[gene] = float(boosted.get(gene, 0.0)) + per_gene
+        expanded_genes.append(gene)
+    return boosted, sorted(set(expanded_genes))
 
 
 def _hubness_weight(
@@ -597,6 +692,7 @@ def run_morphology_workflow(
     reference_profiles: dict[str, dict[str, float]],
     reference_metadata: dict[str, dict[str, str]],
     compound_targets: dict[str, dict[str, float]],
+    target_annotations: dict[str, dict[str, str]] | None,
     feature_schema: list[str] | None,
     feature_stats: dict[str, tuple[float, float]] | None,
     query_membership: dict[str, list[str]],
@@ -739,6 +835,12 @@ def run_morphology_workflow(
             query_metadata_rows=query_metadata_rows,
             modality_column=cfg.query_modality_column,
         )
+        query_nominal_genes = {
+            str(query_metadata_rows.get(member_id, {}).get("gene_symbol", "")).strip().upper()
+            for member_id in query_membership.get(query_id, [])
+            if query_metadata_rows
+            and str(query_metadata_rows.get(member_id, {}).get("gene_symbol", "")).strip()
+        }
         neg_frac = 0.0
         if query_sim:
             neg_frac = float(sum(1 for v in query_sim.values() if float(v) < 0.0)) / float(len(query_sim))
@@ -763,6 +865,8 @@ def run_morphology_workflow(
             )
             raw_candidate_neighbors = sorted(candidate_neighbors, key=lambda item: (-float(item[1]), str(item[0])))
             same_modality_anchor_targets: set[str] = set()
+            same_modality_anchor_families: set[str] = set()
+            same_modality_anchor_mechanisms: set[str] = set()
             if cfg.same_modality_first and query_modality:
                 same_modality_candidates = [
                     (ref_id, base)
@@ -774,6 +878,13 @@ def run_morphology_workflow(
                     ordered = sorted(mapping.items(), key=lambda item: (-float(item[1]), str(item[0])))[:3]
                     for gene, _weight in ordered:
                         same_modality_anchor_targets.add(gene)
+                        if target_annotations:
+                            family = str((target_annotations.get(gene, {}) or {}).get("target_family", "")).strip()
+                            mechanism = str((target_annotations.get(gene, {}) or {}).get("mechanism_label", "")).strip()
+                            if family:
+                                same_modality_anchor_families.add(family)
+                            if mechanism:
+                                same_modality_anchor_mechanisms.add(mechanism)
             penalized_neighbors: list[tuple[str, float, float]] = []
             for ref_id, base in candidate_neighbors:
                 hub_penalty = _hubness_weight(
@@ -791,7 +902,19 @@ def run_morphology_workflow(
                 if cfg.same_modality_first and query_modality and ref_modality and ref_modality != query_modality:
                     mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
                     overlap = bool(same_modality_anchor_targets & set(mapping))
+                    family_overlap = False
+                    mechanism_overlap = False
+                    if target_annotations and mapping:
+                        for gene in mapping:
+                            family = str((target_annotations.get(gene, {}) or {}).get("target_family", "")).strip()
+                            mechanism = str((target_annotations.get(gene, {}) or {}).get("mechanism_label", "")).strip()
+                            if family and family in same_modality_anchor_families:
+                                family_overlap = True
+                            if mechanism and mechanism in same_modality_anchor_mechanisms:
+                                mechanism_overlap = True
                     evidence *= 1.0 if overlap else float(cfg.cross_modality_penalty)
+                    if not overlap and (family_overlap or mechanism_overlap):
+                        evidence *= min(1.0, 1.0 / max(1e-8, float(cfg.cross_modality_penalty)))
                 if evidence <= 0.0:
                     continue
                 penalized_neighbors.append((ref_id, float(base), evidence))
@@ -828,10 +951,51 @@ def run_morphology_workflow(
                         break
                     adaptive_neighbors.append((ref_id, base, evidence))
                 penalized_neighbors = adaptive_neighbors
+            pool_cap = max(int(cfg.max_reference_neighbors) * 5, int(cfg.min_effective_neighbors), 25) if int(cfg.max_reference_neighbors) > 0 else len(penalized_neighbors)
+            pooled_neighbors = penalized_neighbors[:pool_cap]
+            target_support, target_support_count, target_support_by_modality, target_best_similarity = _target_support_from_neighbors(
+                penalized_neighbors=pooled_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+            )
+            target_support_weighted = {
+                gene: (
+                    float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0))
+                    if cfg.gene_recurrence_penalty != "none"
+                    else float(score)
+                )
+                for gene, score in target_support.items()
+            }
+            top_target_candidates = sorted(target_support_weighted.items(), key=lambda item: (-float(item[1]), str(item[0])))[:5]
+            top_support = float(top_target_candidates[0][1]) if top_target_candidates else 0.0
+            if query_nominal_genes and any(float(target_support.get(gene, 0.0)) > 0.0 for gene in query_nominal_genes):
+                top_target_genes = {gene for gene in query_nominal_genes if float(target_support.get(gene, 0.0)) > 0.0}
+            else:
+                top_target_genes = {
+                    gene
+                    for gene, mass in top_target_candidates
+                    if top_support > 0.0 and (float(mass) >= top_support * 0.9 or int(target_support_count.get(gene, 0)) >= 2)
+                } or ({top_target_candidates[0][0]} if top_target_candidates else set())
+            if cfg.mode == "direct_target":
+                retained_source = _refs_supporting_any_gene(
+                    penalized_neighbors=pooled_neighbors,
+                    compound_map=compound_map,
+                    genetic_map=genetic_map,
+                    allowed_genes=top_target_genes,
+                )
+            elif cfg.mode == "mechanism":
+                retained_source = list(pooled_neighbors)
+            else:
+                retained_source = _refs_supporting_any_gene(
+                    penalized_neighbors=pooled_neighbors,
+                    compound_map=compound_map,
+                    genetic_map=genetic_map,
+                    allowed_genes=top_target_genes or set(target_support),
+                ) or list(pooled_neighbors)
             if int(cfg.max_reference_neighbors) > 0:
-                penalized_neighbors = penalized_neighbors[: int(cfg.max_reference_neighbors)]
-            retained_neighbors = [(ref_id, base) for ref_id, base, _evidence in penalized_neighbors]
-            evidence_by_ref: dict[str, float] = {ref_id: float(evidence) for ref_id, _base, evidence in penalized_neighbors}
+                retained_source = retained_source[: int(cfg.max_reference_neighbors)]
+            retained_neighbors = [(ref_id, base) for ref_id, base, _evidence in retained_source]
+            evidence_by_ref: dict[str, float] = {ref_id: float(evidence) for ref_id, _base, evidence in retained_source}
             retained_by_modality: dict[str, int] = {}
             for ref_id, _score in retained_neighbors:
                 modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() or "unknown"
@@ -865,29 +1029,57 @@ def run_morphology_workflow(
             else:
                 cw, gw = 0.0, 0.0
             genes = sorted(set(compound_norm) | set(genetic_norm))
-            gene_scores = {
+            core_gene_scores = {
                 gene: float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0))
                 for gene in genes
                 if float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0)) > 0.0
             }
             if cfg.gene_recurrence_penalty != "none":
-                gene_scores = {
+                core_gene_scores = {
                     gene: float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0))
-                    for gene, score in gene_scores.items()
+                    for gene, score in core_gene_scores.items()
                     if float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0)) > 0.0
                 }
-            selected_gene_ids = _select_gene_ids(gene_scores, cfg)
-            selected_gene_ids = sorted(selected_gene_ids, key=lambda g: (-float(gene_scores.get(g, 0.0)), str(g)))
-            weights = _selected_weights(gene_scores, selected_gene_ids, cfg.normalize)
-            selected_rows = [
-                {"gene_id": gene_id, "gene_symbol": gene_id, "score": float(gene_scores.get(gene_id, 0.0)), "weight": float(weights.get(gene_id, 0.0)), "rank": rank}
-                for rank, gene_id in enumerate(selected_gene_ids, start=1)
+            top_family, top_family_mass, family_support = _top_label_support(
+                core_gene_scores,
+                target_annotations=target_annotations,
+                field="target_family",
+            )
+            top_mechanism, top_mechanism_mass, mechanism_support = _top_label_support(
+                core_gene_scores,
+                target_annotations=target_annotations,
+                field="mechanism_label",
+            )
+            expanded_gene_scores, expanded_family_genes = _family_boost_scores(
+                base_gene_scores=core_gene_scores,
+                target_annotations=target_annotations,
+                family_label=top_family if cfg.mode in {"mechanism", "hybrid"} else None,
+                mechanism_label=top_mechanism if cfg.mode in {"mechanism", "hybrid"} else None,
+            )
+            preferred_variant = "core"
+            if cfg.mode == "mechanism":
+                preferred_variant = "expanded"
+            elif cfg.mode == "hybrid":
+                top_target_mass = float(top_target_candidates[0][1]) / float(sum(target_support.values()) or 1.0) if top_target_candidates else 0.0
+                if top_target_mass < 0.35 and max(top_family_mass, top_mechanism_mass) >= 0.3:
+                    preferred_variant = "expanded"
+
+            selected_core_ids = sorted(_select_gene_ids(core_gene_scores, cfg), key=lambda g: (-float(core_gene_scores.get(g, 0.0)), str(g)))
+            core_weights = _selected_weights(core_gene_scores, selected_core_ids, cfg.normalize)
+            core_rows = [
+                {"gene_id": gene_id, "gene_symbol": gene_id, "score": float(core_gene_scores.get(gene_id, 0.0)), "weight": float(core_weights.get(gene_id, 0.0)), "rank": rank}
+                for rank, gene_id in enumerate(selected_core_ids, start=1)
             ]
+            selected_expanded_ids = sorted(_select_gene_ids(expanded_gene_scores, cfg), key=lambda g: (-float(expanded_gene_scores.get(g, 0.0)), str(g)))
+            expanded_weights = _selected_weights(expanded_gene_scores, selected_expanded_ids, cfg.normalize)
+            expanded_rows = [
+                {"gene_id": gene_id, "gene_symbol": gene_id, "score": float(expanded_gene_scores.get(gene_id, 0.0)), "weight": float(expanded_weights.get(gene_id, 0.0)), "rank": rank}
+                for rank, gene_id in enumerate(selected_expanded_ids, start=1)
+            ]
+            selected_rows = expanded_rows if preferred_variant == "expanded" else core_rows
+            gene_scores = expanded_gene_scores if preferred_variant == "expanded" else core_gene_scores
             full_gene_ids = sorted(gene_scores, key=lambda g: (-float(gene_scores[g]), str(g)))
-            full_rows = [
-                {"gene_id": gene_id, "gene_symbol": gene_id, "score": float(gene_scores[gene_id]), "rank": rank}
-                for rank, gene_id in enumerate(full_gene_ids, start=1)
-            ]
+            full_rows = [{"gene_id": gene_id, "gene_symbol": gene_id, "score": float(gene_scores[gene_id]), "rank": rank} for rank, gene_id in enumerate(full_gene_ids, start=1)]
             frac_artifact = _artifact_family_fraction(selected_rows)
             if frac_artifact >= 0.4:
                 print(
@@ -949,6 +1141,15 @@ def run_morphology_workflow(
                 neighbor_top3_target_agreement=neighbor_top3_target_agreement,
                 high_hub_mass_fraction=high_hub_mass_fraction,
             )
+            total_target_support = float(sum(target_support.values()))
+            top_target_support_mass = float(top_target_candidates[0][1]) / total_target_support if top_target_candidates and total_target_support > 0.0 else 0.0
+            query_target_support_mass = 0.0
+            query_target_best_rank = None
+            if query_nominal_genes and target_support:
+                ordered_targets = sorted(target_support.items(), key=lambda item: (-float(item[1]), str(item[0])))
+                rank_map = {gene: rank for rank, (gene, _score) in enumerate(ordered_targets, start=1)}
+                query_target_support_mass = max(float(target_support.get(gene, 0.0)) for gene in query_nominal_genes) / total_target_support if total_target_support > 0.0 else 0.0
+                query_target_best_rank = min((rank_map.get(gene) for gene in query_nominal_genes if gene in rank_map), default=None)
             if retrieval_confidence == "high" and specificity_confidence == "low":
                 warning_payload = {
                     "code": "diffuse_gene_evidence",
@@ -1005,6 +1206,9 @@ def run_morphology_workflow(
             program_dir = out_dir / f"program={safe_program_id}"
             program_dir.mkdir(parents=True, exist_ok=True)
             _write_rows(program_dir / "geneset.tsv", selected_rows)
+            if cfg.mode == "hybrid":
+                _write_rows(program_dir / "geneset.core.tsv", core_rows)
+                _write_rows(program_dir / "geneset.expanded.tsv", expanded_rows)
             if cfg.emit_full:
                 _write_rows(program_dir / "geneset.full.tsv", full_rows)
 
@@ -1041,6 +1245,9 @@ def run_morphology_workflow(
             root_warnings.extend(gmt_warnings)
 
             output_files = [{"path": str(program_dir / "geneset.tsv"), "role": "selected_program"}]
+            if cfg.mode == "hybrid":
+                output_files.append({"path": str(program_dir / "geneset.core.tsv"), "role": "core_program"})
+                output_files.append({"path": str(program_dir / "geneset.expanded.tsv"), "role": "expanded_program"})
             if cfg.emit_full:
                 output_files.append({"path": str(program_dir / "geneset.full.tsv"), "role": "full_scores"})
             if cfg.emit_gmt and gmt_sets:
@@ -1057,6 +1264,8 @@ def run_morphology_workflow(
                 "n_negative_neighbors": n_negative_neighbors,
                 "n_retained_neighbors": len(retained_neighbors),
                 "effective_neighbor_count": len(retained_neighbors),
+                "mode": cfg.mode,
+                "preferred_variant": preferred_variant,
                 "query_modality": query_modality,
                 "retained_neighbors_by_modality": retained_by_modality,
                 "neg_similarity_fraction": neg_frac,
@@ -1073,6 +1282,18 @@ def run_morphology_workflow(
                 "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
                 "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                 "high_hub_mass_fraction": high_hub_mass_fraction,
+                "top_target_candidates": [{"gene_symbol": gene, "support_mass": score, "support_count": int(target_support_count.get(gene, 0)), "best_similarity": float(target_best_similarity.get(gene, 0.0)), "support_by_modality": target_support_by_modality.get(gene, {})} for gene, score in top_target_candidates],
+                "top_target_support_mass": top_target_support_mass,
+                "query_nominal_targets": sorted(query_nominal_genes),
+                "query_target_best_rank": query_target_best_rank,
+                "query_target_support_mass": query_target_support_mass,
+                "top_family": top_family,
+                "top_family_mass": top_family_mass,
+                "top_mechanism": top_mechanism,
+                "top_mechanism_mass": top_mechanism_mass,
+                "expanded_added_genes": expanded_family_genes,
+                "core_gene_count": len(core_rows),
+                "expanded_gene_count": len(expanded_rows),
                 "hubness_penalty": cfg.hubness_penalty,
                 "hub_score_present": bool(hub_scores_present > 0),
                 "hub_score_summary_retained": {
@@ -1105,6 +1326,7 @@ def run_morphology_workflow(
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
                     "control_calibration": cfg.control_calibration,
+                    "mode": cfg.mode,
                     "control_residual_components": cfg.control_residual_components,
                     "control_min_profiles_for_residualization": cfg.control_min_profiles_for_residualization,
                     "hubness_penalty": cfg.hubness_penalty,
@@ -1143,6 +1365,8 @@ def run_morphology_workflow(
                     "warnings": program_warnings,
                     "retrieval_confidence": retrieval_confidence,
                     "specificity_confidence": specificity_confidence,
+                    "mode": cfg.mode,
+                    "preferred_variant": preferred_variant,
                     "n_positive_neighbors": n_positive_neighbors,
                     "n_negative_neighbors": n_negative_neighbors,
                     "effective_neighbor_count": len(retained_neighbors),
@@ -1158,6 +1382,18 @@ def run_morphology_workflow(
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
                     "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                     "high_hub_mass_fraction": high_hub_mass_fraction,
+                    "top_target_candidates": [{"gene_symbol": gene, "support_mass": score, "support_count": int(target_support_count.get(gene, 0)), "best_similarity": float(target_best_similarity.get(gene, 0.0)), "support_by_modality": target_support_by_modality.get(gene, {})} for gene, score in top_target_candidates],
+                    "top_target_support_mass": top_target_support_mass,
+                    "query_nominal_targets": sorted(query_nominal_genes),
+                    "query_target_best_rank": query_target_best_rank,
+                    "query_target_support_mass": query_target_support_mass,
+                    "top_family": top_family,
+                    "top_family_mass": top_family_mass,
+                    "top_mechanism": top_mechanism,
+                    "top_mechanism_mass": top_mechanism_mass,
+                    "core_gene_count": len(core_rows),
+                    "expanded_gene_count": len(expanded_rows),
+                    "expanded_added_genes": expanded_family_genes,
                     "hubness_penalty": cfg.hubness_penalty,
                     "same_modality_first": cfg.same_modality_first,
                     "cross_modality_penalty": cfg.cross_modality_penalty,
@@ -1179,6 +1415,9 @@ def run_morphology_workflow(
                     "selection_params": {"k": cfg.top_k, "quantile": cfg.quantile, "min_score": cfg.min_score},
                     "normalize": cfg.normalize,
                     "n_selected_genes": len(selected_rows),
+                    "preferred_variant": preferred_variant,
+                    "core_n_selected_genes": len(core_rows),
+                    "expanded_n_selected_genes": len(expanded_rows),
                     "score_definition": f"morphology reference similarity polarity={polarity}",
                     "retrieval_confidence": retrieval_confidence,
                     "specificity_confidence": specificity_confidence,
@@ -1210,6 +1449,8 @@ def run_morphology_workflow(
                 "program_id": query_id,
                 "query_id": query_id,
                 "polarity": polarity,
+                "mode": cfg.mode,
+                "preferred_variant": preferred_variant,
                 "n_query_profiles": len(query_membership.get(query_id, [])),
                 "n_reference_profiles": len(ref_vectors),
                 "n_retained_neighbors": len(retained_neighbors),
@@ -1218,6 +1459,7 @@ def run_morphology_workflow(
                 "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
                 "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                 "high_hub_mass_fraction": high_hub_mass_fraction,
+                "top_target_support_mass": top_target_support_mass,
                 "n_genes_selected": len(selected_rows),
                 "path": str(program_dir.relative_to(out_dir)),
             })
@@ -1232,6 +1474,8 @@ def run_morphology_workflow(
                 "program_id",
                 "query_id",
                 "polarity",
+                "mode",
+                "preferred_variant",
                 "n_query_profiles",
                 "n_reference_profiles",
                 "n_retained_neighbors",
@@ -1240,6 +1484,7 @@ def run_morphology_workflow(
                 "neighbor_primary_target_agreement",
                 "neighbor_top3_target_agreement",
                 "high_hub_mass_fraction",
+                "top_target_support_mass",
                 "n_genes_selected",
                 "path",
             ],
@@ -1252,6 +1497,7 @@ def run_morphology_workflow(
     root_summary = {
         "converter": cfg.converter_name,
         "dataset_label": cfg.dataset_label,
+        "mode": cfg.mode,
         "n_groups": len(manifest_rows),
         "parse_summary": parse_summary,
         "feature_alignment": feature_summary,

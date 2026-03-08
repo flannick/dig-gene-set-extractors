@@ -39,6 +39,12 @@
       "required": false
     },
     {
+      "name": "target_annotations_tsv",
+      "type": "tsv",
+      "description": "Optional gene-level annotation table with fields such as target_family,target_class,mechanism_label,pathway_seed",
+      "required": false
+    },
+    {
       "name": "feature_schema_tsv",
       "type": "tsv",
       "description": "Optional explicit feature order/schema used for feature alignment",
@@ -192,6 +198,17 @@
       "type": "string_or_none",
       "default": null,
       "help": "Bundle resource id providing reference_profiles/reference_metadata/compound_targets and optional schema/stats"
+    },
+    {
+      "name": "mode",
+      "type": "string",
+      "default": "direct_target",
+      "enum": [
+        "direct_target",
+        "mechanism",
+        "hybrid"
+      ],
+      "help": "Retrieval objective. direct_target is strict target-first pooling, mechanism expands through family/mechanism support, hybrid writes both core and expanded outputs and chooses a preferred variant."
     },
     {
       "name": "similarity_metric",

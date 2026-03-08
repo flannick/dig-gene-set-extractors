@@ -34,6 +34,9 @@ class Args:
     compound_targets_delimiter = "\t"
     compound_target_gene_symbol_column = "gene_symbol"
     compound_target_weight_column = "weight"
+    target_annotations_tsv = None
+    target_annotations_delimiter = "\t"
+    target_annotation_gene_symbol_column = "gene_symbol"
 
 
 def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
@@ -90,3 +93,25 @@ def test_jump_prepare_reference_bundle_allow_mixed_timepoints(tmp_path: Path):
     payload = json.loads((Path(args.out_dir) / "toy_jump_u2os_48h_v1.bundle.json").read_text(encoding="utf-8"))
     assert payload["contexts"]["crispr"]["timepoint"] == "96"
     assert payload["contexts"]["compound"]["timepoint"] == "48"
+
+
+def test_jump_prepare_reference_bundle_writes_target_annotations(tmp_path: Path):
+    annotation_path = tmp_path / "target_annotations.tsv"
+    annotation_path.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "GENE1\tIon channel\tPotassium channel\tChannel signaling\tK_path\n"
+        "GENE2\tKinase\tRTK\tNeurotrophin signaling\tN_path\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.out_dir = str(tmp_path / "bundle_with_annotations")
+    args.target_annotations_tsv = str(annotation_path)
+    result = run(args)
+    assert result["bundle_id"] == "toy_jump_u2os_48h_v1"
+    payload = json.loads((Path(args.out_dir) / "toy_jump_u2os_48h_v1.bundle.json").read_text(encoding="utf-8"))
+    assert payload["files"]["target_annotations"] == "target_annotations.tsv.gz"
+    assert payload["summary"]["annotation_coverage"]["n_annotated_genes"] == 2
+    with gzip.open(Path(args.out_dir) / "reference_metadata.tsv.gz", "rt", encoding="utf-8") as fh:
+        text = fh.read()
+    assert "target_family" in text
+    assert "mechanism_label" in text

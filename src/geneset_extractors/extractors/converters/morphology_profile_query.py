@@ -5,7 +5,7 @@ import sys
 
 from geneset_extractors.core.metadata import input_file_record
 from geneset_extractors.extractors.morphology.bundle import bundle_resources_info, load_bundle_context, resolve_bundle_manifest
-from geneset_extractors.extractors.morphology.io import aggregate_profiles, read_compound_targets_auto, read_feature_schema_tsv, read_feature_stats_tsv, read_metadata_tsv, read_profiles_table
+from geneset_extractors.extractors.morphology.io import aggregate_profiles, read_compound_targets_auto, read_feature_schema_tsv, read_feature_stats_tsv, read_metadata_tsv, read_profiles_table, read_target_annotations_tsv
 from geneset_extractors.extractors.morphology.workflow import MorphologyWorkflowConfig, run_morphology_workflow
 
 
@@ -23,6 +23,7 @@ def _resolve_reference_inputs(args) -> tuple[dict[str, str | None], dict[str, ob
         "reference_profiles": args.reference_profiles_tsv or args.reference_profiles_parquet,
         "reference_metadata": args.reference_metadata_tsv,
         "compound_targets": args.compound_targets_tsv,
+        "target_annotations": getattr(args, "target_annotations_tsv", None),
         "feature_schema": args.feature_schema_tsv,
         "feature_stats": args.feature_stats_tsv,
     }
@@ -55,6 +56,9 @@ def _resolve_reference_inputs(args) -> tuple[dict[str, str | None], dict[str, ob
                 continue
             raise ValueError(f"bundle.json missing required file entry: {key}")
         resolved[key] = str(bundle_root / rel)
+    optional_rel = str(files.get("target_annotations", "")).strip()
+    if not resolved.get("target_annotations") and optional_rel:
+        resolved["target_annotations"] = str(bundle_root / optional_rel)
     return resolved, bundle_manifest, bundle_resources_info(ctx)
 
 
@@ -108,11 +112,15 @@ def run(args) -> dict[str, object]:
     feature_stats_summary = None
     if reference_inputs.get("feature_stats"):
         feature_stats, feature_stats_summary = read_feature_stats_tsv(reference_inputs["feature_stats"])
+    target_annotations = None
+    target_annotations_summary = None
+    if reference_inputs.get("target_annotations"):
+        target_annotations, target_annotations_summary = read_target_annotations_tsv(reference_inputs["target_annotations"])
 
     files = [input_file_record(args.query_profiles_tsv, "query_profiles_tsv")]
     if args.query_metadata_tsv:
         files.append(input_file_record(args.query_metadata_tsv, "query_metadata_tsv"))
-    for key, role in (("reference_profiles", "reference_profiles"), ("reference_metadata", "reference_metadata"), ("compound_targets", "compound_targets"), ("feature_schema", "feature_schema"), ("feature_stats", "feature_stats")):
+    for key, role in (("reference_profiles", "reference_profiles"), ("reference_metadata", "reference_metadata"), ("compound_targets", "compound_targets"), ("target_annotations", "target_annotations"), ("feature_schema", "feature_schema"), ("feature_stats", "feature_stats")):
         if reference_inputs.get(key):
             files.append(input_file_record(reference_inputs[key], role))
 
@@ -126,6 +134,7 @@ def run(args) -> dict[str, object]:
         dataset_label=dataset_label,
         signature_name=signature_name,
         similarity_metric=args.similarity_metric,
+        mode=str(getattr(args, "mode", "direct_target")),
         similarity_power=float(args.similarity_power),
         polarity=args.polarity,
         query_modality_column=str(args.query_modality_column),
@@ -172,6 +181,7 @@ def run(args) -> dict[str, object]:
         "compound_targets": compound_targets_summary,
         "feature_schema": feature_schema_summary,
         "feature_stats": feature_stats_summary,
+        "target_annotations": target_annotations_summary,
         "bundle_manifest": bundle_manifest,
     }
     if query_metadata is not None and isinstance(bundle_manifest, dict):
@@ -195,6 +205,7 @@ def run(args) -> dict[str, object]:
         reference_profiles=reference_profiles,
         reference_metadata=reference_metadata,
         compound_targets=compound_targets,
+        target_annotations=target_annotations,
         feature_schema=feature_schema,
         feature_stats=feature_stats,
         query_membership=query_membership,

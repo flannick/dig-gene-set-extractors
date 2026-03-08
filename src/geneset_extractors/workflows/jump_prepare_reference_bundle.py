@@ -6,7 +6,7 @@ from pathlib import Path
 from statistics import mean, median
 import sys
 
-from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, write_bundle_manifest
+from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, read_target_annotations_tsv, write_bundle_manifest
 from geneset_extractors.extractors.morphology.similarity import cosine_similarity
 
 
@@ -77,6 +77,14 @@ def run(args) -> dict[str, object]:
         print(
             f"warning: {targets_summary['n_zero_target_compounds']} compounds had zero parsed targets in target metadata",
             file=sys.stderr,
+        )
+    target_annotations: dict[str, dict[str, str]] = {}
+    target_annotations_summary: dict[str, object] | None = None
+    if getattr(args, "target_annotations_tsv", None):
+        target_annotations, target_annotations_summary = read_target_annotations_tsv(
+            args.target_annotations_tsv,
+            gene_symbol_column=str(getattr(args, "target_annotation_gene_symbol_column", "gene_symbol")),
+            delimiter=str(getattr(args, "target_annotations_delimiter", "\t")),
         )
     all_profiles: dict[str, dict[str, float]] = {}
     n_rows = 0
@@ -162,15 +170,37 @@ def run(args) -> dict[str, object]:
             continue
         grouped.setdefault(perturbation_id, []).append(all_profiles[profile_id])
         if perturbation_id not in metadata_rows:
+            gene_symbol = str(meta.get(args.gene_symbol_column, "")).strip().upper()
+            compound_id = str(meta.get(args.compound_id_column, "") or perturbation_id).strip()
+            annotation_genes: set[str] = set()
+            if gene_symbol:
+                annotation_genes.add(gene_symbol)
+            for target_gene in compound_targets.get(compound_id, {}):
+                annotation_genes.add(str(target_gene).strip().upper())
+
+            def _collapse_annotation(field: str) -> str:
+                values = sorted(
+                    {
+                        str(target_annotations.get(gene, {}).get(field, "")).strip()
+                        for gene in annotation_genes
+                        if str(target_annotations.get(gene, {}).get(field, "")).strip()
+                    }
+                )
+                return ";".join(values)
+
             metadata_rows[perturbation_id] = {
                 "perturbation_id": perturbation_id,
                 "perturbation_type": str(meta.get(args.perturbation_type_column, "")).strip(),
                 "cell_type_or_line": str(meta.get(args.cell_type_column, "")).strip(),
                 "timepoint": str(meta.get(args.timepoint_column, "")).strip(),
                 "gene_symbol": str(meta.get(args.gene_symbol_column, "")).strip(),
-                "compound_id": str(meta.get(args.compound_id_column, "") or perturbation_id).strip(),
+                "compound_id": compound_id,
                 "is_control": str(meta.get(args.is_control_column, "")).strip(),
                 "control_type": str(meta.get(args.control_type_column, "")).strip(),
+                "target_family": _collapse_annotation("target_family"),
+                "target_class": _collapse_annotation("target_class"),
+                "mechanism_label": _collapse_annotation("mechanism_label"),
+                "pathway_seed": _collapse_annotation("pathway_seed"),
             }
 
     consensus_profiles = {perturbation_id: _aggregate_consensus(rows, aggregate=args.consensus_aggregate) for perturbation_id, rows in grouped.items()}
@@ -192,6 +222,7 @@ def run(args) -> dict[str, object]:
     profiles_path = out_dir / "reference_profiles.tsv.gz"
     metadata_path = out_dir / "reference_metadata.tsv.gz"
     targets_path = out_dir / "compound_targets.tsv.gz"
+    target_annotations_path = out_dir / "target_annotations.tsv.gz"
     feature_schema_path = out_dir / "feature_schema.tsv.gz"
     feature_stats_path = out_dir / "feature_stats.tsv.gz"
 
@@ -202,7 +233,23 @@ def run(args) -> dict[str, object]:
         for perturbation_id in sorted(consensus_profiles):
             writer.writerow([perturbation_id, *[consensus_profiles[perturbation_id].get(feat, 0.0) for feat in feature_names]])
     with gzip.open(metadata_path, "wt", encoding="utf-8", newline="") as fh:
-        fieldnames = ["perturbation_id", "perturbation_type", "cell_type_or_line", "timepoint", "gene_symbol", "compound_id", "is_control", "control_type", "qc_weight", "replicate_count", "hub_score"]
+        fieldnames = [
+            "perturbation_id",
+            "perturbation_type",
+            "cell_type_or_line",
+            "timepoint",
+            "gene_symbol",
+            "compound_id",
+            "is_control",
+            "control_type",
+            "qc_weight",
+            "replicate_count",
+            "hub_score",
+            "target_family",
+            "target_class",
+            "mechanism_label",
+            "pathway_seed",
+        ]
         writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames)
         writer.writeheader()
         for perturbation_id in sorted(metadata_rows):
@@ -213,6 +260,15 @@ def run(args) -> dict[str, object]:
         for compound_id in sorted(compound_targets):
             for gene_symbol, weight in sorted(compound_targets[compound_id].items()):
                 writer.writerow([compound_id, gene_symbol, weight])
+    if target_annotations:
+        with gzip.open(target_annotations_path, "wt", encoding="utf-8", newline="") as fh:
+            annotation_fields = sorted({field for row in target_annotations.values() for field in row})
+            writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["gene_symbol", *annotation_fields])
+            writer.writeheader()
+            for gene_symbol in sorted(target_annotations):
+                row = {"gene_symbol": gene_symbol}
+                row.update(target_annotations[gene_symbol])
+                writer.writerow(row)
     with gzip.open(feature_schema_path, "wt", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh, delimiter="\t")
         writer.writerow(["feature"])
@@ -232,6 +288,7 @@ def run(args) -> dict[str, object]:
             "reference_profiles": profiles_path.name,
             "reference_metadata": metadata_path.name,
             "compound_targets": targets_path.name,
+            **({"target_annotations": target_annotations_path.name} if target_annotations else {}),
             "feature_schema": feature_schema_path.name,
             "feature_stats": feature_stats_path.name,
         },
@@ -264,8 +321,17 @@ def run(args) -> dict[str, object]:
             "n_features": len(feature_names),
             "experimental_metadata": exp_summary,
             "compound_targets": targets_summary,
+            "target_annotations": target_annotations_summary,
             "included_modalities": included_modalities,
             "missing_modalities": missing_modalities,
+            "annotation_coverage": {
+                "n_annotated_genes": len(target_annotations),
+                "n_refs_with_any_annotation": sum(
+                    1
+                    for row in metadata_rows.values()
+                    if any(str(row.get(field, "")).strip() for field in ("target_family", "target_class", "mechanism_label", "pathway_seed"))
+                ),
+            },
             "hub_score_summary": {
                 "min": min(hub_scores.values()) if hub_scores else None,
                 "median": median(hub_scores.values()) if hub_scores else None,
@@ -299,6 +365,7 @@ def run(args) -> dict[str, object]:
         f"n_consensus_profiles_total: {len(consensus_profiles)}",
         f"included_modalities: {included_modalities}",
         f"missing_modalities: {missing_modalities}",
+        f"annotation_coverage: {bundle_manifest['summary']['annotation_coverage']}",
     ]
     for modality, context in bundle_manifest["contexts"].items():
         lines.append(

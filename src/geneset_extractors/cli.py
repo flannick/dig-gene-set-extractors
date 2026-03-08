@@ -397,6 +397,7 @@ def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--profile_paths", required=True, help="Comma-separated morphology profile TSV/CSV paths.")
     parser.add_argument("--experimental_metadata_tsv", required=True)
     parser.add_argument("--compound_targets_tsv", required=True)
+    parser.add_argument("--target_annotations_tsv")
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--bundle_id")
     parser.add_argument("--profile_id_column", default="sample_id")
@@ -422,6 +423,8 @@ def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--compound_targets_delimiter", default="\t")
     parser.add_argument("--compound_target_gene_symbol_column", default="gene_symbol")
     parser.add_argument("--compound_target_weight_column", default="weight")
+    parser.add_argument("--target_annotations_delimiter", default="\t")
+    parser.add_argument("--target_annotation_gene_symbol_column", default="gene_symbol")
 
 
 def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None:
@@ -450,6 +453,7 @@ def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None
     parser.add_argument("--reference_metadata_id_column", default="perturbation_id")
     parser.add_argument("--reference_metadata_delimiter", default="\t")
     parser.add_argument("--compound_targets_tsv")
+    parser.add_argument("--target_annotations_tsv")
     parser.add_argument("--compound_targets_delimiter", default="\t")
     parser.add_argument("--compound_id_column", default="compound_id")
     parser.add_argument("--compound_target_gene_symbol_column", default="gene_symbol")
@@ -462,6 +466,7 @@ def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
     parser.add_argument("--reference_bundle_id")
 
+    parser.add_argument("--mode", choices=["direct_target", "mechanism", "hybrid"], default="direct_target")
     parser.add_argument("--similarity_metric", choices=["cosine", "pearson"], default="cosine")
     parser.add_argument("--similarity_power", type=float, default=1.0)
     parser.add_argument("--polarity", choices=["similar", "opposite", "both"], default="similar")
