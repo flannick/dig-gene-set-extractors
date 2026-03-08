@@ -97,6 +97,7 @@ Morphology converter:
 
 Morphology defaults support an optional local reference bundle via `--resources_dir`.
 Bundles can be discovered directly from `<bundle_id>.bundle.json` in that directory without a separate overlay manifest.
+The preferred morphology setup is a single versioned tarball that unpacks to `bundle/`, then use `--resources_dir <...>/bundle`.
 
 Drug response defaults support an optional local annotation/prior bundle via `--resources_dir`
 for more connectable target annotations, target ubiquity priors, and nuisance compound QC.

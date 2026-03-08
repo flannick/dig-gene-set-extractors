@@ -425,6 +425,8 @@ def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--compound_target_weight_column", default="weight")
     parser.add_argument("--target_annotations_delimiter", default="\t")
     parser.add_argument("--target_annotation_gene_symbol_column", default="gene_symbol")
+    parser.add_argument("--write_distribution_artifact", type=_parse_bool, default=True)
+    parser.add_argument("--distribution_dir")
 
 
 def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None:
@@ -1301,7 +1303,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=jump_prepare_reference_bundle n_profiles={result.get('n_profiles')} "
-                    f"out={result.get('bundle_manifest')}",
+                    f"out={result.get('bundle_manifest')} "
+                    f"tarball={result.get('tarball')}",
                     file=sys.stderr,
                 )
                 return 0

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 from statistics import mean, median
 import sys
+import tarfile
 
 from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, read_target_annotations_tsv, write_bundle_manifest
 from geneset_extractors.extractors.morphology.similarity import cosine_similarity
@@ -55,6 +57,56 @@ def _hub_scores(consensus_profiles: dict[str, dict[str, float]], *, k: int) -> d
         kept = sims[: max(1, int(k))] if sims else []
         out[perturbation_id] = float(sum(kept) / float(len(kept))) if kept else 0.0
     return out
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        while True:
+            chunk = fh.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_distribution_artifact(
+    *,
+    dist_dir: Path,
+    bundle_id: str,
+    included_files: list[Path],
+) -> dict[str, str]:
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    tarball_path = dist_dir / f"dig-gene-set-extractors-{bundle_id}.tar.gz"
+    with tarfile.open(tarball_path, "w:gz") as tf:
+        for path in included_files:
+            tf.add(path, arcname=f"bundle/{path.name}")
+    sha_path = dist_dir / "SHA256SUMS.txt"
+    tar_sha = _sha256_file(tarball_path)
+    sha_path.write_text(f"{tar_sha}  {tarball_path.name}\n", encoding="utf-8")
+    manifest_path = dist_dir / "distribution_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "bundle_id": bundle_id,
+                "tarball": tarball_path.name,
+                "sha256sums": sha_path.name,
+                "bundle_root_inside_tarball": "bundle",
+                "included_files": [path.name for path in included_files],
+                "tarball_sha256": tar_sha,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "distribution_dir": str(dist_dir),
+        "tarball": str(tarball_path),
+        "sha256sums": str(sha_path),
+        "distribution_manifest": str(manifest_path),
+    }
 
 
 def run(args) -> dict[str, object]:
@@ -375,4 +427,26 @@ def run(args) -> dict[str, object]:
     for row in bundle_summary["blocked_modalities"]:
         lines.append(f"blocked_modality={row['modality']} reason={row['reason']}")
     (out_dir / "bundle_summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"bundle_id": bundle_id, "bundle_manifest": str(bundle_manifest_path), "n_profiles": len(consensus_profiles)}
+    distribution_info = None
+    if bool(getattr(args, "write_distribution_artifact", True)):
+        distribution_info = _write_distribution_artifact(
+            dist_dir=Path(getattr(args, "distribution_dir", "")).expanduser() if getattr(args, "distribution_dir", None) else (out_dir / "dist"),
+            bundle_id=bundle_id,
+            included_files=[
+                profiles_path,
+                metadata_path,
+                targets_path,
+                *([target_annotations_path] if target_annotations else []),
+                feature_schema_path,
+                feature_stats_path,
+                bundle_manifest_path,
+                out_dir / "bundle_summary.json",
+                out_dir / "bundle_summary.txt",
+            ],
+        )
+    return {
+        "bundle_id": bundle_id,
+        "bundle_manifest": str(bundle_manifest_path),
+        "n_profiles": len(consensus_profiles),
+        **(distribution_info or {}),
+    }

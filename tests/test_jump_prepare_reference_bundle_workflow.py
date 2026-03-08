@@ -1,6 +1,7 @@
 import gzip
 import json
 from pathlib import Path
+import tarfile
 
 from geneset_extractors.workflows.jump_prepare_reference_bundle import run
 
@@ -60,6 +61,14 @@ def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
     assert "hub_score" in text
     assert (out_dir / "bundle_summary.json").exists()
     assert (out_dir / "bundle_summary.txt").exists()
+    dist_dir = out_dir / "dist"
+    assert (dist_dir / "dig-gene-set-extractors-toy_jump_u2os_48h_v1.tar.gz").exists()
+    assert (dist_dir / "SHA256SUMS.txt").exists()
+    assert (dist_dir / "distribution_manifest.json").exists()
+    with tarfile.open(dist_dir / "dig-gene-set-extractors-toy_jump_u2os_48h_v1.tar.gz", "r:gz") as tf:
+        members = {m.name for m in tf.getmembers()}
+    assert "bundle/toy_jump_u2os_48h_v1.bundle.json" in members
+    assert "bundle/reference_profiles.tsv.gz" in members
 
 
 def test_jump_prepare_reference_bundle_same_timepoint_default_does_not_mix(tmp_path: Path, capsys):
