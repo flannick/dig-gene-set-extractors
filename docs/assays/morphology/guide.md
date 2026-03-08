@@ -24,6 +24,13 @@ For each query morphology profile or query group, the extractor:
 5. balances compound and genetic modalities,
 6. emits one or more gene-weighted programs and GMT sets.
 
+Current specificity defaults are retrieval-oriented:
+
+- prefer same-modality neighbors when query modality is known,
+- use cross-modality neighbors mainly when they reinforce the same local target signal,
+- treat `--max_reference_neighbors` as an upper bound rather than a fixed count,
+- penalize genes that recur across many reference perturbations.
+
 Default interpretation:
 
 - `--polarity similar` asks which known perturbations induce similar morphology.
@@ -113,8 +120,13 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--similarity_power 1.0`
 - `--polarity similar`
 - `--max_reference_neighbors 20`
+- `--same_modality_first true`
+- `--cross_modality_penalty 0.35`
+- `--adaptive_neighbors true`
+- `--mutual_neighbor_filter true`
 - `--min_similarity 0.0`
 - `--hubness_penalty inverse_rank`
+- `--gene_recurrence_penalty idf`
 - `--min_specificity_confidence_to_emit_opposite medium`
 - `--compound_weight 0.5 --genetic_weight 0.5`
 - `--select top_k --top_k 200`
@@ -208,6 +220,9 @@ Grouped output layout mirrors other multi-program extractors:
   - morphology neighbors are geometrically coherent, but the routed gene evidence is diffuse.
   - inspect `specificity_confidence`, `top10_gene_mass`, `neighbor_target_concentration`, `neighbor_primary_target_agreement`, `neighbor_top3_target_agreement`, and `high_hub_mass_fraction` in `geneset.meta.json`.
   - for opposite-polarity runs, low-specificity programs are suppressed by default unless you lower `--min_specificity_confidence_to_emit_opposite`.
+- Generic recurrent genes dominate:
+  - recurrent morphology genes such as receptor-family or stress-response genes can still appear.
+  - default `--gene_recurrence_penalty idf` reduces this, but if you disable it you should expect broader outputs.
 - Small or skipped GMT sets:
   - fewer than `--gmt_min_genes` genes survived selection.
   - for toy runs, use smaller `--gmt_min_genes` or `--emit_small_gene_sets true`.
@@ -227,6 +242,7 @@ For a first pass on Cell Painting data:
 - keep `--polarity similar`,
 - treat `--polarity opposite` as experimental / secondary,
 - keep the default hubness penalty on unless you are explicitly studying broad/generic morphological states,
+- keep same-modality-first retrieval on when query modality metadata is available,
 - keep the neighborhood narrow by default; increasing `--max_reference_neighbors` usually makes outputs broader and less specific,
 - if you explicitly want exploratory opposite-polarity outputs, use `--min_specificity_confidence_to_emit_opposite low`,
 - inspect `run_summary.txt` before over-interpreting GMT enrichments.

@@ -119,3 +119,73 @@ def test_morphology_specificity_benchmark_default_suppresses_recurrent_generic_g
     assert genes_default.index("NTRK1") < genes_broad.index("NTRK1")
     assert genes_default[0] == "NTRK1"
 
+
+def test_morphology_specificity_benchmark_gene_recurrence_penalty_reduces_generic_recurrent_gene(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "A\t1.0\t0.0\n"
+        "B\t0.99\t0.01\n"
+        "C\t0.98\t0.02\n"
+        "SPEC\t0.96\t0.04\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "A\tcompound\tA\t0.1\t1.0\tfalse\n"
+        "B\tcompound\tB\t0.1\t1.0\tfalse\n"
+        "C\tcompound\tC\t0.1\t1.0\tfalse\n"
+        "SPEC\tcompound\tSPEC\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "A\tADA\t1.0\n"
+        "B\tADA\t1.0\n"
+        "C\tADA\t1.0\n"
+        "SPEC\tKCNN4\t1.0\n",
+        encoding="utf-8",
+    )
+    args_pen = Args()
+    args_pen.query_profiles_tsv = str(query)
+    args_pen.query_metadata_tsv = None
+    args_pen.group_query_by = None
+    args_pen.reference_profiles_tsv = str(refs)
+    args_pen.reference_metadata_tsv = str(ref_meta)
+    args_pen.compound_targets_tsv = str(targets)
+    args_pen.feature_stats_tsv = None
+    args_pen.feature_schema_tsv = None
+    args_pen.out_dir = str(tmp_path / "pen")
+    args_pen.polarity = "similar"
+    args_pen.top_k = 2
+    args_pen.gmt_topk_list = "2"
+    args_pen.gmt_min_genes = 1
+    args_pen.emit_small_gene_sets = True
+    morphology_profile_query.run(args_pen)
+    genes_pen = _genes(Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+
+    args_none = Args()
+    args_none.query_profiles_tsv = str(query)
+    args_none.query_metadata_tsv = None
+    args_none.group_query_by = None
+    args_none.reference_profiles_tsv = str(refs)
+    args_none.reference_metadata_tsv = str(ref_meta)
+    args_none.compound_targets_tsv = str(targets)
+    args_none.feature_stats_tsv = None
+    args_none.feature_schema_tsv = None
+    args_none.out_dir = str(tmp_path / "none")
+    args_none.polarity = "similar"
+    args_none.gene_recurrence_penalty = "none"
+    args_none.top_k = 2
+    args_none.gmt_topk_list = "2"
+    args_none.gmt_min_genes = 1
+    args_none.emit_small_gene_sets = True
+    morphology_profile_query.run(args_none)
+    genes_none = _genes(Path(args_none.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+
+    assert genes_pen[0] == "KCNN4"
+    assert genes_none[0] == "ADA"

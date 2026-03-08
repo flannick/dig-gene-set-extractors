@@ -21,6 +21,7 @@ class Args:
     query_metadata_tsv = "tests/data/toy_morph_query_metadata.tsv"
     query_metadata_id_column = "sample_id"
     query_metadata_delimiter = "\t"
+    query_modality_column = "perturbation_type"
     group_query_by = "query_group"
     query_aggregate = "median"
     exclude_query_ids_from_reference = False
@@ -48,9 +49,16 @@ class Args:
     similarity_metric = "cosine"
     similarity_power = 1.0
     polarity = "both"
+    same_modality_first = True
+    cross_modality_penalty = 0.35
     max_reference_neighbors = 20
+    adaptive_neighbors = True
+    min_effective_neighbors = 5
+    neighbor_evidence_drop_ratio = 0.25
+    mutual_neighbor_filter = True
     min_similarity = 0.0
     hubness_penalty = "inverse_rank"
+    gene_recurrence_penalty = "idf"
     min_specificity_confidence_to_emit_opposite = "medium"
     compound_weight = 0.5
     genetic_weight = 0.5
@@ -335,6 +343,47 @@ def test_morphology_profile_query_can_force_opposite_emission(tmp_path: Path):
     morphology_profile_query.run(args)
     manifest = _manifest_rows(Path(args.out_dir) / "manifest.tsv")
     assert {row["polarity"] for row in manifest} == {"similar", "opposite"}
+
+
+def test_morphology_profile_query_same_modality_first_prefers_supported_same_modality(tmp_path: Path):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tquery_group\tperturbation_type\nQ1\tQ1\tcompound\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profiles.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "XMOD\t1.0\t0.0\n"
+        "SMOD\t0.92\t0.08\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "XMOD\torf\t\tADA\t0.1\t1.0\tfalse\n"
+        "SMOD\tcompound\tSMOD\t\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nSMOD\tKCNN4\t1.0\n", encoding="utf-8")
+    args = Args()
+    args.query_profiles_tsv = str(query_path)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = "query_group"
+    args.reference_profiles_tsv = str(ref_profiles)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "same_modality")
+    args.polarity = "similar"
+    args.top_k = 2
+    args.gmt_topk_list = "2"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    genes = _geneset_rows(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    assert genes[0]["gene_id"] == "KCNN4"
 
 
 def test_morphology_profile_query_small_gene_set_warning_includes_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

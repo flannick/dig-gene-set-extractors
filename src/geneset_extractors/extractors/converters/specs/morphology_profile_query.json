@@ -83,6 +83,12 @@
       "help": "ID column in query_metadata_tsv"
     },
     {
+      "name": "query_modality_column",
+      "type": "string",
+      "default": "perturbation_type",
+      "help": "Optional query metadata column indicating assay perturbation modality for same-modality-first retrieval"
+    },
+    {
       "name": "query_metadata_delimiter",
       "type": "string",
       "default": "\\t",
@@ -215,10 +221,46 @@
       "help": "Emit similar matches, opposite matches, or both as separate programs. Opposite polarity is experimental."
     },
     {
+      "name": "same_modality_first",
+      "type": "boolean",
+      "default": true,
+      "help": "When query modality is known, prefer same-modality neighbors and downweight unsupported cross-modality neighbors."
+    },
+    {
+      "name": "cross_modality_penalty",
+      "type": "number",
+      "default": 0.35,
+      "help": "Penalty applied to cross-modality neighbors that do not reinforce same-modality target evidence."
+    },
+    {
       "name": "max_reference_neighbors",
       "type": "integer",
       "default": 20,
       "help": "Retain at most this many hubness-adjusted reference neighbors per query and polarity (0 disables truncation). Lower values are usually more specific."
+    },
+    {
+      "name": "adaptive_neighbors",
+      "type": "boolean",
+      "default": true,
+      "help": "Treat max_reference_neighbors as an upper bound and stop early when evidence drops sharply."
+    },
+    {
+      "name": "min_effective_neighbors",
+      "type": "integer",
+      "default": 5,
+      "help": "Minimum retained neighbors before adaptive truncation is allowed to stop."
+    },
+    {
+      "name": "neighbor_evidence_drop_ratio",
+      "type": "number",
+      "default": 0.25,
+      "help": "Adaptive truncation stops when neighbor evidence falls below this fraction of the top retained neighbor."
+    },
+    {
+      "name": "mutual_neighbor_filter",
+      "type": "boolean",
+      "default": true,
+      "help": "Apply a local mutual-support penalty to isolated neighbors that do not cohere with the top neighborhood."
     },
     {
       "name": "min_similarity",
@@ -236,6 +278,16 @@
         "inverse_rank"
       ],
       "help": "Downweight generic hub-like reference perturbations when hub_score is available in reference metadata. inverse_rank is the stronger, more stable default."
+    },
+    {
+      "name": "gene_recurrence_penalty",
+      "type": "string",
+      "default": "idf",
+      "enum": [
+        "none",
+        "idf"
+      ],
+      "help": "Penalize genes that recur across many reference perturbations to reduce generic morphology outputs."
     },
     {
       "name": "min_specificity_confidence_to_emit_opposite",

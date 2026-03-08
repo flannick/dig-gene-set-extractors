@@ -30,9 +30,17 @@ class MorphologyWorkflowConfig:
     similarity_metric: str
     similarity_power: float
     polarity: str
+    query_modality_column: str
+    same_modality_first: bool
+    cross_modality_penalty: float
     max_reference_neighbors: int
+    adaptive_neighbors: bool
+    min_effective_neighbors: int
+    neighbor_evidence_drop_ratio: float
+    mutual_neighbor_filter: bool
     min_similarity: float
     hubness_penalty: str
+    gene_recurrence_penalty: str
     compound_weight: float
     genetic_weight: float
     select: str
@@ -234,6 +242,28 @@ def _hubness_weight(
     return 1.0 / max(1e-6, float(hub_score))
 
 
+def _reference_gene_idf(
+    *,
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+) -> dict[str, float]:
+    ref_maps = [mapping for mapping in list(compound_map.values()) + list(genetic_map.values()) if mapping]
+    n_refs = len(ref_maps)
+    if n_refs <= 0:
+        return {}
+    df: dict[str, int] = {}
+    for mapping in ref_maps:
+        for gene in mapping:
+            df[gene] = int(df.get(gene, 0)) + 1
+    import math
+
+    denom = math.log(float(n_refs) + 1.0) or 1.0
+    return {
+        gene: math.log((float(n_refs) + 1.0) / (float(count) + 1.0)) / denom
+        for gene, count in df.items()
+    }
+
+
 def _routed_primary_target_agreement(
     *,
     retained_neighbors: list[tuple[str, float]],
@@ -321,6 +351,48 @@ def _high_hub_mass_fraction(
     return high_hub_mass / total_mass
 
 
+def _pairwise_ref_similarity(
+    ref_id_a: str,
+    ref_id_b: str,
+    *,
+    ref_vectors: dict[str, list[float]],
+    cache: dict[tuple[str, str], float],
+) -> float:
+    key = tuple(sorted((ref_id_a, ref_id_b)))
+    if key in cache:
+        return float(cache[key])
+    vec_a = ref_vectors.get(ref_id_a)
+    vec_b = ref_vectors.get(ref_id_b)
+    if vec_a is None or vec_b is None:
+        cache[key] = 0.0
+        return 0.0
+    dot = sum(float(a) * float(b) for a, b in zip(vec_a, vec_b, strict=False))
+    norm_a = sum(float(a) * float(a) for a in vec_a) ** 0.5
+    norm_b = sum(float(b) * float(b) for b in vec_b) ** 0.5
+    sim = dot / max(1e-8, norm_a * norm_b)
+    cache[key] = float(sim)
+    return float(sim)
+
+
+def _query_modality(
+    *,
+    query_id: str,
+    query_membership: dict[str, list[str]],
+    query_metadata_rows: dict[str, dict[str, str]] | None,
+    modality_column: str,
+) -> str | None:
+    if not query_metadata_rows:
+        return None
+    modes = {
+        str(query_metadata_rows.get(member_id, {}).get(modality_column, "")).strip().lower()
+        for member_id in query_membership.get(query_id, [])
+        if str(query_metadata_rows.get(member_id, {}).get(modality_column, "")).strip()
+    }
+    if len(modes) == 1:
+        return next(iter(modes))
+    return None
+
+
 def run_morphology_workflow(
     *,
     cfg: MorphologyWorkflowConfig,
@@ -335,6 +407,7 @@ def run_morphology_workflow(
     input_files: list[dict[str, str]],
     resources_info: dict[str, object] | None,
     exclude_query_ids_from_reference: bool,
+    query_metadata_rows: dict[str, dict[str, str]] | None,
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -386,6 +459,7 @@ def run_morphology_workflow(
         reference_metadata=reference_metadata_effective,
         compound_targets=compound_targets,
     )
+    gene_idf = _reference_gene_idf(compound_map=compound_map, genetic_map=genetic_map)
     hub_scores_present = 0
     hub_rank_penalties: dict[str, float] = {}
     hub_order: list[tuple[str, float]] = []
@@ -409,6 +483,7 @@ def run_morphology_workflow(
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     root_warnings: list[dict[str, object]] = []
     skipped_programs: list[dict[str, object]] = []
+    ref_ref_similarity_cache: dict[tuple[str, str], float] = {}
     gmt_topk_list = parse_int_list_csv(str(cfg.gmt_topk_list))
     gmt_mass_list = parse_mass_list_csv(str(cfg.gmt_mass_list))
     gmt_biotype_allowlist = parse_str_list_csv(str(cfg.gmt_biotype_allowlist))
@@ -422,6 +497,12 @@ def run_morphology_workflow(
 
     for query_id in sorted(query_vectors):
         query_sim = similarities.get(query_id, {})
+        query_modality = _query_modality(
+            query_id=query_id,
+            query_membership=query_membership,
+            query_metadata_rows=query_metadata_rows,
+            modality_column=cfg.query_modality_column,
+        )
         neg_frac = 0.0
         if query_sim:
             neg_frac = float(sum(1 for v in query_sim.values() if float(v) < 0.0)) / float(len(query_sim))
@@ -444,6 +525,19 @@ def run_morphology_workflow(
                 polarity=polarity,
                 min_similarity=float(cfg.min_similarity),
             )
+            same_modality_anchor_targets: set[str] = set()
+            if cfg.same_modality_first and query_modality:
+                same_modality_candidates = [
+                    (ref_id, base)
+                    for ref_id, base in candidate_neighbors
+                    if str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() == query_modality
+                ]
+                same_modality_candidates.sort(key=lambda item: (-float(item[1]), str(item[0])))
+                for ref_id, _base in same_modality_candidates[:5]:
+                    mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
+                    ordered = sorted(mapping.items(), key=lambda item: (-float(item[1]), str(item[0])))[:3]
+                    for gene, _weight in ordered:
+                        same_modality_anchor_targets.add(gene)
             penalized_neighbors: list[tuple[str, float, float]] = []
             for ref_id, base in candidate_neighbors:
                 hub_penalty = _hubness_weight(
@@ -457,10 +551,47 @@ def run_morphology_workflow(
                     * float(qc_weights.get(ref_id, 1.0))
                     * float(hub_penalty)
                 )
+                ref_modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower()
+                if cfg.same_modality_first and query_modality and ref_modality and ref_modality != query_modality:
+                    mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
+                    overlap = bool(same_modality_anchor_targets & set(mapping))
+                    evidence *= 1.0 if overlap else float(cfg.cross_modality_penalty)
                 if evidence <= 0.0:
                     continue
                 penalized_neighbors.append((ref_id, float(base), evidence))
             penalized_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+            if cfg.mutual_neighbor_filter and penalized_neighbors:
+                anchors = [ref_id for ref_id, _base, _evidence in penalized_neighbors[: min(5, len(penalized_neighbors))]]
+                filtered_neighbors: list[tuple[str, float, float]] = []
+                for ref_id, base, evidence in penalized_neighbors:
+                    if ref_id in anchors:
+                        filtered_neighbors.append((ref_id, base, evidence))
+                        continue
+                    cohesion_vals = [
+                        max(
+                            0.0,
+                            _pairwise_ref_similarity(ref_id, anchor_id, ref_vectors=ref_vectors, cache=ref_ref_similarity_cache),
+                        )
+                        for anchor_id in anchors
+                        if anchor_id != ref_id
+                    ]
+                    cohesion = sum(cohesion_vals) / float(len(cohesion_vals) or 1)
+                    adjusted = evidence * (0.5 if cohesion < 0.1 else 1.0)
+                    if adjusted > 0.0:
+                        filtered_neighbors.append((ref_id, base, adjusted))
+                penalized_neighbors = sorted(filtered_neighbors, key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+            if cfg.adaptive_neighbors and penalized_neighbors:
+                adaptive_neighbors: list[tuple[str, float, float]] = []
+                top_evidence = float(penalized_neighbors[0][2])
+                for ref_id, base, evidence in penalized_neighbors:
+                    if (
+                        adaptive_neighbors
+                        and len(adaptive_neighbors) >= int(cfg.min_effective_neighbors)
+                        and float(evidence) < top_evidence * float(cfg.neighbor_evidence_drop_ratio)
+                    ):
+                        break
+                    adaptive_neighbors.append((ref_id, base, evidence))
+                penalized_neighbors = adaptive_neighbors
             if int(cfg.max_reference_neighbors) > 0:
                 penalized_neighbors = penalized_neighbors[: int(cfg.max_reference_neighbors)]
             retained_neighbors = [(ref_id, base) for ref_id, base, _evidence in penalized_neighbors]
@@ -478,6 +609,12 @@ def run_morphology_workflow(
             if compound_norm and genetic_norm:
                 cw = float(cfg.compound_weight)
                 gw = float(cfg.genetic_weight)
+                if query_modality == "compound":
+                    cw *= 1.5
+                    gw *= 0.5
+                elif query_modality in {"orf", "crispr"}:
+                    gw *= 1.5
+                    cw *= 0.5
                 if compound_neighbors < 5 <= genetic_neighbors:
                     cw *= 0.25
                 if genetic_neighbors < 5 <= compound_neighbors:
@@ -497,6 +634,12 @@ def run_morphology_workflow(
                 for gene in genes
                 if float(cw * compound_norm.get(gene, 0.0) + gw * genetic_norm.get(gene, 0.0)) > 0.0
             }
+            if cfg.gene_recurrence_penalty != "none":
+                gene_scores = {
+                    gene: float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0))
+                    for gene, score in gene_scores.items()
+                    if float(score) * float(gene_idf.get(gene, 1.0)) * float(gene_idf.get(gene, 1.0)) > 0.0
+                }
             selected_gene_ids = _select_gene_ids(gene_scores, cfg)
             selected_gene_ids = sorted(selected_gene_ids, key=lambda g: (-float(gene_scores.get(g, 0.0)), str(g)))
             weights = _selected_weights(gene_scores, selected_gene_ids, cfg.normalize)
@@ -677,6 +820,8 @@ def run_morphology_workflow(
                 "n_positive_neighbors": n_positive_neighbors,
                 "n_negative_neighbors": n_negative_neighbors,
                 "n_retained_neighbors": len(retained_neighbors),
+                "effective_neighbor_count": len(retained_neighbors),
+                "query_modality": query_modality,
                 "retained_neighbors_by_modality": retained_by_modality,
                 "neg_similarity_fraction": neg_frac,
                 "top_neighbor_ids": top_neighbor_ids,
@@ -721,6 +866,11 @@ def run_morphology_workflow(
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
                     "hubness_penalty": cfg.hubness_penalty,
+                    "same_modality_first": cfg.same_modality_first,
+                    "cross_modality_penalty": cfg.cross_modality_penalty,
+                    "adaptive_neighbors": cfg.adaptive_neighbors,
+                    "mutual_neighbor_filter": cfg.mutual_neighbor_filter,
+                    "gene_recurrence_penalty": cfg.gene_recurrence_penalty,
                     "min_specificity_confidence_to_emit_opposite": cfg.min_specificity_confidence_to_emit_opposite,
                     "compound_weight": cfg.compound_weight,
                     "genetic_weight": cfg.genetic_weight,
@@ -753,6 +903,8 @@ def run_morphology_workflow(
                     "specificity_confidence": specificity_confidence,
                     "n_positive_neighbors": n_positive_neighbors,
                     "n_negative_neighbors": n_negative_neighbors,
+                    "effective_neighbor_count": len(retained_neighbors),
+                    "query_modality": query_modality,
                     "neg_similarity_fraction": neg_frac,
                     "top_neighbor_ids": top_neighbor_ids,
                     "top_neighbor_modalities": top_neighbor_modalities,
@@ -763,6 +915,11 @@ def run_morphology_workflow(
                     "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                     "high_hub_mass_fraction": high_hub_mass_fraction,
                     "hubness_penalty": cfg.hubness_penalty,
+                    "same_modality_first": cfg.same_modality_first,
+                    "cross_modality_penalty": cfg.cross_modality_penalty,
+                    "adaptive_neighbors": cfg.adaptive_neighbors,
+                    "mutual_neighbor_filter": cfg.mutual_neighbor_filter,
+                    "gene_recurrence_penalty": cfg.gene_recurrence_penalty,
                     "hub_score_present": bool(hub_scores_present > 0),
                     "hub_score_summary_retained": {
                         "min": min(retained_hub_scores) if retained_hub_scores else None,
@@ -783,6 +940,7 @@ def run_morphology_workflow(
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
                     "neighbor_top3_target_agreement": neighbor_top3_target_agreement,
                     "high_hub_mass_fraction": high_hub_mass_fraction,
+                    "effective_neighbor_count": len(retained_neighbors),
                 },
                 output_files=output_files,
                 gmt={
