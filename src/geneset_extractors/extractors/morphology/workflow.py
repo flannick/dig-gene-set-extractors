@@ -39,6 +39,7 @@ class MorphologyWorkflowConfig:
     neighbor_evidence_drop_ratio: float
     mutual_neighbor_filter: bool
     min_similarity: float
+    control_calibration: str
     hubness_penalty: str
     gene_recurrence_penalty: str
     compound_weight: float
@@ -393,6 +394,39 @@ def _query_modality(
     return None
 
 
+def _apply_control_mean_center(
+    *,
+    query_vectors: dict[str, list[float]],
+    ref_vectors: dict[str, list[float]],
+    reference_metadata: dict[str, dict[str, str]],
+) -> tuple[dict[str, list[float]], dict[str, list[float]], dict[str, object] | None]:
+    control_ids = [
+        ref_id
+        for ref_id in ref_vectors
+        if str(reference_metadata.get(ref_id, {}).get("is_control", "")).strip().lower() in {"1", "true", "t", "yes"}
+    ]
+    if not control_ids:
+        return query_vectors, ref_vectors, None
+    n_features = len(next(iter(ref_vectors.values()))) if ref_vectors else 0
+    if n_features <= 0:
+        return query_vectors, ref_vectors, None
+    control_mean = [0.0] * n_features
+    for ref_id in control_ids:
+        vec = ref_vectors.get(ref_id, [])
+        for idx, value in enumerate(vec):
+            control_mean[idx] += float(value)
+    control_mean = [value / float(len(control_ids)) for value in control_mean]
+    q_out = {
+        query_id: [float(value) - float(control_mean[idx]) for idx, value in enumerate(vec)]
+        for query_id, vec in query_vectors.items()
+    }
+    r_out = {
+        ref_id: [float(value) - float(control_mean[idx]) for idx, value in enumerate(vec)]
+        for ref_id, vec in ref_vectors.items()
+    }
+    return q_out, r_out, {"mode": "mean_center", "n_control_profiles": len(control_ids)}
+
+
 def run_morphology_workflow(
     *,
     cfg: MorphologyWorkflowConfig,
@@ -412,19 +446,16 @@ def run_morphology_workflow(
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    reference_profiles_effective = dict(reference_profiles)
-    reference_metadata_effective = dict(reference_metadata)
+    reference_profiles_all = dict(reference_profiles)
+    reference_metadata_all = dict(reference_metadata)
+    reference_profiles_effective = dict(reference_profiles_all)
+    reference_metadata_effective = dict(reference_metadata_all)
     if exclude_query_ids_from_reference:
         overlap = set(query_profiles) & set(reference_profiles_effective)
         for ref_id in overlap:
             reference_profiles_effective.pop(ref_id, None)
             reference_metadata_effective.pop(ref_id, None)
-    control_ids = {rid for rid, row in reference_metadata_effective.items() if str(row.get("is_control", "")).strip().lower() in {"1", "true", "t", "yes"}}
-    if control_ids:
-        print(f"warning: excluding {len(control_ids)} reference control profiles from similarity candidates", file=sys.stderr)
-        for rid in control_ids:
-            reference_profiles_effective.pop(rid, None)
-            reference_metadata_effective.pop(rid, None)
+    control_ids = {rid for rid, row in reference_metadata_all.items() if str(row.get("is_control", "")).strip().lower() in {"1", "true", "t", "yes"}}
 
     shared_features, feature_summary = align_feature_space(query_profiles, reference_profiles_effective, feature_schema=feature_schema)
     if not shared_features:
@@ -436,7 +467,21 @@ def run_morphology_workflow(
         )
 
     query_vectors, query_scale_summary = standardize_profiles(query_profiles, features=shared_features, feature_stats=feature_stats)
-    ref_vectors, ref_scale_summary = standardize_profiles(reference_profiles_effective, features=shared_features, feature_stats=feature_stats)
+    ref_vectors_all, ref_scale_summary = standardize_profiles(reference_profiles_effective | {rid: reference_profiles_all[rid] for rid in control_ids if rid in reference_profiles_all}, features=shared_features, feature_stats=feature_stats)
+    control_calibration_summary: dict[str, object] | None = None
+    if cfg.control_calibration == "mean_center":
+        query_vectors, ref_vectors_all, control_calibration_summary = _apply_control_mean_center(
+            query_vectors=query_vectors,
+            ref_vectors=ref_vectors_all,
+            reference_metadata=reference_metadata_all,
+        )
+    ref_vectors = dict(ref_vectors_all)
+    if control_ids:
+        print(f"warning: excluding {len(control_ids)} reference control profiles from similarity candidates", file=sys.stderr)
+        for rid in control_ids:
+            ref_vectors.pop(rid, None)
+            reference_profiles_effective.pop(rid, None)
+            reference_metadata_effective.pop(rid, None)
     similarities = pairwise_similarity(query_vectors, ref_vectors, metric=cfg.similarity_metric)
 
     qc_missing = 0
@@ -525,14 +570,14 @@ def run_morphology_workflow(
                 polarity=polarity,
                 min_similarity=float(cfg.min_similarity),
             )
+            raw_candidate_neighbors = sorted(candidate_neighbors, key=lambda item: (-float(item[1]), str(item[0])))
             same_modality_anchor_targets: set[str] = set()
             if cfg.same_modality_first and query_modality:
                 same_modality_candidates = [
                     (ref_id, base)
-                    for ref_id, base in candidate_neighbors
+                    for ref_id, base in raw_candidate_neighbors
                     if str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() == query_modality
                 ]
-                same_modality_candidates.sort(key=lambda item: (-float(item[1]), str(item[0])))
                 for ref_id, _base in same_modality_candidates[:5]:
                     mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
                     ordered = sorted(mapping.items(), key=lambda item: (-float(item[1]), str(item[0])))[:3]
@@ -827,6 +872,8 @@ def run_morphology_workflow(
                 "top_neighbor_ids": top_neighbor_ids,
                 "top_neighbor_modalities": top_neighbor_modalities,
                 "top_neighbor_similarities": top_neighbor_sims,
+                "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
+                "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
                 "top5_neighbor_score_mass_fraction": top5_mass,
                 "retrieval_confidence": retrieval_confidence,
                 "specificity_confidence": specificity_confidence,
@@ -848,6 +895,7 @@ def run_morphology_workflow(
                 "feature_alignment": feature_summary,
                 "query_standardization": query_scale_summary,
                 "reference_standardization": ref_scale_summary,
+                "control_calibration": control_calibration_summary,
                 "mapping_summary": mapping_summary,
                 "requested_gmt_outputs": [{"name": p.get("name", "")} for p in gmt_plans],
                 "skipped_gmt_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
@@ -865,6 +913,7 @@ def run_morphology_workflow(
                     "polarity": polarity,
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
+                    "control_calibration": cfg.control_calibration,
                     "hubness_penalty": cfg.hubness_penalty,
                     "same_modality_first": cfg.same_modality_first,
                     "cross_modality_penalty": cfg.cross_modality_penalty,
@@ -909,6 +958,8 @@ def run_morphology_workflow(
                     "top_neighbor_ids": top_neighbor_ids,
                     "top_neighbor_modalities": top_neighbor_modalities,
                     "top_neighbor_similarities": top_neighbor_sims,
+                    "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
+                    "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
                     "top10_gene_mass": top10_gene_mass,
                     "neighbor_target_concentration": neighbor_target_concentration,
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
@@ -921,6 +972,7 @@ def run_morphology_workflow(
                     "mutual_neighbor_filter": cfg.mutual_neighbor_filter,
                     "gene_recurrence_penalty": cfg.gene_recurrence_penalty,
                     "hub_score_present": bool(hub_scores_present > 0),
+                    "control_calibration": control_calibration_summary,
                     "hub_score_summary_retained": {
                         "min": min(retained_hub_scores) if retained_hub_scores else None,
                         "median": median(retained_hub_scores) if retained_hub_scores else None,

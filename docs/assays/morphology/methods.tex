@@ -236,6 +236,9 @@ where $d_g$ is the number of reference perturbations that route to gene $g$ and 
 \]
 which reduces recurrent generic genes without imposing a hard blacklist.
 
+\subsection{Control-derived calibration}
+Control profiles should remain excluded from the target-neighbor candidate set, but they can still be useful for calibration. A simple practical default is to estimate a control-derived nuisance mean in feature space and subtract it from both query and reference vectors before similarity scoring. This aims to reduce broad plate or vehicle-like morphology axes without turning controls into mechanistic neighbors.
+
 \section{QC and failure modes}
 Important warnings to implement:
 \begin{itemize}[leftmargin=2em]

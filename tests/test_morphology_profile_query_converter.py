@@ -57,6 +57,7 @@ class Args:
     neighbor_evidence_drop_ratio = 0.25
     mutual_neighbor_filter = True
     min_similarity = 0.0
+    control_calibration = "mean_center"
     hubness_penalty = "inverse_rank"
     gene_recurrence_penalty = "idf"
     min_specificity_confidence_to_emit_opposite = "medium"
@@ -265,6 +266,8 @@ def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Pat
     morphology_profile_query.run(args)
     meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "neighbor_primary_target_agreement" in meta["summary"]
+    assert "raw_candidate_neighbor_ids" in meta["summary"]
+    assert "control_calibration" in meta["summary"]
     assert "high_hub_mass_fraction" in meta["summary"]
     assert meta["summary"]["hubness_penalty"] == "inverse_rank"
 
@@ -384,6 +387,16 @@ def test_morphology_profile_query_same_modality_first_prefers_supported_same_mod
     morphology_profile_query.run(args)
     genes = _geneset_rows(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
     assert genes[0]["gene_id"] == "KCNN4"
+
+
+def test_morphology_profile_query_control_calibration_is_recorded(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "control_calibration")
+    args.polarity = "similar"
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["control_calibration"] is not None
+    assert meta["summary"]["control_calibration"]["mode"] == "mean_center"
 
 
 def test_morphology_profile_query_small_gene_set_warning_includes_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

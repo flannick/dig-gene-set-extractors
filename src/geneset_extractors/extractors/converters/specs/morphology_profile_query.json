@@ -269,6 +269,16 @@
       "help": "Ignore retained neighbors below this similarity threshold after polarity transform."
     },
     {
+      "name": "control_calibration",
+      "type": "string",
+      "default": "mean_center",
+      "enum": [
+        "none",
+        "mean_center"
+      ],
+      "help": "Use control profiles only for calibration before similarity scoring. Controls remain excluded from retrieval candidates."
+    },
+    {
       "name": "hubness_penalty",
       "type": "string",
       "default": "inverse_rank",

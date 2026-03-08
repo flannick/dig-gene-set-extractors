@@ -125,6 +125,7 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--adaptive_neighbors true`
 - `--mutual_neighbor_filter true`
 - `--min_similarity 0.0`
+- `--control_calibration mean_center`
 - `--hubness_penalty inverse_rank`
 - `--gene_recurrence_penalty idf`
 - `--min_specificity_confidence_to_emit_opposite medium`
@@ -210,6 +211,9 @@ Grouped output layout mirrors other multi-program extractors:
   - fix upstream feature selection or use a matched bundle.
 - Reference controls excluded:
   - expected when bundle metadata marks control profiles.
+- Control-derived calibration:
+  - controls are not retrieval candidates, but by default they are used to estimate a nuisance mean before similarity scoring.
+  - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.
   - rerun with `--polarity both` if you want both directions.

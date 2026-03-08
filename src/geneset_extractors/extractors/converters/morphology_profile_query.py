@@ -137,6 +137,7 @@ def run(args) -> dict[str, object]:
         neighbor_evidence_drop_ratio=float(args.neighbor_evidence_drop_ratio),
         mutual_neighbor_filter=bool(args.mutual_neighbor_filter),
         min_similarity=float(args.min_similarity),
+        control_calibration=str(args.control_calibration),
         hubness_penalty=str(args.hubness_penalty),
         gene_recurrence_penalty=str(args.gene_recurrence_penalty),
         min_specificity_confidence_to_emit_opposite=str(args.min_specificity_confidence_to_emit_opposite),
