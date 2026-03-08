@@ -464,9 +464,9 @@ def _add_morphology_profile_query_flags(parser: argparse.ArgumentParser) -> None
     parser.add_argument("--similarity_metric", choices=["cosine", "pearson"], default="cosine")
     parser.add_argument("--similarity_power", type=float, default=1.0)
     parser.add_argument("--polarity", choices=["similar", "opposite", "both"], default="similar")
-    parser.add_argument("--max_reference_neighbors", type=int, default=50)
+    parser.add_argument("--max_reference_neighbors", type=int, default=20)
     parser.add_argument("--min_similarity", type=float, default=0.0)
-    parser.add_argument("--hubness_penalty", choices=["none", "inverse_linear", "inverse_rank"], default="inverse_linear")
+    parser.add_argument("--hubness_penalty", choices=["none", "inverse_linear", "inverse_rank"], default="inverse_rank")
     parser.add_argument("--compound_weight", type=float, default=0.5)
     parser.add_argument("--genetic_weight", type=float, default=0.5)
 

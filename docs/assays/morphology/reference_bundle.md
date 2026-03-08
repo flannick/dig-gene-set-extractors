@@ -110,6 +110,12 @@ This means the builder will keep a coherent cell-type/timepoint context and warn
 
 The bundle builder computes a `hub_score` for each reference perturbation from within-bundle reference-reference similarities. The extractor can use this score to downweight generic hub-like references:
 
-- `--hubness_penalty inverse_linear` (default)
-- `--hubness_penalty inverse_rank`
+- `--hubness_penalty inverse_rank` (default)
+- `--hubness_penalty inverse_linear`
 - `--hubness_penalty none`
+
+The extractor also keeps only a narrow local neighborhood by default:
+
+- `--max_reference_neighbors 20`
+
+This is deliberate. Morphology retrieval becomes much less specific when weak long-tail neighbors are allowed to contribute.

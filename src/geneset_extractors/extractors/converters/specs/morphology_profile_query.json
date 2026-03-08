@@ -212,13 +212,13 @@
         "opposite",
         "both"
       ],
-      "help": "Emit similar matches, opposite matches, or both as separate programs"
+      "help": "Emit similar matches, opposite matches, or both as separate programs. Opposite polarity is experimental."
     },
     {
       "name": "max_reference_neighbors",
       "type": "integer",
-      "default": 50,
-      "help": "Retain at most this many reference neighbors per query and polarity (0 disables truncation)."
+      "default": 20,
+      "help": "Retain at most this many hubness-adjusted reference neighbors per query and polarity (0 disables truncation). Lower values are usually more specific."
     },
     {
       "name": "min_similarity",
@@ -229,13 +229,13 @@
     {
       "name": "hubness_penalty",
       "type": "string",
-      "default": "inverse_linear",
+      "default": "inverse_rank",
       "enum": [
         "none",
         "inverse_linear",
         "inverse_rank"
       ],
-      "help": "Downweight generic hub-like reference perturbations when hub_score is available in reference metadata."
+      "help": "Downweight generic hub-like reference perturbations when hub_score is available in reference metadata. inverse_rank is the stronger, more stable default."
     },
     {
       "name": "compound_weight",

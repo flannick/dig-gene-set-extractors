@@ -48,9 +48,9 @@ class Args:
     similarity_metric = "cosine"
     similarity_power = 1.0
     polarity = "both"
-    max_reference_neighbors = 50
+    max_reference_neighbors = 20
     min_similarity = 0.0
-    hubness_penalty = "inverse_linear"
+    hubness_penalty = "inverse_rank"
     compound_weight = 0.5
     genetic_weight = 0.5
 
@@ -240,13 +240,73 @@ def test_morphology_profile_query_hubness_penalty_prefers_specific_neighbor(tmp_
     args_pen.polarity = "similar"
     args_pen.top_k = 1
     args_pen.gmt_topk_list = "1"
-    args_pen.hubness_penalty = "inverse_linear"
+    args_pen.hubness_penalty = "inverse_rank"
     morphology_profile_query.run(args_pen)
 
     gene_none = _geneset_rows(Path(args_none.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
     gene_pen = _geneset_rows(Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
     assert gene_none == "GENE_HUB"
     assert gene_pen == "GENE_SPEC"
+
+
+def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "meta_specificity")
+    args.polarity = "similar"
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "neighbor_primary_target_agreement" in meta["summary"]
+    assert "high_hub_mass_fraction" in meta["summary"]
+    assert meta["summary"]["hubness_penalty"] == "inverse_rank"
+
+
+def test_morphology_profile_query_high_retrieval_low_specificity_warns(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profile_lines = ["perturbation_id\tf1\tf2"]
+    ref_meta_lines = ["perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control"]
+    target_lines = ["compound_id\tgene_symbol\tweight"]
+    for idx in range(1, 21):
+        ref_profile_lines.append(f"R{idx}\t1.0\t0.0")
+        ref_meta_lines.append(f"R{idx}\tcompound\tR{idx}\t0.2\t1.0\tfalse")
+        target_lines.append(f"R{idx}\tGENE{idx}\t1.0")
+    ref_profiles.write_text("\n".join(ref_profile_lines) + "\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text("\n".join(ref_meta_lines) + "\n", encoding="utf-8")
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("\n".join(target_lines) + "\n", encoding="utf-8")
+    args = Args()
+    args.query_profiles_tsv = str(query_path)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(ref_profiles)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "diffuse")
+    args.polarity = "similar"
+    args.hubness_penalty = "none"
+    args.top_k = 20
+    args.gmt_topk_list = "20"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    captured = capsys.readouterr()
+    assert "gene evidence is diffuse" in captured.err
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["retrieval_confidence"] == "high"
+    assert meta["summary"]["specificity_confidence"] == "low"
+
+
+def test_morphology_profile_query_opposite_experimental_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    args = Args()
+    args.out_dir = str(tmp_path / "opposite_warning")
+    args.polarity = "opposite"
+    morphology_profile_query.run(args)
+    captured = capsys.readouterr()
+    assert "opposite-polarity morphology programs are experimental" in captured.err
 
 
 def test_morphology_profile_query_small_gene_set_warning_includes_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

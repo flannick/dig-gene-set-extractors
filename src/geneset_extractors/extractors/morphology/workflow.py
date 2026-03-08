@@ -145,11 +145,10 @@ def _artifact_family_fraction(rows: list[dict[str, object]], top_n: int = 20) ->
     return float(hits) / float(len(top_rows))
 
 
-def _retained_neighbors(
+def _candidate_neighbors(
     query_sim: dict[str, float],
     *,
     polarity: str,
-    max_reference_neighbors: int,
     min_similarity: float,
 ) -> list[tuple[str, float]]:
     retained: list[tuple[str, float]] = []
@@ -166,9 +165,6 @@ def _retained_neighbors(
         if score <= 0.0:
             continue
         retained.append((ref_id, score))
-    retained.sort(key=lambda item: (-float(item[1]), str(item[0])))
-    if int(max_reference_neighbors) > 0:
-        retained = retained[: int(max_reference_neighbors)]
     return retained
 
 
@@ -186,19 +182,25 @@ def _retrieval_confidence(
 def _specificity_confidence(
     selected_rows: list[dict[str, object]],
     gene_scores: dict[str, float],
-) -> tuple[str, float, float]:
+    *,
+    neighbor_primary_target_agreement: float,
+    high_hub_mass_fraction: float,
+) -> tuple[str, float, float, float, float]:
     if not selected_rows or not gene_scores:
-        return "low", 0.0, 0.0
+        return "low", 0.0, 0.0, 0.0, 0.0
     top10_gene_mass = sum(float(row.get("weight", 0.0)) for row in selected_rows[:10])
     total_gene_mass = sum(float(v) for v in gene_scores.values())
     neighbor_target_concentration = 0.0
     if total_gene_mass > 0.0:
         neighbor_target_concentration = max(float(v) for v in gene_scores.values()) / total_gene_mass
-    if top10_gene_mass >= 0.7 and neighbor_target_concentration >= 0.35:
-        return "high", top10_gene_mass, neighbor_target_concentration
-    if top10_gene_mass >= 0.7 or neighbor_target_concentration >= 0.35:
-        return "medium", top10_gene_mass, neighbor_target_concentration
-    return "low", top10_gene_mass, neighbor_target_concentration
+    strong_gene_concentration = top10_gene_mass >= 0.65
+    strong_target_agreement = neighbor_target_concentration >= 0.25 or neighbor_primary_target_agreement >= 0.35
+    low_hub_dominance = high_hub_mass_fraction <= 0.5
+    if strong_gene_concentration and strong_target_agreement and low_hub_dominance:
+        return "high", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
+    if (strong_gene_concentration or strong_target_agreement) and high_hub_mass_fraction <= 0.75:
+        return "medium", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
+    return "low", top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction
 
 
 def _hubness_weight(
@@ -220,6 +222,61 @@ def _hubness_weight(
     if hub_score is None:
         return 1.0
     return 1.0 / max(1e-6, float(hub_score))
+
+
+def _routed_primary_target_agreement(
+    *,
+    retained_neighbors: list[tuple[str, float]],
+    evidence_by_ref: dict[str, float],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+) -> float:
+    target_mass: dict[str, float] = {}
+    total_mass = 0.0
+    for ref_id, _base in retained_neighbors:
+        evidence = float(evidence_by_ref.get(ref_id, 0.0))
+        if evidence <= 0.0:
+            continue
+        mapping = compound_map.get(ref_id) or genetic_map.get(ref_id)
+        if not mapping:
+            continue
+        top_weight = max(float(w) for w in mapping.values())
+        top_genes = [gene for gene, weight in mapping.items() if float(weight) == top_weight]
+        share = evidence / float(len(top_genes) or 1)
+        for gene in top_genes:
+            target_mass[gene] = float(target_mass.get(gene, 0.0)) + share
+        total_mass += evidence
+    if total_mass <= 0.0 or not target_mass:
+        return 0.0
+    return max(float(v) for v in target_mass.values()) / total_mass
+
+
+def _high_hub_mass_fraction(
+    *,
+    evidence_by_ref: dict[str, float],
+    reference_metadata: dict[str, dict[str, str]],
+) -> float:
+    scored: list[tuple[str, float]] = []
+    total_mass = 0.0
+    for ref_id, evidence in evidence_by_ref.items():
+        if float(evidence) <= 0.0:
+            continue
+        raw = reference_metadata.get(ref_id, {}).get("hub_score")
+        try:
+            hub_score = float(raw) if raw not in {None, ""} else None
+        except ValueError:
+            hub_score = None
+        if hub_score is None:
+            continue
+        scored.append((ref_id, hub_score))
+        total_mass += float(evidence)
+    if total_mass <= 0.0 or len(scored) < 4:
+        return 0.0
+    scored.sort(key=lambda item: (float(item[1]), str(item[0])))
+    cutoff_index = max(0, int(0.75 * len(scored)))
+    high_hub_ids = {ref_id for ref_id, _hub_score in scored[cutoff_index:]}
+    high_hub_mass = sum(float(evidence_by_ref.get(ref_id, 0.0)) for ref_id in high_hub_ids)
+    return high_hub_mass / total_mass
 
 
 def run_morphology_workflow(
@@ -316,6 +373,9 @@ def run_morphology_workflow(
     if cfg.hubness_penalty != "none" and hub_scores_present == 0:
         print("warning: hub_score not present in reference metadata; proceeding without hubness penalty", file=sys.stderr)
         root_warnings.append({"code": "hub_score_missing", "mode": cfg.hubness_penalty})
+    if cfg.polarity in {"opposite", "both"}:
+        print("warning: opposite-polarity morphology programs are experimental and should be interpreted cautiously", file=sys.stderr)
+        root_warnings.append({"code": "opposite_polarity_experimental"})
 
     for query_id in sorted(query_vectors):
         query_sim = similarities.get(query_id, {})
@@ -336,25 +396,32 @@ def run_morphology_workflow(
             )
         for polarity in polarities:
             program_warnings: list[dict[str, object]] = []
-            retained_neighbors = _retained_neighbors(
+            candidate_neighbors = _candidate_neighbors(
                 query_sim,
                 polarity=polarity,
-                max_reference_neighbors=int(cfg.max_reference_neighbors),
                 min_similarity=float(cfg.min_similarity),
             )
-            evidence_by_ref: dict[str, float] = {}
-            for ref_id, base in retained_neighbors:
+            penalized_neighbors: list[tuple[str, float, float]] = []
+            for ref_id, base in candidate_neighbors:
                 hub_penalty = _hubness_weight(
                     ref_id=ref_id,
                     reference_metadata=reference_metadata_effective,
                     mode=cfg.hubness_penalty,
                     hub_rank_penalties=hub_rank_penalties,
                 )
-                evidence_by_ref[ref_id] = float(
+                evidence = float(
                     (float(base) ** float(cfg.similarity_power))
                     * float(qc_weights.get(ref_id, 1.0))
                     * float(hub_penalty)
                 )
+                if evidence <= 0.0:
+                    continue
+                penalized_neighbors.append((ref_id, float(base), evidence))
+            penalized_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+            if int(cfg.max_reference_neighbors) > 0:
+                penalized_neighbors = penalized_neighbors[: int(cfg.max_reference_neighbors)]
+            retained_neighbors = [(ref_id, base) for ref_id, base, _evidence in penalized_neighbors]
+            evidence_by_ref: dict[str, float] = {ref_id: float(evidence) for ref_id, _base, evidence in penalized_neighbors}
             retained_by_modality: dict[str, int] = {}
             for ref_id, _score in retained_neighbors:
                 modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() or "unknown"
@@ -436,16 +503,28 @@ def run_morphology_workflow(
             n_positive_neighbors = sum(1 for value in query_sim.values() if float(value) > 0.0)
             n_negative_neighbors = sum(1 for value in query_sim.values() if float(value) < 0.0)
             retrieval_confidence = _retrieval_confidence(n_positive_neighbors, neg_frac)
-            specificity_confidence, top10_gene_mass, neighbor_target_concentration = _specificity_confidence(
+            neighbor_primary_target_agreement = _routed_primary_target_agreement(
+                retained_neighbors=retained_neighbors,
+                evidence_by_ref=evidence_by_ref,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+            )
+            high_hub_mass_fraction = _high_hub_mass_fraction(
+                evidence_by_ref=evidence_by_ref,
+                reference_metadata=reference_metadata_effective,
+            )
+            specificity_confidence, top10_gene_mass, neighbor_target_concentration, neighbor_primary_target_agreement, high_hub_mass_fraction = _specificity_confidence(
                 selected_rows,
                 gene_scores,
+                neighbor_primary_target_agreement=neighbor_primary_target_agreement,
+                high_hub_mass_fraction=high_hub_mass_fraction,
             )
             if retrieval_confidence == "high" and specificity_confidence == "low":
                 warning_payload = {
                     "code": "diffuse_gene_evidence",
                     "query_id": query_id,
                     "polarity": polarity,
-                    "suggestion": "neighbors are geometrically coherent but gene evidence is diffuse; inspect hubness/context and target routing",
+                    "suggestion": "neighbors are geometrically coherent but gene evidence is diffuse; tighten --max_reference_neighbors, inspect hubness/context, and check target routing",
                 }
                 print(
                     f"warning: query={query_id} polarity={polarity} neighbors are geometrically coherent but gene evidence is diffuse",
@@ -532,6 +611,8 @@ def run_morphology_workflow(
                 "specificity_confidence": specificity_confidence,
                 "top10_gene_mass": top10_gene_mass,
                 "neighbor_target_concentration": neighbor_target_concentration,
+                "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                "high_hub_mass_fraction": high_hub_mass_fraction,
                 "hubness_penalty": cfg.hubness_penalty,
                 "hub_score_present": bool(hub_scores_present > 0),
                 "hub_score_summary_retained": {
@@ -600,6 +681,8 @@ def run_morphology_workflow(
                     "top_neighbor_similarities": top_neighbor_sims,
                     "top10_gene_mass": top10_gene_mass,
                     "neighbor_target_concentration": neighbor_target_concentration,
+                    "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                    "high_hub_mass_fraction": high_hub_mass_fraction,
                     "hubness_penalty": cfg.hubness_penalty,
                     "hub_score_present": bool(hub_scores_present > 0),
                     "hub_score_summary_retained": {
@@ -618,6 +701,8 @@ def run_morphology_workflow(
                     "score_definition": f"morphology reference similarity polarity={polarity}",
                     "retrieval_confidence": retrieval_confidence,
                     "specificity_confidence": specificity_confidence,
+                    "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                    "high_hub_mass_fraction": high_hub_mass_fraction,
                 },
                 output_files=output_files,
                 gmt={
@@ -647,6 +732,8 @@ def run_morphology_workflow(
                 "n_retained_neighbors": len(retained_neighbors),
                 "retrieval_confidence": retrieval_confidence,
                 "specificity_confidence": specificity_confidence,
+                "neighbor_primary_target_agreement": neighbor_primary_target_agreement,
+                "high_hub_mass_fraction": high_hub_mass_fraction,
                 "n_genes_selected": len(selected_rows),
                 "path": str(program_dir.relative_to(out_dir)),
             })
@@ -666,6 +753,8 @@ def run_morphology_workflow(
                 "n_retained_neighbors",
                 "retrieval_confidence",
                 "specificity_confidence",
+                "neighbor_primary_target_agreement",
+                "high_hub_mass_fraction",
                 "n_genes_selected",
                 "path",
             ],

@@ -28,10 +28,20 @@ def _aggregate_consensus(rows: list[dict[str, float]], *, aggregate: str) -> dic
 def _hub_scores(consensus_profiles: dict[str, dict[str, float]], *, k: int) -> dict[str, float]:
     ids = sorted(consensus_profiles)
     features = sorted({feat for row in consensus_profiles.values() for feat in row})
-    vectors = {
-        perturbation_id: [float(consensus_profiles[perturbation_id].get(feat, 0.0)) for feat in features]
-        for perturbation_id in ids
-    }
+    feature_centers: dict[str, float] = {}
+    feature_scales: dict[str, float] = {}
+    for feat in features:
+        vals = [float(consensus_profiles[perturbation_id].get(feat, 0.0)) for perturbation_id in ids]
+        ctr = float(mean(vals)) if vals else 0.0
+        scale = float(max(1e-8, (sum((v - ctr) ** 2 for v in vals) / float(len(vals) or 1)) ** 0.5))
+        feature_centers[feat] = ctr
+        feature_scales[feat] = scale
+    vectors = {}
+    for perturbation_id in ids:
+        vectors[perturbation_id] = [
+            (float(consensus_profiles[perturbation_id].get(feat, 0.0)) - feature_centers[feat]) / feature_scales[feat]
+            for feat in features
+        ]
     out: dict[str, float] = {}
     for perturbation_id in ids:
         sims: list[float] = []

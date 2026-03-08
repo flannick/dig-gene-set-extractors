@@ -179,12 +179,12 @@ Given a nonnegative gene score vector $S_{ug}$ for a chosen polarity, select gen
 As in other extractors, the implementation should enforce default size bounds of 100--500 genes for GMT emission and warn when fewer genes are available.
 
 \subsection{Neighbor restriction for specificity}
-In practice, morphology retrieval can become too diffuse if all weakly similar references are allowed to contribute. A robust default is therefore to retain only the top $K_{\mathrm{nbr}}$ reference neighbors per query and polarity after thresholding:
+In practice, morphology retrieval can become too diffuse if all weakly similar references are allowed to contribute. A robust default is therefore to retain only the top $K_{\mathrm{nbr}}$ reference neighbors per query and polarity after thresholding and hubness-aware evidence reweighting:
 \[
 \mathcal{N}_u^+ = \operatorname{TopK}\{r : \mathrm{sim}(u,r) \ge \tau\},
 \]
 and analogously for the opposite-polarity case using $-\mathrm{sim}(u,r)$.
-Only retained neighbors contribute to $E_{ug}$. This improves specificity by preventing a long tail of weak matches from dominating the routed gene evidence.
+Only retained neighbors contribute to $E_{ug}$. This improves specificity by preventing a long tail of weak matches from dominating the routed gene evidence. In the practical implementation, hubness-adjusted evidence is computed first and the retained neighborhood is then truncated to a narrow local panel.
 
 \subsection{Within-set normalization}
 For the selected set $\mathcal{S}_u$, define within-set weights:
@@ -217,7 +217,7 @@ Some reference perturbations are generic morphology hubs: they are moderately si
 \[
 \tilde{w}_{ur} = \frac{w_{ur}}{\epsilon + h_r}.
 \]
-An alternative rank-based penalty may be used, but the intent is the same: reduce the influence of generic hub-like references and increase specificity of routed gene evidence.
+The implementation may also use a rank-based penalty. In practice this is often more stable than a raw inverse-linear rescaling when hub scores are compressed. The intent is the same: reduce the influence of generic hub-like references and increase specificity of routed gene evidence.
 
 \section{QC and failure modes}
 Important warnings to implement:
@@ -229,6 +229,7 @@ Important warnings to implement:
 \item Gene families dominating selected sets (for example, a broad receptor family), reported as warnings but not filtered by default.
 \item Low retrieval confidence, for example when few positive neighbors are retained or the negative-similarity fraction is high.
 \item Low specificity confidence, for example when retained neighbors are geometrically coherent but routed gene evidence remains diffuse across many unrelated genes.
+\item High retrieval confidence with low specificity confidence, which indicates a stable morphology neighborhood that still does not concentrate on target-like routed gene evidence.
 \end{itemize}
 
 \section{Recommended defaults}
@@ -238,8 +239,8 @@ A sensible initial default is:
 \item query aggregation: median within user-supplied group,
 \item similarity metric: cosine,
 \item polarity: similar only,
-\item neighbor restriction: top 50 reference neighbors with nonnegative similarity retained by default,
-\item hubness penalty: inverse-linear downweighting when the bundle provides hub scores,
+\item neighbor restriction: top 20 hubness-adjusted reference neighbors with nonnegative similarity retained by default,
+\item hubness penalty: rank-based downweighting when the bundle provides hub scores,
 \item modality balance: equal across available modalities,
 \item selection: top-k with $K=200$,
 \item normalization: within-set $\ell_1$,
