@@ -322,6 +322,9 @@ def test_morphology_profile_query_low_specificity_opposite_is_suppressed(tmp_pat
     assert {row["polarity"] for row in manifest} == {"similar"}
     root_summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert any(row["reason"] == "low_specificity_opposite_suppressed" for row in root_summary["skipped_programs"])
+    root_summary_txt = (Path(args.out_dir) / "run_summary.txt").read_text(encoding="utf-8")
+    assert "skipped_programs: 2" in root_summary_txt
+    assert "reason=low_specificity_opposite_suppressed" in root_summary_txt
 
 
 def test_morphology_profile_query_can_force_opposite_emission(tmp_path: Path):

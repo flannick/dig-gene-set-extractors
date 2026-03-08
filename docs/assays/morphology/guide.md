@@ -28,7 +28,7 @@ Default interpretation:
 
 - `--polarity similar` asks which known perturbations induce similar morphology.
 - `--polarity opposite` asks which perturbations induce anti-correlated morphology.
-- `--polarity both` emits both as separate programs.
+- `--polarity both` requests both as separate programs, but opposite-polarity outputs may be suppressed if specificity is too low.
 
 ## Inputs
 

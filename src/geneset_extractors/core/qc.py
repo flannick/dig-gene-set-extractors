@@ -222,6 +222,32 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
                 + f" link_method={row.get('link_method','')}"
                 + (f" direction={row.get('direction','')}" if row.get("direction") else "")
             )
+    for key in (
+        "retrieval_confidence",
+        "specificity_confidence",
+        "top10_gene_mass",
+        "neighbor_target_concentration",
+        "neighbor_primary_target_agreement",
+        "neighbor_top3_target_agreement",
+        "high_hub_mass_fraction",
+        "n_positive_neighbors",
+        "n_negative_neighbors",
+        "n_retained_neighbors",
+        "neg_similarity_fraction",
+    ):
+        if key in payload:
+            lines.append(f"{key}: {payload[key]}")
+    skipped_programs = payload.get("skipped_programs")
+    if isinstance(skipped_programs, list) and skipped_programs:
+        lines.append(f"skipped_programs: {len(skipped_programs)}")
+        for row in skipped_programs:
+            if not isinstance(row, dict):
+                continue
+            parts = []
+            for key in ("query_id", "polarity", "reason", "specificity_confidence", "min_required"):
+                if key in row:
+                    parts.append(f"{key}={row[key]}")
+            lines.append("  " + " ".join(parts))
 
     for key in ("program_methods_skipped", "calibration_methods_skipped", "contrast_methods_skipped"):
         value = payload.get(key)
