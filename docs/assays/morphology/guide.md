@@ -74,6 +74,7 @@ Optional:
 - `--feature_schema_tsv`
 - `--feature_stats_tsv`
 - `--target_annotations_tsv`
+  - overrides the packaged canonical annotation table used by the bundle builder
 
 ### Bundle-driven mode
 
@@ -179,6 +180,24 @@ geneset-extractors workflows jump_prepare_reference_bundle \
   --out_dir results/jump_u2os_48h_bundle
 ```
 
+By default, the bundle builder now injects the packaged canonical morphology target-annotation table:
+
+- `src/geneset_extractors/resources/morphology_target_annotations_human_v1.tsv`
+
+Use:
+
+```bash
+--target_annotations_tsv path/to/custom_target_annotations.tsv
+```
+
+to override it, or:
+
+```bash
+--use_default_target_annotations false
+```
+
+to build an annotation-free bundle for strict fallback comparisons.
+
 Minimal working bundle-to-converter path:
 
 ```bash
@@ -241,6 +260,8 @@ Grouped output layout mirrors other multi-program extractors:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
   - `mechanism` uses optional target annotations to back off to family or mechanism support when exact-target support is weak.
   - `hybrid` emits both strict and expanded outputs and records which one is preferred.
+  - bundle builds now include a canonical curated target-annotation table by default, so public/distributed bundles should normally be mechanism-ready.
+  - some recurrent generic genes are intentionally left blank in that table to avoid noisy family expansion.
   - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.

@@ -1,0 +1,176 @@
+gene_symbol	target_family	target_class	mechanism_label	pathway_seed
+ABL1	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+ADA				
+ADH1C	Enzyme	Drug-metabolism enzyme	Xenobiotic metabolism	Xenobiotic
+ADORA2A	GPCR	Adenosine receptor	Purinergic GPCR signaling	Purinergic
+ADRA2B	GPCR	Class A GPCR	GPCR signaling	GPCR
+AGER				
+AKR1B1	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+AKR1C1	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+AKT1	Kinase	PI3K-AKT pathway kinase	PI3K-AKT signaling	PI3K_AKT
+ALDH2	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+ALK	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+ANXA1				
+ASIC1	Ion channel	Acid-sensing ion channel	Channel signaling	Sodium_channel
+ATG5	Autophagy regulator	Autophagy machinery	Autophagy regulation	Autophagy
+ATM	Genome maintenance	DNA damage regulator	DNA damage response	DDR
+ATP5F1D				
+AURKB	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+AVPR1A	GPCR	Class A GPCR	GPCR signaling	GPCR
+BAX	Cell-death regulator	Apoptosis regulator	Cell-death signaling	Apoptosis
+BCL2L1	Cell-death regulator	Apoptosis regulator	Cell-death signaling	Apoptosis
+BRAF	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+BRD4	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+BTK	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+CA14	Enzyme	Carbonic anhydrase	Acid-base metabolism	Carbonic_anhydrase
+CA5A	Enzyme	Carbonic anhydrase	Acid-base metabolism	Carbonic_anhydrase
+CACNA2D3	Ion channel	Calcium channel	Channel signaling	Calcium_channel
+CACNB4	Ion channel	Calcium channel	Channel signaling	Calcium_channel
+CACNG1	Ion channel	Calcium channel	Channel signaling	Calcium_channel
+CASP3	Cell-death regulator	Apoptosis regulator	Cell-death signaling	Apoptosis
+CATSPER4	Ion channel	Calcium channel	Channel signaling	Calcium_channel
+CCND1	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CCR1	GPCR	Class A GPCR	GPCR signaling	GPCR
+CDC25A				
+CDK2	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CDK4	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CDK7	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CDK9	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CFLAR	Cell-death regulator	Apoptosis regulator	Cell-death signaling	Apoptosis
+CHEK2	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CHRM2	GPCR	Class A GPCR	GPCR signaling	GPCR
+CHRM3	GPCR	Class A GPCR	GPCR signaling	GPCR
+CLK1	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+CLOCK	Transcriptional regulator	Transcription factor	Transcriptional control	Transcription
+COMT	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+CSF1R	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+CSK	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+CTSG	Protease	Serine protease	Proteolytic signaling	Protease
+CYP1A2	Enzyme	Drug-metabolism enzyme	Xenobiotic metabolism	Xenobiotic
+CYP2A6	Enzyme	Drug-metabolism enzyme	Xenobiotic metabolism	Xenobiotic
+CYP3A4	Enzyme	Drug-metabolism enzyme	Xenobiotic metabolism	Xenobiotic
+DCK	Enzyme	Nucleoside kinase	Nucleotide salvage	Nucleotide_metabolism
+DDR2	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+DHH	Secreted ligand	Extracellular ligand	Paracrine signaling	Ligand
+DNMT3A	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+DYRK1B	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+EDNRB	GPCR	Class A GPCR	GPCR signaling	GPCR
+ELANE	Protease	Serine protease	Proteolytic signaling	Protease
+ERBB2	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+EZH2	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+F10	Protease	Serine protease	Proteolytic signaling	Protease
+FFAR2	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+FFAR4	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+FGF1	Secreted ligand	Extracellular ligand	Paracrine signaling	Ligand
+FLT3	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+FOXM1	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+FPR1				
+GAA	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+GABRB2	Ion channel	Ligand-gated ion channel	Synaptic channel signaling	Ligand_gated_channel
+GHSR	GPCR	Class A GPCR	GPCR signaling	GPCR
+GJB4	Ion channel	Gap junction channel	Cell-cell conductance	Gap_junction
+GLRA3	Ion channel	Ligand-gated ion channel	Synaptic channel signaling	Ligand_gated_channel
+GPR119	GPCR	Class A GPCR	GPCR signaling	GPCR
+GPR55	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+GRIN2A	Ion channel	Ligand-gated ion channel	Synaptic channel signaling	Ligand_gated_channel
+GUCY1B1	Enzyme	Guanylate cyclase	NO-cGMP signaling	cGMP
+HBB				
+HCK	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+HDAC3	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+HDAC6	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+HIF1A	Transcriptional regulator	Transcription factor	Transcriptional control	Transcription
+HIF1AN	Regulatory enzyme	Oxygen-sensing hydroxylase	Hypoxia regulation	Hypoxia
+HPGDS	Enzyme	Eicosanoid metabolism enzyme	Eicosanoid metabolism	Eicosanoid
+HRH4	GPCR	Class A GPCR	GPCR signaling	GPCR
+HSD11B1	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+HSP90AA1	Chaperone	HSP90 chaperone	Proteostasis signaling	HSP90
+HSP90AB1	Chaperone	HSP90 chaperone	Proteostasis signaling	HSP90
+HTR2C	GPCR	Class A GPCR	GPCR signaling	GPCR
+HTR3A	Ion channel	Ligand-gated ion channel	Synaptic channel signaling	Ligand_gated_channel
+ICAM1	Cell-surface receptor	Adhesion receptor	Adhesion signaling	Adhesion
+IGF1R	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+IKBKE	Kinase	Innate immune kinase	NF-kB signaling	NFkB
+IL1B	Secreted ligand	Extracellular ligand	Paracrine signaling	Ligand
+IMPDH1	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+ITGB2	Cell-surface receptor	Adhesion receptor	Adhesion signaling	Adhesion
+JAK1	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+KCNH7	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNJ1	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNK1	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNMA1	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNN1	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNN4	Ion channel	Potassium channel	Channel signaling	K_channel
+KCNQ2	Ion channel	Potassium channel	Channel signaling	K_channel
+KCTD16	Ion channel regulator	Potassium channel auxiliary	Channel signaling	K_channel
+KDR	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+KRAS	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+LCK	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+LPAR1	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+LYN	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+MAPK13	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+MAPK14	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+MAPK8	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+MAPK9	MAPK pathway	MAPK regulator	MAPK signaling	MAPK
+MET	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+MME	Protease	Metalloprotease	Proteolytic remodeling	Protease
+MMP2	Protease	Metalloprotease	Proteolytic remodeling	Protease
+NAMPT	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+NTRK1	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+OPRL1	GPCR	Opioid receptor	Neuromodulatory GPCR signaling	Opioid
+OPRM1				
+P2RY12				
+P3H1	Enzyme	Collagen-modifying enzyme	Extracellular matrix processing	ECM
+PAK1	Kinase	Ser/Thr kinase	Signal transduction	SerThr_kinase
+PAK4	Kinase	Ser/Thr kinase	Signal transduction	SerThr_kinase
+PARP3	Genome maintenance	DNA damage regulator	DNA damage response	DDR
+PDE3A	Enzyme	Phosphodiesterase	Cyclic-nucleotide signaling	cAMP_cGMP
+PDE4D	Enzyme	Phosphodiesterase	Cyclic-nucleotide signaling	cAMP_cGMP
+PDE7A	Enzyme	Phosphodiesterase	Cyclic-nucleotide signaling	cAMP_cGMP
+PDPK1	Kinase	PI3K-AKT pathway kinase	PI3K-AKT signaling	PI3K_AKT
+PIK3CG	Kinase	PI3K-AKT pathway kinase	PI3K-AKT signaling	PI3K_AKT
+PLA2G1B	Enzyme	Eicosanoid metabolism enzyme	Eicosanoid metabolism	Eicosanoid
+PLD1	Enzyme	Phospholipase	Phospholipid signaling	Phospholipid
+PLK1	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+PNLIP	Enzyme	Lipase	Lipid metabolism	Lipase
+PORCN	Enzyme	WNT processing enzyme	WNT secretion	WNT
+PPARD	Nuclear receptor	PPAR receptor	Nuclear receptor signaling	PPAR
+PPAT	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+PRKACB	Kinase	Ser/Thr kinase	Signal transduction	SerThr_kinase
+PRKCB	Kinase	Ser/Thr kinase	Signal transduction	SerThr_kinase
+PRKCE	Kinase	Ser/Thr kinase	Signal transduction	SerThr_kinase
+PTGIR				
+PTGIS	Enzyme	Eicosanoid metabolism enzyme	Eicosanoid metabolism	Eicosanoid
+PTK2B	Kinase	Non-receptor tyrosine kinase	Tyrosine kinase signaling	Tyrosine_kinase
+PTPN2	Phosphatase	Tyrosine phosphatase	Cytokine signaling regulation	PTP
+RB1	Cell-cycle regulator	Cell-cycle signaling	Cell-cycle control	Cell_cycle
+RET	Kinase	Receptor tyrosine kinase	RTK signaling	RTK
+RGS4	GPCR regulator	G-protein signaling regulator	GPCR signaling regulation	GPCR
+RHEB	Small GTPase	mTOR regulator	mTOR signaling	mTOR
+RNASE1	Enzyme	Metabolic enzyme	Small-molecule metabolism	Metabolism
+RPL23A				
+RPL3				
+S100B				
+S1PR1	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+S1PR2				
+S1PR4	GPCR	Lipid mediator receptor	Lipid signaling	Lipid_GPCR
+SCNN1G	Ion channel	Epithelial sodium channel	Channel signaling	Sodium_channel
+SGK3	Kinase	PI3K-AKT pathway kinase	PI3K-AKT signaling	PI3K_AKT
+SIRT2	Epigenetic regulator	Chromatin regulator	Chromatin regulation	Chromatin
+SLC29A1	Transporter	Solute carrier	Membrane transport	Transport
+SLC7A11	Transporter	Solute carrier	Membrane transport	Transport
+SLCO2B1	Transporter	Solute carrier	Membrane transport	Transport
+SLIRP				
+SSTR2	GPCR	Class A GPCR	GPCR signaling	GPCR
+STAT1	Transcriptional regulator	Transcription factor	Transcriptional control	Transcription
+TBXAS1				
+TGFBR1	Kinase	TGF-beta receptor kinase	TGF-beta signaling	TGF_beta
+TGM2	Enzyme	Transglutaminase	ECM and stress signaling	ECM_stress
+TNF	Cell-death regulator	Apoptosis regulator	Cell-death signaling	Apoptosis
+TNNC1				
+TUBB				
+TUBB3				
+TUBB4B				
+UGT1A9	Enzyme	Drug-metabolism enzyme	Xenobiotic metabolism	Xenobiotic
+USP1	Genome maintenance	DNA damage regulator	DNA damage response	DDR
+VEGFA	Secreted ligand	Extracellular ligand	Paracrine signaling	Ligand
+ZBTB24	Transcriptional regulator	Transcription factor	Transcriptional control	Transcription

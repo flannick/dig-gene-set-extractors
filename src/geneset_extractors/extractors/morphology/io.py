@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import importlib.resources as importlib_resources
 import json
 from pathlib import Path
 import re
@@ -10,6 +11,8 @@ from typing import Callable
 
 
 META_PREFIX = "Metadata_"
+MORPHOLOGY_TARGET_ANNOTATION_FIELDS = ["target_family", "target_class", "mechanism_label", "pathway_seed"]
+DEFAULT_MORPHOLOGY_TARGET_ANNOTATIONS_RESOURCE = "morphology_target_annotations_human_v1.tsv"
 
 
 def _open_text(path: Path):
@@ -386,6 +389,18 @@ def read_target_annotations_tsv(
         "n_missing_gene_symbol": missing,
         "fields": [field for field in fieldnames if field != gene_symbol_column],
     }
+
+
+def read_packaged_target_annotations_tsv() -> tuple[dict[str, dict[str, str]], dict[str, object]]:
+    resource = importlib_resources.files("geneset_extractors.resources").joinpath(
+        DEFAULT_MORPHOLOGY_TARGET_ANNOTATIONS_RESOURCE
+    )
+    with importlib_resources.as_file(resource) as resolved_path:
+        payload, summary = read_target_annotations_tsv(resolved_path)
+    summary = dict(summary)
+    summary["source"] = "package_default"
+    summary["resource_name"] = DEFAULT_MORPHOLOGY_TARGET_ANNOTATIONS_RESOURCE
+    return payload, summary
 
 
 def aggregate_profiles(

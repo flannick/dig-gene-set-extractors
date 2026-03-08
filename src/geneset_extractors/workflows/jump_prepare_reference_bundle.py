@@ -8,7 +8,15 @@ from statistics import mean, median
 import sys
 import tarfile
 
-from geneset_extractors.extractors.morphology.io import read_compound_targets_auto, read_metadata_tsv, read_profiles_table, read_target_annotations_tsv, write_bundle_manifest
+from geneset_extractors.extractors.morphology.io import (
+    MORPHOLOGY_TARGET_ANNOTATION_FIELDS,
+    read_compound_targets_auto,
+    read_metadata_tsv,
+    read_packaged_target_annotations_tsv,
+    read_profiles_table,
+    read_target_annotations_tsv,
+    write_bundle_manifest,
+)
 from geneset_extractors.extractors.morphology.similarity import cosine_similarity
 
 
@@ -132,12 +140,17 @@ def run(args) -> dict[str, object]:
         )
     target_annotations: dict[str, dict[str, str]] = {}
     target_annotations_summary: dict[str, object] | None = None
+    target_annotations_source = "none"
     if getattr(args, "target_annotations_tsv", None):
         target_annotations, target_annotations_summary = read_target_annotations_tsv(
             args.target_annotations_tsv,
             gene_symbol_column=str(getattr(args, "target_annotation_gene_symbol_column", "gene_symbol")),
             delimiter=str(getattr(args, "target_annotations_delimiter", "\t")),
         )
+        target_annotations_source = "explicit"
+    elif bool(getattr(args, "use_default_target_annotations", True)):
+        target_annotations, target_annotations_summary = read_packaged_target_annotations_tsv()
+        target_annotations_source = "package_default"
     all_profiles: dict[str, dict[str, float]] = {}
     n_rows = 0
     for profile_path in profile_paths:
@@ -314,7 +327,7 @@ def run(args) -> dict[str, object]:
                 writer.writerow([compound_id, gene_symbol, weight])
     if target_annotations:
         with gzip.open(target_annotations_path, "wt", encoding="utf-8", newline="") as fh:
-            annotation_fields = sorted({field for row in target_annotations.values() for field in row})
+            annotation_fields = list(MORPHOLOGY_TARGET_ANNOTATION_FIELDS)
             writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["gene_symbol", *annotation_fields])
             writer.writeheader()
             for gene_symbol in sorted(target_annotations):
@@ -374,6 +387,7 @@ def run(args) -> dict[str, object]:
             "experimental_metadata": exp_summary,
             "compound_targets": targets_summary,
             "target_annotations": target_annotations_summary,
+            "target_annotations_source": target_annotations_source,
             "included_modalities": included_modalities,
             "missing_modalities": missing_modalities,
             "annotation_coverage": {
@@ -417,6 +431,7 @@ def run(args) -> dict[str, object]:
         f"n_consensus_profiles_total: {len(consensus_profiles)}",
         f"included_modalities: {included_modalities}",
         f"missing_modalities: {missing_modalities}",
+        f"target_annotations_source: {target_annotations_source}",
         f"annotation_coverage: {bundle_manifest['summary']['annotation_coverage']}",
     ]
     for modality, context in bundle_manifest["contexts"].items():

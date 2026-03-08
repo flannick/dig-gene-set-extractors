@@ -2,6 +2,7 @@ import gzip
 import json
 from pathlib import Path
 import tarfile
+import csv
 
 from geneset_extractors.workflows.jump_prepare_reference_bundle import run
 
@@ -36,6 +37,7 @@ class Args:
     compound_target_gene_symbol_column = "gene_symbol"
     compound_target_weight_column = "weight"
     target_annotations_tsv = None
+    use_default_target_annotations = True
     target_annotations_delimiter = "\t"
     target_annotation_gene_symbol_column = "gene_symbol"
 
@@ -51,7 +53,10 @@ def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
     assert bundle_manifest.exists()
     payload = json.loads(bundle_manifest.read_text(encoding="utf-8"))
     assert payload["files"]["reference_profiles"] == "reference_profiles.tsv.gz"
+    assert payload["files"]["target_annotations"] == "target_annotations.tsv.gz"
     assert payload["summary"]["n_consensus_profiles"] == 5
+    assert payload["summary"]["target_annotations_source"] == "package_default"
+    assert payload["summary"]["annotation_coverage"]["n_annotated_genes"] > 0
     assert "hub_score_summary" in payload["summary"]
 
     with gzip.open(out_dir / "reference_metadata.tsv.gz", "rt", encoding="utf-8") as fh:
@@ -59,6 +64,7 @@ def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
     assert "CMP_A" in text
     assert "ORF_GENE3" in text
     assert "hub_score" in text
+    assert "target_family" in text
     assert (out_dir / "bundle_summary.json").exists()
     assert (out_dir / "bundle_summary.txt").exists()
     dist_dir = out_dir / "dist"
@@ -69,6 +75,11 @@ def test_jump_prepare_reference_bundle_workflow(tmp_path: Path):
         members = {m.name for m in tf.getmembers()}
     assert "bundle/toy_jump_u2os_48h_v1.bundle.json" in members
     assert "bundle/reference_profiles.tsv.gz" in members
+    assert "bundle/target_annotations.tsv.gz" in members
+    with gzip.open(out_dir / "target_annotations.tsv.gz", "rt", encoding="utf-8") as fh:
+        rows = {row["gene_symbol"]: row for row in csv.DictReader(fh, delimiter="\t")}
+    assert rows["KCNN4"]["target_family"] == "Ion channel"
+    assert rows["FPR1"]["target_family"] == ""
 
 
 def test_jump_prepare_reference_bundle_same_timepoint_default_does_not_mix(tmp_path: Path, capsys):
@@ -120,7 +131,20 @@ def test_jump_prepare_reference_bundle_writes_target_annotations(tmp_path: Path)
     payload = json.loads((Path(args.out_dir) / "toy_jump_u2os_48h_v1.bundle.json").read_text(encoding="utf-8"))
     assert payload["files"]["target_annotations"] == "target_annotations.tsv.gz"
     assert payload["summary"]["annotation_coverage"]["n_annotated_genes"] == 2
+    assert payload["summary"]["target_annotations_source"] == "explicit"
     with gzip.open(Path(args.out_dir) / "reference_metadata.tsv.gz", "rt", encoding="utf-8") as fh:
         text = fh.read()
     assert "target_family" in text
     assert "mechanism_label" in text
+
+
+def test_jump_prepare_reference_bundle_can_disable_default_target_annotations(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "bundle_no_default_annotations")
+    args.use_default_target_annotations = False
+    result = run(args)
+    assert result["bundle_id"] == "toy_jump_u2os_48h_v1"
+    payload = json.loads((Path(args.out_dir) / "toy_jump_u2os_48h_v1.bundle.json").read_text(encoding="utf-8"))
+    assert "target_annotations" not in payload["files"]
+    assert payload["summary"]["target_annotations_source"] == "none"
+    assert payload["summary"]["annotation_coverage"]["n_annotated_genes"] == 0

@@ -229,6 +229,18 @@
       "license": "Curated compound-QC bundle license; document source/version in local bundle provenance"
     },
     {
+      "id": "morphology_target_annotations_human_v1",
+      "description": "Canonical curated target-annotation table for mechanism-aware morphology bundles with columns gene_symbol,target_family,target_class,mechanism_label,pathway_seed",
+      "provider": "packaged_default_or_bundle",
+      "stable_id": "package:morphology_target_annotations_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "morphology_target_annotations_human_v1.tsv",
+      "url": "",
+      "sha256": "",
+      "license": "Curated morphology target-annotation table distributed with the package; provenance documented in assay docs"
+    },
+    {
       "id": "morphology_jump_target_pilot_u2os_48h_v1",
       "description": "Morphology reference bundle manifest for JUMP target pilot U2OS 48h consensus profiles",
       "provider": "manual_or_bundle",

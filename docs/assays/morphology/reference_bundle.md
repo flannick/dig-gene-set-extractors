@@ -36,7 +36,32 @@ If target annotations are present, mechanism-aware morphology modes can use:
 - `mechanism_label`
 - `pathway_seed`
 
+Bundle builds now use a packaged canonical annotation table by default:
+
+- `src/geneset_extractors/resources/morphology_target_annotations_human_v1.tsv`
+
+You only need `--target_annotations_tsv` when overriding that canonical table. Use `--use_default_target_annotations false` only for explicit annotation-free comparisons.
+
 Without `target_annotations`, `--mode mechanism` and `--mode hybrid` still run, but they fall back to broader target routing rather than full family-aware expansion.
+
+## Canonical annotation vocabulary
+
+The canonical table uses four columns:
+
+- `gene_symbol`
+- `target_family`
+- `target_class`
+- `mechanism_label`
+- `pathway_seed`
+
+Intended semantics:
+
+- `target_family`: broad, biologically meaningful grouping used for coarse expansion
+- `target_class`: more specific mechanistic subtype
+- `mechanism_label`: short pathway-like label for reranking/expansion summaries
+- `pathway_seed`: compact stable token for grouping related labels
+
+The table is deliberately conservative. Some recurrent generic genes are intentionally present with blank annotation fields so they do not seed broad mechanism expansion.
 
 ## Distribution artifact
 
@@ -100,7 +125,19 @@ geneset-extractors workflows jump_prepare_reference_bundle \
   --profile_paths path/to/profiles.tsv \
   --experimental_metadata_tsv path/to/experimental_metadata.tsv \
   --compound_targets_tsv path/to/jump_target_compound_metadata.tsv \
-  --target_annotations_tsv path/to/target_annotations.tsv \
+  --cell_type_filter U2OS \
+  --timepoint_filter 48 \
+  --out_dir results/jump_u2os_48h_bundle
+```
+
+Override the packaged canonical table only when needed:
+
+```bash
+geneset-extractors workflows jump_prepare_reference_bundle \
+  --profile_paths path/to/profiles.tsv \
+  --experimental_metadata_tsv path/to/experimental_metadata.tsv \
+  --compound_targets_tsv path/to/jump_target_compound_metadata.tsv \
+  --target_annotations_tsv path/to/custom_target_annotations.tsv \
   --cell_type_filter U2OS \
   --timepoint_filter 48 \
   --out_dir results/jump_u2os_48h_bundle

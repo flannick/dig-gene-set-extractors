@@ -199,6 +199,9 @@ If the bundle includes optional target annotations such as \texttt{target\_famil
 
 If these annotations are absent, mechanism mode remains runnable but should be interpreted as a broad target-routing fallback rather than as full family-aware inference. In that setting the implementation should warn explicitly so users do not mistake missing annotation support for a negative biological result.
 
+In the current practical implementation, a canonical curated annotation table ships with the package and is injected into newly built morphology bundles by default unless the user overrides it. The controlled vocabulary has four fields:
+\texttt{target\_family}, \texttt{target\_class}, \texttt{mechanism\_label}, and \texttt{pathway\_seed}. The design is intentionally conservative: some recurrent generic genes are left blank on purpose so they do not seed broad family/mechanism expansion from weak morphology neighborhoods.
+
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.
 
@@ -229,6 +232,8 @@ A morphology extractor is most useful when paired with a reusable reference bund
 \end{itemize}
 
 A practical first bundle should be derived from the JUMP pilot data in a single cell line and timepoint (for example, U2OS 48h or A549 48h), because those datasets contain matched compounds, CRISPR knockouts, and ORF overexpression perturbations with strong metadata and manageable scale compared to the full JUMP production release. \cite{jump_gallery,jump_pilot,jump_target}
+
+Distributed morphology bundles should include \texttt{target\_annotations.tsv.gz} by default. Annotation-free bundles remain useful as strict baselines, but they are not the preferred public distribution because they limit mechanism-aware retrieval.
 
 The practical default should prefer coherent same-timepoint bundles. If a public context does not contain all modalities at one timepoint, the workflow should keep a coherent same-timepoint reference from the available modalities and warn explicitly about missing modalities. Mixed-timepoint bundles should require explicit user intent.
 

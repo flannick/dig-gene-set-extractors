@@ -398,6 +398,7 @@ def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--experimental_metadata_tsv", required=True)
     parser.add_argument("--compound_targets_tsv", required=True)
     parser.add_argument("--target_annotations_tsv")
+    parser.add_argument("--use_default_target_annotations", type=_parse_bool, default=True)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--bundle_id")
     parser.add_argument("--profile_id_column", default="sample_id")
