@@ -239,6 +239,15 @@ which reduces recurrent generic genes without imposing a hard blacklist.
 \subsection{Control-derived calibration}
 Control profiles should remain excluded from the target-neighbor candidate set, but they can still be useful for calibration. A simple practical default is to estimate a control-derived nuisance mean in feature space and subtract it from both query and reference vectors before similarity scoring. This aims to reduce broad plate or vehicle-like morphology axes without turning controls into mechanistic neighbors.
 
+A stronger extension is to estimate a low-rank nuisance subspace from controls and residualize against it. Let $\mu^{(C)} \in \mathbb{R}^{F}$ denote the mean control profile and let $U = [u_1,\dots,u_K]$ be the top $K$ orthonormal nuisance axes estimated from centered control profiles. The residualized query and reference vectors are then
+\[
+\hat{X}^{(Q)}_u = \left(\bar{X}^{(Q)}_u - \mu^{(C)}\right) - \sum_{k=1}^{K} \left\langle \bar{X}^{(Q)}_u - \mu^{(C)}, u_k \right\rangle u_k,
+\]
+\[
+\hat{X}^{(R)}_r = \left(\tilde{X}^{(R)}_r - \mu^{(C)}\right) - \sum_{k=1}^{K} \left\langle \tilde{X}^{(R)}_r - \mu^{(C)}, u_k \right\rangle u_k.
+\]
+Similarity is then computed on $\hat{X}^{(Q)}$ and $\hat{X}^{(R)}$ rather than on the uncalibrated vectors. In practical CLI terms, this corresponds to a control-residualization mode that falls back to mean-centering when too few controls are available to estimate stable nuisance axes. The point of this extension is to remove a broad nuisance direction even when the control mean itself is near zero.
+
 \section{QC and failure modes}
 Important warnings to implement:
 \begin{itemize}[leftmargin=2em]
@@ -264,6 +273,7 @@ A sensible initial default is:
 \item neighbor restriction: top 20 hubness-adjusted reference neighbors with nonnegative similarity retained by default,
 \item same-modality-first retrieval when query modality metadata is available,
 \item adaptive neighborhood truncation after a minimum coherent local panel,
+\item control calibration: mean-centering by default, with control residualization available when enough controls are present,
 \item hubness penalty: rank-based downweighting when the bundle provides hub scores,
 \item gene recurrence penalty: weak IDF-style downweighting of genes that recur across many reference perturbations,
 \item modality balance: equal across available modalities,

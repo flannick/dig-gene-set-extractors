@@ -138,6 +138,8 @@ def run(args) -> dict[str, object]:
         mutual_neighbor_filter=bool(args.mutual_neighbor_filter),
         min_similarity=float(args.min_similarity),
         control_calibration=str(args.control_calibration),
+        control_residual_components=int(args.control_residual_components),
+        control_min_profiles_for_residualization=int(args.control_min_profiles_for_residualization),
         hubness_penalty=str(args.hubness_penalty),
         gene_recurrence_penalty=str(args.gene_recurrence_penalty),
         min_specificity_confidence_to_emit_opposite=str(args.min_specificity_confidence_to_emit_opposite),

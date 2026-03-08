@@ -274,9 +274,22 @@
       "default": "mean_center",
       "enum": [
         "none",
-        "mean_center"
+        "mean_center",
+        "residualize_controls"
       ],
-      "help": "Use control profiles only for calibration before similarity scoring. Controls remain excluded from retrieval candidates."
+      "help": "Use control profiles only for calibration before similarity scoring. Controls remain excluded from retrieval candidates. residualize_controls subtracts the control mean and projects out top nuisance axes estimated from controls."
+    },
+    {
+      "name": "control_residual_components",
+      "type": "integer",
+      "default": 2,
+      "help": "Number of control-derived nuisance axes to project out when control_calibration=residualize_controls."
+    },
+    {
+      "name": "control_min_profiles_for_residualization",
+      "type": "integer",
+      "default": 5,
+      "help": "Minimum number of control profiles required before residualize_controls is attempted. Otherwise the workflow falls back to mean_center."
     },
     {
       "name": "hubness_penalty",

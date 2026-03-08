@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import re
 import sys
@@ -40,6 +41,8 @@ class MorphologyWorkflowConfig:
     mutual_neighbor_filter: bool
     min_similarity: float
     control_calibration: str
+    control_residual_components: int
+    control_min_profiles_for_residualization: int
     hubness_penalty: str
     gene_recurrence_penalty: str
     compound_weight: float
@@ -427,6 +430,166 @@ def _apply_control_mean_center(
     return q_out, r_out, {"mode": "mean_center", "n_control_profiles": len(control_ids)}
 
 
+def _dot(a: list[float], b: list[float]) -> float:
+    return sum(float(x) * float(y) for x, y in zip(a, b, strict=False))
+
+
+def _l2_norm(vec: list[float]) -> float:
+    return math.sqrt(sum(float(x) * float(x) for x in vec))
+
+
+def _normalize_axis(vec: list[float]) -> list[float] | None:
+    norm = _l2_norm(vec)
+    if norm <= 1e-8:
+        return None
+    return [float(x) / norm for x in vec]
+
+
+def _orthogonalize(vec: list[float], axes: list[list[float]]) -> list[float]:
+    out = [float(x) for x in vec]
+    for axis in axes:
+        proj = _dot(out, axis)
+        if abs(proj) <= 1e-12:
+            continue
+        out = [float(value) - float(proj) * float(axis[idx]) for idx, value in enumerate(out)]
+    return out
+
+
+def _estimate_control_nuisance_axes(
+    *,
+    control_vectors: list[list[float]],
+    n_components: int,
+    n_iter: int = 25,
+) -> tuple[list[list[float]], list[float]]:
+    if not control_vectors or n_components <= 0:
+        return [], []
+    residual_controls = [[float(x) for x in vec] for vec in control_vectors]
+    axes: list[list[float]] = []
+    explained: list[float] = []
+    total_energy = sum(_dot(vec, vec) for vec in residual_controls)
+    if total_energy <= 1e-12:
+        return [], []
+    n_features = len(residual_controls[0])
+    max_components = min(int(n_components), len(residual_controls), n_features)
+    for _ in range(max_components):
+        seed = [0.0] * n_features
+        for vec in residual_controls:
+            for idx, value in enumerate(vec):
+                seed[idx] += float(value)
+        axis = _normalize_axis(seed)
+        if axis is None:
+            seed = [float(residual_controls[0][idx]) for idx in range(n_features)]
+            axis = _normalize_axis(seed)
+        if axis is None:
+            break
+        for _iter in range(n_iter):
+            updated = [0.0] * n_features
+            for vec in residual_controls:
+                proj = _dot(vec, axis)
+                if abs(proj) <= 1e-12:
+                    continue
+                for idx, value in enumerate(vec):
+                    updated[idx] += float(proj) * float(value)
+            updated = _orthogonalize(updated, axes)
+            normalized = _normalize_axis(updated)
+            if normalized is None:
+                break
+            axis = normalized
+        axis_energy = 0.0
+        next_residuals: list[list[float]] = []
+        for vec in residual_controls:
+            proj = _dot(vec, axis)
+            axis_energy += float(proj) * float(proj)
+            next_residuals.append([float(value) - float(proj) * float(axis[idx]) for idx, value in enumerate(vec)])
+        if axis_energy <= 1e-10:
+            break
+        axes.append(axis)
+        explained.append(axis_energy / total_energy)
+        residual_controls = next_residuals
+    return axes, explained
+
+
+def _apply_control_residualization(
+    *,
+    query_vectors: dict[str, list[float]],
+    ref_vectors: dict[str, list[float]],
+    reference_metadata: dict[str, dict[str, str]],
+    n_components: int,
+    min_profiles: int,
+) -> tuple[dict[str, list[float]], dict[str, list[float]], dict[str, object] | None]:
+    control_ids = [
+        ref_id
+        for ref_id in ref_vectors
+        if str(reference_metadata.get(ref_id, {}).get("is_control", "")).strip().lower() in {"1", "true", "t", "yes"}
+    ]
+    if not control_ids:
+        return query_vectors, ref_vectors, None
+    n_features = len(next(iter(ref_vectors.values()))) if ref_vectors else 0
+    if n_features <= 0:
+        return query_vectors, ref_vectors, None
+    if len(control_ids) < int(min_profiles):
+        q_out, r_out, fallback = _apply_control_mean_center(
+            query_vectors=query_vectors,
+            ref_vectors=ref_vectors,
+            reference_metadata=reference_metadata,
+        )
+        summary = dict(fallback or {})
+        summary.update(
+            {
+                "mode": "mean_center",
+                "requested_mode": "residualize_controls",
+                "fallback_reason": "too_few_controls",
+                "min_profiles_required": int(min_profiles),
+            }
+        )
+        return q_out, r_out, summary
+    control_mean = [0.0] * n_features
+    for ref_id in control_ids:
+        vec = ref_vectors.get(ref_id, [])
+        for idx, value in enumerate(vec):
+            control_mean[idx] += float(value)
+    control_mean = [value / float(len(control_ids)) for value in control_mean]
+    centered_controls = [
+        [float(value) - float(control_mean[idx]) for idx, value in enumerate(ref_vectors.get(ref_id, []))]
+        for ref_id in control_ids
+    ]
+    axes, explained = _estimate_control_nuisance_axes(
+        control_vectors=centered_controls,
+        n_components=max(1, int(n_components)),
+    )
+    if not axes:
+        q_out, r_out, fallback = _apply_control_mean_center(
+            query_vectors=query_vectors,
+            ref_vectors=ref_vectors,
+            reference_metadata=reference_metadata,
+        )
+        summary = dict(fallback or {})
+        summary.update(
+            {
+                "mode": "mean_center",
+                "requested_mode": "residualize_controls",
+                "fallback_reason": "axis_estimation_failed",
+                "requested_components": int(n_components),
+            }
+        )
+        return q_out, r_out, summary
+
+    def transform(vec: list[float]) -> list[float]:
+        centered = [float(value) - float(control_mean[idx]) for idx, value in enumerate(vec)]
+        return _orthogonalize(centered, axes)
+
+    q_out = {query_id: transform(vec) for query_id, vec in query_vectors.items()}
+    r_out = {ref_id: transform(vec) for ref_id, vec in ref_vectors.items()}
+    return q_out, r_out, {
+        "mode": "residualize_controls",
+        "n_control_profiles": len(control_ids),
+        "n_components": len(axes),
+        "requested_components": int(n_components),
+        "min_profiles_required": int(min_profiles),
+        "explained_variance_fraction": explained,
+    }
+
+
 def run_morphology_workflow(
     *,
     cfg: MorphologyWorkflowConfig,
@@ -469,12 +632,35 @@ def run_morphology_workflow(
     query_vectors, query_scale_summary = standardize_profiles(query_profiles, features=shared_features, feature_stats=feature_stats)
     ref_vectors_all, ref_scale_summary = standardize_profiles(reference_profiles_effective | {rid: reference_profiles_all[rid] for rid in control_ids if rid in reference_profiles_all}, features=shared_features, feature_stats=feature_stats)
     control_calibration_summary: dict[str, object] | None = None
+    root_fallback_warning: dict[str, object] | None = None
     if cfg.control_calibration == "mean_center":
         query_vectors, ref_vectors_all, control_calibration_summary = _apply_control_mean_center(
             query_vectors=query_vectors,
             ref_vectors=ref_vectors_all,
             reference_metadata=reference_metadata_all,
         )
+    elif cfg.control_calibration == "residualize_controls":
+        query_vectors, ref_vectors_all, control_calibration_summary = _apply_control_residualization(
+            query_vectors=query_vectors,
+            ref_vectors=ref_vectors_all,
+            reference_metadata=reference_metadata_all,
+            n_components=int(cfg.control_residual_components),
+            min_profiles=int(cfg.control_min_profiles_for_residualization),
+        )
+        if control_calibration_summary and str(control_calibration_summary.get("fallback_reason", "")).strip():
+            print(
+                "warning: control residualization fell back to mean-centering because "
+                f"{control_calibration_summary['fallback_reason']}",
+                file=sys.stderr,
+            )
+            root_fallback_warning = {
+                "code": "control_residualization_fallback",
+                "reason": str(control_calibration_summary["fallback_reason"]),
+            }
+        else:
+            root_fallback_warning = None
+    else:
+        root_fallback_warning = None
     ref_vectors = dict(ref_vectors_all)
     if control_ids:
         print(f"warning: excluding {len(control_ids)} reference control profiles from similarity candidates", file=sys.stderr)
@@ -536,6 +722,11 @@ def run_morphology_workflow(
     if cfg.hubness_penalty != "none" and hub_scores_present == 0:
         print("warning: hub_score not present in reference metadata; proceeding without hubness penalty", file=sys.stderr)
         root_warnings.append({"code": "hub_score_missing", "mode": cfg.hubness_penalty})
+    if cfg.control_calibration == "residualize_controls" and control_calibration_summary is None:
+        print("warning: control residualization requested but no usable controls were available", file=sys.stderr)
+        root_warnings.append({"code": "control_residualization_unavailable"})
+    elif root_fallback_warning is not None:
+        root_warnings.append(root_fallback_warning)
     if cfg.polarity in {"opposite", "both"}:
         print("warning: opposite-polarity morphology programs are experimental and should be interpreted cautiously", file=sys.stderr)
         root_warnings.append({"code": "opposite_polarity_experimental"})
@@ -914,6 +1105,8 @@ def run_morphology_workflow(
                     "max_reference_neighbors": cfg.max_reference_neighbors,
                     "min_similarity": cfg.min_similarity,
                     "control_calibration": cfg.control_calibration,
+                    "control_residual_components": cfg.control_residual_components,
+                    "control_min_profiles_for_residualization": cfg.control_min_profiles_for_residualization,
                     "hubness_penalty": cfg.hubness_penalty,
                     "same_modality_first": cfg.same_modality_first,
                     "cross_modality_penalty": cfg.cross_modality_penalty,
@@ -1068,6 +1261,7 @@ def run_morphology_workflow(
         "resources": resources_info,
         "warnings": root_warnings,
         "skipped_programs": skipped_programs,
+        "control_calibration": control_calibration_summary,
     }
     run_json_path, run_txt_path = write_run_summary_files(out_dir, root_summary)
     return {"n_groups": len(manifest_rows), "out_dir": str(out_dir), "run_summary_json": str(run_json_path), "run_summary_txt": str(run_txt_path)}

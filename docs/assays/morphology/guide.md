@@ -126,6 +126,8 @@ Default converter behavior is conservative and designed to produce interpretable
 - `--mutual_neighbor_filter true`
 - `--min_similarity 0.0`
 - `--control_calibration mean_center`
+- `--control_residual_components 2`
+- `--control_min_profiles_for_residualization 5`
 - `--hubness_penalty inverse_rank`
 - `--gene_recurrence_penalty idf`
 - `--min_specificity_confidence_to_emit_opposite medium`
@@ -212,7 +214,10 @@ Grouped output layout mirrors other multi-program extractors:
 - Reference controls excluded:
   - expected when bundle metadata marks control profiles.
 - Control-derived calibration:
-  - controls are not retrieval candidates, but by default they are used to estimate a nuisance mean before similarity scoring.
+  - controls are not retrieval candidates, but they can still be used to estimate nuisance morphology structure before similarity scoring.
+  - `--control_calibration mean_center` subtracts only the control mean.
+  - `--control_calibration residualize_controls` subtracts the control mean and then projects query/reference vectors off the top control-derived nuisance axes.
+  - if too few controls are available for residualization, the workflow falls back to mean-centering and records that fallback in summaries and metadata.
   - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.
@@ -248,6 +253,7 @@ For a first pass on Cell Painting data:
 - keep the default hubness penalty on unless you are explicitly studying broad/generic morphological states,
 - keep same-modality-first retrieval on when query modality metadata is available,
 - keep the neighborhood narrow by default; increasing `--max_reference_neighbors` usually makes outputs broader and less specific,
+- if controls capture a strong vehicle or plate axis, prefer `--control_calibration residualize_controls` over plain mean-centering,
 - if you explicitly want exploratory opposite-polarity outputs, use `--min_specificity_confidence_to_emit_opposite low`,
 - inspect `run_summary.txt` before over-interpreting GMT enrichments.
 

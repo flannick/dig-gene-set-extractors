@@ -58,6 +58,8 @@ class Args:
     mutual_neighbor_filter = True
     min_similarity = 0.0
     control_calibration = "mean_center"
+    control_residual_components = 2
+    control_min_profiles_for_residualization = 5
     hubness_penalty = "inverse_rank"
     gene_recurrence_penalty = "idf"
     min_specificity_confidence_to_emit_opposite = "medium"
@@ -257,6 +259,135 @@ def test_morphology_profile_query_hubness_penalty_prefers_specific_neighbor(tmp_
     gene_pen = _geneset_rows(Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
     assert gene_none == "GENE_HUB"
     assert gene_pen == "GENE_SPEC"
+
+
+def test_morphology_profile_query_control_residualization_reduces_control_axis(tmp_path: Path):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t2.0\t1.0\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profiles.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "CTRL1\t-2.0\t0.0\n"
+        "CTRL2\t-1.0\t0.0\n"
+        "CTRL3\t1.0\t0.0\n"
+        "CTRL4\t2.0\t0.0\n"
+        "CTRL5\t3.0\t0.0\n"
+        "GENERIC\t2.0\t-0.1\n"
+        "SPEC\t0.2\t1.0\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "CTRL1\tcompound\tCTRL1\t1.0\t1.0\ttrue\n"
+        "CTRL2\tcompound\tCTRL2\t1.0\t1.0\ttrue\n"
+        "CTRL3\tcompound\tCTRL3\t1.0\t1.0\ttrue\n"
+        "CTRL4\tcompound\tCTRL4\t1.0\t1.0\ttrue\n"
+        "CTRL5\tcompound\tCTRL5\t1.0\t1.0\ttrue\n"
+        "GENERIC\tcompound\tGENERIC\t1.0\t1.0\tfalse\n"
+        "SPEC\tcompound\tSPEC\t1.0\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "GENERIC\tADA\t1.0\n"
+        "SPEC\tKCNN4\t1.0\n",
+        encoding="utf-8",
+    )
+
+    args_mean = Args()
+    args_mean.query_profiles_tsv = str(query_path)
+    args_mean.query_metadata_tsv = None
+    args_mean.group_query_by = None
+    args_mean.reference_profiles_tsv = str(ref_profiles)
+    args_mean.reference_metadata_tsv = str(ref_meta)
+    args_mean.compound_targets_tsv = str(targets)
+    args_mean.feature_stats_tsv = None
+    args_mean.feature_schema_tsv = None
+    args_mean.out_dir = str(tmp_path / "mean")
+    args_mean.polarity = "similar"
+    args_mean.top_k = 1
+    args_mean.gmt_topk_list = "1"
+    args_mean.control_calibration = "mean_center"
+    morphology_profile_query.run(args_mean)
+
+    args_resid = Args()
+    args_resid.query_profiles_tsv = str(query_path)
+    args_resid.query_metadata_tsv = None
+    args_resid.group_query_by = None
+    args_resid.reference_profiles_tsv = str(ref_profiles)
+    args_resid.reference_metadata_tsv = str(ref_meta)
+    args_resid.compound_targets_tsv = str(targets)
+    args_resid.feature_stats_tsv = None
+    args_resid.feature_schema_tsv = None
+    args_resid.out_dir = str(tmp_path / "resid")
+    args_resid.polarity = "similar"
+    args_resid.top_k = 1
+    args_resid.gmt_topk_list = "1"
+    args_resid.control_calibration = "residualize_controls"
+    args_resid.control_residual_components = 1
+    args_resid.control_min_profiles_for_residualization = 5
+    morphology_profile_query.run(args_resid)
+
+    gene_mean = _geneset_rows(Path(args_mean.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
+    gene_resid = _geneset_rows(Path(args_resid.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")[0]["gene_id"]
+    assert gene_mean == "ADA"
+    assert gene_resid == "KCNN4"
+
+    meta = json.loads((Path(args_resid.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    calibration = meta["summary"]["control_calibration"]
+    assert calibration["mode"] == "residualize_controls"
+    assert calibration["n_components"] == 1
+
+
+def test_morphology_profile_query_control_residualization_falls_back_when_controls_too_few(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    query_path = tmp_path / "query.tsv"
+    query_path.write_text("sample_id\tf1\tf2\nQ1\t1.0\t1.0\n", encoding="utf-8")
+    ref_profiles = tmp_path / "refs.tsv"
+    ref_profiles.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "CTRL1\t-1.0\t0.0\n"
+        "CTRL2\t1.0\t0.0\n"
+        "SPEC\t0.0\t1.0\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "CTRL1\tcompound\tCTRL1\t1.0\t1.0\ttrue\n"
+        "CTRL2\tcompound\tCTRL2\t1.0\t1.0\ttrue\n"
+        "SPEC\tcompound\tSPEC\t1.0\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nSPEC\tKCNN4\t1.0\n", encoding="utf-8")
+
+    args = Args()
+    args.query_profiles_tsv = str(query_path)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(ref_profiles)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "fallback")
+    args.polarity = "similar"
+    args.control_calibration = "residualize_controls"
+    args.control_residual_components = 2
+    args.control_min_profiles_for_residualization = 5
+    morphology_profile_query.run(args)
+
+    captured = capsys.readouterr()
+    assert "fell back to mean-centering" in captured.err
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    calibration = meta["summary"]["control_calibration"]
+    assert calibration["mode"] == "mean_center"
+    assert calibration["requested_mode"] == "residualize_controls"
 
 
 def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Path):
