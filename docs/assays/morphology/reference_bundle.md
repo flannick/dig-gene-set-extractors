@@ -15,7 +15,7 @@ A v1 bundle is a small directory containing text or parquet artifacts plus a man
 - `reference_profiles.tsv.gz` or `reference_profiles.parquet`
 - `reference_metadata.tsv.gz`
 - `compound_targets.tsv.gz`
-- optional `target_annotations.tsv.gz`
+- `target_annotations.tsv.gz` by default
 - `feature_schema.tsv.gz`
 - `feature_stats.tsv.gz`
 - `<bundle_id>.bundle.json`
@@ -25,7 +25,7 @@ The bundle manifest maps logical roles to relative files:
 - `reference_profiles`
 - `reference_metadata`
 - `compound_targets`
-- optional `target_annotations`
+- `target_annotations` by default
 - `feature_schema`
 - `feature_stats`
 
@@ -42,7 +42,7 @@ Bundle builds now use a packaged canonical annotation table by default:
 
 You only need `--target_annotations_tsv` when overriding that canonical table. Use `--use_default_target_annotations false` only for explicit annotation-free comparisons.
 
-Without `target_annotations`, `--mode mechanism` and `--mode hybrid` still run, but they fall back to broader target routing rather than full family-aware expansion.
+Annotation-free bundles are now an explicit opt-out. Without `target_annotations`, `--mode mechanism` and `--mode hybrid` still run, but they fall back to broader target routing rather than full family-aware expansion.
 
 ## Canonical annotation vocabulary
 

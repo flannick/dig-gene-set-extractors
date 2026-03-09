@@ -41,10 +41,13 @@ Current retrieval modes:
   - family/mechanism-aware reranking and expansion
   - best when morphology is class-correct but not exact-target-correct
   - reaches its intended behavior only when the bundle or explicit inputs include `target_annotations`
+  - expansion is gated: the winning family/mechanism must remain stable across raw and penalized pooled neighborhoods
 - `--mode hybrid`
   - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
   - keeps `geneset.tsv` as the preferred variant for downstream compatibility
   - without target annotations, hybrid is mostly a strict core plus a broad fallback rather than full family-aware expansion
+  - for `orf` and `crispr` queries, expansion also requires same-modality family/mechanism support
+  - for `compound` queries, expansion may legitimately rely on coherent genetic neighbors and does not require same-modality support
 
 Default interpretation:
 
@@ -245,6 +248,39 @@ Grouped output layout mirrors other multi-program extractors:
 - root `genesets.gmt` (combined)
 - `run_summary.json` and `run_summary.txt`
 
+## Routing diagnostics
+
+When a morphology result looks surprising, inspect the per-program summary fields in:
+
+- `program=<...>/run_summary.json`
+- `program=<...>/geneset.meta.json`
+
+Most useful fields:
+
+- `raw_candidate_neighbor_ids` / `raw_candidate_neighbor_similarities`
+  - top neighbors before hubness/context penalties and truncation
+- `raw_candidate_neighbors_detail`
+  - raw neighbor modality and top routed targets
+- `retained_neighbors_detail`
+  - neighbors that actually contributed after penalties/filtering
+- `family_vote_summary_raw`
+  - family-level vote totals in the pooled raw neighborhood
+- `family_vote_summary_retained`
+  - family-level vote totals after penalization/filtering
+- `mechanism_vote_summary_raw`
+- `mechanism_vote_summary_retained`
+- `expansion_decision`
+  - machine-readable reason for whether family/mechanism expansion was allowed
+- `top_target_candidates`
+  - routed target support before final gene-set extraction
+
+Interpretation:
+
+- if raw and retained family summaries disagree, the family signal is unstable
+- if `expansion_decision.reason` is `family_support_too_weak`, the pooled evidence never concentrated enough to justify expansion
+- if `expansion_decision.reason` is `family_lacks_same_modality_support`, this usually reflects an ORF/CRISPR query where only cross-modality support existed
+- for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
+
 ## Common warnings and how to read them
 
 - Low shared feature fraction:
@@ -261,6 +297,8 @@ Grouped output layout mirrors other multi-program extractors:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
   - `mechanism` uses optional target annotations to back off to family or mechanism support when exact-target support is weak.
   - `hybrid` emits both strict and expanded outputs and records which one is preferred.
+  - current family/mechanism expansion is not triggered by any single winning label; it requires stable support across raw and penalized pooled neighborhoods.
+  - same-modality support is required for ORF/CRISPR expansion, but not for compound queries.
   - bundle builds now include a canonical curated target-annotation table by default, so public/distributed bundles should normally be mechanism-ready.
   - some recurrent generic genes are intentionally left blank in that table to avoid noisy family expansion.
   - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
