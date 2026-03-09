@@ -377,7 +377,7 @@ def run(args) -> dict[str, object]:
                     if str(row.get("perturbation_type", "")).strip().lower() == modality
                 ),
             }
-            for modality in valid_modalities
+            for modality in included_modalities
             if chosen_contexts.get(modality, "")
         },
         "summary": {

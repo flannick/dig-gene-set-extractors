@@ -248,6 +248,138 @@ def _top_label_support(
     return best_label, float(best_score) / total, support
 
 
+def _label_vote_summary_from_neighbors(
+    *,
+    neighbors: list[tuple[str, float, float]],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    reference_metadata: dict[str, dict[str, str]],
+    target_annotations: dict[str, dict[str, str]] | None,
+    field: str,
+    query_modality: str | None,
+) -> dict[str, object]:
+    if not target_annotations:
+        return {
+            "top_label": None,
+            "top_label_mass": 0.0,
+            "votes": [],
+            "top_label_support_count": 0,
+            "top_label_same_modality_count": 0,
+        }
+    label_mass: dict[str, float] = {}
+    label_refs: dict[str, set[str]] = {}
+    label_same_modality_refs: dict[str, set[str]] = {}
+    total_mass = 0.0
+    for ref_id, _base, evidence in neighbors:
+        mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
+        if not mapping:
+            continue
+        ref_modality = str(reference_metadata.get(ref_id, {}).get("perturbation_type", "")).strip().lower()
+        ref_labels: set[str] = set()
+        for gene, weight in mapping.items():
+            label = str((target_annotations.get(gene, {}) or {}).get(field, "")).strip()
+            if not label:
+                continue
+            contribution = float(evidence) * float(weight)
+            if contribution <= 0.0:
+                continue
+            label_mass[label] = float(label_mass.get(label, 0.0)) + contribution
+            ref_labels.add(label)
+            total_mass += contribution
+        for label in ref_labels:
+            label_refs.setdefault(label, set()).add(ref_id)
+            if query_modality and ref_modality == query_modality:
+                label_same_modality_refs.setdefault(label, set()).add(ref_id)
+    if not label_mass or total_mass <= 0.0:
+        return {
+            "top_label": None,
+            "top_label_mass": 0.0,
+            "votes": [],
+            "top_label_support_count": 0,
+            "top_label_same_modality_count": 0,
+        }
+    ordered = sorted(label_mass.items(), key=lambda item: (-float(item[1]), str(item[0])))
+    top_label, top_mass_raw = ordered[0]
+    votes = [
+        {
+            "label": label,
+            "support_mass": float(mass),
+            "support_fraction": float(mass) / float(total_mass),
+            "support_count": len(label_refs.get(label, set())),
+            "same_modality_support_count": len(label_same_modality_refs.get(label, set())),
+        }
+        for label, mass in ordered[:5]
+    ]
+    return {
+        "top_label": top_label,
+        "top_label_mass": float(top_mass_raw) / float(total_mass),
+        "votes": votes,
+        "top_label_support_count": len(label_refs.get(top_label, set())),
+        "top_label_same_modality_count": len(label_same_modality_refs.get(top_label, set())),
+    }
+
+
+def _expansion_gate_decision(
+    *,
+    mode: str,
+    query_modality: str | None,
+    top_family: str | None,
+    top_family_mass: float,
+    raw_family_summary: dict[str, object],
+    retained_family_summary: dict[str, object],
+    top_mechanism: str | None,
+    top_mechanism_mass: float,
+    raw_mechanism_summary: dict[str, object],
+    retained_mechanism_summary: dict[str, object],
+) -> dict[str, object]:
+    decision = {
+        "allow_family": False,
+        "allow_mechanism": False,
+        "reason": "annotations_unstable",
+    }
+    if mode not in {"mechanism", "hybrid"}:
+        decision["reason"] = "mode_not_expandable"
+        return decision
+    stable_family = (
+        bool(top_family)
+        and str(raw_family_summary.get("top_label") or "") == str(top_family)
+        and str(retained_family_summary.get("top_label") or "") == str(top_family)
+        and float(top_family_mass) >= 0.22
+        and float(raw_family_summary.get("top_label_mass", 0.0) or 0.0) >= 0.18
+        and int(raw_family_summary.get("top_label_support_count", 0) or 0) >= 2
+        and int(retained_family_summary.get("top_label_support_count", 0) or 0) >= 2
+    )
+    if query_modality:
+        stable_family = stable_family and int(retained_family_summary.get("top_label_same_modality_count", 0) or 0) >= 1
+    stable_mechanism = (
+        bool(top_mechanism)
+        and str(raw_mechanism_summary.get("top_label") or "") == str(top_mechanism)
+        and str(retained_mechanism_summary.get("top_label") or "") == str(top_mechanism)
+        and float(top_mechanism_mass) >= 0.18
+        and float(raw_mechanism_summary.get("top_label_mass", 0.0) or 0.0) >= 0.15
+        and int(raw_mechanism_summary.get("top_label_support_count", 0) or 0) >= 2
+        and int(retained_mechanism_summary.get("top_label_support_count", 0) or 0) >= 2
+    )
+    if query_modality:
+        stable_mechanism = stable_mechanism and int(retained_mechanism_summary.get("top_label_same_modality_count", 0) or 0) >= 1
+    if stable_family:
+        decision["allow_family"] = True
+        decision["reason"] = "stable_family_support"
+    if stable_mechanism:
+        decision["allow_mechanism"] = True
+        decision["reason"] = "stable_mechanism_support"
+    if decision["allow_family"] and decision["allow_mechanism"]:
+        decision["reason"] = "stable_family_and_mechanism_support"
+    if not decision["allow_family"] and not decision["allow_mechanism"]:
+        if top_family and str(raw_family_summary.get("top_label") or "") != str(top_family):
+            decision["reason"] = "family_unstable_between_raw_and_penalized"
+        elif query_modality and int(retained_family_summary.get("top_label_same_modality_count", 0) or 0) < 1:
+            decision["reason"] = "family_lacks_same_modality_support"
+        else:
+            decision["reason"] = "family_support_too_weak"
+    return decision
+
+
 def _refs_supporting_any_gene(
     *,
     penalized_neighbors: list[tuple[str, float, float]],
@@ -959,6 +1091,14 @@ def run_morphology_workflow(
                 penalized_neighbors = adaptive_neighbors
             pool_cap = max(int(cfg.max_reference_neighbors) * 5, int(cfg.min_effective_neighbors), 25) if int(cfg.max_reference_neighbors) > 0 else len(penalized_neighbors)
             pooled_neighbors = penalized_neighbors[:pool_cap]
+            raw_pooled_neighbors = [
+                (
+                    ref_id,
+                    float(base),
+                    float(base) * float(qc_weights.get(ref_id, 1.0)),
+                )
+                for ref_id, base in raw_candidate_neighbors[:pool_cap]
+            ]
             target_support, target_support_count, target_support_by_modality, target_best_similarity = _target_support_from_neighbors(
                 penalized_neighbors=pooled_neighbors,
                 compound_map=compound_map,
@@ -1065,20 +1205,60 @@ def run_morphology_workflow(
                 target_annotations=target_annotations,
                 field="mechanism_label",
             )
+            raw_family_summary = _label_vote_summary_from_neighbors(
+                neighbors=raw_pooled_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                reference_metadata=reference_metadata_effective,
+                target_annotations=target_annotations,
+                field="target_family",
+                query_modality=query_modality,
+            )
+            retained_family_summary = _label_vote_summary_from_neighbors(
+                neighbors=pooled_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                reference_metadata=reference_metadata_effective,
+                target_annotations=target_annotations,
+                field="target_family",
+                query_modality=query_modality,
+            )
+            raw_mechanism_summary = _label_vote_summary_from_neighbors(
+                neighbors=raw_pooled_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                reference_metadata=reference_metadata_effective,
+                target_annotations=target_annotations,
+                field="mechanism_label",
+                query_modality=query_modality,
+            )
+            retained_mechanism_summary = _label_vote_summary_from_neighbors(
+                neighbors=pooled_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                reference_metadata=reference_metadata_effective,
+                target_annotations=target_annotations,
+                field="mechanism_label",
+                query_modality=query_modality,
+            )
+            expansion_decision = _expansion_gate_decision(
+                mode=cfg.mode,
+                query_modality=query_modality,
+                top_family=top_family,
+                top_family_mass=top_family_mass,
+                raw_family_summary=raw_family_summary,
+                retained_family_summary=retained_family_summary,
+                top_mechanism=top_mechanism,
+                top_mechanism_mass=top_mechanism_mass,
+                raw_mechanism_summary=raw_mechanism_summary,
+                retained_mechanism_summary=retained_mechanism_summary,
+            )
             expanded_gene_scores, expanded_family_genes = _family_boost_scores(
                 base_gene_scores=core_gene_scores,
                 target_annotations=target_annotations,
-                family_label=top_family if cfg.mode in {"mechanism", "hybrid"} else None,
-                mechanism_label=top_mechanism if cfg.mode in {"mechanism", "hybrid"} else None,
+                family_label=top_family if bool(expansion_decision["allow_family"]) else None,
+                mechanism_label=top_mechanism if bool(expansion_decision["allow_mechanism"]) else None,
             )
-            preferred_variant = "core"
-            if cfg.mode == "mechanism":
-                preferred_variant = "expanded"
-            elif cfg.mode == "hybrid":
-                top_target_mass = float(top_target_candidates[0][1]) / float(sum(target_support.values()) or 1.0) if top_target_candidates else 0.0
-                if top_target_mass < 0.35 and max(top_family_mass, top_mechanism_mass) >= 0.3:
-                    preferred_variant = "expanded"
-
             selected_core_ids = sorted(_select_gene_ids(core_gene_scores, cfg), key=lambda g: (-float(core_gene_scores.get(g, 0.0)), str(g)))
             core_weights = _selected_weights(core_gene_scores, selected_core_ids, cfg.normalize)
             core_rows = [
@@ -1091,6 +1271,19 @@ def run_morphology_workflow(
                 {"gene_id": gene_id, "gene_symbol": gene_id, "score": float(expanded_gene_scores.get(gene_id, 0.0)), "weight": float(expanded_weights.get(gene_id, 0.0)), "rank": rank}
                 for rank, gene_id in enumerate(selected_expanded_ids, start=1)
             ]
+            preferred_variant = "core"
+            top_target_mass = float(top_target_candidates[0][1]) / float(sum(target_support.values()) or 1.0) if top_target_candidates else 0.0
+            if cfg.mode == "mechanism" and (expansion_decision["allow_family"] or expansion_decision["allow_mechanism"]):
+                preferred_variant = "expanded"
+            elif (
+                cfg.mode == "hybrid"
+                and (expansion_decision["allow_family"] or expansion_decision["allow_mechanism"])
+                and (
+                    len(expanded_rows) > len(core_rows)
+                    or (top_target_mass < 0.5 and max(top_family_mass, top_mechanism_mass) >= 0.22)
+                )
+            ):
+                preferred_variant = "expanded"
             selected_rows = expanded_rows if preferred_variant == "expanded" else core_rows
             gene_scores = expanded_gene_scores if preferred_variant == "expanded" else core_gene_scores
             full_gene_ids = sorted(gene_scores, key=lambda g: (-float(gene_scores[g]), str(g)))
@@ -1289,6 +1482,41 @@ def run_morphology_workflow(
                 "top_neighbor_similarities": top_neighbor_sims,
                 "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
                 "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
+                "raw_candidate_neighbors_detail": [
+                    {
+                        "ref_id": ref_id,
+                        "similarity": float(score),
+                        "modality": str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower(),
+                        "top_targets": sorted(
+                            (compound_map.get(ref_id) or genetic_map.get(ref_id) or {}).items(),
+                            key=lambda item: (-float(item[1]), str(item[0])),
+                        )[:3],
+                    }
+                    for ref_id, score in raw_candidate_neighbors[:10]
+                ],
+                "retained_neighbors_detail": [
+                    {
+                        "ref_id": ref_id,
+                        "similarity": float(score),
+                        "evidence": float(evidence_by_ref.get(ref_id, 0.0)),
+                        "modality": str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower(),
+                        "target_family": sorted(
+                            {
+                                str((target_annotations.get(gene, {}) or {}).get("target_family", "")).strip()
+                                for gene in (compound_map.get(ref_id) or genetic_map.get(ref_id) or {})
+                                if target_annotations and str((target_annotations.get(gene, {}) or {}).get("target_family", "")).strip()
+                            }
+                        ),
+                        "mechanism_label": sorted(
+                            {
+                                str((target_annotations.get(gene, {}) or {}).get("mechanism_label", "")).strip()
+                                for gene in (compound_map.get(ref_id) or genetic_map.get(ref_id) or {})
+                                if target_annotations and str((target_annotations.get(gene, {}) or {}).get("mechanism_label", "")).strip()
+                            }
+                        ),
+                    }
+                    for ref_id, score in retained_neighbors[:10]
+                ],
                 "top5_neighbor_score_mass_fraction": top5_mass,
                 "retrieval_confidence": retrieval_confidence,
                 "specificity_confidence": specificity_confidence,
@@ -1306,6 +1534,11 @@ def run_morphology_workflow(
                 "top_family_mass": top_family_mass,
                 "top_mechanism": top_mechanism,
                 "top_mechanism_mass": top_mechanism_mass,
+                "family_vote_summary_raw": raw_family_summary,
+                "family_vote_summary_retained": retained_family_summary,
+                "mechanism_vote_summary_raw": raw_mechanism_summary,
+                "mechanism_vote_summary_retained": retained_mechanism_summary,
+                "expansion_decision": expansion_decision,
                 "expanded_added_genes": expanded_family_genes,
                 "core_gene_count": len(core_rows),
                 "expanded_gene_count": len(expanded_rows),
@@ -1392,6 +1625,11 @@ def run_morphology_workflow(
                     "top_neighbor_similarities": top_neighbor_sims,
                     "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
                     "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
+                    "family_vote_summary_raw": raw_family_summary,
+                    "family_vote_summary_retained": retained_family_summary,
+                    "mechanism_vote_summary_raw": raw_mechanism_summary,
+                    "mechanism_vote_summary_retained": retained_mechanism_summary,
+                    "expansion_decision": expansion_decision,
                     "top10_gene_mass": top10_gene_mass,
                     "neighbor_target_concentration": neighbor_target_concentration,
                     "neighbor_primary_target_agreement": neighbor_primary_target_agreement,

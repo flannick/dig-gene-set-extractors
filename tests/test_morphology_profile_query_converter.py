@@ -460,6 +460,10 @@ def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Pat
     assert "raw_candidate_neighbor_ids" in meta["summary"]
     assert "control_calibration" in meta["summary"]
     assert "high_hub_mass_fraction" in meta["summary"]
+    assert "family_vote_summary_raw" in meta["summary"]
+    assert "family_vote_summary_retained" in meta["summary"]
+    assert "mechanism_vote_summary_raw" in meta["summary"]
+    assert "expansion_decision" in meta["summary"]
     assert meta["summary"]["hubness_penalty"] == "inverse_rank"
 
 

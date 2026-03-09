@@ -97,6 +97,10 @@ def test_jump_prepare_reference_bundle_same_timepoint_default_does_not_mix(tmp_p
     payload = json.loads((Path(args.out_dir) / "toy_jump_u2os_48h_v1.bundle.json").read_text(encoding="utf-8"))
     assert payload["summary"]["included_modalities"] == ["compound", "orf"]
     assert payload["summary"]["missing_modalities"] == ["crispr"]
+    summary_text = (Path(args.out_dir) / "bundle_summary.txt").read_text(encoding="utf-8")
+    assert "missing_modalities: ['crispr']" in summary_text
+    assert "blocked_modality=crispr" in summary_text
+    assert "modality=crispr included=yes" not in summary_text
 
 
 def test_jump_prepare_reference_bundle_allow_mixed_timepoints(tmp_path: Path):

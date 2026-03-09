@@ -36,6 +36,7 @@ Current retrieval modes:
 - `--mode direct_target`
   - strict target-first pooling
   - best when distributed same-target support exists
+  - intentionally strict; on weak held-out queries it may emit very small outputs rather than broadening to a possibly wrong family
 - `--mode mechanism`
   - family/mechanism-aware reranking and expansion
   - best when morphology is class-correct but not exact-target-correct
