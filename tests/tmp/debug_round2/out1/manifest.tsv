@@ -1,2 +1,0 @@
-program_id	query_id	polarity	mode	preferred_variant	n_query_profiles	n_reference_profiles	n_retained_neighbors	retrieval_confidence	specificity_confidence	neighbor_primary_target_agreement	neighbor_top3_target_agreement	high_hub_mass_fraction	top_target_support_mass	n_genes_selected	path
-Q1	Q1	similar	direct_target	core	1	4	3	low	high	1.0	1.0	0.0	0.1220211944762709	1	program=Q1__polarity=similar

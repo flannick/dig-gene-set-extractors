@@ -19,3 +19,5 @@ refdata_build/raw/
 refdata_build/bundle/
 refdata_build/*.tar.gz
 refdata_build/SHA256SUMS.txt
+
+tests/tmp/
