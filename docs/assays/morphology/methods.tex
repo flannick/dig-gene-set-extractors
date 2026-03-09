@@ -224,7 +224,7 @@ The current implementation maintains two distinct routed branches:
 \item a \textbf{mechanism branch}, built from the full retained coherent neighborhood and used for label choice plus local expansion.
 \end{itemize}
 
-In \texttt{hybrid} mode both branches are always computed independently. The strict branch writes \texttt{geneset.core.tsv}; the mechanism branch writes \texttt{geneset.expanded.tsv}; and the preferred output is selected afterward from branch-level confidence rather than by reusing one branch to define the other.
+In \texttt{hybrid} mode both branches are always computed independently. The strict branch writes \texttt{geneset.core.tsv}; the mechanism branch writes \texttt{geneset.expanded.tsv}; and the public \texttt{geneset.tsv} is formed by merging the two so that core genes are preserved while expanded-only genes add context. Internal preferred-variant diagnostics are still recorded, but the user-facing hybrid output is no longer a winner-take-all copy of the mechanism branch.
 
 \subsection{Local weighted expansion}
 Expansion is not implemented as a flat union over all genes carrying any broad matching annotation. Once $(h^\star, \ell^\star)$ has been chosen, the candidate gene universe is restricted in the following order:
@@ -235,6 +235,9 @@ Expansion is not implemented as a flat union over all genes carrying any broad m
 \end{itemize}
 
 Candidate genes are then weighted by local routed support when available, with only a small bundle-coverage prior for genes that match the label but have weak direct local evidence. This avoids the earlier broad family-union behavior and preserves the preference for the narrowest stable label.
+
+\subsection{Compound promiscuity and optional target confidence}
+Compound references can be more weakly informative than genetic references because of polypharmacology and uneven target annotation confidence. The current implementation therefore applies a mild bounded promiscuity penalty when accumulating compound-driven target support, so compounds with many annotated targets do not dominate exact-target nomination as strongly as single-target compounds. In addition, if the compound-target table carries optional columns such as \texttt{confidence}, \texttt{primary\_target}, \texttt{potency\_bucket}, or \texttt{source\_confidence}, these are folded into edge weights through a bounded multiplier. Inputs that omit these columns retain the previous behavior.
 
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.

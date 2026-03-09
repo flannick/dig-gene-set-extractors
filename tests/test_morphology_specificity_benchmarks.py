@@ -646,3 +646,214 @@ def test_morphology_narrow_label_beats_broad_label(tmp_path: Path):
     assert meta["summary"]["expansion_decision"]["chosen_level"] in {"pathway_seed", "target_class"}
     expanded_genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
     assert "SCN5A" not in expanded_genes
+
+
+def test_morphology_expansion_uses_bundle_gene_universe_not_reference_ids(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text("perturbation_id\tf1\tf2\nA\t0.95\t0.05\nB\t0.94\t0.06\nC\t0.10\t0.90\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "A\tcompound\tA\t0.1\t1.0\tfalse\n"
+        "B\tcompound\tB\t0.1\t1.0\tfalse\n"
+        "C\tcompound\tC\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nA\tKCNN1\t1.0\nB\tKCNMA1\t1.0\nC\tKCNN4\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "KCNMA1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "KCNN4\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "bundle_gene_universe")
+    args.mode = "mechanism"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    assert "KCNN4" in genes
+    assert meta["summary"]["expansion_decision"]["candidate_scope"] == "bundle"
+    assert meta["summary"]["expansion_decision"]["bundle_candidate_genes"] >= 3
+
+
+def test_morphology_target_nomination_rewards_distributed_support(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "A\t0.98\t0.02\n"
+        "B\t0.97\t0.03\n"
+        "SHARP\t1.00\t0.00\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "A\tcompound\tA\t0.1\t1.0\tfalse\n"
+        "B\tcompound\tB\t0.1\t1.0\tfalse\n"
+        "SHARP\tcompound\tSHARP\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "A\tKCNN4\t1.0\n"
+        "B\tKCNN4\t1.0\n"
+        "SHARP\tOPRM1\t1.0\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "distributed_nomination")
+    args.mode = "direct_target"
+    args.top_k = 2
+    args.gmt_topk_list = "2"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["top_target_candidates"][0]["gene_symbol"] == "KCNN4"
+
+
+def test_morphology_summary_exposes_target_class_and_pathway_seed(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text("perturbation_id\tf1\tf2\nA\t0.95\t0.05\nB\t0.94\t0.06\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "A\tcompound\tA\t0.1\t1.0\tfalse\n"
+        "B\tcompound\tB\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nA\tKCNN1\t1.0\nB\tKCNMA1\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "KCNMA1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "summary_narrow")
+    args.mode = "mechanism"
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["top_target_class"] == "Potassium channel"
+    assert meta["summary"]["top_pathway_seed"] == "Potassium_conductance"
+
+
+def test_morphology_hybrid_output_is_distinct_from_mechanism_when_core_exists(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "CMP1\t0.99\t0.01\n"
+        "ORF1\t0.95\t0.05\n"
+        "ORF2\t0.94\t0.06\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "CMP1\tcompound\tCMP1\t\t0.1\t1.0\tfalse\n"
+        "ORF1\torf\t\tNTRK1\t0.1\t1.0\tfalse\n"
+        "ORF2\torf\t\tRET\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nCMP1\tFGFR1\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "FGFR1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tFGF_RTK\n"
+        "NTRK1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tNTRK_RTK\n"
+        "RET\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRET_RTK\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "hybrid_merge")
+    args.mode = "hybrid"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    program_dir = Path(args.out_dir) / "program=Q1__polarity=similar"
+    core_genes = _genes(program_dir / "geneset.core.tsv")
+    expanded_genes = _genes(program_dir / "geneset.expanded.tsv")
+    merged_genes = _genes(program_dir / "geneset.tsv")
+    meta = json.loads((program_dir / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert len(core_genes) < len(expanded_genes)
+    assert merged_genes != expanded_genes
+    assert set(core_genes).issubset(set(merged_genes))
+    assert meta["summary"]["hybrid_merge_applied"] is True
+
+
+def test_morphology_optional_compound_target_confidence_downweights_secondary_target(tmp_path: Path):
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\tconfidence\tprimary_target\n"
+        "CMP1\tNTRK1\t1.0\t1.0\ttrue\n"
+        "CMP1\tOPRM1\t1.0\t0.2\tfalse\n",
+        encoding="utf-8",
+    )
+    from geneset_extractors.extractors.morphology.io import read_compound_targets_auto
+
+    mapping, summary = read_compound_targets_auto(targets)
+    assert mapping["CMP1"]["NTRK1"] > mapping["CMP1"]["OPRM1"]
+    assert summary["n_rows_using_optional_confidence"] == 2

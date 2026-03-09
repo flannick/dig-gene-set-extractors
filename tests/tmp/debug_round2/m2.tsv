@@ -1,0 +1,3 @@
+perturbation_id	perturbation_type	compound_id	hub_score	qc_weight	is_control
+A	compound	A	0.1	1.0	false
+B	compound	B	0.1	1.0	false

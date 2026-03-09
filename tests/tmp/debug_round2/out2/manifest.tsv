@@ -1,0 +1,2 @@
+program_id	query_id	polarity	mode	preferred_variant	n_query_profiles	n_reference_profiles	n_retained_neighbors	retrieval_confidence	specificity_confidence	neighbor_primary_target_agreement	neighbor_top3_target_agreement	high_hub_mass_fraction	top_target_support_mass	n_genes_selected	path
+Q1	Q1	similar	mechanism	expanded	1	2	2	low	high	0.6668110633551219	1.0	0.0	0.24610012347375332	2	program=Q1__polarity=similar

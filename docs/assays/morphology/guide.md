@@ -45,7 +45,7 @@ Current retrieval modes:
   - uses the hierarchy `pathway_seed -> target_class -> mechanism_label -> target_family`
 - `--mode hybrid`
   - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
-  - keeps `geneset.tsv` as the preferred variant for downstream compatibility
+  - writes `geneset.tsv` as a merged hybrid output that preserves strict core genes while adding expanded-only context
   - computes the strict core branch and the mechanism branch independently
   - without target annotations, hybrid is mostly a strict core plus a conservative mechanism fallback rather than full family-aware expansion
   - for `orf` and `crispr` queries, expansion confidence still favors same-modality family/mechanism support
@@ -81,6 +81,7 @@ Optional:
 - `--feature_stats_tsv`
 - `--target_annotations_tsv`
   - overrides the packaged canonical annotation table used by the bundle builder
+  - if `compound_targets.tsv` also carries optional columns such as `confidence`, `primary_target`, `potency_bucket`, or `source_confidence`, those are folded into compound-target edge weights in a bounded way
 
 ### Bundle-driven mode
 
@@ -276,9 +277,11 @@ Most useful fields:
   - level-by-level support records for `pathway_seed`, `target_class`, `mechanism_label`, and `target_family`
 - `expansion_decision`
   - machine-readable reason for whether expansion was allowed
-  - includes `chosen_level`, `chosen_label`, `expansion_confidence`, `candidate_scope`, and whether a raw-vs-retained mismatch was observed
+  - includes `chosen_level`, `chosen_label`, `expansion_confidence`, `candidate_scope`, `bundle_candidate_genes`, `bundle_supported_genes`, `local_supported_genes`, `global_fallback_genes`, `expansion_mass_injected`, and whether a raw-vs-retained mismatch was observed
 - `core_branch_neighbor_ids` / `mechanism_branch_neighbor_ids`
   - the strict exact-target branch and the broader mechanism branch are now reported separately
+- `top_pathway_seed` / `top_target_class`
+  - the narrowest high-level labels visible in the retained mechanism neighborhood
 - `top_target_candidates`
   - routed target support before final gene-set extraction
 
@@ -304,11 +307,12 @@ Interpretation:
 - Direct target versus mechanism mode:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
   - `mechanism` uses the full coherent retained neighborhood to choose the most specific supported annotation level, then expands locally from that mechanism branch.
-  - `hybrid` emits both strict and expanded outputs and records which one is preferred; the strict branch does not define the expansion branch.
+  - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
   - same-modality support still matters more for ORF/CRISPR queries than for compound queries.
   - bundle builds now include a canonical curated target-annotation table by default, so public/distributed bundles should normally be mechanism-ready.
   - some recurrent generic genes are intentionally left blank in that table to avoid noisy family expansion.
+  - mild compound promiscuity and optional target-confidence metadata can downweight noisy compound edges without removing multitarget compounds entirely.
   - inspect `control_calibration`, branch-specific neighbor summaries, and `expansion_decision` if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.

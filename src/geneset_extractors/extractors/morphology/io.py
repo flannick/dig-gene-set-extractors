@@ -48,6 +48,48 @@ def _sniff_delimiter(path: Path) -> str:
     return "\t"
 
 
+def _bounded_confidence_multiplier(row: dict[str, object], fieldnames: list[str]) -> tuple[float, dict[str, object]]:
+    confidence_fields = [name for name in ("confidence", "source_confidence") if name in fieldnames]
+    primary_target_fields = [name for name in ("primary_target",) if name in fieldnames]
+    potency_fields = [name for name in ("potency_bucket",) if name in fieldnames]
+    multiplier = 1.0
+    used: dict[str, object] = {}
+    for field in confidence_fields:
+        value = _parse_float(row.get(field))
+        if value is not None:
+            clamped = min(max(float(value), 0.0), 1.0)
+            multiplier *= 0.5 + 0.5 * clamped
+            used[field] = clamped
+            break
+    for field in primary_target_fields:
+        text = str(row.get(field, "")).strip().lower()
+        if text in {"1", "true", "t", "yes", "y", "primary"}:
+            multiplier *= 1.0
+            used[field] = True
+            break
+        if text in {"0", "false", "f", "no", "n", "secondary"}:
+            multiplier *= 0.75
+            used[field] = False
+            break
+    for field in potency_fields:
+        text = str(row.get(field, "")).strip().lower()
+        if not text:
+            continue
+        scale = {
+            "high": 1.0,
+            "medium": 0.9,
+            "low": 0.8,
+            "weak": 0.7,
+            "primary": 1.0,
+            "secondary": 0.8,
+        }.get(text)
+        if scale is not None:
+            multiplier *= scale
+            used[field] = text
+            break
+    return max(0.25, min(1.0, multiplier)), used
+
+
 def read_profiles_table(
     path: str | Path,
     *,
@@ -188,6 +230,7 @@ def read_compound_targets_tsv(
         rows = list(reader)
     raw: dict[str, dict[str, float]] = {}
     missing = 0
+    used_optional = 0
     for row in rows:
         compound_id = str(row.get(compound_id_column, "")).strip()
         gene_symbol = str(row.get(gene_symbol_column, "")).strip().upper()
@@ -197,6 +240,10 @@ def read_compound_targets_tsv(
         weight = _parse_float(row.get(weight_column)) if weight_column in row else None
         if weight is None or weight <= 0.0:
             weight = 1.0
+        confidence_multiplier, used_meta = _bounded_confidence_multiplier(row, fieldnames)
+        if used_meta:
+            used_optional += 1
+        weight *= confidence_multiplier
         raw.setdefault(compound_id, {})
         raw[compound_id][gene_symbol] = float(raw[compound_id].get(gene_symbol, 0.0)) + float(weight)
     normalized: dict[str, dict[str, float]] = {}
@@ -205,7 +252,13 @@ def read_compound_targets_tsv(
         if total <= 0.0:
             continue
         normalized[compound_id] = {gene: float(value) / total for gene, value in mapping.items()}
-    return normalized, {"path": str(path), "n_rows": len(rows), "n_compounds": len(normalized), "n_missing_required": missing}
+    return normalized, {
+        "path": str(path),
+        "n_rows": len(rows),
+        "n_compounds": len(normalized),
+        "n_missing_required": missing,
+        "n_rows_using_optional_confidence": used_optional,
+    }
 
 
 def read_compound_targets_auto(
@@ -261,6 +314,7 @@ def read_compound_targets_auto(
     raw: dict[str, dict[str, float]] = {}
     n_missing_required = 0
     n_multi_target_rows = 0
+    n_rows_using_optional_confidence = 0
     fallback_used = resolved_gene != "gene_symbol"
     for row in rows:
         compound_id = str(row.get(resolved_compound, "")).strip()
@@ -280,10 +334,13 @@ def read_compound_targets_auto(
         if len(targets) > 1:
             n_multi_target_rows += 1
         weight = _parse_float(row.get(resolved_weight)) if resolved_weight else None
+        confidence_multiplier, used_meta = _bounded_confidence_multiplier(row, fieldnames)
+        if used_meta:
+            n_rows_using_optional_confidence += 1
         if weight is not None and weight > 0.0 and len(targets) == 1:
-            per_target_weight = float(weight)
+            per_target_weight = float(weight) * confidence_multiplier
         else:
-            per_target_weight = 1.0 / float(len(targets))
+            per_target_weight = confidence_multiplier / float(len(targets))
         raw.setdefault(compound_id, {})
         for target in targets:
             raw[compound_id][target] = float(raw[compound_id].get(target, 0.0)) + float(per_target_weight)
@@ -307,6 +364,7 @@ def read_compound_targets_auto(
         "resolved_weight_column": resolved_weight,
         "fallback_used": fallback_used,
         "n_multi_target_rows": n_multi_target_rows,
+        "n_rows_using_optional_confidence": n_rows_using_optional_confidence,
     }
 
 
