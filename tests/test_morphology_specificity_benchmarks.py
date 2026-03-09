@@ -11,6 +11,11 @@ def _genes(path: Path) -> list[str]:
         return [row["gene_id"] for row in csv.DictReader(fh, delimiter="\t")]
 
 
+def _gene_scores(path: Path) -> dict[str, float]:
+    with path.open("r", encoding="utf-8") as fh:
+        return {row["gene_id"]: float(row["score"]) for row in csv.DictReader(fh, delimiter="\t")}
+
+
 def test_morphology_specificity_benchmark_target_recovery_beats_generic_hub(tmp_path: Path):
     query = tmp_path / "query.tsv"
     query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
@@ -169,7 +174,9 @@ def test_morphology_specificity_benchmark_gene_recurrence_penalty_reduces_generi
     args_pen.gmt_min_genes = 1
     args_pen.emit_small_gene_sets = True
     morphology_profile_query.run(args_pen)
-    genes_pen = _genes(Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    genes_pen_path = Path(args_pen.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv"
+    genes_pen = _genes(genes_pen_path)
+    scores_pen = _gene_scores(genes_pen_path)
 
     args_none = Args()
     args_none.query_profiles_tsv = str(query)
@@ -188,10 +195,14 @@ def test_morphology_specificity_benchmark_gene_recurrence_penalty_reduces_generi
     args_none.gmt_min_genes = 1
     args_none.emit_small_gene_sets = True
     morphology_profile_query.run(args_none)
-    genes_none = _genes(Path(args_none.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    genes_none_path = Path(args_none.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv"
+    genes_none = _genes(genes_none_path)
+    scores_none = _gene_scores(genes_none_path)
 
-    assert genes_pen[0] == "KCNN4"
     assert genes_none[0] == "ADA"
+    assert "KCNN4" in genes_pen
+    assert scores_pen["KCNN4"] > scores_none["KCNN4"]
+    assert scores_pen["ADA"] < scores_none["ADA"]
 
 
 def test_morphology_direct_target_mode_rescues_distributed_same_target_support(tmp_path: Path):

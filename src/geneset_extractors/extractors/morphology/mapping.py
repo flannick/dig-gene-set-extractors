@@ -37,6 +37,42 @@ def build_reference_gene_maps(
     }
 
 
+def bounded_reference_gene_mapping(
+    *,
+    ref_id: str,
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+) -> tuple[dict[str, float], dict[str, object]]:
+    if ref_id in genetic_map:
+        mapping = {gene: float(weight) for gene, weight in genetic_map.get(ref_id, {}).items() if float(weight) > 0.0}
+        return mapping, {
+            "modality": "genetic",
+            "raw_target_count": len(mapping),
+            "raw_total_weight": sum(mapping.values()),
+            "renormalized": False,
+        }
+    raw_mapping = compound_map.get(ref_id, {})
+    mapping = {gene: float(weight) for gene, weight in raw_mapping.items() if float(weight) > 0.0}
+    raw_total = sum(mapping.values())
+    if raw_total <= 0.0:
+        return {}, {
+            "modality": "compound" if ref_id in compound_map else "unknown",
+            "raw_target_count": 0,
+            "raw_total_weight": 0.0,
+            "renormalized": False,
+        }
+    renormalized = False
+    if raw_total > 1.0:
+        renormalized = True
+        mapping = {gene: float(weight) / raw_total for gene, weight in mapping.items()}
+    return mapping, {
+        "modality": "compound" if ref_id in compound_map else "unknown",
+        "raw_target_count": len(mapping),
+        "raw_total_weight": raw_total,
+        "renormalized": renormalized,
+    }
+
+
 def accumulate_gene_scores(
     *,
     evidence_by_ref: dict[str, float],

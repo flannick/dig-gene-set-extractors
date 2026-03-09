@@ -192,7 +192,7 @@ and analogously for the opposite-polarity case using $-\mathrm{sim}(u,r)$.
 Only retained neighbors contribute to $E_{ug}$. This improves specificity by preventing a long tail of weak matches from dominating the routed gene evidence. In the practical implementation, hubness-adjusted evidence is computed first and the retained neighborhood is then truncated to a narrow local panel.
 
 \subsection{Target-first aggregation}
-For direct-target retrieval, the practical implementation does not immediately map query $\rightarrow$ top references $\rightarrow$ genes. Instead it first forms a positive evidence pool over references, aggregates that evidence by routed target gene, and only then restricts the retained references to those supporting the strongest target candidates. If $T_{ug}$ denotes pooled target support, direct-target mode ranks candidate targets by $T_{ug}$ before the final reference cap is applied. This is designed to rescue weak distributed same-target support that would otherwise be lost when one off-target reference has the single highest similarity.
+For direct-target retrieval, the practical implementation does not immediately map query $\rightarrow$ top references $\rightarrow$ genes. Instead it first forms a positive evidence pool over references, aggregates that evidence by routed target gene, and only then restricts the retained references to those supporting the strongest target candidates. If $T_{ug}$ denotes pooled target support, direct-target mode defines the strict nomination pool from the raw $T_{ug}$ values together with support-count and best-similarity guards, and then uses recurrence-adjusted support only to rank genes within that allowed pool before the final reference cap is applied. This is designed to rescue weak distributed same-target support that would otherwise be lost when one off-target reference has the single highest similarity while still preventing recurrent generic targets from monopolizing the strict branch.
 
 \subsection{Mechanism-aware expansion}
 If the bundle includes optional target annotations such as \texttt{target\_family}, \texttt{target\_class}, \texttt{mechanism\_label}, or \texttt{pathway\_seed}, mechanism mode estimates label support directly from the retained mechanism neighborhood rather than from already-reranked core genes. When exact target support is weak but neighborhood support is coherent at a narrower label level, the expanded output boosts genes carrying that supported label. This yields broader, enrichment-ready outputs without pretending that exact-target recovery is stronger than it is.
@@ -229,15 +229,15 @@ In \texttt{hybrid} mode both branches are always computed independently. The str
 \subsection{Local weighted expansion}
 Expansion is not implemented as a flat union over all genes carrying any broad matching annotation. Once $(h^\star, \ell^\star)$ has been chosen, the candidate gene universe is restricted in the following order:
 \begin{itemize}[leftmargin=2em]
-\item genes present in the current bundle and carrying $(h^\star, \ell^\star)$,
+\item genes present in the full pre-exclusion bundle and carrying $(h^\star, \ell^\star)$,
 \item if empty, genes observed in the local retained neighborhood carrying $(h^\star, \ell^\star)$,
 \item only as a fallback, all genes in the packaged annotation table carrying $(h^\star, \ell^\star)$.
 \end{itemize}
 
-Candidate genes are then weighted by local routed support when available, with only a small bundle-coverage prior for genes that match the label but have weak direct local evidence. This avoids the earlier broad family-union behavior and preserves the preference for the narrowest stable label.
+For narrow levels such as \texttt{pathway\_seed}, \texttt{target\_class}, and \texttt{mechanism\_label}, a controlled global annotation fallback is allowed even when the effective held-out retrieval panel is sparse. Local evidence still comes only from effective retrieved neighbors, but the bundle prior counts and candidate universe come from the full bundle so held-out nominal targets are not silently removed from consideration. Candidate genes are then weighted by local routed support when available, with only a small bundle-coverage prior for genes that match the label but have weak direct local evidence. This avoids the earlier broad family-union behavior and preserves the preference for the narrowest stable label.
 
 \subsection{Compound promiscuity and optional target confidence}
-Compound references can be more weakly informative than genetic references because of polypharmacology and uneven target annotation confidence. The current implementation therefore applies a mild bounded promiscuity penalty when accumulating compound-driven target support, so compounds with many annotated targets do not dominate exact-target nomination as strongly as single-target compounds. In addition, if the compound-target table carries optional columns such as \texttt{confidence}, \texttt{primary\_target}, \texttt{potency\_bucket}, or \texttt{source\_confidence}, these are folded into edge weights through a bounded multiplier. Inputs that omit these columns retain the previous behavior.
+Compound references can be more weakly informative than genetic references because of polypharmacology and uneven target annotation confidence. The current implementation therefore uses a shared bounded per-reference mapping for compounds: positive target weights are retained, but if their total mass exceeds $1.0$ they are renormalized so that a single compound contributes at most one reference-equivalent unit of routed target mass. This bounded mapping is used consistently in exact-target nomination, label voting, and mechanism gene accumulation, so a multitarget compound can support several genes or labels without voting several full times for the same biological explanation. In addition, if the compound-target table carries optional columns such as \texttt{confidence}, \texttt{primary\_target}, \texttt{potency\_bucket}, or \texttt{source\_confidence}, these are folded into edge weights through a bounded multiplier. Inputs that omit these columns retain the previous behavior.
 
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.
@@ -328,6 +328,9 @@ The implementation should also expose routing diagnostics in machine-readable su
 \item family vote summaries before and after filtering,
 \item mechanism vote summaries before and after filtering,
 \item hierarchy-level label support summaries,
+\item modality-separated label support summaries,
+\item top routed target candidates together with raw versus recurrence-adjusted support,
+\item whether compound edges were renormalized and how many references were affected,
 \item and an explicit expansion-decision record describing why expansion was allowed or suppressed, which label level was chosen, and how large the local expansion universe was.
 \end{itemize}
 

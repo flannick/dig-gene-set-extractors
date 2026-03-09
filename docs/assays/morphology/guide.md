@@ -284,6 +284,13 @@ Most useful fields:
   - the narrowest high-level labels visible in the retained mechanism neighborhood
 - `top_target_candidates`
   - routed target support before final gene-set extraction
+  - `support_mass` is the raw pooled target support used to nominate the strict target pool
+  - `weighted_support_mass` shows the recurrence-adjusted ranking signal used only inside that allowed pool
+- `label_scores_raw_by_modality` / `label_scores_retained_by_modality`
+  - the same label summaries split into `all`, `compound`, and `genetic` support
+  - useful when a compound query expands through coherent genetic neighbors
+- `compound_target_weighting_mode`, `n_compound_refs_renormalized`, `median_raw_target_count`
+  - report whether multitarget compound edges were renormalized and how heavy that correction was
 
 Interpretation:
 
@@ -291,6 +298,8 @@ Interpretation:
 - if `expansion_decision.reason` is `retained_label_support_too_weak`, the retained mechanism neighborhood never concentrated enough to justify expansion
 - if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
+- `expansion_decision.bundle_gene_universe_source` should normally be `full_bundle`; that means expansion candidates were drawn from the full pre-exclusion bundle rather than only the effective held-out retrieval panel
+- if `query_nominal_genes_matching_label` is nonempty but `query_nominal_genes_dropped_by_scope` is also nonempty, the chosen label fit the nominal target but the expansion scope still excluded part of that nominal set
 
 ## Common warnings and how to read them
 
@@ -306,12 +315,14 @@ Interpretation:
   - if too few controls are available for residualization, the workflow falls back to mean-centering and records that fallback in summaries and metadata.
 - Direct target versus mechanism mode:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
+  - strict nomination is built from raw pooled target support, with support count and best-similarity guards; recurrence weighting is used only to rank within that allowed pool.
   - `mechanism` uses the full coherent retained neighborhood to choose the most specific supported annotation level, then expands locally from that mechanism branch.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
   - same-modality support still matters more for ORF/CRISPR queries than for compound queries.
   - bundle builds now include a canonical curated target-annotation table by default, so public/distributed bundles should normally be mechanism-ready.
   - some recurrent generic genes are intentionally left blank in that table to avoid noisy family expansion.
+  - compound edges are bounded per reference across direct-target nomination, label voting, and mechanism scoring; a multitarget compound can still support multiple genes or labels, but its total routed mass stays bounded.
   - mild compound promiscuity and optional target-confidence metadata can downweight noisy compound edges without removing multitarget compounds entirely.
   - inspect `control_calibration`, branch-specific neighbor summaries, and `expansion_decision` if a result looks surprising.
 - Many negative similarities ignored:
