@@ -412,3 +412,61 @@ def test_morphology_hybrid_expands_when_family_support_is_coherent(tmp_path: Pat
     payload = json.loads(meta.read_text(encoding="utf-8"))
     assert len(expanded_genes) > len(core_genes)
     assert payload["summary"]["expansion_decision"]["reason"] in {"stable_family_support", "stable_family_and_mechanism_support", "stable_mechanism_support"}
+
+
+def test_morphology_compound_query_can_expand_from_stable_genetic_family_support(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "ORF1\t0.95\t0.05\n"
+        "ORF2\t0.94\t0.06\n"
+        "CMP1\t0.90\t0.10\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "ORF1\torf\t\tNTRK1\t0.1\t1.0\tfalse\n"
+        "ORF2\torf\t\tRET\t0.1\t1.0\tfalse\n"
+        "CMP1\tcompound\tCMP1\t\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nCMP1\tIGF1R\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "NTRK1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRTK\n"
+        "RET\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRTK\n"
+        "IGF1R\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRTK\n"
+        "KDR\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRTK\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "compound_expand")
+    args.mode = "hybrid"
+    args.polarity = "similar"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    core_genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.core.tsv")
+    expanded_genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.expanded.tsv")
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "NTRK1" in expanded_genes
+    assert len(expanded_genes) > len(core_genes)
+    assert meta["summary"]["expansion_decision"]["require_same_modality_support"] is False

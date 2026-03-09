@@ -349,7 +349,8 @@ def _expansion_gate_decision(
         and int(raw_family_summary.get("top_label_support_count", 0) or 0) >= 2
         and int(retained_family_summary.get("top_label_support_count", 0) or 0) >= 2
     )
-    if query_modality:
+    require_same_modality_family = query_modality in {"orf", "crispr"}
+    if require_same_modality_family:
         stable_family = stable_family and int(retained_family_summary.get("top_label_same_modality_count", 0) or 0) >= 1
     stable_mechanism = (
         bool(top_mechanism)
@@ -360,7 +361,8 @@ def _expansion_gate_decision(
         and int(raw_mechanism_summary.get("top_label_support_count", 0) or 0) >= 2
         and int(retained_mechanism_summary.get("top_label_support_count", 0) or 0) >= 2
     )
-    if query_modality:
+    require_same_modality_mechanism = query_modality in {"orf", "crispr"}
+    if require_same_modality_mechanism:
         stable_mechanism = stable_mechanism and int(retained_mechanism_summary.get("top_label_same_modality_count", 0) or 0) >= 1
     if stable_family:
         decision["allow_family"] = True
@@ -373,10 +375,11 @@ def _expansion_gate_decision(
     if not decision["allow_family"] and not decision["allow_mechanism"]:
         if top_family and str(raw_family_summary.get("top_label") or "") != str(top_family):
             decision["reason"] = "family_unstable_between_raw_and_penalized"
-        elif query_modality and int(retained_family_summary.get("top_label_same_modality_count", 0) or 0) < 1:
+        elif require_same_modality_family and int(retained_family_summary.get("top_label_same_modality_count", 0) or 0) < 1:
             decision["reason"] = "family_lacks_same_modality_support"
         else:
             decision["reason"] = "family_support_too_weak"
+    decision["require_same_modality_support"] = bool(require_same_modality_family or require_same_modality_mechanism)
     return decision
 
 
