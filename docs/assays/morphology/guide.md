@@ -41,12 +41,14 @@ Current retrieval modes:
   - family/mechanism-aware reranking and expansion
   - best when morphology is class-correct but not exact-target-correct
   - reaches its intended behavior only when the bundle or explicit inputs include `target_annotations`
-  - expansion is gated: the winning family/mechanism must remain stable across raw and penalized pooled neighborhoods
+  - chooses expansion labels from the retained mechanism neighborhood, not from reranked core genes
+  - uses the hierarchy `pathway_seed -> target_class -> mechanism_label -> target_family`
 - `--mode hybrid`
   - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
   - keeps `geneset.tsv` as the preferred variant for downstream compatibility
-  - without target annotations, hybrid is mostly a strict core plus a broad fallback rather than full family-aware expansion
-  - for `orf` and `crispr` queries, expansion also requires same-modality family/mechanism support
+  - computes the strict core branch and the mechanism branch independently
+  - without target annotations, hybrid is mostly a strict core plus a conservative mechanism fallback rather than full family-aware expansion
+  - for `orf` and `crispr` queries, expansion confidence still favors same-modality family/mechanism support
   - for `compound` queries, expansion may legitimately rely on coherent genetic neighbors and does not require same-modality support
 
 Default interpretation:
@@ -269,16 +271,22 @@ Most useful fields:
   - family-level vote totals after penalization/filtering
 - `mechanism_vote_summary_raw`
 - `mechanism_vote_summary_retained`
+- `label_scores_raw`
+- `label_scores_retained`
+  - level-by-level support records for `pathway_seed`, `target_class`, `mechanism_label`, and `target_family`
 - `expansion_decision`
-  - machine-readable reason for whether family/mechanism expansion was allowed
+  - machine-readable reason for whether expansion was allowed
+  - includes `chosen_level`, `chosen_label`, `expansion_confidence`, `candidate_scope`, and whether a raw-vs-retained mismatch was observed
+- `core_branch_neighbor_ids` / `mechanism_branch_neighbor_ids`
+  - the strict exact-target branch and the broader mechanism branch are now reported separately
 - `top_target_candidates`
   - routed target support before final gene-set extraction
 
 Interpretation:
 
-- if raw and retained family summaries disagree, the family signal is unstable
-- if `expansion_decision.reason` is `family_support_too_weak`, the pooled evidence never concentrated enough to justify expansion
-- if `expansion_decision.reason` is `family_lacks_same_modality_support`, this usually reflects an ORF/CRISPR query where only cross-modality support existed
+- if raw and retained label summaries disagree, that now lowers `expansion_confidence` instead of acting as a hard veto
+- if `expansion_decision.reason` is `retained_label_support_too_weak`, the retained mechanism neighborhood never concentrated enough to justify expansion
+- if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
 
 ## Common warnings and how to read them
@@ -295,13 +303,13 @@ Interpretation:
   - if too few controls are available for residualization, the workflow falls back to mean-centering and records that fallback in summaries and metadata.
 - Direct target versus mechanism mode:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
-  - `mechanism` uses optional target annotations to back off to family or mechanism support when exact-target support is weak.
-  - `hybrid` emits both strict and expanded outputs and records which one is preferred.
-  - current family/mechanism expansion is not triggered by any single winning label; it requires stable support across raw and penalized pooled neighborhoods.
-  - same-modality support is required for ORF/CRISPR expansion, but not for compound queries.
+  - `mechanism` uses the full coherent retained neighborhood to choose the most specific supported annotation level, then expands locally from that mechanism branch.
+  - `hybrid` emits both strict and expanded outputs and records which one is preferred; the strict branch does not define the expansion branch.
+  - current expansion is confidence-weighted rather than hard-vetoed.
+  - same-modality support still matters more for ORF/CRISPR queries than for compound queries.
   - bundle builds now include a canonical curated target-annotation table by default, so public/distributed bundles should normally be mechanism-ready.
   - some recurrent generic genes are intentionally left blank in that table to avoid noisy family expansion.
-  - inspect `control_calibration` plus `raw_candidate_neighbor_ids` vs retained neighbors in summaries if a result looks surprising.
+  - inspect `control_calibration`, branch-specific neighbor summaries, and `expansion_decision` if a result looks surprising.
 - Many negative similarities ignored:
   - seen when `--polarity similar` but many anti-correlated matches exist.
   - rerun with `--polarity both` if you want both directions.

@@ -352,7 +352,7 @@ def test_morphology_mechanism_mode_rejects_unstable_wrong_family_expansion(tmp_p
     meta = Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json"
     payload = json.loads(meta.read_text(encoding="utf-8"))
     assert genes[0] in {"NTRK1", "RET"}
-    assert payload["summary"]["expansion_decision"]["reason"] != "stable_family_support"
+    assert payload["summary"]["expansion_decision"]["reason"] != "family_unstable_between_raw_and_penalized"
     assert payload["summary"]["top_family"] in {"Ion channel", "Kinase", None}
 
 
@@ -411,7 +411,8 @@ def test_morphology_hybrid_expands_when_family_support_is_coherent(tmp_path: Pat
     meta = Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json"
     payload = json.loads(meta.read_text(encoding="utf-8"))
     assert len(expanded_genes) > len(core_genes)
-    assert payload["summary"]["expansion_decision"]["reason"] in {"stable_family_support", "stable_family_and_mechanism_support", "stable_mechanism_support"}
+    assert payload["summary"]["expansion_decision"]["allow_expansion"] is True
+    assert payload["summary"]["expansion_decision"]["chosen_level"] in {"pathway_seed", "target_class", "mechanism_label", "target_family"}
 
 
 def test_morphology_compound_query_can_expand_from_stable_genetic_family_support(tmp_path: Path):
@@ -470,3 +471,178 @@ def test_morphology_compound_query_can_expand_from_stable_genetic_family_support
     assert "NTRK1" in expanded_genes
     assert len(expanded_genes) > len(core_genes)
     assert meta["summary"]["expansion_decision"]["require_same_modality_support"] is False
+    assert meta["summary"]["expansion_decision"]["allow_expansion"] is True
+
+
+def test_morphology_hybrid_expands_from_mechanism_branch_when_core_is_tiny(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "CMP_STRICT\t0.98\t0.02\n"
+        "ORF_A\t0.95\t0.05\n"
+        "ORF_B\t0.94\t0.06\n"
+        "ORF_C\t0.93\t0.07\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "CMP_STRICT\tcompound\tCMP_STRICT\t\t0.1\t1.0\tfalse\n"
+        "ORF_A\torf\t\tNTRK1\t0.1\t1.0\tfalse\n"
+        "ORF_B\torf\t\tRET\t0.1\t1.0\tfalse\n"
+        "ORF_C\torf\t\tKDR\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nCMP_STRICT\tFGFR1\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "FGFR1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tFGF_RTK\n"
+        "NTRK1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tNTRK_RTK\n"
+        "RET\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRET_RTK\n"
+        "KDR\tKinase\tReceptor tyrosine kinase\tRTK signaling\tVEGF_RTK\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "hybrid_branch_split")
+    args.mode = "hybrid"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    program_dir = Path(args.out_dir) / "program=Q1__polarity=similar"
+    core_genes = _genes(program_dir / "geneset.core.tsv")
+    expanded_genes = _genes(program_dir / "geneset.expanded.tsv")
+    meta = json.loads((program_dir / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert len(core_genes) <= 2
+    assert len(expanded_genes) > len(core_genes)
+    assert meta["summary"]["mechanism_branch_neighbor_count"] > meta["summary"]["core_branch_neighbor_count"]
+    assert meta["summary"]["expansion_decision"]["allow_expansion"] is True
+
+
+def test_morphology_retained_label_can_beat_raw_label_mismatch(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "RAW1\t1.00\t0.00\n"
+        "RAW2\t0.99\t0.01\n"
+        "RTK1\t0.95\t0.05\n"
+        "RTK2\t0.94\t0.06\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "RAW1\tcompound\tRAW1\t\t9.0\t1.0\tfalse\n"
+        "RAW2\tcompound\tRAW2\t\t8.0\t1.0\tfalse\n"
+        "RTK1\torf\t\tNTRK1\t0.1\t1.0\tfalse\n"
+        "RTK2\torf\t\tRET\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "RAW1\tOPRM1\t1.0\n"
+        "RAW2\tP2RY12\t1.0\n",
+        encoding="utf-8",
+    )
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "OPRM1\tGPCR\tGPCR\tNeuroactive receptor\tGPCR_seed\n"
+        "P2RY12\tGPCR\tGPCR\tNeuroactive receptor\tGPCR_seed\n"
+        "NTRK1\tKinase\tReceptor tyrosine kinase\tRTK signaling\tNTRK_RTK\n"
+        "RET\tKinase\tReceptor tyrosine kinase\tRTK signaling\tRET_RTK\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "retained_beats_raw")
+    args.mode = "mechanism"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["expansion_decision"]["raw_retained_mismatch"] is True
+    assert meta["summary"]["expansion_decision"]["allow_expansion"] is True
+    assert meta["summary"]["expansion_decision"]["chosen_label"] in {"Receptor tyrosine kinase", "RTK signaling", "Kinase"}
+
+
+def test_morphology_narrow_label_beats_broad_label(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "A\t0.96\t0.04\n"
+        "B\t0.95\t0.05\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control\n"
+        "A\tcompound\tA\t0.1\t1.0\tfalse\n"
+        "B\tcompound\tB\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\nA\tKCNN1\t1.0\nB\tKCNMA1\t1.0\n", encoding="utf-8")
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "KCNMA1\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "KCNN4\tIon channel\tPotassium channel\tChannel signaling\tPotassium_conductance\n"
+        "SCN5A\tIon channel\tSodium channel\tChannel signaling\tSodium_conductance\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = None
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "narrow_wins")
+    args.mode = "mechanism"
+    args.top_k = 4
+    args.gmt_topk_list = "4"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["expansion_decision"]["chosen_level"] in {"pathway_seed", "target_class"}
+    expanded_genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    assert "SCN5A" not in expanded_genes

@@ -448,6 +448,10 @@ def test_morphology_profile_query_hybrid_writes_core_and_expanded_outputs(tmp_pa
     meta = json.loads((program_dir / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["summary"]["mode"] == "hybrid"
     assert meta["program_extraction"]["preferred_variant"] in {"core", "expanded"}
+    assert meta["summary"]["core_branch_neighbor_count"] >= 1
+    assert meta["summary"]["mechanism_branch_neighbor_count"] >= 1
+    assert "chosen_level" in meta["summary"]["expansion_decision"]
+    assert "candidate_scope" in meta["summary"]["expansion_decision"]
 
 
 def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Path):
@@ -464,6 +468,8 @@ def test_morphology_profile_query_meta_includes_specificity_fields(tmp_path: Pat
     assert "family_vote_summary_retained" in meta["summary"]
     assert "mechanism_vote_summary_raw" in meta["summary"]
     assert "expansion_decision" in meta["summary"]
+    assert "label_scores_retained" in meta["summary"]
+    assert "core_branch_neighbor_ids" in meta["summary"]
     assert meta["summary"]["hubness_penalty"] == "inverse_rank"
 
 

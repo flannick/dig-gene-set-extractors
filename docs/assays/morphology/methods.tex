@@ -170,8 +170,8 @@ Each query unit $u$ yields one or more gene programs:
 The default is to emit only the similar program. Beyond polarity, the current implementation supports three retrieval objectives:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{direct\_target}: strict target-first pooling before hard reference truncation,
-\item \texttt{mechanism}: family/mechanism-aware reranking and expansion,
-\item \texttt{hybrid}: emit both a strict core output and a broader expanded output, while marking one as preferred for downstream use.
+\item \texttt{mechanism}: family/mechanism-aware reranking and local expansion from the full retained neighborhood,
+\item \texttt{hybrid}: emit both a strict core output and a broader expanded output from an independent mechanism branch, while marking one as preferred for downstream use.
 \end{itemize}
 
 \subsection{Selection}
@@ -195,7 +195,7 @@ Only retained neighbors contribute to $E_{ug}$. This improves specificity by pre
 For direct-target retrieval, the practical implementation does not immediately map query $\rightarrow$ top references $\rightarrow$ genes. Instead it first forms a positive evidence pool over references, aggregates that evidence by routed target gene, and only then restricts the retained references to those supporting the strongest target candidates. If $T_{ug}$ denotes pooled target support, direct-target mode ranks candidate targets by $T_{ug}$ before the final reference cap is applied. This is designed to rescue weak distributed same-target support that would otherwise be lost when one off-target reference has the single highest similarity.
 
 \subsection{Mechanism-aware expansion}
-If the bundle includes optional target annotations such as \texttt{target\_family}, \texttt{target\_class}, or \texttt{mechanism\_label}, mechanism mode can estimate family-level or mechanism-level posterior support from the pooled routed gene evidence. When exact target support is weak but family support is coherent, the expanded output boosts genes carrying the supported family/mechanism labels. This yields broader, enrichment-ready outputs without pretending that exact-target recovery is stronger than it is.
+If the bundle includes optional target annotations such as \texttt{target\_family}, \texttt{target\_class}, \texttt{mechanism\_label}, or \texttt{pathway\_seed}, mechanism mode estimates label support directly from the retained mechanism neighborhood rather than from already-reranked core genes. When exact target support is weak but neighborhood support is coherent at a narrower label level, the expanded output boosts genes carrying that supported label. This yields broader, enrichment-ready outputs without pretending that exact-target recovery is stronger than it is.
 
 If these annotations are absent, mechanism mode remains runnable but should be interpreted as a broad target-routing fallback rather than as full family-aware inference. In that setting the implementation should warn explicitly so users do not mistake missing annotation support for a negative biological result.
 
@@ -203,21 +203,38 @@ In the current practical implementation, a canonical curated annotation table sh
 \texttt{target\_family}, \texttt{target\_class}, \texttt{mechanism\_label}, and \texttt{pathway\_seed}. The design is intentionally conservative: some recurrent generic genes are left blank on purpose so they do not seed broad family/mechanism expansion from weak morphology neighborhoods.
 
 \subsection{Expansion gating}
-Family/mechanism expansion is not triggered by any single winning label. The practical implementation requires the winning family or mechanism label to remain stable across both:
-\begin{itemize}[leftmargin=2em]
-\item a raw pooled neighborhood summary, and
-\item a penalized pooled neighborhood summary after hubness/context penalties and local filtering.
-\end{itemize}
+Family/mechanism expansion is no longer controlled by a hard veto requiring exact agreement between raw and penalized neighborhoods. Instead, the implementation computes a soft expansion confidence from the retained mechanism neighborhood and treats raw-versus-retained disagreement as a penalty term and diagnostic.
 
-Let $F^{\mathrm{raw}}_u(\ell)$ and $F^{\mathrm{pen}}_u(\ell)$ denote family-level support masses for label $\ell$ in the raw and penalized pooled neighborhoods of query $u$. Expansion is only permitted when the same label $\ell^\star$ wins both summaries and its support is not concentrated in a single weak neighbor. In practice, this means requiring multiple supporting neighbors and a minimum support fraction before boosting all genes carrying $\ell^\star$.
+Let $L_u^{\mathrm{pen}}(h,\ell)$ denote retained-neighborhood support for label $\ell$ at hierarchy level $h \in \{\texttt{pathway\_seed}, \texttt{target\_class}, \texttt{mechanism\_label}, \texttt{target\_family}\}$. The practical implementation searches these levels from most specific to least specific and chooses the first level whose top label has sufficient retained support, multiplicity of supporting neighbors, and acceptable modality structure. This gives a chosen level $h^\star$ and label $\ell^\star$ together with an expansion confidence score in $[0,1]$.
 
-The gate is modality-aware:
+Raw-neighborhood summaries are still computed, but only to downweight confidence or surface warnings when they disagree with the retained neighborhood. They are not a binary veto.
+
+The confidence rule is modality-aware:
 \begin{itemize}[leftmargin=2em]
-\item for \texttt{orf} and \texttt{crispr} queries, expansion additionally requires same-modality support for the winning family/mechanism label,
+\item for \texttt{orf} and \texttt{crispr} queries, same-modality support still contributes strongly to whether a label is trusted for expansion,
 \item for \texttt{compound} queries, same-modality support is \emph{not} required, because biologically meaningful compound interpretation often depends on coherent genetic neighbors.
 \end{itemize}
 
-This asymmetry is intentional. It preserves ORF/CRISPR specificity while still allowing compound queries to expand through stable genetically supported family structure.
+This asymmetry is intentional. It preserves ORF/CRISPR specificity while still allowing compound queries to expand through stable genetically supported class or mechanism structure.
+
+\subsection{Branch structure}
+The current implementation maintains two distinct routed branches:
+\begin{itemize}[leftmargin=2em]
+\item a \textbf{core branch}, built from references that support the strongest nominated targets and intended to remain strict,
+\item a \textbf{mechanism branch}, built from the full retained coherent neighborhood and used for label choice plus local expansion.
+\end{itemize}
+
+In \texttt{hybrid} mode both branches are always computed independently. The strict branch writes \texttt{geneset.core.tsv}; the mechanism branch writes \texttt{geneset.expanded.tsv}; and the preferred output is selected afterward from branch-level confidence rather than by reusing one branch to define the other.
+
+\subsection{Local weighted expansion}
+Expansion is not implemented as a flat union over all genes carrying any broad matching annotation. Once $(h^\star, \ell^\star)$ has been chosen, the candidate gene universe is restricted in the following order:
+\begin{itemize}[leftmargin=2em]
+\item genes present in the current bundle and carrying $(h^\star, \ell^\star)$,
+\item if empty, genes observed in the local retained neighborhood carrying $(h^\star, \ell^\star)$,
+\item only as a fallback, all genes in the packaged annotation table carrying $(h^\star, \ell^\star)$.
+\end{itemize}
+
+Candidate genes are then weighted by local routed support when available, with only a small bundle-coverage prior for genes that match the label but have weak direct local evidence. This avoids the earlier broad family-union behavior and preserves the preference for the narrowest stable label.
 
 \subsection{Same-modality-first retrieval}
 If the query metadata identifies the perturbation modality (for example compound versus ORF), same-modality neighbors can be prioritized before cross-modality fusion. Cross-modality neighbors are still useful, but they should contribute most strongly when they reinforce the same local target signal as the same-modality neighborhood rather than dominating it outright.
@@ -304,9 +321,11 @@ The implementation should also expose routing diagnostics in machine-readable su
 \begin{itemize}[leftmargin=2em]
 \item top raw candidate neighbors,
 \item retained neighbors after penalization/filtering,
+\item branch-specific retained neighbors for the core and mechanism branches,
 \item family vote summaries before and after filtering,
 \item mechanism vote summaries before and after filtering,
-\item and an explicit expansion-decision record describing why expansion was allowed or suppressed.
+\item hierarchy-level label support summaries,
+\item and an explicit expansion-decision record describing why expansion was allowed or suppressed, which label level was chosen, and how large the local expansion universe was.
 \end{itemize}
 
 \section{Recommended defaults}
