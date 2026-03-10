@@ -317,7 +317,9 @@ Interpretation:
 - Direct target versus mechanism mode:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
   - strict nomination is built from raw pooled target support, with support count and best-similarity guards; recurrence weighting is used only to rank within that allowed pool.
+  - direct-target pool membership is determined from a broader raw-similarity view with protected same-modality and nominal-target-supporting references, so hubness-weighted low-similarity neighbors cannot evict exact self-like support too early.
   - `mechanism` uses the full coherent retained neighborhood to choose the most specific supported annotation level, then expands locally from that mechanism branch.
+  - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
   - same-modality support still matters more for ORF/CRISPR queries than for compound queries.

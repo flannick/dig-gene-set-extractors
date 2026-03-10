@@ -249,6 +249,125 @@ def test_morphology_direct_target_mode_rescues_distributed_same_target_support(t
     assert genes[0] == "NTRK1"
 
 
+def test_morphology_direct_target_noholdout_keeps_self_like_compound_reference(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    ref_lines = ["perturbation_id\tf1\tf2", "SELF\t1.0\t0.0"]
+    meta_lines = ["perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control", "SELF\tcompound\tSELF\t99.0\t1.0\tfalse"]
+    target_lines = ["compound_id\tgene_symbol\tweight", "SELF\tNTRK1\t1.0"]
+    for idx in range(1, 31):
+        ref_lines.append(f"D{idx}\t0.2\t0.98")
+        meta_lines.append(f"D{idx}\tcompound\tD{idx}\t{idx}.0\t1.0\tfalse")
+        target_lines.append(f"D{idx}\tOFF{idx}\t1.0")
+    refs.write_text("\n".join(ref_lines) + "\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text("\n".join(meta_lines) + "\n", encoding="utf-8")
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("\n".join(target_lines) + "\n", encoding="utf-8")
+
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "direct_target_self_compound")
+    args.mode = "direct_target"
+    args.polarity = "similar"
+    args.top_k = 2
+    args.gmt_topk_list = "2"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "SELF" in meta["summary"]["core_branch_neighbor_ids"]
+    assert "NTRK1" in {row["gene_symbol"] for row in meta["summary"]["top_target_candidates"]}
+
+
+def test_morphology_mechanism_noholdout_keeps_self_like_orf_reference(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\torf\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    ref_lines = ["perturbation_id\tf1\tf2", "SELF\t1.0\t0.0"]
+    meta_lines = ["perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control", "SELF\torf\t\tNTRK1\t99.0\t1.0\tfalse"]
+    for idx in range(1, 31):
+        ref_lines.append(f"O{idx}\t0.2\t0.98")
+        meta_lines.append(f"O{idx}\torf\t\tOFF{idx}\t{idx}.0\t1.0\tfalse")
+    refs.write_text("\n".join(ref_lines) + "\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text("\n".join(meta_lines) + "\n", encoding="utf-8")
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("compound_id\tgene_symbol\tweight\n", encoding="utf-8")
+
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "mechanism_self_orf")
+    args.mode = "mechanism"
+    args.polarity = "similar"
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "SELF" in meta["summary"]["mechanism_branch_neighbor_ids"]
+
+
+def test_morphology_mechanism_noholdout_keeps_self_like_compound_reference(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tNTRK1\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    ref_lines = ["perturbation_id\tf1\tf2", "SELF\t1.0\t0.0"]
+    meta_lines = ["perturbation_id\tperturbation_type\tcompound_id\thub_score\tqc_weight\tis_control", "SELF\tcompound\tSELF\t99.0\t1.0\tfalse"]
+    target_lines = ["compound_id\tgene_symbol\tweight", "SELF\tNTRK1\t1.0"]
+    for idx in range(1, 31):
+        ref_lines.append(f"D{idx}\t0.2\t0.98")
+        meta_lines.append(f"D{idx}\tcompound\tD{idx}\t{idx}.0\t1.0\tfalse")
+        target_lines.append(f"D{idx}\tOFF{idx}\t1.0")
+    refs.write_text("\n".join(ref_lines) + "\n", encoding="utf-8")
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text("\n".join(meta_lines) + "\n", encoding="utf-8")
+    targets = tmp_path / "targets.tsv"
+    targets.write_text("\n".join(target_lines) + "\n", encoding="utf-8")
+
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "mechanism_self_compound")
+    args.mode = "mechanism"
+    args.polarity = "similar"
+    args.top_k = 3
+    args.gmt_topk_list = "3"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "SELF" in meta["summary"]["mechanism_branch_neighbor_ids"]
+
+
 def test_morphology_mechanism_mode_backs_off_to_family_support(tmp_path: Path):
     query = tmp_path / "query.tsv"
     query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")

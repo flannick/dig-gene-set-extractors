@@ -371,6 +371,55 @@ def _is_same_modality_pair(
     return False
 
 
+def _reference_supports_nominal_target(
+    *,
+    ref_id: str,
+    query_nominal_genes: set[str],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+) -> bool:
+    if not query_nominal_genes:
+        return False
+    mapping, _meta = bounded_reference_gene_mapping(
+        ref_id=ref_id,
+        compound_map=compound_map,
+        genetic_map=genetic_map,
+    )
+    return bool(query_nominal_genes & set(mapping))
+
+
+def _protected_same_modality_reference_ids(
+    *,
+    raw_candidate_neighbors: list[tuple[str, float]],
+    reference_metadata: dict[str, dict[str, str]],
+    query_modality: str | None,
+    query_nominal_genes: set[str],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    same_modality_top_n: int,
+    raw_similarity_ratio: float,
+) -> set[str]:
+    if not raw_candidate_neighbors:
+        return set()
+    protected: set[str] = set()
+    top_raw = float(raw_candidate_neighbors[0][1])
+    same_modality_seen = 0
+    for ref_id, base in raw_candidate_neighbors:
+        ref_modality = _normalize_modality_token(reference_metadata.get(ref_id, {}).get("perturbation_type", ""))
+        if query_modality and _is_same_modality_pair(query_modality=query_modality, ref_modality=ref_modality):
+            if same_modality_seen < same_modality_top_n or float(base) >= top_raw * raw_similarity_ratio:
+                protected.add(ref_id)
+            same_modality_seen += 1
+        if _reference_supports_nominal_target(
+            ref_id=ref_id,
+            query_nominal_genes=query_nominal_genes,
+            compound_map=compound_map,
+            genetic_map=genetic_map,
+        ):
+            protected.add(ref_id)
+    return protected
+
+
 def _recurrence_weight(
     gene: str,
     *,
@@ -1559,6 +1608,26 @@ def run_morphology_workflow(
                 min_similarity=float(cfg.min_similarity),
             )
             raw_candidate_neighbors = sorted(candidate_neighbors, key=lambda item: (-float(item[1]), str(item[0])))
+            protected_direct_ref_ids = _protected_same_modality_reference_ids(
+                raw_candidate_neighbors=raw_candidate_neighbors,
+                reference_metadata=reference_metadata_effective,
+                query_modality=query_modality,
+                query_nominal_genes=query_nominal_genes,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                same_modality_top_n=5,
+                raw_similarity_ratio=0.9,
+            )
+            protected_mechanism_ref_ids = _protected_same_modality_reference_ids(
+                raw_candidate_neighbors=raw_candidate_neighbors,
+                reference_metadata=reference_metadata_effective,
+                query_modality=query_modality,
+                query_nominal_genes=query_nominal_genes,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                same_modality_top_n=3,
+                raw_similarity_ratio=0.95,
+            )
             same_modality_anchor_targets: set[str] = set()
             same_modality_anchor_pathway_seeds: set[str] = set()
             same_modality_anchor_target_classes: set[str] = set()
@@ -1643,6 +1712,7 @@ def run_morphology_workflow(
                     continue
                 penalized_neighbors.append((ref_id, float(base), evidence))
             penalized_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+            all_penalized_neighbors = list(penalized_neighbors)
             if cfg.mutual_neighbor_filter and penalized_neighbors:
                 anchors = [ref_id for ref_id, _base, _evidence in penalized_neighbors[: min(5, len(penalized_neighbors))]]
                 filtered_neighbors: list[tuple[str, float, float]] = []
@@ -1675,16 +1745,55 @@ def run_morphology_workflow(
                         break
                     adaptive_neighbors.append((ref_id, base, evidence))
                 penalized_neighbors = adaptive_neighbors
-            pool_cap = max(int(cfg.max_reference_neighbors) * 5, int(cfg.min_effective_neighbors), 25) if int(cfg.max_reference_neighbors) > 0 else len(penalized_neighbors)
-            pooled_neighbors = penalized_neighbors[:pool_cap]
-            raw_pooled_neighbors = [
-                (
-                    ref_id,
-                    float(base),
-                    float(base) * float(qc_weights.get(ref_id, 1.0)),
+            penalized_by_ref = {ref_id: (ref_id, float(base), float(evidence)) for ref_id, base, evidence in all_penalized_neighbors}
+            raw_by_ref = {ref_id: float(base) for ref_id, base in raw_candidate_neighbors}
+            if cfg.mode == "direct_target":
+                raw_pool_cap = max(int(cfg.max_reference_neighbors) * 15, int(cfg.min_effective_neighbors), 250) if int(cfg.max_reference_neighbors) > 0 else len(raw_candidate_neighbors)
+                direct_pool_ids: list[str] = []
+                top_raw = float(raw_candidate_neighbors[0][1]) if raw_candidate_neighbors else 0.0
+                for ref_id, base in raw_candidate_neighbors[:raw_pool_cap]:
+                    include = (
+                        len(direct_pool_ids) < int(cfg.min_effective_neighbors)
+                        or float(base) >= top_raw * float(cfg.neighbor_evidence_drop_ratio)
+                        or ref_id in protected_direct_ref_ids
+                    )
+                    if include and ref_id in penalized_by_ref:
+                        direct_pool_ids.append(ref_id)
+                for ref_id in protected_direct_ref_ids:
+                    if ref_id in penalized_by_ref and ref_id not in direct_pool_ids:
+                        direct_pool_ids.append(ref_id)
+                pooled_neighbors = sorted(
+                    [penalized_by_ref[ref_id] for ref_id in direct_pool_ids if ref_id in penalized_by_ref],
+                    key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])),
                 )
-                for ref_id, base in raw_candidate_neighbors[:pool_cap]
-            ]
+                raw_pooled_neighbors = [
+                    (
+                        ref_id,
+                        float(raw_by_ref.get(ref_id, 0.0)),
+                        float(raw_by_ref.get(ref_id, 0.0)) * float(qc_weights.get(ref_id, 1.0)),
+                    )
+                    for ref_id in direct_pool_ids
+                    if ref_id in raw_by_ref
+                ]
+            else:
+                mechanism_neighbors = list(penalized_neighbors)
+                if protected_mechanism_ref_ids:
+                    for ref_id in protected_mechanism_ref_ids:
+                        if ref_id in penalized_by_ref and all(existing_ref != ref_id for existing_ref, _b, _e in mechanism_neighbors):
+                            mechanism_neighbors.append(penalized_by_ref[ref_id])
+                    mechanism_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+                pool_cap = max(int(cfg.max_reference_neighbors) * 5, int(cfg.min_effective_neighbors), 25) if int(cfg.max_reference_neighbors) > 0 else len(mechanism_neighbors)
+                pooled_neighbors = mechanism_neighbors[:pool_cap]
+                pooled_ref_ids = [ref_id for ref_id, _base, _evidence in pooled_neighbors]
+                raw_pooled_neighbors = [
+                    (
+                        ref_id,
+                        float(raw_by_ref.get(ref_id, 0.0)),
+                        float(raw_by_ref.get(ref_id, 0.0)) * float(qc_weights.get(ref_id, 1.0)),
+                    )
+                    for ref_id in pooled_ref_ids
+                    if ref_id in raw_by_ref
+                ]
             target_support, target_support_count, target_support_by_modality, target_best_similarity = _target_support_from_neighbors(
                 penalized_neighbors=pooled_neighbors,
                 compound_map=compound_map,
