@@ -215,6 +215,8 @@ The confidence rule is modality-aware:
 \item for \texttt{compound} queries, same-modality support is \emph{not} required, because biologically meaningful compound interpretation often depends on coherent genetic neighbors.
 \end{itemize}
 
+In the practical implementation, same-modality support for genetic queries is matched against the reference perturbation subtype (\texttt{orf} versus \texttt{crispr}) rather than the broader routed mapping category \texttt{genetic}. This avoids the failure mode where an ORF-only retained neighborhood is incorrectly counted as having zero same-modality label support.
+
 This asymmetry is intentional. It preserves ORF/CRISPR specificity while still allowing compound queries to expand through stable genetically supported class or mechanism structure.
 
 \subsection{Branch structure}

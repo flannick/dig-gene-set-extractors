@@ -275,7 +275,11 @@ def _label_vote_summary_from_neighbors(
         )
         if not mapping:
             continue
-        ref_modality = str(meta.get("modality") or reference_metadata.get(ref_id, {}).get("perturbation_type", "")).strip().lower()
+        ref_modality = _reference_modality_for_same_modality(
+            ref_id=ref_id,
+            reference_metadata=reference_metadata,
+            mapping_modality=str(meta.get("modality") or ""),
+        )
         ref_labels: set[str] = set()
         label_mass_by_ref: dict[str, float] = {}
         for gene, weight in mapping.items():
@@ -293,7 +297,7 @@ def _label_vote_summary_from_neighbors(
             total_mass += bounded_contribution
         for label in ref_labels:
             label_refs.setdefault(label, set()).add(ref_id)
-            if query_modality and ref_modality == query_modality:
+            if _is_same_modality_pair(query_modality=query_modality, ref_modality=ref_modality):
                 label_same_modality_refs.setdefault(label, set()).add(ref_id)
     if not label_mass or total_mass <= 0.0:
         return {
@@ -322,6 +326,49 @@ def _label_vote_summary_from_neighbors(
         "top_label_support_count": len(label_refs.get(top_label, set())),
         "top_label_same_modality_count": len(label_same_modality_refs.get(top_label, set())),
     }
+
+
+def _normalize_modality_token(value: str | None) -> str | None:
+    token = str(value or "").strip().lower()
+    if not token:
+        return None
+    if token in {"compound", "cmpd", "small_molecule"}:
+        return "compound"
+    if token in {"orf", "overexpression"}:
+        return "orf"
+    if token in {"crispr", "crispra", "crispri", "knockout"}:
+        return "crispr"
+    if token == "genetic":
+        return "genetic"
+    return token
+
+
+def _reference_modality_for_same_modality(
+    *,
+    ref_id: str,
+    reference_metadata: dict[str, dict[str, str]],
+    mapping_modality: str,
+) -> str | None:
+    ref_meta_modality = _normalize_modality_token(reference_metadata.get(ref_id, {}).get("perturbation_type", ""))
+    if ref_meta_modality:
+        return ref_meta_modality
+    return _normalize_modality_token(mapping_modality)
+
+
+def _is_same_modality_pair(
+    *,
+    query_modality: str | None,
+    ref_modality: str | None,
+) -> bool:
+    query_token = _normalize_modality_token(query_modality)
+    ref_token = _normalize_modality_token(ref_modality)
+    if not query_token or not ref_token:
+        return False
+    if query_token == ref_token:
+        return True
+    if query_token == "compound" or ref_token == "compound":
+        return False
+    return False
 
 
 def _recurrence_weight(

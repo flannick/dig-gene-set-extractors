@@ -298,6 +298,7 @@ Interpretation:
 - if `expansion_decision.reason` is `retained_label_support_too_weak`, the retained mechanism neighborhood never concentrated enough to justify expansion
 - if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
+- for ORF or CRISPR queries, `top_label_same_modality_count` is computed against the reference perturbation subtype (`orf` or `crispr`), not the generic routed mapping label `genetic`
 - `expansion_decision.bundle_gene_universe_source` should normally be `full_bundle`; that means expansion candidates were drawn from the full pre-exclusion bundle rather than only the effective held-out retrieval panel
 - if `query_nominal_genes_matching_label` is nonempty but `query_nominal_genes_dropped_by_scope` is also nonempty, the chosen label fit the nominal target but the expansion scope still excluded part of that nominal set
 

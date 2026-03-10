@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from geneset_extractors.converters import morphology_profile_query
+from geneset_extractors.extractors.morphology.workflow import _label_vote_summary_from_neighbors
 from tests.test_morphology_profile_query_converter import Args
 
 
@@ -424,6 +425,48 @@ def test_morphology_hybrid_expands_when_family_support_is_coherent(tmp_path: Pat
     assert len(expanded_genes) > len(core_genes)
     assert payload["summary"]["expansion_decision"]["allow_expansion"] is True
     assert payload["summary"]["expansion_decision"]["chosen_level"] in {"pathway_seed", "target_class", "mechanism_label", "target_family"}
+    retained_target_class = payload["summary"]["label_scores_retained"]["target_class"]
+    assert retained_target_class["top_label_same_modality_count"] > 0
+
+
+def test_morphology_label_vote_counts_orf_same_modality_support() -> None:
+    summary = _label_vote_summary_from_neighbors(
+        neighbors=[("ORF1", 0.9, 1.2), ("ORF2", 0.8, 1.0)],
+        compound_map={},
+        genetic_map={"ORF1": {"KCNN1": 1.0}, "ORF2": {"KCNMA1": 1.0}},
+        reference_metadata={
+            "ORF1": {"perturbation_type": "orf"},
+            "ORF2": {"perturbation_type": "orf"},
+        },
+        target_annotations={
+            "KCNN1": {"target_class": "Potassium channel"},
+            "KCNMA1": {"target_class": "Potassium channel"},
+        },
+        field="target_class",
+        query_modality="orf",
+    )
+    assert summary["top_label"] == "Potassium channel"
+    assert summary["top_label_same_modality_count"] == 2
+
+
+def test_morphology_label_vote_counts_crispr_same_modality_support() -> None:
+    summary = _label_vote_summary_from_neighbors(
+        neighbors=[("KO1", 0.85, 1.1), ("KO2", 0.83, 0.9)],
+        compound_map={},
+        genetic_map={"KO1": {"NTRK1": 1.0}, "KO2": {"RET": 1.0}},
+        reference_metadata={
+            "KO1": {"perturbation_type": "crispr"},
+            "KO2": {"perturbation_type": "crispr"},
+        },
+        target_annotations={
+            "NTRK1": {"target_class": "Receptor tyrosine kinase"},
+            "RET": {"target_class": "Receptor tyrosine kinase"},
+        },
+        field="target_class",
+        query_modality="crispr",
+    )
+    assert summary["top_label"] == "Receptor tyrosine kinase"
+    assert summary["top_label_same_modality_count"] == 2
 
 
 def test_morphology_compound_query_can_expand_from_stable_genetic_family_support(tmp_path: Path):
