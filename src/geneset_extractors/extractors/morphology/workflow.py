@@ -628,17 +628,40 @@ def _score_label_from_neighbors(
     }
 
 
+def _query_labels_for_level(
+    *,
+    query_nominal_genes: set[str],
+    target_annotations: dict[str, dict[str, str]] | None,
+    field: str,
+) -> set[str]:
+    if not query_nominal_genes or not target_annotations:
+        return set()
+    return {
+        str((target_annotations.get(gene, {}) or {}).get(field, "")).strip()
+        for gene in query_nominal_genes
+        if str((target_annotations.get(gene, {}) or {}).get(field, "")).strip()
+    }
+
+
 def _choose_expansion_label(
     *,
     mode: str,
     query_modality: str | None,
     raw_neighbors: list[tuple[str, float, float]],
-    mechanism_neighbors: list[tuple[str, float, float]],
+    prelabel_neighbors: list[tuple[str, float, float]],
+    retained_neighbors: list[tuple[str, float, float]],
     compound_map: dict[str, dict[str, float]],
     genetic_map: dict[str, dict[str, float]],
     reference_metadata: dict[str, dict[str, str]],
     target_annotations: dict[str, dict[str, str]] | None,
-) -> tuple[dict[str, object], dict[str, dict[str, object]], dict[str, dict[str, object]]]:
+    query_nominal_genes: set[str],
+    exact_target_support_present: bool,
+) -> tuple[
+    dict[str, object],
+    dict[str, dict[str, object]],
+    dict[str, dict[str, object]],
+    dict[str, dict[str, object]],
+]:
     decision = {
         "allow_expansion": False,
         "allow_family": False,
@@ -648,12 +671,14 @@ def _choose_expansion_label(
         "chosen_label": None,
         "expansion_confidence": 0.0,
         "raw_retained_mismatch": False,
+        "raw_prelabel_mismatch": False,
         "require_same_modality_support": query_modality in {"orf", "crispr"},
     }
     if mode not in {"mechanism", "hybrid"} or not target_annotations:
-        return decision, {}, {}
+        return decision, {}, {}, {}
     levels = ["pathway_seed", "target_class", "mechanism_label", "target_family"]
     raw_scores: dict[str, dict[str, object]] = {}
+    prelabel_scores: dict[str, dict[str, object]] = {}
     retained_scores: dict[str, dict[str, object]] = {}
     compound_like = query_modality == "compound"
     threshold = 0.18 if compound_like else 0.24
@@ -667,8 +692,17 @@ def _choose_expansion_label(
             field=level,
             query_modality=query_modality,
         )
+        prelabel_payload = _score_label_from_neighbors(
+            neighbors=prelabel_neighbors,
+            compound_map=compound_map,
+            genetic_map=genetic_map,
+            reference_metadata=reference_metadata,
+            target_annotations=target_annotations,
+            field=level,
+            query_modality=query_modality,
+        )
         retained_payload = _score_label_from_neighbors(
-            neighbors=mechanism_neighbors,
+            neighbors=retained_neighbors,
             compound_map=compound_map,
             genetic_map=genetic_map,
             reference_metadata=reference_metadata,
@@ -677,35 +711,75 @@ def _choose_expansion_label(
             query_modality=query_modality,
         )
         raw_scores[level] = raw_payload
+        prelabel_scores[level] = prelabel_payload
         retained_scores[level] = retained_payload
     for level in levels:
         raw_payload = raw_scores[level]
+        prelabel_payload = prelabel_scores[level]
         retained_payload = retained_scores[level]
-        label = retained_payload.get("top_label")
+        label = prelabel_payload.get("top_label")
         if not label:
             continue
-        retained_mass = float(retained_payload.get("top_label_mass", 0.0) or 0.0)
-        support_count = int(retained_payload.get("top_label_support_count", 0) or 0)
-        same_modality_count = int(retained_payload.get("top_label_same_modality_count", 0) or 0)
+        retained_mass = float(prelabel_payload.get("top_label_mass", 0.0) or 0.0)
+        support_count = int(prelabel_payload.get("top_label_support_count", 0) or 0)
+        same_modality_count = int(prelabel_payload.get("top_label_same_modality_count", 0) or 0)
         raw_label = raw_payload.get("top_label")
+        retained_label = retained_payload.get("top_label")
         raw_mass = float(raw_payload.get("top_label_mass", 0.0) or 0.0)
         mismatch = bool(raw_label and raw_label != label)
+        retained_mismatch = bool(raw_label and retained_label and raw_label != retained_label)
         if mismatch:
+            decision["raw_prelabel_mismatch"] = True
+        if retained_mismatch:
             decision["raw_retained_mismatch"] = True
         support_factor = min(1.0, float(support_count) / 3.0)
         modality_factor = 1.0
         if query_modality in {"orf", "crispr"} and same_modality_count <= 0:
             modality_factor = 0.65
         disagreement_factor = 0.75 if mismatch else 1.0
-        confidence = retained_mass * support_factor * float(retained_payload.get("specificity_bonus", 1.0)) * modality_factor * disagreement_factor
+        confidence = retained_mass * support_factor * float(prelabel_payload.get("specificity_bonus", 1.0)) * modality_factor * disagreement_factor
         if raw_mass > 0.0 and raw_label == label:
             confidence *= 1.0 + min(0.15, 0.5 * raw_mass)
-        retained_payload["expansion_confidence"] = confidence
+        query_labels = _query_labels_for_level(
+            query_nominal_genes=query_nominal_genes,
+            target_annotations=target_annotations,
+            field=level,
+        )
+        raw_support = int(raw_payload.get("top_label_support_count", 0) or 0)
+        raw_same_modality = int(raw_payload.get("top_label_same_modality_count", 0) or 0)
+        retained_support = int(retained_payload.get("top_label_support_count", 0) or 0)
+        raw_query_consistent = bool(raw_label and raw_label in query_labels)
+        prelabel_query_consistent = bool(label and label in query_labels)
+        retained_query_consistent = bool(retained_label and retained_label in query_labels)
+        if (
+            compound_like
+            and not exact_target_support_present
+            and raw_query_consistent
+            and not prelabel_query_consistent
+            and raw_mass >= 0.15
+            and (raw_support >= 3 or raw_same_modality >= 2)
+            and (retained_support <= 2 or not retained_query_consistent)
+        ):
+            fallback_confidence = raw_mass * min(1.0, float(max(raw_support, raw_same_modality)) / 4.0) * float(raw_payload.get("specificity_bonus", 1.0))
+            if fallback_confidence >= threshold:
+                decision.update(
+                    {
+                        "allow_expansion": True,
+                        "reason": "raw_query_consistent_label_fallback",
+                        "chosen_level": level,
+                        "chosen_label": raw_label,
+                        "expansion_confidence": fallback_confidence,
+                        "allow_family": level == "target_family",
+                        "allow_mechanism": level in {"mechanism_label", "target_class", "pathway_seed"},
+                    }
+                )
+                return decision, raw_scores, prelabel_scores, retained_scores
+        prelabel_payload["expansion_confidence"] = confidence
         if confidence >= threshold:
             decision.update(
                 {
                     "allow_expansion": True,
-                    "reason": "retained_coherent_label_support",
+                    "reason": "prelabel_coherent_label_support",
                     "chosen_level": level,
                     "chosen_label": label,
                     "expansion_confidence": confidence,
@@ -713,14 +787,19 @@ def _choose_expansion_label(
                     "allow_mechanism": level in {"mechanism_label", "target_class", "pathway_seed"},
                 }
             )
-            return decision, raw_scores, retained_scores
+            return decision, raw_scores, prelabel_scores, retained_scores
     decision["raw_retained_mismatch"] = any(
         str((raw_scores.get(level, {}) or {}).get("top_label") or "") != str((retained_scores.get(level, {}) or {}).get("top_label") or "")
         and bool((retained_scores.get(level, {}) or {}).get("top_label"))
         for level in levels
     )
-    decision["reason"] = "retained_label_support_too_weak"
-    return decision, raw_scores, retained_scores
+    decision["raw_prelabel_mismatch"] = any(
+        str((raw_scores.get(level, {}) or {}).get("top_label") or "") != str((prelabel_scores.get(level, {}) or {}).get("top_label") or "")
+        and bool((prelabel_scores.get(level, {}) or {}).get("top_label"))
+        for level in levels
+    )
+    decision["reason"] = "prelabel_label_support_too_weak"
+    return decision, raw_scores, prelabel_scores, retained_scores
 
 
 def _label_scores_by_modality(
@@ -885,6 +964,9 @@ def _apply_local_weighted_expansion(
         local = float(local_gene_support.get(gene, 0.0))
         bundle = float(bundle_label_counts.get(gene, 0))
         weighted_candidates[gene] = local + 0.25 * bundle
+    for gene in nominal_matching:
+        if gene in candidate_genes:
+            weighted_candidates[gene] = max(float(weighted_candidates.get(gene, 0.0)), 0.5)
     total_weight = sum(float(v) for v in weighted_candidates.values())
     base_total = sum(float(v) for v in base_gene_scores.values())
     expansion_mass = max(1e-6, 0.35 * base_total * float(expansion_confidence))
@@ -1775,7 +1857,27 @@ def run_morphology_workflow(
                     for ref_id in direct_pool_ids
                     if ref_id in raw_by_ref
                 ]
+                prelabel_neighbors = list(pooled_neighbors)
+                raw_prelabel_neighbors = list(raw_pooled_neighbors)
             else:
+                prelabel_neighbors = list(all_penalized_neighbors)
+                if protected_mechanism_ref_ids:
+                    for ref_id in protected_mechanism_ref_ids:
+                        if ref_id in penalized_by_ref and all(existing_ref != ref_id for existing_ref, _b, _e in prelabel_neighbors):
+                            prelabel_neighbors.append(penalized_by_ref[ref_id])
+                    prelabel_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+                prelabel_cap = max(int(cfg.max_reference_neighbors) * 8, int(cfg.min_effective_neighbors), 50) if int(cfg.max_reference_neighbors) > 0 else len(prelabel_neighbors)
+                prelabel_neighbors = prelabel_neighbors[:prelabel_cap]
+                prelabel_ref_ids = [ref_id for ref_id, _base, _evidence in prelabel_neighbors]
+                raw_prelabel_neighbors = [
+                    (
+                        ref_id,
+                        float(raw_by_ref.get(ref_id, 0.0)),
+                        float(raw_by_ref.get(ref_id, 0.0)) * float(qc_weights.get(ref_id, 1.0)),
+                    )
+                    for ref_id in prelabel_ref_ids
+                    if ref_id in raw_by_ref
+                ]
                 mechanism_neighbors = list(penalized_neighbors)
                 if protected_mechanism_ref_ids:
                     for ref_id in protected_mechanism_ref_ids:
@@ -1862,18 +1964,32 @@ def run_morphology_workflow(
             for ref_id, _score in retained_neighbors:
                 modality = str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower() or "unknown"
                 retained_by_modality[modality] = int(retained_by_modality.get(modality, 0)) + 1
-            label_decision, raw_label_scores, retained_label_scores = _choose_expansion_label(
+            exact_target_support_present = bool(
+                query_nominal_genes and any(float(target_support.get(gene, 0.0)) > 0.0 for gene in query_nominal_genes)
+            )
+            label_decision, raw_label_scores, prelabel_label_scores, retained_label_scores = _choose_expansion_label(
                 mode=cfg.mode,
                 query_modality=query_modality,
-                raw_neighbors=raw_pooled_neighbors,
-                mechanism_neighbors=mechanism_branch.neighbors,
+                raw_neighbors=raw_prelabel_neighbors,
+                prelabel_neighbors=prelabel_neighbors,
+                retained_neighbors=mechanism_branch.neighbors,
                 compound_map=compound_map,
                 genetic_map=genetic_map,
                 reference_metadata=reference_metadata_effective,
                 target_annotations=target_annotations,
+                query_nominal_genes=query_nominal_genes,
+                exact_target_support_present=exact_target_support_present,
             )
             raw_label_scores_by_modality = _label_scores_by_modality(
-                neighbors=raw_pooled_neighbors,
+                neighbors=raw_prelabel_neighbors,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                reference_metadata=reference_metadata_effective,
+                target_annotations=target_annotations,
+                query_modality=query_modality,
+            )
+            prelabel_label_scores_by_modality = _label_scores_by_modality(
+                neighbors=prelabel_neighbors,
                 compound_map=compound_map,
                 genetic_map=genetic_map,
                 reference_metadata=reference_metadata_effective,
@@ -1903,17 +2019,34 @@ def run_morphology_workflow(
                 query_nominal_genes=query_nominal_genes,
             )
             expansion_decision.update(expansion_scope)
-            top_pathway_seed = str((retained_label_scores.get("pathway_seed", {}) or {}).get("top_label") or "") or None
-            top_pathway_seed_mass = float((retained_label_scores.get("pathway_seed", {}) or {}).get("top_label_mass", 0.0) or 0.0)
-            top_target_class = str((retained_label_scores.get("target_class", {}) or {}).get("top_label") or "") or None
-            top_target_class_mass = float((retained_label_scores.get("target_class", {}) or {}).get("top_label_mass", 0.0) or 0.0)
-            top_family = str((retained_label_scores.get("target_family", {}) or {}).get("top_label") or "") or None
-            top_family_mass = float((retained_label_scores.get("target_family", {}) or {}).get("top_label_mass", 0.0) or 0.0)
-            top_mechanism = str((retained_label_scores.get("mechanism_label", {}) or {}).get("top_label") or "") or None
-            top_mechanism_mass = float((retained_label_scores.get("mechanism_label", {}) or {}).get("top_label_mass", 0.0) or 0.0)
+            top_pathway_seed = str((prelabel_label_scores.get("pathway_seed", {}) or {}).get("top_label") or "") or None
+            top_pathway_seed_mass = float((prelabel_label_scores.get("pathway_seed", {}) or {}).get("top_label_mass", 0.0) or 0.0)
+            top_target_class = str((prelabel_label_scores.get("target_class", {}) or {}).get("top_label") or "") or None
+            top_target_class_mass = float((prelabel_label_scores.get("target_class", {}) or {}).get("top_label_mass", 0.0) or 0.0)
+            top_family = str((prelabel_label_scores.get("target_family", {}) or {}).get("top_label") or "") or None
+            top_family_mass = float((prelabel_label_scores.get("target_family", {}) or {}).get("top_label_mass", 0.0) or 0.0)
+            top_mechanism = str((prelabel_label_scores.get("mechanism_label", {}) or {}).get("top_label") or "") or None
+            top_mechanism_mass = float((prelabel_label_scores.get("mechanism_label", {}) or {}).get("top_label_mass", 0.0) or 0.0)
+            chosen_level = str(expansion_decision.get("chosen_level") or "")
+            chosen_label = str(expansion_decision.get("chosen_label") or "")
+            chosen_confidence = float(expansion_decision.get("expansion_confidence", 0.0) or 0.0)
+            if chosen_level == "pathway_seed" and chosen_label:
+                top_pathway_seed = chosen_label
+                top_pathway_seed_mass = chosen_confidence
+            elif chosen_level == "target_class" and chosen_label:
+                top_target_class = chosen_label
+                top_target_class_mass = chosen_confidence
+            elif chosen_level == "mechanism_label" and chosen_label:
+                top_mechanism = chosen_label
+                top_mechanism_mass = chosen_confidence
+            elif chosen_level == "target_family" and chosen_label:
+                top_family = chosen_label
+                top_family_mass = chosen_confidence
             raw_family_summary = (raw_label_scores.get("target_family", {}) or {}).get("summary", {})
+            prelabel_family_summary = (prelabel_label_scores.get("target_family", {}) or {}).get("summary", {})
             retained_family_summary = (retained_label_scores.get("target_family", {}) or {}).get("summary", {})
             raw_mechanism_summary = (raw_label_scores.get("mechanism_label", {}) or {}).get("summary", {})
+            prelabel_mechanism_summary = (prelabel_label_scores.get("mechanism_label", {}) or {}).get("summary", {})
             retained_mechanism_summary = (retained_label_scores.get("mechanism_label", {}) or {}).get("summary", {})
             core_gene_scores = core_branch.gene_scores
             core_rows = _rows_from_scores(core_gene_scores, cfg)
@@ -2194,13 +2327,17 @@ def run_morphology_workflow(
                 "top_mechanism": top_mechanism,
                 "top_mechanism_mass": top_mechanism_mass,
                 "family_vote_summary_raw": raw_family_summary,
+                "family_vote_summary_prelabel": prelabel_family_summary,
                 "family_vote_summary_retained": retained_family_summary,
                 "mechanism_vote_summary_raw": raw_mechanism_summary,
+                "mechanism_vote_summary_prelabel": prelabel_mechanism_summary,
                 "mechanism_vote_summary_retained": retained_mechanism_summary,
                 "expansion_decision": expansion_decision,
                 "label_scores_raw": raw_label_scores,
+                "label_scores_prelabel": prelabel_label_scores,
                 "label_scores_retained": retained_label_scores,
                 "label_scores_raw_by_modality": raw_label_scores_by_modality,
+                "label_scores_prelabel_by_modality": prelabel_label_scores_by_modality,
                 "label_scores_retained_by_modality": retained_label_scores_by_modality,
                 "expanded_added_genes": expanded_family_genes,
                 "core_gene_count": len(core_rows),
@@ -2298,12 +2435,16 @@ def run_morphology_workflow(
                     "core_branch_neighbor_count": len(core_branch.neighbors),
                     "mechanism_branch_neighbor_count": len(mechanism_branch.neighbors),
                     "family_vote_summary_raw": raw_family_summary,
+                    "family_vote_summary_prelabel": prelabel_family_summary,
                     "family_vote_summary_retained": retained_family_summary,
                     "mechanism_vote_summary_raw": raw_mechanism_summary,
+                    "mechanism_vote_summary_prelabel": prelabel_mechanism_summary,
                     "mechanism_vote_summary_retained": retained_mechanism_summary,
                     "label_scores_raw": raw_label_scores,
+                    "label_scores_prelabel": prelabel_label_scores,
                     "label_scores_retained": retained_label_scores,
                     "label_scores_raw_by_modality": raw_label_scores_by_modality,
+                    "label_scores_prelabel_by_modality": prelabel_label_scores_by_modality,
                     "label_scores_retained_by_modality": retained_label_scores_by_modality,
                     "expansion_decision": expansion_decision,
                     "top10_gene_mass": top10_gene_mass,

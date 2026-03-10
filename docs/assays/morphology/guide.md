@@ -41,7 +41,7 @@ Current retrieval modes:
   - family/mechanism-aware reranking and expansion
   - best when morphology is class-correct but not exact-target-correct
   - reaches its intended behavior only when the bundle or explicit inputs include `target_annotations`
-  - chooses expansion labels from the retained mechanism neighborhood, not from reranked core genes
+  - chooses expansion labels from a broader pre-label mechanism pool, not from reranked core genes
   - uses the hierarchy `pathway_seed -> target_class -> mechanism_label -> target_family`
 - `--mode hybrid`
   - writes both `geneset.core.tsv` and `geneset.expanded.tsv`
@@ -268,25 +268,29 @@ Most useful fields:
   - neighbors that actually contributed after penalties/filtering
 - `family_vote_summary_raw`
   - family-level vote totals in the pooled raw neighborhood
+- `family_vote_summary_prelabel`
+  - family-level vote totals in the broader pre-label pool used for mechanism arbitration
 - `family_vote_summary_retained`
   - family-level vote totals after penalization/filtering
 - `mechanism_vote_summary_raw`
+- `mechanism_vote_summary_prelabel`
 - `mechanism_vote_summary_retained`
 - `label_scores_raw`
+- `label_scores_prelabel`
 - `label_scores_retained`
   - level-by-level support records for `pathway_seed`, `target_class`, `mechanism_label`, and `target_family`
 - `expansion_decision`
   - machine-readable reason for whether expansion was allowed
-  - includes `chosen_level`, `chosen_label`, `expansion_confidence`, `candidate_scope`, `bundle_candidate_genes`, `bundle_supported_genes`, `local_supported_genes`, `global_fallback_genes`, `expansion_mass_injected`, and whether a raw-vs-retained mismatch was observed
+  - includes `chosen_level`, `chosen_label`, `expansion_confidence`, `candidate_scope`, `bundle_candidate_genes`, `bundle_supported_genes`, `local_supported_genes`, `global_fallback_genes`, `expansion_mass_injected`, and whether raw-vs-prelabel or raw-vs-retained mismatch was observed
 - `core_branch_neighbor_ids` / `mechanism_branch_neighbor_ids`
   - the strict exact-target branch and the broader mechanism branch are now reported separately
 - `top_pathway_seed` / `top_target_class`
-  - the narrowest high-level labels visible in the retained mechanism neighborhood
+  - the narrowest high-level labels chosen from the pre-label mechanism pool after any allowed fallback
 - `top_target_candidates`
   - routed target support before final gene-set extraction
   - `support_mass` is the raw pooled target support used to nominate the strict target pool
   - `weighted_support_mass` shows the recurrence-adjusted ranking signal used only inside that allowed pool
-- `label_scores_raw_by_modality` / `label_scores_retained_by_modality`
+- `label_scores_raw_by_modality` / `label_scores_prelabel_by_modality` / `label_scores_retained_by_modality`
   - the same label summaries split into `all`, `compound`, and `genetic` support
   - useful when a compound query expands through coherent genetic neighbors
 - `compound_target_weighting_mode`, `n_compound_refs_renormalized`, `median_raw_target_count`
@@ -295,12 +299,14 @@ Most useful fields:
 Interpretation:
 
 - if raw and retained label summaries disagree, that now lowers `expansion_confidence` instead of acting as a hard veto
-- if `expansion_decision.reason` is `retained_label_support_too_weak`, the retained mechanism neighborhood never concentrated enough to justify expansion
+- if `expansion_decision.reason` is `prelabel_label_support_too_weak`, the broader pre-label pool never concentrated enough to justify expansion
+- if `expansion_decision.reason` is `raw_query_consistent_label_fallback`, exact target support was absent but the raw compound neighborhood contained coherent query-consistent family/mechanism signal that the smaller mechanism neighborhood failed to preserve
 - if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
 - for ORF or CRISPR queries, `top_label_same_modality_count` is computed against the reference perturbation subtype (`orf` or `crispr`), not the generic routed mapping label `genetic`
 - `expansion_decision.bundle_gene_universe_source` should normally be `full_bundle`; that means expansion candidates were drawn from the full pre-exclusion bundle rather than only the effective held-out retrieval panel
 - if `query_nominal_genes_matching_label` is nonempty but `query_nominal_genes_dropped_by_scope` is also nonempty, the chosen label fit the nominal target but the expansion scope still excluded part of that nominal set
+- if `query_nominal_genes_matching_label` is nonempty, the expander gives those nominal genes a small bounded prior inside the chosen label universe so a held-out nominal gene can still appear even when no retained neighbor maps to it directly
 
 ## Common warnings and how to read them
 
@@ -318,7 +324,7 @@ Interpretation:
   - `direct_target` pools positive evidence by target before hard neighbor truncation.
   - strict nomination is built from raw pooled target support, with support count and best-similarity guards; recurrence weighting is used only to rank within that allowed pool.
   - direct-target pool membership is determined from a broader raw-similarity view with protected same-modality and nominal-target-supporting references, so hubness-weighted low-similarity neighbors cannot evict exact self-like support too early.
-  - `mechanism` uses the full coherent retained neighborhood to choose the most specific supported annotation level, then expands locally from that mechanism branch.
+  - `mechanism` uses a broader pre-label pool for annotation voting, keeps a narrower retained neighborhood for final routing, and then expands locally from the mechanism branch.
   - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
