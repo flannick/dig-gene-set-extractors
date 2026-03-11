@@ -264,6 +264,15 @@ Most useful fields:
   - top neighbors before hubness/context penalties and truncation
 - `raw_candidate_neighbors_detail`
   - raw neighbor modality and top routed targets
+- `raw_same_modality_candidate_ids` / `raw_same_modality_candidate_count`
+  - same-modality neighbors available in the raw pool before prelabel voting
+  - useful when a held-out compound has family-consistent raw signal but weak exact-target support
+- `protected_direct_reference_ids` / `protected_mechanism_reference_ids` / `coherent_compound_prelabel_reference_ids`
+  - references explicitly preserved into strict nomination or mechanism/prelabel routing
+  - inspect these first if self-like or family-consistent compound references appear to vanish too early
+- `prelabel_candidate_neighbor_ids` / `prelabel_candidate_neighbors_detail`
+  - the actual prelabel voting pool, with similarity, penalized evidence, and protection flags
+  - this is the decisive stage for debugging raw -> prelabel family flips
 - `retained_neighbors_detail`
   - neighbors that actually contributed after penalties/filtering
 - `family_vote_summary_raw`

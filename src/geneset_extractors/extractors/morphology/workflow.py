@@ -1915,6 +1915,16 @@ def run_morphology_workflow(
                 min_similarity=float(cfg.min_similarity),
             )
             raw_candidate_neighbors = sorted(candidate_neighbors, key=lambda item: (-float(item[1]), str(item[0])))
+            raw_same_modality_candidate_ids = [
+                ref_id
+                for ref_id, _score in raw_candidate_neighbors
+                if _is_same_modality_pair(
+                    query_modality=query_modality,
+                    ref_modality=_normalize_modality_token(
+                        reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")
+                    ),
+                )
+            ]
             protected_direct_ref_ids = _protected_same_modality_reference_ids(
                 raw_candidate_neighbors=raw_candidate_neighbors,
                 reference_metadata=reference_metadata_effective,
@@ -2517,6 +2527,14 @@ def run_morphology_workflow(
                 "top_neighbor_similarities": top_neighbor_sims,
                 "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
                 "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
+                "raw_same_modality_candidate_ids": raw_same_modality_candidate_ids[:10],
+                "raw_same_modality_candidate_count": len(raw_same_modality_candidate_ids),
+                "protected_direct_reference_ids": sorted(protected_direct_ref_ids)[:25],
+                "protected_mechanism_reference_ids": sorted(protected_mechanism_ref_ids)[:25],
+                "coherent_compound_prelabel_reference_ids": sorted(coherent_compound_prelabel_ref_ids)[:25],
+                "prelabel_candidate_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_neighbors[:15]],
+                "prelabel_candidate_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_neighbors[:15]],
+                "prelabel_candidate_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_neighbors[:15]],
                 "raw_candidate_neighbors_detail": [
                     {
                         "ref_id": ref_id,
@@ -2528,6 +2546,18 @@ def run_morphology_workflow(
                         )[:3],
                     }
                     for ref_id, score in raw_candidate_neighbors[:10]
+                ],
+                "prelabel_candidate_neighbors_detail": [
+                    {
+                        "ref_id": ref_id,
+                        "similarity": float(base),
+                        "evidence": float(evidence),
+                        "modality": str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower(),
+                        "protected_direct": ref_id in protected_direct_ref_ids,
+                        "protected_mechanism": ref_id in protected_mechanism_ref_ids,
+                        "protected_compound_coherent": ref_id in coherent_compound_prelabel_ref_ids,
+                    }
+                    for ref_id, base, evidence in prelabel_neighbors[:15]
                 ],
                 "retained_neighbors_detail": [
                     {
@@ -2681,6 +2711,14 @@ def run_morphology_workflow(
                     "top_neighbor_similarities": top_neighbor_sims,
                     "raw_candidate_neighbor_ids": [ref_id for ref_id, _score in raw_candidate_neighbors[:10]],
                     "raw_candidate_neighbor_similarities": [float(score) for _ref_id, score in raw_candidate_neighbors[:10]],
+                    "raw_same_modality_candidate_ids": raw_same_modality_candidate_ids[:10],
+                    "raw_same_modality_candidate_count": len(raw_same_modality_candidate_ids),
+                    "protected_direct_reference_ids": sorted(protected_direct_ref_ids)[:25],
+                    "protected_mechanism_reference_ids": sorted(protected_mechanism_ref_ids)[:25],
+                    "coherent_compound_prelabel_reference_ids": sorted(coherent_compound_prelabel_ref_ids)[:25],
+                    "prelabel_candidate_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_neighbors[:15]],
+                    "prelabel_candidate_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_neighbors[:15]],
+                    "prelabel_candidate_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_neighbors[:15]],
                     "core_branch_neighbor_ids": [ref_id for ref_id, _base, _evidence in core_branch.neighbors[:10]],
                     "mechanism_branch_neighbor_ids": [ref_id for ref_id, _base, _evidence in mechanism_branch.neighbors[:10]],
                     "core_branch_neighbor_count": len(core_branch.neighbors),

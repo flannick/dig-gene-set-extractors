@@ -225,6 +225,8 @@ In addition, compound queries can use a narrower same-modality raw fallback. If 
 
 In the current implementation this same-modality compound safeguard acts at two levels. First, pre-label voting eligibility is not determined solely by hubness-penalized evidence order: a protected slice of high raw-similarity same-modality compound neighbors is forced into the pre-label pool so broad coherent family support can still vote. Second, if the pre-label winner is supported by only a tiny cluster while the same-modality raw pool shows broader coherent support for another label, a coherence guard can still prefer the same-modality label rather than allowing an early wrong-family flip.
 
+Operationally, the implementation now records the raw same-modality candidate set, the protected direct/mechanism reference ids, and the final pre-label voting pool in the run summary. These diagnostics are intentionally first-class because repeated morphology failures have tended to arise from silent raw $\rightarrow$ pre-label eligibility changes rather than from the final gene truncation step.
+
 For \texttt{mechanism} mode on \texttt{orf} or \texttt{crispr} queries, the implementation also allows a narrow query-consistent fallback when the new pre-label gate is only slightly too weak. If a query-consistent label has same-modality support in the pre-label or retained mechanism neighborhood, and its support is above a small minimum confidence floor, the mechanism branch may still expand through that label rather than returning an empty expansion. This fallback is intentionally restricted to \texttt{mechanism} mode so that the stricter \texttt{direct\_target} path and the existing \texttt{hybrid} wins are not loosened.
 
 \subsection{Branch structure}
