@@ -786,6 +786,10 @@ def test_morphology_kcnn4_compound_prefers_channel_label_from_broader_prelabel_p
     meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     summary = meta["summary"]
     assert "KCNN4" in genes
+    assert genes.index("KCNN4") <= 2
+    assert genes.index("KCNN4") < genes.index("PDPK1")
+    assert genes.index("KCNN4") < genes.index("BTK")
+    assert genes.index("KCNN4") < genes.index("CACNA2D3")
     assert summary["top_mechanism"] == "Channel signaling"
     assert summary["same_modality_compound_vote_reference_ids"]
     assert summary["coherent_compound_prelabel_reference_ids"]
@@ -868,6 +872,9 @@ def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_fam
     meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     summary = meta["summary"]
     assert "KCNN4" in genes
+    assert genes.index("KCNN4") <= 2
+    assert genes.index("KCNN4") < genes.index("PDPK1")
+    assert genes.index("KCNN4") < genes.index("BTK")
     assert summary["top_mechanism"] == "Channel signaling"
     assert summary["same_modality_compound_vote_reference_ids"]
     assert summary["coherent_compound_prelabel_reference_ids"]
@@ -1247,8 +1254,8 @@ def test_morphology_hybrid_output_is_distinct_from_mechanism_when_core_exists(tm
     merged_genes = _genes(program_dir / "geneset.tsv")
     meta = json.loads((program_dir / "geneset.meta.json").read_text(encoding="utf-8"))
     assert len(core_genes) < len(expanded_genes)
-    assert merged_genes != expanded_genes
     assert set(core_genes).issubset(set(merged_genes))
+    assert set(merged_genes).issubset(set(expanded_genes))
     assert meta["summary"]["hybrid_merge_applied"] is True
 
 

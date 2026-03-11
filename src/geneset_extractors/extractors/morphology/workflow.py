@@ -1526,6 +1526,65 @@ def _apply_local_weighted_expansion(
             "chosen_label": chosen_label,
             "expansion_mass_injected": 0.0,
         }
+    subordinate_levels: list[str] = []
+    if chosen_level == "target_family":
+        subordinate_levels = ["mechanism_label", "target_class", "pathway_seed"]
+    elif chosen_level == "mechanism_label":
+        subordinate_levels = ["target_class", "pathway_seed"]
+    elif chosen_level == "target_class":
+        subordinate_levels = ["pathway_seed"]
+    preferred_subordinate_labels: dict[str, set[str]] = {}
+    preferred_subordinate_support: dict[str, float] = {}
+    query_consistent_subordinate_levels: set[str] = set()
+    if subordinate_levels:
+        for sublevel in subordinate_levels:
+            support_by_label: dict[str, float] = {}
+            count_by_label: dict[str, int] = {}
+            for gene in candidate_genes:
+                label = str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+                if not label:
+                    continue
+                support = float(local_gene_support.get(gene, 0.0))
+                support_by_label[label] = float(support_by_label.get(label, 0.0)) + support
+                count_by_label[label] = int(count_by_label.get(label, 0)) + 1
+            query_labels = {
+                str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+                for gene in query_nominal_genes
+                if str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+            }
+            matching_query_labels = {
+                label
+                for label in query_labels
+                if float(support_by_label.get(label, 0.0)) > 0.0
+            }
+            if matching_query_labels:
+                preferred_subordinate_labels[sublevel] = matching_query_labels
+                preferred_subordinate_support[sublevel] = max(
+                    float(support_by_label.get(label, 0.0)) for label in matching_query_labels
+                )
+                query_consistent_subordinate_levels.add(sublevel)
+                continue
+            if support_by_label:
+                top_label, top_mass = max(
+                    support_by_label.items(),
+                    key=lambda item: (float(item[1]), int(count_by_label.get(item[0], 0)), str(item[0])),
+                )
+                total_mass = sum(float(v) for v in support_by_label.values()) or 1.0
+                if float(top_mass) / total_mass >= 0.60 and int(count_by_label.get(top_label, 0)) >= 2:
+                    preferred_subordinate_labels[sublevel] = {str(top_label)}
+                    preferred_subordinate_support[sublevel] = float(top_mass)
+    if query_consistent_subordinate_levels:
+        hierarchical_candidates = sorted(
+            gene
+            for gene in candidate_genes
+            if any(
+                str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+                in preferred_subordinate_labels.get(sublevel, set())
+                for sublevel in query_consistent_subordinate_levels
+            )
+        )
+        if hierarchical_candidates:
+            candidate_genes = sorted(set(hierarchical_candidates) | set(nominal_matching))
     bundle_label_counts: dict[str, int] = {}
     for ref_id in set(compound_map) | set(genetic_map):
         mapping = compound_map.get(ref_id) or genetic_map.get(ref_id) or {}
@@ -1536,14 +1595,41 @@ def _apply_local_weighted_expansion(
     for gene in candidate_genes:
         local = float(local_gene_support.get(gene, 0.0))
         bundle = float(bundle_label_counts.get(gene, 0))
-        weighted_candidates[gene] = local + 0.25 * bundle
+        hierarchical_bonus = 0.0
+        matches_query_consistent_subordinate = False
+        for sublevel in subordinate_levels:
+            label = str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+            if label and label in preferred_subordinate_labels.get(sublevel, set()):
+                hierarchical_bonus += 0.25 * float(preferred_subordinate_support.get(sublevel, 0.0))
+                if sublevel in query_consistent_subordinate_levels:
+                    matches_query_consistent_subordinate = True
+        weighted_candidates[gene] = local + 0.25 * bundle + hierarchical_bonus
+        if query_consistent_subordinate_levels and not matches_query_consistent_subordinate:
+            weighted_candidates[gene] *= 0.25
     for gene in nominal_matching:
         if gene in candidate_genes:
-            weighted_candidates[gene] = max(float(weighted_candidates.get(gene, 0.0)), 0.5)
+            nominal_support = 0.0
+            for sublevel in subordinate_levels:
+                label = str((target_annotations.get(gene, {}) or {}).get(sublevel, "")).strip()
+                if label and label in preferred_subordinate_labels.get(sublevel, set()):
+                    nominal_support = max(nominal_support, float(preferred_subordinate_support.get(sublevel, 0.0)))
+            weighted_candidates[gene] = max(
+                float(weighted_candidates.get(gene, 0.0)),
+                0.75 + 2.5 * nominal_support,
+            )
     total_weight = sum(float(v) for v in weighted_candidates.values())
     base_total = sum(float(v) for v in base_gene_scores.values())
     expansion_mass = max(1e-6, 0.35 * base_total * float(expansion_confidence))
-    boosted = dict(base_gene_scores)
+    off_label_damping_factor = max(0.2, 1.0 - 1.1 * float(expansion_confidence))
+    boosted = {
+        gene: (
+            float(score)
+            if gene in candidate_genes
+            else float(score) * off_label_damping_factor
+        )
+        for gene, score in base_gene_scores.items()
+        if float(score) > 0.0
+    }
     expanded_genes: list[str] = []
     if total_weight <= 0.0:
         return boosted, [], {
@@ -1559,6 +1645,7 @@ def _apply_local_weighted_expansion(
             "bundle_gene_universe_source": "full_bundle",
             "chosen_level": chosen_level,
             "chosen_label": chosen_label,
+            "off_label_damping_factor": off_label_damping_factor,
             "expansion_mass_injected": 0.0,
         }
     for gene, raw_weight in sorted(weighted_candidates.items(), key=lambda item: (-float(item[1]), str(item[0]))):
@@ -1579,6 +1666,7 @@ def _apply_local_weighted_expansion(
         "bundle_gene_universe_source": "full_bundle",
         "chosen_level": chosen_level,
         "chosen_label": chosen_label,
+        "off_label_damping_factor": off_label_damping_factor,
         "expansion_mass_injected": expansion_mass,
     }
 

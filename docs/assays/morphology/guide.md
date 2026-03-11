@@ -347,6 +347,8 @@ Interpretation:
 - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
 - for compound queries, pre-label voting also preserves a protected slice of high raw-similarity same-modality neighbors so hubness-heavy penalized ordering cannot erase broad coherent family support before label choice.
 - for compound queries, the pre-label vote itself is built from a broader raw-similarity same-modality pool with bounded query-consistency bonuses; penalized evidence still shapes the final retained mechanism branch, but it no longer decides family voting eligibility on its own.
+- once a broad mechanism or family label is chosen, the expanded branch reranks genes within that label using narrower local subordinate labels (`pathway_seed`, then `target_class`) plus a bounded nominal-target prior.
+- when a query-consistent narrow subordinate label is present locally, genes outside that fine label are damped inside the expanded branch so broad family members do not overwhelm the more specific within-family explanation.
 - for compound queries, the extractor now separates the broader prelabel vote pool from the narrower retained mechanism branch: family/mechanism labels are chosen from the broader vote pool, while final gene scoring still uses the narrower retained branch.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
