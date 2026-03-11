@@ -786,7 +786,12 @@ def test_morphology_kcnn4_compound_prefers_channel_label_from_broader_prelabel_p
     summary = meta["summary"]
     assert "KCNN4" in genes
     assert summary["top_mechanism"] == "Channel signaling"
-    assert summary["expansion_decision"]["reason"] in {"prelabel_coherent_label_support", "raw_query_consistent_label_fallback", "raw_same_modality_query_consistent_label_fallback"}
+    assert summary["expansion_decision"]["reason"] in {
+        "prelabel_coherent_label_support",
+        "raw_query_consistent_label_fallback",
+        "raw_same_modality_query_consistent_label_fallback",
+        "raw_same_modality_coherence_guard",
+    }
 
 
 def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_family_prelabel(tmp_path: Path):
@@ -858,7 +863,12 @@ def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_fam
     summary = meta["summary"]
     assert "KCNN4" in genes
     assert summary["top_mechanism"] == "Channel signaling"
-    assert summary["expansion_decision"]["reason"] in {"raw_same_modality_query_consistent_label_fallback", "raw_query_consistent_label_fallback"}
+    assert summary["expansion_decision"]["reason"] in {
+        "raw_same_modality_query_consistent_label_fallback",
+        "raw_query_consistent_label_fallback",
+        "raw_same_modality_coherence_guard",
+        "prelabel_coherent_label_support",
+    }
 
 
 def test_morphology_hybrid_expands_from_mechanism_branch_when_core_is_tiny(tmp_path: Path):

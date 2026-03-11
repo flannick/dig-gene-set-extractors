@@ -302,6 +302,7 @@ Interpretation:
 - if `expansion_decision.reason` is `prelabel_label_support_too_weak`, the broader pre-label pool never concentrated enough to justify expansion
 - if `expansion_decision.reason` is `raw_query_consistent_label_fallback`, exact target support was absent but the raw compound neighborhood contained coherent query-consistent family/mechanism signal that the smaller mechanism neighborhood failed to preserve
 - if `expansion_decision.reason` is `raw_same_modality_query_consistent_label_fallback`, a compound query had coherent high-similarity same-modality family/mechanism support that the hubness-dominated pre-label pool failed to preserve; the mechanism branch fell back to that same-modality raw label instead of following a tiny wrong-family pre-label set
+- if `expansion_decision.reason` is `raw_same_modality_coherence_guard`, the same-modality compound raw neighborhood carried broader coherent family/mechanism support than the tiny wrong-family pre-label cluster, so mechanism routing kept the coherent same-modality label instead of flipping early
 - if `expansion_decision.reason` is `genetic_query_consistent_label_fallback`, a `mechanism` run on an ORF/CRISPR query recovered a query-consistent label with same-modality support even though the new pre-label gate was too weak to pass on its own
 - if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
@@ -329,7 +330,8 @@ Interpretation:
   - `mechanism` uses a broader pre-label pool for annotation voting, keeps a narrower retained neighborhood for final routing, and then expands locally from the mechanism branch.
   - for compound queries, the mechanism branch can also fall back to a query-consistent same-modality raw label when the pre-label pool is overly distorted by penalized evidence.
   - for `mechanism` only, ORF/CRISPR queries can still expand through a query-consistent label if same-modality support is present but the broader pre-label gate is slightly too weak; this is a surgical fallback to avoid losing plausible genetic mechanism outputs.
-  - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
+- mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
+- for compound queries, pre-label voting also preserves a protected slice of high raw-similarity same-modality neighbors so hubness-heavy penalized ordering cannot erase broad coherent family support before label choice.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
   - same-modality support still matters more for ORF/CRISPR queries than for compound queries.
