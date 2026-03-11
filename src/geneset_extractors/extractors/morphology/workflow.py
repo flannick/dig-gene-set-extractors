@@ -798,6 +798,43 @@ def _choose_expansion_label(
         and bool((prelabel_scores.get(level, {}) or {}).get("top_label"))
         for level in levels
     )
+    if mode == "mechanism" and query_modality in {"orf", "crispr"}:
+        for level in levels:
+            query_labels = _query_labels_for_level(
+                query_nominal_genes=query_nominal_genes,
+                target_annotations=target_annotations,
+                field=level,
+            )
+            if not query_labels:
+                continue
+            for payload in (prelabel_scores.get(level, {}), retained_scores.get(level, {})):
+                label = str(payload.get("top_label") or "")
+                if not label or label not in query_labels:
+                    continue
+                support_count = int(payload.get("top_label_support_count", 0) or 0)
+                same_modality_count = int(payload.get("top_label_same_modality_count", 0) or 0)
+                label_mass = float(payload.get("top_label_mass", 0.0) or 0.0)
+                if same_modality_count <= 0 or support_count <= 0:
+                    continue
+                fallback_confidence = (
+                    label_mass
+                    * min(1.0, float(max(support_count, same_modality_count)) / 2.0)
+                    * float(payload.get("specificity_bonus", 1.0) or 1.0)
+                )
+                if fallback_confidence < 0.14:
+                    continue
+                decision.update(
+                    {
+                        "allow_expansion": True,
+                        "reason": "genetic_query_consistent_label_fallback",
+                        "chosen_level": level,
+                        "chosen_label": label,
+                        "expansion_confidence": fallback_confidence,
+                        "allow_family": level == "target_family",
+                        "allow_mechanism": level in {"mechanism_label", "target_class", "pathway_seed"},
+                    }
+                )
+                return decision, raw_scores, prelabel_scores, retained_scores
     decision["reason"] = "prelabel_label_support_too_weak"
     return decision, raw_scores, prelabel_scores, retained_scores
 

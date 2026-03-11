@@ -548,6 +548,74 @@ def test_morphology_hybrid_expands_when_family_support_is_coherent(tmp_path: Pat
     assert retained_target_class["top_label_same_modality_count"] > 0
 
 
+def test_morphology_mechanism_orf_can_expand_via_query_consistent_fallback(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\torf\tKCNN4\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "ORF1\t0.84\t0.16\n"
+        "CMP1\t0.82\t0.18\n"
+        "KIN1\t0.80\t0.20\n"
+        "KIN2\t0.79\t0.21\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "ORF1\torf\t\tKCNN1\t0.1\t1.0\tfalse\n"
+        "CMP1\tcompound\tCMP1\t\t0.1\t1.0\tfalse\n"
+        "KIN1\tcompound\tKIN1\t\t0.1\t1.0\tfalse\n"
+        "KIN2\tcompound\tKIN2\t\t0.1\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "CMP1\tKCNMA1\t1.0\n"
+        "KIN1\tPDPK1\t1.0\n"
+        "KIN2\tBTK\t1.0\n",
+        encoding="utf-8",
+    )
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN1\tIon channel\tPotassium channel\tChannel signaling\tK_channel\n"
+        "KCNMA1\tIon channel\tPotassium channel\tChannel signaling\tK_channel\n"
+        "KCNN4\tIon channel\tPotassium channel\tChannel signaling\tK_channel\n"
+        "PDPK1\tKinase\tPI3K-AKT pathway kinase\tPI3K-AKT signaling\tPI3K_AKT\n"
+        "BTK\tKinase\tNon-receptor tyrosine kinase\tTyrosine kinase signaling\tTyrosine_kinase\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "mechanism_orf_fallback")
+    args.mode = "mechanism"
+    args.polarity = "similar"
+    args.top_k = 6
+    args.gmt_topk_list = "6"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+
+    genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    payload = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert "KCNN4" in genes
+    assert payload["summary"]["expansion_decision"]["reason"] in {"genetic_query_consistent_label_fallback", "prelabel_coherent_label_support"}
+    assert payload["summary"]["expanded_added_genes"]
+
+
 def test_morphology_label_vote_counts_orf_same_modality_support() -> None:
     summary = _label_vote_summary_from_neighbors(
         neighbors=[("ORF1", 0.9, 1.2), ("ORF2", 0.8, 1.0)],

@@ -301,6 +301,7 @@ Interpretation:
 - if raw and retained label summaries disagree, that now lowers `expansion_confidence` instead of acting as a hard veto
 - if `expansion_decision.reason` is `prelabel_label_support_too_weak`, the broader pre-label pool never concentrated enough to justify expansion
 - if `expansion_decision.reason` is `raw_query_consistent_label_fallback`, exact target support was absent but the raw compound neighborhood contained coherent query-consistent family/mechanism signal that the smaller mechanism neighborhood failed to preserve
+- if `expansion_decision.reason` is `genetic_query_consistent_label_fallback`, a `mechanism` run on an ORF/CRISPR query recovered a query-consistent label with same-modality support even though the new pre-label gate was too weak to pass on its own
 - if `expansion_decision.chosen_level` is `target_class` or `pathway_seed`, the workflow found a narrower stable label and preferred it over the broader family
 - for compound queries, expansion can still be valid when the strongest support comes from coherent genetic neighbors
 - for ORF or CRISPR queries, `top_label_same_modality_count` is computed against the reference perturbation subtype (`orf` or `crispr`), not the generic routed mapping label `genetic`
@@ -325,6 +326,7 @@ Interpretation:
   - strict nomination is built from raw pooled target support, with support count and best-similarity guards; recurrence weighting is used only to rank within that allowed pool.
   - direct-target pool membership is determined from a broader raw-similarity view with protected same-modality and nominal-target-supporting references, so hubness-weighted low-similarity neighbors cannot evict exact self-like support too early.
   - `mechanism` uses a broader pre-label pool for annotation voting, keeps a narrower retained neighborhood for final routing, and then expands locally from the mechanism branch.
+  - for `mechanism` only, ORF/CRISPR queries can still expand through a query-consistent label if same-modality support is present but the broader pre-label gate is slightly too weak; this is a surgical fallback to avoid losing plausible genetic mechanism outputs.
   - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
