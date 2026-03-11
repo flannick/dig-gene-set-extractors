@@ -76,6 +76,30 @@ class MorphologyBranch:
     gene_scores: dict[str, float]
 
 
+def _truncate_neighbors_preserving_protected(
+    neighbors: list[tuple[str, float, float]],
+    *,
+    max_neighbors: int,
+    protected_ref_ids: set[str] | None,
+) -> list[tuple[str, float, float]]:
+    if max_neighbors <= 0:
+        return list(neighbors)
+    if len(neighbors) <= max_neighbors or not protected_ref_ids:
+        return list(neighbors[:max_neighbors])
+    kept = list(neighbors[:max_neighbors])
+    kept_ids = {ref_id for ref_id, _base, _evidence in kept}
+    protected_missing = [item for item in neighbors if item[0] in protected_ref_ids and item[0] not in kept_ids]
+    if not protected_missing:
+        return kept
+    unprotected_slots = [idx for idx, (ref_id, _base, _evidence) in enumerate(kept) if ref_id not in protected_ref_ids]
+    for item in protected_missing:
+        if unprotected_slots:
+            kept[unprotected_slots.pop()] = item
+        elif len(kept) < max_neighbors:
+            kept.append(item)
+    return sorted(kept, key=lambda entry: (-float(entry[2]), -float(entry[1]), str(entry[0])))
+
+
 def _bundle_gene_universe(
     *,
     compound_map: dict[str, dict[str, float]],
@@ -526,6 +550,101 @@ def _coherent_same_modality_compound_prelabel_ids(
     }
 
 
+def _query_label_catalog(
+    *,
+    query_nominal_genes: set[str],
+    target_annotations: dict[str, dict[str, str]] | None,
+    levels: tuple[str, ...] = ("pathway_seed", "target_class", "mechanism_label", "target_family"),
+) -> dict[str, set[str]]:
+    return {
+        level: _query_labels_for_level(
+            query_nominal_genes=query_nominal_genes,
+            target_annotations=target_annotations,
+            field=level,
+        )
+        for level in levels
+    }
+
+
+def _same_modality_compound_vote_reference_ids(
+    *,
+    raw_candidate_neighbors: list[tuple[str, float]],
+    reference_metadata: dict[str, dict[str, str]],
+    query_modality: str | None,
+    query_nominal_genes: set[str],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    target_annotations: dict[str, dict[str, str]] | None,
+    same_modality_top_n: int,
+    raw_similarity_ratio: float,
+) -> set[str]:
+    if query_modality != "compound" or not raw_candidate_neighbors:
+        return set()
+    top_raw = float(raw_candidate_neighbors[0][1])
+    label_catalog = _query_label_catalog(
+        query_nominal_genes=query_nominal_genes,
+        target_annotations=target_annotations,
+    )
+    vote_ids: set[str] = set()
+    same_modality_seen = 0
+    for ref_id, base in raw_candidate_neighbors[: max(80, same_modality_top_n * 8)]:
+        ref_modality = _normalize_modality_token(reference_metadata.get(ref_id, {}).get("perturbation_type", ""))
+        if not _is_same_modality_pair(query_modality=query_modality, ref_modality=ref_modality):
+            continue
+        qualifies_raw = same_modality_seen < same_modality_top_n or float(base) >= top_raw * raw_similarity_ratio
+        same_modality_seen += 1
+        if not qualifies_raw:
+            continue
+        if _reference_supports_nominal_target(
+            ref_id=ref_id,
+            query_nominal_genes=query_nominal_genes,
+            compound_map=compound_map,
+            genetic_map=genetic_map,
+        ):
+            vote_ids.add(ref_id)
+            continue
+        if target_annotations and any(label_catalog.values()):
+            ref_mechanisms = _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="mechanism_label",
+            )
+            ref_families = _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="target_family",
+            )
+            ref_classes = _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="target_class",
+            )
+            ref_pathways = _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="pathway_seed",
+            )
+            if (
+                ref_mechanisms & label_catalog.get("mechanism_label", set())
+                or ref_families & label_catalog.get("target_family", set())
+                or ref_classes & label_catalog.get("target_class", set())
+                or ref_pathways & label_catalog.get("pathway_seed", set())
+            ):
+                vote_ids.add(ref_id)
+                continue
+        if not target_annotations or not any(label_catalog.values()):
+            vote_ids.add(ref_id)
+    return vote_ids
+
+
 def _recurrence_weight(
     gene: str,
     *,
@@ -620,6 +739,7 @@ def _build_core_branch(
     genetic_map: dict[str, dict[str, float]],
     cfg: MorphologyWorkflowConfig,
     gene_idf: dict[str, float],
+    protected_ref_ids: set[str] | None = None,
 ) -> MorphologyBranch:
     core_neighbors = _refs_supporting_any_gene(
         penalized_neighbors=pooled_neighbors,
@@ -628,7 +748,11 @@ def _build_core_branch(
         allowed_genes=allowed_genes,
     )
     if int(cfg.max_reference_neighbors) > 0:
-        core_neighbors = core_neighbors[: int(cfg.max_reference_neighbors)]
+        core_neighbors = _truncate_neighbors_preserving_protected(
+            core_neighbors,
+            max_neighbors=int(cfg.max_reference_neighbors),
+            protected_ref_ids=protected_ref_ids,
+        )
     evidence_by_ref = {ref_id: float(evidence) for ref_id, _base, evidence in core_neighbors}
     direct_scores = {
         gene: float(target_support_weighted.get(gene, 0.0))
@@ -657,10 +781,15 @@ def _build_mechanism_branch(
     genetic_map: dict[str, dict[str, float]],
     cfg: MorphologyWorkflowConfig,
     gene_idf: dict[str, float],
+    protected_ref_ids: set[str] | None = None,
 ) -> MorphologyBranch:
     mechanism_neighbors = list(pooled_neighbors)
     if int(cfg.max_reference_neighbors) > 0:
-        mechanism_neighbors = mechanism_neighbors[: int(cfg.max_reference_neighbors)]
+        mechanism_neighbors = _truncate_neighbors_preserving_protected(
+            mechanism_neighbors,
+            max_neighbors=int(cfg.max_reference_neighbors),
+            protected_ref_ids=protected_ref_ids,
+        )
     evidence_by_ref = {ref_id: float(evidence) for ref_id, _base, evidence in mechanism_neighbors}
     gene_scores = _combine_modal_gene_scores(
         evidence_by_ref=evidence_by_ref,
@@ -1945,6 +2074,17 @@ def run_morphology_workflow(
                 same_modality_top_n=3,
                 raw_similarity_ratio=0.95,
             )
+            same_modality_compound_vote_ref_ids = _same_modality_compound_vote_reference_ids(
+                raw_candidate_neighbors=raw_candidate_neighbors,
+                reference_metadata=reference_metadata_effective,
+                query_modality=query_modality,
+                query_nominal_genes=query_nominal_genes,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                same_modality_top_n=12,
+                raw_similarity_ratio=0.25,
+            )
             coherent_compound_prelabel_ref_ids = _coherent_same_modality_compound_prelabel_ids(
                 raw_candidate_neighbors=raw_candidate_neighbors,
                 reference_metadata=reference_metadata_effective,
@@ -2132,6 +2272,20 @@ def run_morphology_workflow(
                     for ref_id in prelabel_ref_ids
                     if ref_id in raw_by_ref
                 ]
+                prelabel_vote_ref_ids = set(prelabel_ref_ids) | set(same_modality_compound_vote_ref_ids)
+                prelabel_vote_neighbors = sorted(
+                    [penalized_by_ref[ref_id] for ref_id in prelabel_vote_ref_ids if ref_id in penalized_by_ref],
+                    key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])),
+                )
+                raw_vote_neighbors = [
+                    (
+                        ref_id,
+                        float(raw_by_ref.get(ref_id, 0.0)),
+                        float(raw_by_ref.get(ref_id, 0.0)) * float(qc_weights.get(ref_id, 1.0)),
+                    )
+                    for ref_id in sorted(prelabel_vote_ref_ids)
+                    if ref_id in raw_by_ref
+                ]
                 mechanism_neighbors = list(penalized_neighbors)
                 protected_mechanism_pool_ids = set(protected_mechanism_ref_ids) | set(coherent_compound_prelabel_ref_ids)
                 if protected_mechanism_pool_ids:
@@ -2157,6 +2311,9 @@ def run_morphology_workflow(
                     for ref_id in pooled_ref_ids
                     if ref_id in raw_by_ref
                 ]
+            if cfg.mode == "direct_target":
+                prelabel_vote_neighbors = list(prelabel_neighbors)
+                raw_vote_neighbors = list(raw_prelabel_neighbors)
             target_support, target_support_count, target_support_by_modality, target_best_similarity = _target_support_from_neighbors(
                 penalized_neighbors=pooled_neighbors,
                 compound_map=compound_map,
@@ -2209,6 +2366,7 @@ def run_morphology_workflow(
                 genetic_map=genetic_map,
                 cfg=cfg,
                 gene_idf=gene_idf,
+                protected_ref_ids=protected_direct_ref_ids,
             )
             mechanism_branch = _build_mechanism_branch(
                 pooled_neighbors=pooled_neighbors,
@@ -2217,6 +2375,7 @@ def run_morphology_workflow(
                 genetic_map=genetic_map,
                 cfg=cfg,
                 gene_idf=gene_idf,
+                protected_ref_ids=protected_mechanism_pool_ids if cfg.mode != "direct_target" else protected_mechanism_ref_ids,
             )
             active_branch = core_branch if cfg.mode == "direct_target" else mechanism_branch
             retained_neighbors = [(ref_id, base) for ref_id, base, _evidence in active_branch.neighbors]
@@ -2231,8 +2390,8 @@ def run_morphology_workflow(
             label_decision, raw_label_scores, prelabel_label_scores, retained_label_scores = _choose_expansion_label(
                 mode=cfg.mode,
                 query_modality=query_modality,
-                raw_neighbors=raw_prelabel_neighbors,
-                prelabel_neighbors=prelabel_neighbors,
+                raw_neighbors=raw_vote_neighbors,
+                prelabel_neighbors=prelabel_vote_neighbors,
                 retained_neighbors=mechanism_branch.neighbors,
                 compound_map=compound_map,
                 genetic_map=genetic_map,
@@ -2242,7 +2401,7 @@ def run_morphology_workflow(
                 exact_target_support_present=exact_target_support_present,
             )
             raw_label_scores_by_modality = _label_scores_by_modality(
-                neighbors=raw_prelabel_neighbors,
+                neighbors=raw_vote_neighbors,
                 compound_map=compound_map,
                 genetic_map=genetic_map,
                 reference_metadata=reference_metadata_effective,
@@ -2250,7 +2409,7 @@ def run_morphology_workflow(
                 query_modality=query_modality,
             )
             prelabel_label_scores_by_modality = _label_scores_by_modality(
-                neighbors=prelabel_neighbors,
+                neighbors=prelabel_vote_neighbors,
                 compound_map=compound_map,
                 genetic_map=genetic_map,
                 reference_metadata=reference_metadata_effective,
@@ -2531,10 +2690,14 @@ def run_morphology_workflow(
                 "raw_same_modality_candidate_count": len(raw_same_modality_candidate_ids),
                 "protected_direct_reference_ids": sorted(protected_direct_ref_ids)[:25],
                 "protected_mechanism_reference_ids": sorted(protected_mechanism_ref_ids)[:25],
+                "same_modality_compound_vote_reference_ids": sorted(same_modality_compound_vote_ref_ids)[:25],
                 "coherent_compound_prelabel_reference_ids": sorted(coherent_compound_prelabel_ref_ids)[:25],
                 "prelabel_candidate_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_neighbors[:15]],
                 "prelabel_candidate_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_neighbors[:15]],
                 "prelabel_candidate_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_neighbors[:15]],
+                "prelabel_vote_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_vote_neighbors[:20]],
+                "prelabel_vote_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_vote_neighbors[:20]],
+                "prelabel_vote_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_vote_neighbors[:20]],
                 "raw_candidate_neighbors_detail": [
                     {
                         "ref_id": ref_id,
@@ -2558,6 +2721,19 @@ def run_morphology_workflow(
                         "protected_compound_coherent": ref_id in coherent_compound_prelabel_ref_ids,
                     }
                     for ref_id, base, evidence in prelabel_neighbors[:15]
+                ],
+                "prelabel_vote_neighbors_detail": [
+                    {
+                        "ref_id": ref_id,
+                        "similarity": float(base),
+                        "evidence": float(evidence),
+                        "modality": str(reference_metadata_effective.get(ref_id, {}).get("perturbation_type", "")).strip().lower(),
+                        "protected_direct": ref_id in protected_direct_ref_ids,
+                        "protected_mechanism": ref_id in protected_mechanism_ref_ids,
+                        "protected_compound_vote": ref_id in same_modality_compound_vote_ref_ids,
+                        "protected_compound_coherent": ref_id in coherent_compound_prelabel_ref_ids,
+                    }
+                    for ref_id, base, evidence in prelabel_vote_neighbors[:20]
                 ],
                 "retained_neighbors_detail": [
                     {
@@ -2715,10 +2891,14 @@ def run_morphology_workflow(
                     "raw_same_modality_candidate_count": len(raw_same_modality_candidate_ids),
                     "protected_direct_reference_ids": sorted(protected_direct_ref_ids)[:25],
                     "protected_mechanism_reference_ids": sorted(protected_mechanism_ref_ids)[:25],
+                    "same_modality_compound_vote_reference_ids": sorted(same_modality_compound_vote_ref_ids)[:25],
                     "coherent_compound_prelabel_reference_ids": sorted(coherent_compound_prelabel_ref_ids)[:25],
                     "prelabel_candidate_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_neighbors[:15]],
                     "prelabel_candidate_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_neighbors[:15]],
                     "prelabel_candidate_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_neighbors[:15]],
+                    "prelabel_vote_neighbor_ids": [ref_id for ref_id, _base, _evidence in prelabel_vote_neighbors[:20]],
+                    "prelabel_vote_neighbor_similarities": [float(base) for _ref_id, base, _evidence in prelabel_vote_neighbors[:20]],
+                    "prelabel_vote_neighbor_evidences": [float(evidence) for _ref_id, _base, evidence in prelabel_vote_neighbors[:20]],
                     "core_branch_neighbor_ids": [ref_id for ref_id, _base, _evidence in core_branch.neighbors[:10]],
                     "mechanism_branch_neighbor_ids": [ref_id for ref_id, _base, _evidence in mechanism_branch.neighbors[:10]],
                     "core_branch_neighbor_count": len(core_branch.neighbors),

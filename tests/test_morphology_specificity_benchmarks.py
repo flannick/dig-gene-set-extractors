@@ -786,8 +786,10 @@ def test_morphology_kcnn4_compound_prefers_channel_label_from_broader_prelabel_p
     summary = meta["summary"]
     assert "KCNN4" in genes
     assert summary["top_mechanism"] == "Channel signaling"
+    assert summary["same_modality_compound_vote_reference_ids"]
     assert summary["coherent_compound_prelabel_reference_ids"]
     assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_candidate_neighbor_ids"])
+    assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_vote_neighbor_ids"])
     assert summary["expansion_decision"]["reason"] in {
         "prelabel_coherent_label_support",
         "raw_query_consistent_label_fallback",
@@ -865,8 +867,10 @@ def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_fam
     summary = meta["summary"]
     assert "KCNN4" in genes
     assert summary["top_mechanism"] == "Channel signaling"
+    assert summary["same_modality_compound_vote_reference_ids"]
     assert summary["coherent_compound_prelabel_reference_ids"]
     assert summary["raw_same_modality_candidate_count"] >= 3
+    assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_vote_neighbor_ids"])
     assert summary["expansion_decision"]["reason"] in {
         "raw_same_modality_query_consistent_label_fallback",
         "raw_query_consistent_label_fallback",

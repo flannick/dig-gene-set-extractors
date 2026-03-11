@@ -273,6 +273,9 @@ Most useful fields:
 - `prelabel_candidate_neighbor_ids` / `prelabel_candidate_neighbors_detail`
   - the actual prelabel voting pool, with similarity, penalized evidence, and protection flags
   - this is the decisive stage for debugging raw -> prelabel family flips
+- `same_modality_compound_vote_reference_ids` / `prelabel_vote_neighbor_ids` / `prelabel_vote_neighbors_detail`
+  - a broader vote-only pool used for compound family/mechanism arbitration
+  - this is intentionally wider than the retained mechanism branch so raw same-modality family evidence can influence label choice even when final routing stays narrow
 - `retained_neighbors_detail`
   - neighbors that actually contributed after penalties/filtering
 - `family_vote_summary_raw`
@@ -341,6 +344,7 @@ Interpretation:
   - for `mechanism` only, ORF/CRISPR queries can still expand through a query-consistent label if same-modality support is present but the broader pre-label gate is slightly too weak; this is a surgical fallback to avoid losing plausible genetic mechanism outputs.
 - mechanism retrieval still uses penalized evidence, but it preserves a small protected same-modality path so no-holdout self-like compound or ORF references are not trivially discarded before label scoring.
 - for compound queries, pre-label voting also preserves a protected slice of high raw-similarity same-modality neighbors so hubness-heavy penalized ordering cannot erase broad coherent family support before label choice.
+- for compound queries, the extractor now separates the broader prelabel vote pool from the narrower retained mechanism branch: family/mechanism labels are chosen from the broader vote pool, while final gene scoring still uses the narrower retained branch.
   - `hybrid` emits both strict and expanded outputs, then writes a merged `geneset.tsv`; the strict branch does not define the expansion branch.
   - current expansion is confidence-weighted rather than hard-vetoed.
   - same-modality support still matters more for ORF/CRISPR queries than for compound queries.
