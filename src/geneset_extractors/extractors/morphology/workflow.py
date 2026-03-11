@@ -680,6 +680,26 @@ def _choose_expansion_label(
     raw_scores: dict[str, dict[str, object]] = {}
     prelabel_scores: dict[str, dict[str, object]] = {}
     retained_scores: dict[str, dict[str, object]] = {}
+    same_modality_raw_neighbors = [
+        item
+        for item in raw_neighbors
+        if _is_same_modality_pair(
+            query_modality=query_modality,
+            ref_modality=_reference_modality_for_same_modality(
+                ref_id=str(item[0]),
+                reference_metadata=reference_metadata,
+                mapping_modality=str(
+                    bounded_reference_gene_mapping(
+                        ref_id=str(item[0]),
+                        compound_map=compound_map,
+                        genetic_map=genetic_map,
+                    )[1].get("modality")
+                    or ""
+                ),
+            ),
+        )
+    ]
+    same_modality_raw_scores: dict[str, dict[str, object]] = {}
     compound_like = query_modality == "compound"
     threshold = 0.18 if compound_like else 0.24
     for level in levels:
@@ -713,8 +733,18 @@ def _choose_expansion_label(
         raw_scores[level] = raw_payload
         prelabel_scores[level] = prelabel_payload
         retained_scores[level] = retained_payload
+        same_modality_raw_scores[level] = _score_label_from_neighbors(
+            neighbors=same_modality_raw_neighbors,
+            compound_map=compound_map,
+            genetic_map=genetic_map,
+            reference_metadata=reference_metadata,
+            target_annotations=target_annotations,
+            field=level,
+            query_modality=query_modality,
+        )
     for level in levels:
         raw_payload = raw_scores[level]
+        same_modality_raw_payload = same_modality_raw_scores[level]
         prelabel_payload = prelabel_scores[level]
         retained_payload = retained_scores[level]
         label = prelabel_payload.get("top_label")
@@ -747,10 +777,37 @@ def _choose_expansion_label(
         )
         raw_support = int(raw_payload.get("top_label_support_count", 0) or 0)
         raw_same_modality = int(raw_payload.get("top_label_same_modality_count", 0) or 0)
+        same_modality_raw_label = str(same_modality_raw_payload.get("top_label") or "")
+        same_modality_raw_mass = float(same_modality_raw_payload.get("top_label_mass", 0.0) or 0.0)
+        same_modality_raw_support = int(same_modality_raw_payload.get("top_label_support_count", 0) or 0)
         retained_support = int(retained_payload.get("top_label_support_count", 0) or 0)
         raw_query_consistent = bool(raw_label and raw_label in query_labels)
+        same_modality_raw_query_consistent = bool(same_modality_raw_label and same_modality_raw_label in query_labels)
         prelabel_query_consistent = bool(label and label in query_labels)
         retained_query_consistent = bool(retained_label and retained_label in query_labels)
+        if (
+            compound_like
+            and not exact_target_support_present
+            and same_modality_raw_query_consistent
+            and not prelabel_query_consistent
+            and same_modality_raw_mass >= 0.15
+            and same_modality_raw_support >= 2
+            and (retained_support <= 2 or not retained_query_consistent)
+        ):
+            fallback_confidence = same_modality_raw_mass * min(1.0, float(same_modality_raw_support) / 4.0) * float(same_modality_raw_payload.get("specificity_bonus", 1.0))
+            if fallback_confidence >= threshold:
+                decision.update(
+                    {
+                        "allow_expansion": True,
+                        "reason": "raw_same_modality_query_consistent_label_fallback",
+                        "chosen_level": level,
+                        "chosen_label": same_modality_raw_label,
+                        "expansion_confidence": fallback_confidence,
+                        "allow_family": level == "target_family",
+                        "allow_mechanism": level in {"mechanism_label", "target_class", "pathway_seed"},
+                    }
+                )
+                return decision, raw_scores, prelabel_scores, retained_scores
         if (
             compound_like
             and not exact_target_support_present

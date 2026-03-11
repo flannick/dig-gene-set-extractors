@@ -786,7 +786,79 @@ def test_morphology_kcnn4_compound_prefers_channel_label_from_broader_prelabel_p
     summary = meta["summary"]
     assert "KCNN4" in genes
     assert summary["top_mechanism"] == "Channel signaling"
-    assert summary["expansion_decision"]["reason"] in {"prelabel_coherent_label_support", "raw_query_consistent_label_fallback"}
+    assert summary["expansion_decision"]["reason"] in {"prelabel_coherent_label_support", "raw_query_consistent_label_fallback", "raw_same_modality_query_consistent_label_fallback"}
+
+
+def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_family_prelabel(tmp_path: Path):
+    query = tmp_path / "query.tsv"
+    query.write_text("sample_id\tf1\tf2\nQ1\t1.0\t0.0\n", encoding="utf-8")
+    query_meta = tmp_path / "query_meta.tsv"
+    query_meta.write_text("sample_id\tperturbation_type\tgene_symbol\nQ1\tcompound\tKCNN4\n", encoding="utf-8")
+    refs = tmp_path / "refs.tsv"
+    refs.write_text(
+        "perturbation_id\tf1\tf2\n"
+        "ORF_K1\t0.98\t0.02\n"
+        "ORF_K2\t0.97\t0.03\n"
+        "CHAN1\t0.96\t0.04\n"
+        "CHAN2\t0.95\t0.05\n"
+        "CHAN3\t0.94\t0.06\n",
+        encoding="utf-8",
+    )
+    ref_meta = tmp_path / "ref_meta.tsv"
+    ref_meta.write_text(
+        "perturbation_id\tperturbation_type\tcompound_id\tgene_symbol\thub_score\tqc_weight\tis_control\n"
+        "ORF_K1\torf\t\tPDPK1\t0.1\t1.0\tfalse\n"
+        "ORF_K2\torf\t\tBTK\t0.1\t1.0\tfalse\n"
+        "CHAN1\tcompound\tCHAN1\t\t100.0\t1.0\tfalse\n"
+        "CHAN2\tcompound\tCHAN2\t\t95.0\t1.0\tfalse\n"
+        "CHAN3\tcompound\tCHAN3\t\t90.0\t1.0\tfalse\n",
+        encoding="utf-8",
+    )
+    targets = tmp_path / "targets.tsv"
+    targets.write_text(
+        "compound_id\tgene_symbol\tweight\n"
+        "CHAN1\tCACNA2D3\t1.0\n"
+        "CHAN2\tKCNJ1\t1.0\n"
+        "CHAN3\tCACNG1\t1.0\n",
+        encoding="utf-8",
+    )
+    annotations = tmp_path / "target_annotations.tsv"
+    annotations.write_text(
+        "gene_symbol\ttarget_family\ttarget_class\tmechanism_label\tpathway_seed\n"
+        "KCNN4\tIon channel\tPotassium channel\tChannel signaling\tK_channel\n"
+        "KCNJ1\tIon channel\tPotassium channel\tChannel signaling\tK_channel\n"
+        "CACNA2D3\tIon channel\tCalcium channel\tChannel signaling\tCalcium_channel\n"
+        "CACNG1\tIon channel\tCalcium channel\tChannel signaling\tCalcium_channel\n"
+        "PDPK1\tKinase\tPI3K-AKT pathway kinase\tPI3K-AKT signaling\tPI3K_AKT\n"
+        "BTK\tKinase\tNon-receptor tyrosine kinase\tTyrosine kinase signaling\tTyrosine_kinase\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.query_profiles_tsv = str(query)
+    args.query_metadata_tsv = str(query_meta)
+    args.group_query_by = None
+    args.reference_profiles_tsv = str(refs)
+    args.reference_metadata_tsv = str(ref_meta)
+    args.compound_targets_tsv = str(targets)
+    args.target_annotations_tsv = str(annotations)
+    args.feature_stats_tsv = None
+    args.feature_schema_tsv = None
+    args.out_dir = str(tmp_path / "kcnn4_compound_same_modality")
+    args.mode = "mechanism"
+    args.polarity = "similar"
+    args.top_k = 8
+    args.gmt_topk_list = "8"
+    args.gmt_min_genes = 1
+    args.emit_small_gene_sets = True
+    morphology_profile_query.run(args)
+
+    genes = _genes(Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.tsv")
+    meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
+    summary = meta["summary"]
+    assert "KCNN4" in genes
+    assert summary["top_mechanism"] == "Channel signaling"
+    assert summary["expansion_decision"]["reason"] in {"raw_same_modality_query_consistent_label_fallback", "raw_query_consistent_label_fallback"}
 
 
 def test_morphology_hybrid_expands_from_mechanism_branch_when_core_is_tiny(tmp_path: Path):
