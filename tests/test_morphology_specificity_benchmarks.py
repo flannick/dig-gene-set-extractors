@@ -326,6 +326,7 @@ def test_morphology_mechanism_noholdout_keeps_self_like_orf_reference(tmp_path: 
     morphology_profile_query.run(args)
     meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert "SELF" in meta["summary"]["mechanism_branch_neighbor_ids"]
+    assert "SELF" in meta["summary"]["prelabel_vote_neighbor_ids"]
 
 
 def test_morphology_mechanism_noholdout_keeps_self_like_compound_reference(tmp_path: Path):
@@ -791,6 +792,7 @@ def test_morphology_kcnn4_compound_prefers_channel_label_from_broader_prelabel_p
     assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_candidate_neighbor_ids"])
     assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_vote_neighbor_ids"])
     assert summary["expansion_decision"]["reason"] in {
+        "compound_family_coherence_override",
         "prelabel_coherent_label_support",
         "raw_query_consistent_label_fallback",
         "raw_same_modality_query_consistent_label_fallback",
@@ -872,6 +874,7 @@ def test_morphology_kcnn4_compound_same_modality_raw_signal_beats_tiny_wrong_fam
     assert summary["raw_same_modality_candidate_count"] >= 3
     assert any(ref_id.startswith("CHAN") for ref_id in summary["prelabel_vote_neighbor_ids"])
     assert summary["expansion_decision"]["reason"] in {
+        "compound_family_coherence_override",
         "raw_same_modality_query_consistent_label_fallback",
         "raw_query_consistent_label_fallback",
         "raw_same_modality_coherence_guard",
@@ -999,7 +1002,7 @@ def test_morphology_retained_label_can_beat_raw_label_mismatch(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "program=Q1__polarity=similar" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["summary"]["expansion_decision"]["raw_retained_mismatch"] is True
     assert meta["summary"]["expansion_decision"]["allow_expansion"] is True
-    assert meta["summary"]["expansion_decision"]["chosen_label"] in {"Receptor tyrosine kinase", "RTK signaling", "Kinase"}
+    assert meta["summary"]["expansion_decision"]["chosen_label"] in {"NTRK_RTK", "Receptor tyrosine kinase", "RTK signaling", "Kinase"}
 
 
 def test_morphology_narrow_label_beats_broad_label(tmp_path: Path):

@@ -645,6 +645,106 @@ def _same_modality_compound_vote_reference_ids(
     return vote_ids
 
 
+def _build_compound_prelabel_vote_neighbors(
+    *,
+    raw_candidate_neighbors: list[tuple[str, float]],
+    prelabel_ref_ids: list[str],
+    same_modality_compound_vote_ref_ids: set[str],
+    coherent_compound_prelabel_ref_ids: set[str],
+    protected_mechanism_ref_ids: set[str],
+    reference_metadata: dict[str, dict[str, str]],
+    query_nominal_genes: set[str],
+    compound_map: dict[str, dict[str, float]],
+    genetic_map: dict[str, dict[str, float]],
+    target_annotations: dict[str, dict[str, str]] | None,
+    qc_weights: dict[str, float],
+    max_neighbors: int,
+    min_effective_neighbors: int,
+) -> list[tuple[str, float, float]]:
+    vote_ref_ids = (
+        set(prelabel_ref_ids)
+        | set(same_modality_compound_vote_ref_ids)
+        | set(coherent_compound_prelabel_ref_ids)
+        | set(protected_mechanism_ref_ids)
+    )
+    if not vote_ref_ids:
+        return []
+    label_catalog = _query_label_catalog(
+        query_nominal_genes=query_nominal_genes,
+        target_annotations=target_annotations,
+    )
+    ordered_by_raw = {ref_id: idx for idx, (ref_id, _base) in enumerate(raw_candidate_neighbors)}
+    vote_neighbors: list[tuple[str, float, float]] = []
+    for ref_id in vote_ref_ids:
+        raw_rank = int(ordered_by_raw.get(ref_id, 10**9))
+        if raw_rank == 10**9:
+            continue
+        base = float(raw_candidate_neighbors[raw_rank][1])
+        evidence = float(base) * float(qc_weights.get(ref_id, 1.0))
+        ref_modality = _normalize_modality_token(reference_metadata.get(ref_id, {}).get("perturbation_type", ""))
+        if _is_same_modality_pair(query_modality="compound", ref_modality=ref_modality):
+            evidence *= 1.30
+        if raw_rank < 6:
+            evidence *= 1.10
+        if ref_id in same_modality_compound_vote_ref_ids:
+            evidence *= 1.15
+        if ref_id in coherent_compound_prelabel_ref_ids:
+            evidence *= 1.20
+        if ref_id in protected_mechanism_ref_ids:
+            evidence *= 1.05
+        if _reference_supports_nominal_target(
+            ref_id=ref_id,
+            query_nominal_genes=query_nominal_genes,
+            compound_map=compound_map,
+            genetic_map=genetic_map,
+        ):
+            evidence *= 1.25
+        if target_annotations and any(label_catalog.values()):
+            if _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="pathway_seed",
+            ) & label_catalog.get("pathway_seed", set()):
+                evidence *= 1.20
+            elif _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="target_class",
+            ) & label_catalog.get("target_class", set()):
+                evidence *= 1.15
+            elif _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="mechanism_label",
+            ) & label_catalog.get("mechanism_label", set()):
+                evidence *= 1.12
+            elif _reference_labels_for_level(
+                ref_id=ref_id,
+                compound_map=compound_map,
+                genetic_map=genetic_map,
+                target_annotations=target_annotations,
+                field="target_family",
+            ) & label_catalog.get("target_family", set()):
+                evidence *= 1.08
+        vote_neighbors.append((ref_id, float(base), float(evidence)))
+    vote_neighbors.sort(key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])))
+    if max_neighbors > 0:
+        vote_neighbors = _truncate_neighbors_preserving_protected(
+            vote_neighbors,
+            max_neighbors=max(max_neighbors * 8, min_effective_neighbors, 60),
+            protected_ref_ids=set(same_modality_compound_vote_ref_ids)
+            | set(coherent_compound_prelabel_ref_ids)
+            | set(protected_mechanism_ref_ids),
+        )
+    return vote_neighbors
+
+
 def _recurrence_weight(
     gene: str,
     *,
@@ -977,6 +1077,70 @@ def _choose_expansion_label(
             field=level,
             query_modality=query_modality,
         )
+    if compound_like:
+        query_label_catalog = _query_label_catalog(
+            query_nominal_genes=query_nominal_genes,
+            target_annotations=target_annotations,
+        )
+        raw_same_family = same_modality_raw_scores.get("target_family", {})
+        prelabel_family = prelabel_scores.get("target_family", {})
+        raw_same_mechanism = same_modality_raw_scores.get("mechanism_label", {})
+        prelabel_mechanism = prelabel_scores.get("mechanism_label", {})
+        family_query_consistent = bool(
+            raw_same_family.get("top_label")
+            and raw_same_family.get("top_label") in query_label_catalog.get("target_family", set())
+        )
+        mechanism_query_consistent = bool(
+            raw_same_mechanism.get("top_label")
+            and raw_same_mechanism.get("top_label") in query_label_catalog.get("mechanism_label", set())
+        )
+        prelabel_family_wrong = bool(
+            query_label_catalog.get("target_family")
+            and prelabel_family.get("top_label")
+            and prelabel_family.get("top_label") not in query_label_catalog.get("target_family", set())
+        )
+        prelabel_family_support = int(prelabel_family.get("top_label_support_count", 0) or 0)
+        prelabel_family_mass = float(prelabel_family.get("top_label_mass", 0.0) or 0.0)
+        raw_same_family_support = int(raw_same_family.get("top_label_support_count", 0) or 0)
+        raw_same_family_mass = float(raw_same_family.get("top_label_mass", 0.0) or 0.0)
+        shallow_competing_family = prelabel_family_support <= max(3, raw_same_family_support - 1)
+        if (
+            family_query_consistent
+            and prelabel_family_wrong
+            and shallow_competing_family
+            and raw_same_family_mass >= 0.20
+            and int(raw_same_family.get("top_label_same_modality_count", 0) or 0) >= 2
+            and prelabel_family_mass <= max(raw_same_family_mass * 1.20, 0.28)
+        ):
+            if (
+                mechanism_query_consistent
+                and float(raw_same_mechanism.get("top_label_mass", 0.0) or 0.0) >= 0.15
+                and int(raw_same_mechanism.get("top_label_same_modality_count", 0) or 0) >= 2
+            ):
+                decision.update(
+                    {
+                        "allow_expansion": True,
+                        "reason": "compound_family_coherence_override",
+                        "chosen_level": "mechanism_label",
+                        "chosen_label": str(raw_same_mechanism.get("top_label") or ""),
+                        "expansion_confidence": float(raw_same_mechanism.get("top_label_mass", 0.0) or 0.0),
+                        "allow_family": False,
+                        "allow_mechanism": True,
+                    }
+                )
+                return decision, raw_scores, prelabel_scores, retained_scores
+            decision.update(
+                {
+                    "allow_expansion": True,
+                    "reason": "compound_family_coherence_override",
+                    "chosen_level": "target_family",
+                    "chosen_label": str(raw_same_family.get("top_label") or ""),
+                    "expansion_confidence": float(raw_same_family.get("top_label_mass", 0.0) or 0.0),
+                    "allow_family": True,
+                    "allow_mechanism": False,
+                }
+            )
+            return decision, raw_scores, prelabel_scores, retained_scores
     for level in levels:
         raw_payload = raw_scores[level]
         same_modality_raw_payload = same_modality_raw_scores[level]
@@ -1020,6 +1184,61 @@ def _choose_expansion_label(
         same_modality_raw_query_consistent = bool(same_modality_raw_label and same_modality_raw_label in query_labels)
         prelabel_query_consistent = bool(label and label in query_labels)
         retained_query_consistent = bool(retained_label and retained_label in query_labels)
+        if compound_like and query_labels and not prelabel_query_consistent:
+            if (
+                retained_query_consistent
+                and float(retained_payload.get("top_label_mass", 0.0) or 0.0) >= 0.15
+                and int(retained_payload.get("top_label_support_count", 0) or 0) >= 1
+            ):
+                fallback_confidence = (
+                    float(retained_payload.get("top_label_mass", 0.0) or 0.0)
+                    * min(1.0, float(int(retained_payload.get("top_label_support_count", 0) or 0)) / 2.0)
+                    * float(retained_payload.get("specificity_bonus", 1.0))
+                )
+                if fallback_confidence >= threshold:
+                    decision.update(
+                        {
+                            "allow_expansion": True,
+                            "reason": "retained_query_consistent_label_fallback",
+                            "chosen_level": level,
+                            "chosen_label": retained_label,
+                            "expansion_confidence": fallback_confidence,
+                            "allow_family": level == "target_family",
+                            "allow_mechanism": level in {"mechanism_label", "target_class", "pathway_seed"},
+                        }
+                    )
+                    return decision, raw_scores, prelabel_scores, retained_scores
+            if level in {"pathway_seed", "target_class"}:
+                broader_query_consistent = False
+                for broader_level in ("mechanism_label", "target_family"):
+                    broader_prelabel = prelabel_scores.get(broader_level, {})
+                    broader_retained = retained_scores.get(broader_level, {})
+                    broader_query_labels = _query_labels_for_level(
+                        query_nominal_genes=query_nominal_genes,
+                        target_annotations=target_annotations,
+                        field=broader_level,
+                    )
+                    broader_prelabel_label = str(broader_prelabel.get("top_label") or "")
+                    broader_retained_label = str(broader_retained.get("top_label") or "")
+                    if (
+                        broader_query_labels
+                        and (
+                            (
+                                broader_prelabel_label in broader_query_labels
+                                and float(broader_prelabel.get("top_label_mass", 0.0) or 0.0) >= 0.18
+                                and int(broader_prelabel.get("top_label_support_count", 0) or 0) >= 2
+                            )
+                            or (
+                                broader_retained_label in broader_query_labels
+                                and float(broader_retained.get("top_label_mass", 0.0) or 0.0) >= 0.15
+                                and int(broader_retained.get("top_label_support_count", 0) or 0) >= 1
+                            )
+                        )
+                    ):
+                        broader_query_consistent = True
+                        break
+                if broader_query_consistent:
+                    continue
         if (
             compound_like
             and same_modality_raw_label
@@ -2273,10 +2492,28 @@ def run_morphology_workflow(
                     if ref_id in raw_by_ref
                 ]
                 prelabel_vote_ref_ids = set(prelabel_ref_ids) | set(same_modality_compound_vote_ref_ids)
-                prelabel_vote_neighbors = sorted(
-                    [penalized_by_ref[ref_id] for ref_id in prelabel_vote_ref_ids if ref_id in penalized_by_ref],
-                    key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])),
-                )
+                if query_modality == "compound":
+                    prelabel_vote_neighbors = _build_compound_prelabel_vote_neighbors(
+                        raw_candidate_neighbors=raw_candidate_neighbors,
+                        prelabel_ref_ids=prelabel_ref_ids,
+                        same_modality_compound_vote_ref_ids=same_modality_compound_vote_ref_ids,
+                        coherent_compound_prelabel_ref_ids=coherent_compound_prelabel_ref_ids,
+                        protected_mechanism_ref_ids=protected_mechanism_ref_ids,
+                        reference_metadata=reference_metadata_effective,
+                        query_nominal_genes=query_nominal_genes,
+                        compound_map=compound_map,
+                        genetic_map=genetic_map,
+                        target_annotations=target_annotations,
+                        qc_weights=qc_weights,
+                        max_neighbors=int(cfg.max_reference_neighbors),
+                        min_effective_neighbors=int(cfg.min_effective_neighbors),
+                    )
+                    prelabel_vote_ref_ids = {ref_id for ref_id, _base, _evidence in prelabel_vote_neighbors}
+                else:
+                    prelabel_vote_neighbors = sorted(
+                        [penalized_by_ref[ref_id] for ref_id in prelabel_vote_ref_ids if ref_id in penalized_by_ref],
+                        key=lambda item: (-float(item[2]), -float(item[1]), str(item[0])),
+                    )
                 raw_vote_neighbors = [
                     (
                         ref_id,
@@ -2287,7 +2524,11 @@ def run_morphology_workflow(
                     if ref_id in raw_by_ref
                 ]
                 mechanism_neighbors = list(penalized_neighbors)
-                protected_mechanism_pool_ids = set(protected_mechanism_ref_ids) | set(coherent_compound_prelabel_ref_ids)
+                protected_mechanism_pool_ids = (
+                    set(protected_mechanism_ref_ids)
+                    | set(coherent_compound_prelabel_ref_ids)
+                    | (set(same_modality_compound_vote_ref_ids) if query_modality == "compound" else set())
+                )
                 if protected_mechanism_pool_ids:
                     for ref_id in protected_mechanism_pool_ids:
                         if ref_id in penalized_by_ref and all(existing_ref != ref_id for existing_ref, _b, _e in mechanism_neighbors):
