@@ -229,6 +229,42 @@
       "license": "Curated compound-QC bundle license; document source/version in local bundle provenance"
     },
     {
+      "id": "calorimetry_term_templates_mouse_v1",
+      "description": "Packaged mouse calorimetry phenotype term templates with columns term_id,term_label,program,feature,weight",
+      "provider": "packaged_default_or_bundle",
+      "stable_id": "package:calorimetry_term_templates_mouse_v1",
+      "version": "v1",
+      "genome_build": "mouse",
+      "filename": "calr_term_templates_mouse_v1.tsv",
+      "url": "",
+      "sha256": "",
+      "license": "Curated calorimetry term-template table distributed with the package; provenance documented in assay docs"
+    },
+    {
+      "id": "calorimetry_phenotype_gene_edges_mouse_v1",
+      "description": "Packaged mouse calorimetry phenotype-to-gene routing edges with columns term_id,gene_id,gene_symbol,weight",
+      "provider": "packaged_default_or_bundle",
+      "stable_id": "package:calorimetry_phenotype_gene_edges_mouse_v1",
+      "version": "v1",
+      "genome_build": "mouse",
+      "filename": "calr_phenotype_gene_edges_mouse_v1.tsv",
+      "url": "",
+      "sha256": "",
+      "license": "Curated calorimetry phenotype-edge table distributed with the package; provenance documented in assay docs"
+    },
+    {
+      "id": "calorimetry_term_hierarchy_mouse_v1",
+      "description": "Packaged mouse calorimetry phenotype term hierarchy with columns parent_term_id,child_term_id",
+      "provider": "packaged_default_or_bundle",
+      "stable_id": "package:calorimetry_term_hierarchy_mouse_v1",
+      "version": "v1",
+      "genome_build": "mouse",
+      "filename": "calr_term_hierarchy_mouse_v1.tsv",
+      "url": "",
+      "sha256": "",
+      "license": "Curated calorimetry term-hierarchy table distributed with the package; provenance documented in assay docs"
+    },
+    {
       "id": "morphology_target_annotations_human_v1",
       "description": "Canonical curated target-annotation table for mechanism-aware morphology bundles with columns gene_symbol,target_family,target_class,mechanism_label,pathway_seed",
       "provider": "packaged_default_or_bundle",

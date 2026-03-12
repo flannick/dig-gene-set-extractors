@@ -583,6 +583,77 @@ def _add_ptm_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max_k_fraction", type=float, default=0.25)
 
 
+def _add_calr_common_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--calr_data_csv", required=True)
+    parser.add_argument("--session_csv")
+    parser.add_argument("--exclusions_tsv")
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--signature_name")
+    parser.add_argument("--analysis_start_hour", type=float)
+    parser.add_argument("--analysis_end_hour", type=float)
+    parser.add_argument("--photoperiod_lights_on_hour", type=float)
+    parser.add_argument("--photoperiod_hours_light", type=float, default=12.0)
+    parser.add_argument("--exploratory_without_session", type=_parse_bool, default=True)
+    parser.add_argument("--mass_covariate")
+    parser.add_argument("--min_group_size", type=int, default=2)
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--reference_bundle_id")
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+        gmt_split_signed=False,
+        gmt_require_symbol=False,
+        emit_small_gene_sets=False,
+    )
+
+
+def _add_calr_ontology_mapper_flags(parser: argparse.ArgumentParser) -> None:
+    _add_calr_common_flags(parser)
+    parser.add_argument("--term_templates_tsv")
+    parser.add_argument("--phenotype_gene_edges_tsv")
+    parser.add_argument("--term_hierarchy_tsv")
+
+
+def _add_calr_profile_query_flags(parser: argparse.ArgumentParser) -> None:
+    _add_calr_common_flags(parser)
+    parser.add_argument("--reference_profiles_tsv")
+    parser.add_argument("--reference_metadata_tsv")
+    parser.add_argument("--feature_schema_tsv")
+    parser.add_argument("--feature_stats_tsv")
+    parser.add_argument("--similarity_metric", choices=["cosine", "pearson"], default="cosine")
+    parser.add_argument("--similarity_floor", type=float, default=0.0)
+    parser.add_argument("--similarity_power", type=float, default=1.0)
+    parser.add_argument("--hubness_penalty", choices=["none", "inverse_linear", "inverse_rank"], default="inverse_linear")
+    parser.add_argument("--provenance_mismatch_penalty", type=float, default=0.15)
+
+
+def _add_calr_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--reference_profiles_tsv", required=True)
+    parser.add_argument("--reference_metadata_tsv", required=True)
+    parser.add_argument("--feature_schema_tsv")
+    parser.add_argument("--feature_stats_tsv")
+    parser.add_argument("--term_templates_tsv")
+    parser.add_argument("--phenotype_gene_edges_tsv")
+    parser.add_argument("--term_hierarchy_tsv")
+    parser.add_argument("--include_packaged_term_hierarchy", type=_parse_bool, default=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["mouse", "human"], required=True)
+    parser.add_argument("--bundle_id", required=True)
+    parser.add_argument("--write_distribution_artifact", type=_parse_bool, default=True)
+    parser.add_argument("--distribution_dir")
+
+
 def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile_paths", required=True, help="Comma-separated morphology profile TSV/CSV paths.")
     parser.add_argument("--experimental_metadata_tsv", required=True)
@@ -924,6 +995,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_ptm_prepare_public_flags(p_ptm_public)
     p_ptm_prepare = wf_sub.add_parser("ptm_prepare_reference_bundle")
     _add_ptm_prepare_reference_bundle_flags(p_ptm_prepare)
+    p_calr_prepare = wf_sub.add_parser("calr_prepare_reference_bundle")
+    _add_calr_prepare_reference_bundle_flags(p_calr_prepare)
     p_jump_prepare = wf_sub.add_parser("jump_prepare_reference_bundle")
     _add_jump_prepare_reference_bundle_flags(p_jump_prepare)
 
@@ -1220,6 +1293,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_drug.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_drug.add_argument("--genome_build", required=True)
     _add_drug_response_flags(p_drug)
+
+    p_calr_onto = conv.add_parser("calr_ontology_mapper")
+    p_calr_onto.add_argument("--out_dir", required=True)
+    p_calr_onto.add_argument("--organism", choices=["mouse", "human"], required=True)
+    p_calr_onto.add_argument("--genome_build", required=True)
+    _add_calr_ontology_mapper_flags(p_calr_onto)
+
+    p_calr_profile = conv.add_parser("calr_profile_query")
+    p_calr_profile.add_argument("--out_dir", required=True)
+    p_calr_profile.add_argument("--organism", choices=["mouse", "human"], required=True)
+    p_calr_profile.add_argument("--genome_build", required=True)
+    _add_calr_profile_query_flags(p_calr_profile)
 
     p_morph = conv.add_parser("morphology_profile_query")
     _add_morphology_profile_query_flags(p_morph)
@@ -1525,6 +1610,18 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=ptm_prepare_reference_bundle n_canonical_sites={result.get('n_canonical_sites')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "calr_prepare_reference_bundle":
+                from geneset_extractors.workflows.calr_prepare_reference_bundle import run as run_calr_prepare_reference_bundle
+
+                result = run_calr_prepare_reference_bundle(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=calr_prepare_reference_bundle n_profiles={result.get('n_profiles')} "
+                    f"out={result.get('bundle_manifest')} "
+                    f"tarball={result.get('tarball')}",
                     file=sys.stderr,
                 )
                 return 0

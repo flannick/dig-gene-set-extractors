@@ -21,6 +21,7 @@ Both CLI names dispatch to the same implementation.
 - scRNA cNMF prep workflow: `docs/assays/rnaseq/scrna_cnmf_workflow.md`
 - DNA methylation: `docs/assays/methylation/guide.md`
 - Proteomics PTM: `docs/assays/proteomics/guide.md`
+- Indirect calorimetry: `docs/assays/calorimetry/guide.md`
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV segments: `docs/assays/cnv/guide.md`
 - Drug response screens: `docs/assays/drug_response/guide.md`
@@ -36,6 +37,7 @@ Both CLI names dispatch to the same implementation.
 - RNA-seq methods: `docs/assays/rnaseq/methods.tex`
 - DNA methylation methods: `docs/assays/methylation/methods.tex`
 - Proteomics PTM methods: `docs/assays/proteomics/methods.tex`
+- Indirect calorimetry methods: `docs/assays/calorimetry/methods.tex`
 - CNV methods: `docs/assays/cnv/methods.tex`
 - Drug response methods: `docs/assays/drug_response/methods.tex`
 - Morphology methods: `docs/assays/morphology/methods.tex`
@@ -54,10 +56,12 @@ Assay-specific resource instructions:
 
 - ATAC resources and bundles: `docs/assays/atac/reference_bundle.md`
 - Proteomics PTM bundle guide: `docs/assays/proteomics/reference_bundle.md`
+- Indirect calorimetry bundle guide: `docs/assays/calorimetry/reference_bundle.md`
 - Proteomics PTM public-data workflow: `geneset-extractors workflows ptm_prepare_public`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
 - Proteomics PTM supports `workflows ptm_prepare_public` for CDAP/PDC standardization plus both `ptm_site_diff` and `ptm_site_matrix`; the converters can use the optional alias/ubiquity bundle.
+- Indirect calorimetry supports `workflows calr_prepare_reference_bundle` plus `calr_ontology_mapper` and `calr_profile_query`.
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
 - Morphology supports an optional local reference bundle for reusable perturbation profiles, metadata, and feature stats.
 - Morphology bundles can be resolved directly from `--resources_dir/<bundle_id>.bundle.json` without a separate overlay manifest.

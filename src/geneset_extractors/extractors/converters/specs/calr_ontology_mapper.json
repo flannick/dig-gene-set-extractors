@@ -1,0 +1,51 @@
+{
+  "name": "calr_ontology_mapper",
+  "description": "CalR-compatible indirect calorimetry dataset mapped through phenotype term templates and phenotype-to-gene edges into weighted gene programs and GMT gene sets",
+  "inputs": [
+    {"name": "calr_data_csv", "type": "csv", "description": "Standardized CalR data CSV with subject-level time series", "required": true},
+    {"name": "session_csv", "type": "csv", "description": "Preferred CalR session CSV carrying selected window, group, and body-composition metadata", "required": false},
+    {"name": "exclusions_tsv", "type": "tsv", "description": "Optional explicit subject/time exclusions", "required": false},
+    {"name": "term_templates_tsv", "type": "tsv", "description": "Optional phenotype term-template table overriding packaged defaults or bundle content", "required": false},
+    {"name": "phenotype_gene_edges_tsv", "type": "tsv", "description": "Optional phenotype-to-gene edge table overriding packaged defaults or bundle content", "required": false},
+    {"name": "term_hierarchy_tsv", "type": "tsv", "description": "Optional phenotype term hierarchy for expanded routing", "required": false}
+  ],
+  "parameters": [
+    {"name": "dataset_label", "type": "string", "default": "", "help": "Optional dataset label for summaries and GMT naming"},
+    {"name": "signature_name", "type": "string", "default": "", "help": "Optional signature label for summaries and GMT naming"},
+    {"name": "analysis_start_hour", "type": "number", "default": null, "help": "Explicit selected-window start hour; overrides session values"},
+    {"name": "analysis_end_hour", "type": "number", "default": null, "help": "Explicit selected-window end hour; overrides session values"},
+    {"name": "photoperiod_lights_on_hour", "type": "number", "default": null, "help": "Explicit lights-on hour; overrides session values"},
+    {"name": "photoperiod_hours_light", "type": "number", "default": 12.0, "help": "Hours classified as light phase"},
+    {"name": "exploratory_without_session", "type": "boolean", "default": true, "help": "Allow exploratory analysis without a session CSV, with strong warnings"},
+    {"name": "mass_covariate", "type": "string_or_none", "default": null, "help": "Explicit mass/body-composition covariate; otherwise Lean.Mass then Total.Mass then subject.mass"},
+    {"name": "min_group_size", "type": "integer", "default": 2, "help": "Minimum per-group sample size before falling back to simpler contrasts"},
+    {"name": "resources_manifest", "type": "string_or_none", "default": null, "help": "Optional resource manifest override"},
+    {"name": "resources_dir", "type": "string_or_none", "default": null, "help": "Optional local resources directory containing calorimetry bundle files"},
+    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Behavior when requested bundle files are missing"},
+    {"name": "reference_bundle_id", "type": "string_or_none", "default": null, "help": "Optional calorimetry reference bundle id supplying ontology resources"},
+    {"name": "select", "type": "string", "default": "top_k", "enum": ["none", "top_k", "quantile", "threshold"], "help": "Gene selection method on routed ontology scores"},
+    {"name": "top_k", "type": "integer", "default": 200, "help": "K for select=top_k"},
+    {"name": "quantile", "type": "number", "default": 0.01, "help": "Fraction for select=quantile"},
+    {"name": "min_score", "type": "number", "default": 0.0, "help": "Threshold for select=threshold"},
+    {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Selected-gene weight normalization"},
+    {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv for each emitted program"},
+    {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write per-program and combined GMT files"},
+    {"name": "gmt_format", "type": "string", "default": "dig2col", "enum": ["dig2col", "classic"], "help": "GMT serialization format"},
+    {"name": "gmt_topk_list", "type": "string", "default": "200", "help": "Comma-separated top-K GMT plans"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
+    {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes with warning"}
+  ],
+  "outputs": [
+    {"name": "manifest.tsv", "description": "Grouped program manifest across contrasts and calorimetry programs"},
+    {"name": "program=<PROGRAM>/geneset.tsv", "description": "Selected ontology-routed gene program"},
+    {"name": "program=<PROGRAM>/geneset.meta.json", "description": "Metadata and provenance for one ontology-routed program"},
+    {"name": "program=<PROGRAM>/geneset.full.tsv", "description": "Full ranked ontology-routed scores (optional)"},
+    {"name": "program=<PROGRAM>/genesets.gmt", "description": "Per-program GMT file (optional)"},
+    {"name": "program=<PROGRAM>/run_summary.json", "description": "Machine-readable per-program summary"},
+    {"name": "program=<PROGRAM>/run_summary.txt", "description": "Human-readable per-program summary"},
+    {"name": "genesets.gmt", "description": "Combined GMT across emitted programs (optional)"},
+    {"name": "run_summary.json", "description": "Root machine-readable summary"},
+    {"name": "run_summary.txt", "description": "Root human-readable summary"}
+  ]
+}

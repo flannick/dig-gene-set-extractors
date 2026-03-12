@@ -1,0 +1,201 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+\title{Indirect calorimetry to gene-set extractors for CalR-compatible datasets}
+\author{}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Indirect calorimetry is a whole-animal physiology assay, not a direct molecular assay. A CalR-uploadable dataset therefore reaches genes only through phenotype routing or reference-profile retrieval. This note describes the two current extractors in \texttt{geneset-extractors}: \texttt{calr\_ontology\_mapper} and \texttt{calr\_profile\_query}, together with the CalR processing rules they preserve.
+\end{abstract}
+
+\section{Mental model}
+Let $y_{ivt}$ denote the measured value of variable $v$ for animal $i$ at time bin $t$. The extractor does not map raw bins directly to genes. It first computes selected-window summary features, then estimates contrast-aware physiology signatures, then routes those signatures to genes.
+
+The core pipeline is:
+\begin{enumerate}[leftmargin=2em]
+\item choose the active analysis window and photoperiod,
+\item summarize each animal into feature vector $s_i$,
+\item estimate a contrast or grouped signature $q$ using CalR-style covariate logic,
+\item either map $q$ to phenotype terms and then genes, or compare $q$ to a reference library and route retrieved evidence to genes,
+\item select and normalize the resulting gene program.
+\end{enumerate}
+
+\section{CalR compatibility rules}
+The extractor preserves the following constraints from CalR-style analysis:
+\begin{itemize}[leftmargin=2em]
+\item the selected analysis window is not silently the full trace,
+\item session metadata is preferred and recorded as \texttt{session\_mode=explicit},
+\item missing session metadata is allowed only in exploratory mode with strong warnings,
+\item mass-dependent variables are not naively divided by body weight,
+\item \texttt{ee} and \texttt{rer} are used as reported when present,
+\item interaction with the selected mass covariate is tested before falling back to a simpler model,
+\item exclusions are explicit and auditable.
+\end{itemize}
+
+Practical covariate priority is:
+\begin{enumerate}[leftmargin=2em]
+\item explicit user covariate,
+\item \texttt{Lean.Mass},
+\item \texttt{Total.Mass},
+\item \texttt{subject.mass},
+\item no covariate only as an exploratory fallback.
+\end{enumerate}
+
+\section{Selected-window feature derivation}
+For each animal, define the selected bin set
+\begin{equation}
+\mathcal{W}_i = \{ t : m_i(t) = 1 \},
+\end{equation}
+where $m_i(t)$ reflects the selected window and any explicit exclusions.
+
+Whole-window averages are
+\begin{equation}
+\bar{y}^{(W)}_{iv} = \frac{1}{|\mathcal{W}_i|} \sum_{t \in \mathcal{W}_i} y_{ivt}.
+\end{equation}
+
+Light and dark summaries are computed on the selected-window subsets:
+\begin{equation}
+\bar{y}^{(L)}_{iv} = \frac{1}{|\mathcal{W}^{(L)}_i|} \sum_{t \in \mathcal{W}^{(L)}_i} y_{ivt},
+\qquad
+\bar{y}^{(D)}_{iv} = \frac{1}{|\mathcal{W}^{(D)}_i|} \sum_{t \in \mathcal{W}^{(D)}_i} y_{ivt}.
+\end{equation}
+
+Day-night contrast:
+\begin{equation}
+\Delta^{(D-L)}_{iv} = \bar{y}^{(D)}_{iv} - \bar{y}^{(L)}_{iv}.
+\end{equation}
+
+For cumulative variables:
+\begin{equation}
+A_{iv} = \sum_{t \in \mathcal{W}_i} y_{ivt}\Delta t.
+\end{equation}
+
+For circadian structure, the first harmonic is summarized by
+\begin{equation}
+a_{iv} = \frac{2}{|\mathcal{W}_i|}\sum_{t \in \mathcal{W}_i} y_{ivt}\cos(2\pi t / 24),
+\qquad
+b_{iv} = \frac{2}{|\mathcal{W}_i|}\sum_{t \in \mathcal{W}_i} y_{ivt}\sin(2\pi t / 24),
+\end{equation}
+with amplitude
+\begin{equation}
+r_{iv} = \sqrt{a_{iv}^2 + b_{iv}^2}.
+\end{equation}
+
+\section{Variable-class-aware contrast estimation}
+Mass-independent variables are treated without the mass covariate:
+\begin{equation}
+s_{ik} = \alpha_k + z_i^\top \gamma_k + \varepsilon_{ik}.
+\end{equation}
+
+Mass-dependent variables use a CalR-style ANCOVA/GLM split:
+\begin{equation}
+s_{ik} = \alpha_k + x_i^\top \beta_k + z_i^\top \gamma_k + (x_i \otimes z_i)^\top \delta_k + \varepsilon_{ik},
+\end{equation}
+where $x_i$ is the selected mass/body-composition covariate and $z_i$ encodes the experimental contrast.
+
+Implementation rule:
+\begin{enumerate}[leftmargin=2em]
+\item test the interaction term,
+\item retain it when non-negligible,
+\item otherwise drop it and use the simpler ANCOVA-style effect.
+\end{enumerate}
+
+The resulting standardized feature effect is treated as the query signature component $q_k$.
+
+\section{Program decomposition}
+The extractor does not force one omnibus physiology output. Instead it emits program-specific views:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{global}
+\item \texttt{thermogenesis}
+\item \texttt{substrate\_use}
+\item \texttt{intake\_balance}
+\item \texttt{activity\_circadian}
+\end{itemize}
+
+Each program masks the feature space before routing.
+
+\section{Extractor 1: \texttt{calr\_ontology\_mapper}}
+Let $p$ index phenotype terms with signed feature templates $T_{pk}$. The raw term score is
+\begin{equation}
+z_p(q) = \sum_{k=1}^{K} T_{pk} q_k.
+\end{equation}
+
+A nonnegative normalized term score is
+\begin{equation}
+u_p(q) = \frac{\max(0, z_p(q))}{\|T_p\|_1 + \epsilon}.
+\end{equation}
+
+Let $H_{pg}$ be a phenotype-to-gene adjacency from phenotype-gene resources. Then the routed ontology score is
+\begin{equation}
+S^{\mathrm{onto}}_g(q) = \sum_p \omega_p u_p(q) H_{pg},
+\end{equation}
+where $\omega_p$ downweights generic or high-degree terms.
+
+The current implementation emits:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{mode=core}: direct routed phenotype support
+\item \texttt{mode=expanded}: small hierarchy-aware term expansion when a hierarchy is available
+\end{itemize}
+
+\section{Extractor 2: \texttt{calr\_profile\_query}}
+Let $x_r$ be a reference feature profile aligned to the same feature schema as the query. After optional centering/scaling, similarity is
+\begin{equation}
+\mathrm{sim}(q,r) = \frac{\tilde{q}^\top \tilde{x}_r}{\|\tilde{q}\|_2 \|\tilde{x}_r\|_2}
+\end{equation}
+for cosine similarity, or Pearson correlation when that metric is selected.
+
+The current weighted reference evidence is
+\begin{equation}
+w_r(q) = a_r \, h_r \, \max(0, \mathrm{sim}(q,r) - \tau)^\gamma \, \pi_r,
+\end{equation}
+where:
+\begin{itemize}[leftmargin=2em]
+\item $a_r$ is any implicit reference quality term,
+\item $h_r$ is the chosen hubness penalty,
+\item $\tau$ is the similarity floor,
+\item $\gamma$ is the similarity power,
+\item $\pi_r$ is a provenance penalty for mismatched query/reference metadata.
+\end{itemize}
+
+With one primary perturbed gene per reference, the direct profile-query score is
+\begin{equation}
+S^{\mathrm{prof}}_g(q) = \sum_r w_r(q)\mathbf{1}\{g_r = g\}.
+\end{equation}
+
+The current implementation is intentionally conservative: it emits \texttt{mode=core} only and warns when retrieval confidence is low or when query/reference provenance looks mismatched.
+
+\section{Reference bundles}
+`workflows calr_prepare_reference_bundle` packages:
+\begin{itemize}[leftmargin=2em]
+\item reference profiles,
+\item reference metadata,
+\item feature schema,
+\item feature stats,
+\item ontology resources,
+\item bundle manifest and summary,
+\item optional tarball distribution artifact.
+\end{itemize}
+
+Packaged ontology defaults are mouse-first. Human profile-query use is supported when explicit human reference resources are supplied.
+
+\section{Limitations}
+Current v1 scope is:
+\begin{itemize}[leftmargin=2em]
+\item straightforward grouped or chronic designs,
+\item CalR-standardized inputs,
+\item phenotype routing and reference-profile retrieval,
+\item no dedicated challenge-response or crossover modeling yet.
+\end{itemize}
+
+The extractor is therefore best described as a CalR-compatible phenotype-to-gene family, not a general-purpose parser for every vendor-native calorimetry export.
+
+\end{document}

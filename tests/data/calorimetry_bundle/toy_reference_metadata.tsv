@@ -1,0 +1,5 @@
+perturbation_id	gene_id	gene_symbol	qc_weight	hub_score	mass_covariate	acclimation_state	ambient_temperature
+Ucp1_ko	Ucp1	Ucp1	1.0	0.1	lean_mass	post_window_selected	22
+Mlxipl_ko	Mlxipl	Mlxipl	0.9	0.2	lean_mass	post_window_selected	22
+Npy_oe	Npy	Npy	0.8	0.3	lean_mass	post_window_selected	22
+Clock_mut	Clock	Clock	1.0	0.1	lean_mass	post_window_selected	22

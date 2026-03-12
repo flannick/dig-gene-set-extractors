@@ -1,0 +1,5 @@
+perturbation_id	vo2_mean_selected	ee_mean_selected	rer_mean_selected	feed_auc_selected	xytot_mean_selected	body.temp_mean_selected	xytot_amp1
+Ucp1_ko	-1.2	-1.1	0.2	0.1	-0.3	-0.6	0.2
+Mlxipl_ko	-0.2	-0.1	0.9	0.4	-0.1	-0.1	0.0
+Npy_oe	-0.1	-0.2	0.2	1.0	0.1	0.0	0.1
+Clock_mut	0.0	0.0	0.1	0.0	-0.5	0.0	0.9

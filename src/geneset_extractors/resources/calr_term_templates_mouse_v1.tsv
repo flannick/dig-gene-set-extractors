@@ -1,0 +1,28 @@
+term_id	term_label	program	feature	weight
+MP:0001	decreased oxygen consumption	global	vo2_mean_selected	-1.0
+MP:0001	decreased oxygen consumption	thermogenesis	vo2_mean_selected	-1.0
+MP:0001	decreased oxygen consumption	thermogenesis	ee_mean_selected	-0.8
+MP:0002	increased oxygen consumption	global	vo2_mean_selected	1.0
+MP:0002	increased oxygen consumption	thermogenesis	vo2_mean_selected	1.0
+MP:0002	increased oxygen consumption	thermogenesis	ee_mean_selected	0.8
+MP:0003	decreased respiratory exchange ratio	global	rer_mean_selected	-1.0
+MP:0003	decreased respiratory exchange ratio	substrate_use	rer_mean_selected	-1.0
+MP:0004	increased respiratory exchange ratio	global	rer_mean_selected	1.0
+MP:0004	increased respiratory exchange ratio	substrate_use	rer_mean_selected	1.0
+MP:0005	abnormal energy expenditure	global	ee_mean_selected	1.0
+MP:0005	abnormal energy expenditure	thermogenesis	ee_mean_selected	1.0
+MP:0006	increased food intake	global	feed_auc_selected	1.0
+MP:0006	increased food intake	intake_balance	feed_auc_selected	1.0
+MP:0007	decreased food intake	global	feed_auc_selected	-1.0
+MP:0007	decreased food intake	intake_balance	feed_auc_selected	-1.0
+MP:0008	increased locomotor activity	global	xytot_mean_selected	1.0
+MP:0008	increased locomotor activity	activity_circadian	xytot_mean_selected	1.0
+MP:0008	increased locomotor activity	activity_circadian	xytot_amp1	0.6
+MP:0009	decreased locomotor activity	global	xytot_mean_selected	-1.0
+MP:0009	decreased locomotor activity	activity_circadian	xytot_mean_selected	-1.0
+MP:0010	abnormal circadian rhythm	global	xytot_amp1	1.0
+MP:0010	abnormal circadian rhythm	activity_circadian	xytot_amp1	1.0
+MP:0010	abnormal circadian rhythm	activity_circadian	xytot_phase1_cos	0.5
+MP:0010	abnormal circadian rhythm	activity_circadian	xytot_phase1_sin	0.5
+MP:0011	abnormal thermoregulation	global	body.temp_mean_selected	1.0
+MP:0011	abnormal thermoregulation	thermogenesis	body.temp_mean_selected	1.0

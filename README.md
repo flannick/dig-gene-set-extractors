@@ -5,7 +5,7 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `geneset_extractors` (ATAC-seq, RNA-seq, DNA methylation, CNV, and drug response extractors)
+- `geneset_extractors` (ATAC-seq, RNA-seq, proteomics PTM, indirect calorimetry, DNA methylation, CNV, drug response, and morphology extractors)
   - exposed via CLI names `geneset-extractors` / `geneset_extractors`
 
 ## Repository Scope
@@ -23,6 +23,8 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/assays/proteomics/guide.md` (proteomics PTM practical guide)
 - `docs/assays/proteomics/reference_bundle.md` (proteomics PTM bundle guide)
+- `docs/assays/calorimetry/guide.md` (indirect calorimetry practical guide)
+- `docs/assays/calorimetry/reference_bundle.md` (indirect calorimetry bundle guide)
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/assays/drug_response/guide.md` (drug response practical guide)
@@ -80,12 +82,18 @@ RNA workflow commands:
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
 - `workflows ptm_prepare_public` (standardize local CDAP/PDC public phosphosite/proteome reports into repo-native PTM matrices)
 - `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
+- `workflows calr_prepare_reference_bundle` (prepare a local indirect calorimetry reference bundle)
 
 Proteomics converters:
 
 - `proteomics_diff` (legacy gene-level abundance)
 - `ptm_site_diff` (site-level PTM differential table to gene program)
 - `ptm_site_matrix` (site-by-sample PTM matrix plus sample metadata to one or more study-specific gene programs)
+
+Indirect calorimetry converters:
+
+- `calr_ontology_mapper`
+- `calr_profile_query`
 
 DNA methylation converters:
 
@@ -121,6 +129,8 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md`
 - `docs/assays/proteomics/guide.md`
 - `docs/assays/proteomics/reference_bundle.md`
+- `docs/assays/calorimetry/guide.md`
+- `docs/assays/calorimetry/reference_bundle.md`
 - `docs/assays/methylation/guide.md`
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
@@ -136,6 +146,7 @@ Method notes and equations (split by assay + index):
 - `docs/assays/atac/methods.tex`
 - `docs/assays/rnaseq/methods.tex`
 - `docs/assays/proteomics/methods.tex`
+- `docs/assays/calorimetry/methods.tex`
 - `docs/assays/methylation/methods.tex`
 - `docs/assays/cnv/methods.tex`
 - `docs/assays/drug_response/methods.tex`
@@ -167,6 +178,14 @@ Proteomics PTM optional bundle setup:
   - `geneset-extractors workflows ptm_prepare_public --input_mode cdap_files ...`
   - `geneset-extractors workflows ptm_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --ptm_type phospho --bundle_id ...`
   - then run `ptm_site_diff --resources_dir <bundle_dir>` or `ptm_site_matrix --resources_dir <bundle_dir>`
+
+Calorimetry optional reference-bundle setup:
+
+- `docs/assays/calorimetry/reference_bundle.md`
+- packaged mouse ontology defaults allow `calr_ontology_mapper` to run without a bundle
+- `calr_profile_query` requires either explicit reference files or a local bundle
+- `workflows calr_prepare_reference_bundle` writes both an unpacked bundle directory and an optional tarball/checksum distribution artifact
+- the current packaged defaults are mouse-first; human runs should supply explicit human resources or a human-calibrated bundle
 
 Not recommended by default:
 
@@ -218,6 +237,10 @@ dig-gene-set-extractors/
         guide.md
         methods.tex
         reference_bundle.md
+      calorimetry/
+        guide.md
+        methods.tex
+        reference_bundle.md
       methylation/
         guide.md
         methods.tex
@@ -239,13 +262,16 @@ dig-gene-set-extractors/
     cnv2geneset.md             # compatibility alias
     drug-response2geneset.md   # compatibility alias
     morphology2geneset.md      # compatibility alias
+    calorimetry2geneset.md     # compatibility alias
     atac-seq_methods.tex       # compatibility alias
     rna-seq_methods.tex        # compatibility alias
     methylation_methods.tex    # compatibility alias
     cnv_methods.tex            # compatibility alias
     morphology_methods.tex     # compatibility alias
+    calorimetry_methods.tex    # compatibility alias
     scrna_cnmf_workflow.md     # compatibility alias
     atac_reference_bundle.md   # compatibility alias
+    calorimetry_reference_bundle.md # compatibility alias
     air_gapped_install.md
   tests/
   scripts/

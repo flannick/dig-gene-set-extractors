@@ -21,6 +21,8 @@ def test_cli_list():
     assert p.returncode == 0
     assert "atac_bulk" in p.stdout
     assert "atac_bulk_matrix" in p.stdout
+    assert "calr_ontology_mapper" in p.stdout
+    assert "calr_profile_query" in p.stdout
     assert "methylation_cpg_diff" in p.stdout
     assert "methylation_dmr_regions" in p.stdout
     assert "cnv_gene_extractor" in p.stdout
@@ -119,6 +121,28 @@ def test_cli_describe_drug_response_screen():
     assert "min_group_size" in param_names
     assert "target_ubiquity_penalty" in param_names
     assert "gmt_format" in param_names
+
+
+def test_cli_describe_calr_ontology_mapper():
+    p = _run("describe", "calr_ontology_mapper")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "calr_ontology_mapper"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "analysis_start_hour" in param_names
+    assert "reference_bundle_id" in param_names
+    assert "term_templates_tsv" not in param_names
+
+
+def test_cli_describe_calr_profile_query():
+    p = _run("describe", "calr_profile_query")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "calr_profile_query"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "similarity_metric" in param_names
+    assert "reference_bundle_id" in param_names
+    assert "reference_profiles_tsv" not in param_names
 
 
 def test_cli_describe_morphology_profile_query():
