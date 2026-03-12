@@ -78,6 +78,7 @@ RNA workflow commands:
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
 - `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
+- `workflows ptm_prepare_public` (standardize local CDAP/PDC public phosphosite/proteome reports into repo-native PTM matrices)
 - `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
 
 Proteomics converters:
@@ -163,6 +164,7 @@ Proteomics PTM optional bundle setup:
   - site alias harmonization
   - phosphosite ubiquity weighting
 - preferred workflow:
+  - `geneset-extractors workflows ptm_prepare_public --input_mode cdap_files ...`
   - `geneset-extractors workflows ptm_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --ptm_type phospho --bundle_id ...`
   - then run `ptm_site_diff --resources_dir <bundle_dir>` or `ptm_site_matrix --resources_dir <bundle_dir>`
 

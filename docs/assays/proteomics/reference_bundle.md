@@ -77,6 +77,22 @@ geneset-extractors workflows ptm_prepare_reference_bundle \
 
 Each source table should already be standardized enough that canonical site keys can be reconstructed from columns such as `site_id`, `protein_accession`, `residue`, and `position`.
 
+The recommended upstream normalizer for public CPTAC/PDC reports is:
+
+```bash
+geneset-extractors workflows ptm_prepare_public \
+  --input_mode cdap_files \
+  --ptm_report_tsv <Phosphoproteome.phosphosite.tmt11.tsv> \
+  --protein_report_tsv <Proteome.tmt11.tsv> \
+  --sample_design_tsv <study.sample.txt> \
+  --sample_annotations_tsv <sample_annotations.tsv> \
+  --out_dir <prepared_dir> \
+  --organism human \
+  --ptm_type phospho
+```
+
+That workflow writes `bundle_source_row.tsv`, which you can use directly as a one-study `--sources_tsv` input or concatenate across many prepared studies before building a larger PTM bundle.
+
 ## Runtime usage
 
 ### Direct bundle layout

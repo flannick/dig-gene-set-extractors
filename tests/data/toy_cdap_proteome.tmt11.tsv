@@ -1,0 +1,5 @@
+Gene	Protein	Description	Tumor-A	Tumor-A Unshared Log Ratio	Tumor-B	Tumor-B Unshared Log Ratio	Normal-A	Normal-A Unshared Log Ratio	Normal-B	Normal-B Unshared Log Ratio	POOL-REF	POOL-REF Unshared Log Ratio
+KCNN4	NP_000001	potassium channel protein	0.8	9.9	0.7	9.9	-0.1	9.9	-0.2	9.9	0.0	9.9
+KCNJ1	NP_000002	channel protein	0.4	8.8	0.3	8.8	0.0	8.8	0.0	8.8	0.0	8.8
+MAPK1	NP_000003	kinase protein	0.1	7.7	0.0	7.7	0.3	7.7	0.4	7.7	0.0	7.7
+Mean		protein summary row	0.0	6.6	0.0	6.6	0.0	6.6	0.0	6.6	0.0	6.6

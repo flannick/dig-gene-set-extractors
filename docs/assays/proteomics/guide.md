@@ -10,6 +10,8 @@ This assay family now has two distinct entrypoints:
 
 `ptm_site_matrix` is the recommended PTM entrypoint for public site-by-sample matrices. It estimates within-study site-level contrasts, then reuses the same downstream scorer as `ptm_site_diff`.
 
+`workflows ptm_prepare_public` is the workflow-layer normalizer for official CDAP/PDC public phosphosite and proteome reports. It converts those public reports into the standardized `ptm_matrix.tsv` / `sample_metadata.tsv` / optional `protein_matrix.tsv` interface consumed by `ptm_site_matrix`.
+
 ## Quickstart
 
 ### 1. Optional: build a local phosphosite bundle
@@ -58,15 +60,59 @@ geneset-extractors convert ptm_site_diff \
   --use_reference_bundle false
 ```
 
-### 2b. Convert a site-by-sample PTM matrix
+### 2b. Standardize public CDAP/PDC PTM reports
+
+Explicit local files:
+
+```bash
+geneset-extractors workflows ptm_prepare_public \
+  --input_mode cdap_files \
+  --ptm_report_tsv <Phosphoproteome.phosphosite.tmt11.tsv> \
+  --protein_report_tsv <Proteome.tmt11.tsv> \
+  --sample_design_tsv <study.sample.txt> \
+  --sample_annotations_tsv <sample_annotations.tsv> \
+  --out_dir <prepared_dir> \
+  --organism human \
+  --ptm_type phospho \
+  --study_id <study_id> \
+  --study_label <study_label>
+```
+
+Local PDC-manifest discovery mode:
+
+```bash
+geneset-extractors workflows ptm_prepare_public \
+  --input_mode pdc_manifest \
+  --pdc_manifest_tsv <manifest.tsv> \
+  --source_dir <download_dir> \
+  --sample_annotations_tsv <sample_annotations.tsv> \
+  --out_dir <prepared_dir> \
+  --organism human \
+  --ptm_type phospho \
+  --study_id <study_id>
+```
+
+This workflow writes:
+
+- `ptm_matrix.tsv`
+- `sample_metadata.tsv`
+- optional `protein_matrix.tsv`
+- `sample_id_map.tsv`
+- `site_id_map.tsv`
+- `prepare_summary.json`
+- `bundle_source_row.tsv`
+
+`bundle_source_row.tsv` is deliberately shaped so you can concatenate many prepared studies and feed them into `workflows ptm_prepare_reference_bundle`.
+
+### 2c. Convert a standardized site-by-sample PTM matrix
 
 Single study-wide condition contrast:
 
 ```bash
 geneset-extractors convert ptm_site_matrix \
-  --ptm_matrix_tsv <ptm_matrix.tsv> \
-  --sample_metadata_tsv <sample_metadata.tsv> \
-  --protein_matrix_tsv <protein_matrix.tsv> \
+  --ptm_matrix_tsv <prepared_dir>/ptm_matrix.tsv \
+  --sample_metadata_tsv <prepared_dir>/sample_metadata.tsv \
+  --protein_matrix_tsv <prepared_dir>/protein_matrix.tsv \
   --study_contrast condition_a_vs_b \
   --condition_a case \
   --condition_b control \
@@ -158,6 +204,36 @@ The current matrix front-end supports:
 - `--study_contrast baseline`
 
 For matrix contrasts, the default effect metric is `welch_t`; `mean_diff` is available when you want a simpler within-study contrast.
+
+## Public-report workflow contract
+
+`ptm_prepare_public` is intentionally narrow. It is for official local CDAP/PDC public reports, not for already standardized matrices.
+
+Inputs supported in v1:
+
+- phosphosite report TSV
+- optional matched proteome report TSV
+- optional `*.sample.txt` experimental design table
+- optional sample-annotation sidecar
+- optional PDC manifest plus `--source_dir` for local discovery
+
+The helper does structural harmonization only:
+
+- parse `Phosphosite` strings into `site_id` or `site_group_id` when lossless
+- preserve `raw_site_label`, `raw_peptide`, and `site_parser_status`
+- normalize the public reports into repo-standard wide matrices
+- enrich sample metadata from `sample.txt` and optional sidecars
+- keep the source numeric values unchanged
+
+The helper does not do:
+
+- cross-study alias resolution
+- site ubiquity weighting
+- protein-adjusted PTM scoring
+- duplicate collapse
+- gene aggregation
+
+Those remain the responsibility of `ptm_site_diff`, `ptm_site_matrix`, and the optional PTM bundle.
 
 ## Recommended defaults
 
@@ -271,6 +347,12 @@ Bundle guide: `docs/assays/proteomics/reference_bundle.md`
 - Matched protein adjustment only works if the protein matrix can be keyed back to the PTM sites.
   - Include `protein_accession`, `gene_id`, or `gene_symbol` in the protein matrix rows.
 
-## Extending the assay
+## Standard public-data path
 
-The next natural extension is a public-data standardization helper for raw PDC/CPTAC site matrices before they reach `ptm_site_matrix`.
+The intended public phosphoproteomics path is now:
+
+1. `geneset-extractors workflows ptm_prepare_public`
+2. optional `geneset-extractors workflows ptm_prepare_reference_bundle`
+3. `geneset-extractors convert ptm_site_matrix`
+
+Use `ptm_site_diff` only when you already have a site-level contrast table rather than a public site-by-sample matrix.

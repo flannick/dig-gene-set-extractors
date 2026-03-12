@@ -54,9 +54,10 @@ Assay-specific resource instructions:
 
 - ATAC resources and bundles: `docs/assays/atac/reference_bundle.md`
 - Proteomics PTM bundle guide: `docs/assays/proteomics/reference_bundle.md`
+- Proteomics PTM public-data workflow: `geneset-extractors workflows ptm_prepare_public`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
-- Proteomics PTM supports both `ptm_site_diff` and `ptm_site_matrix`; both can use the optional alias/ubiquity bundle.
+- Proteomics PTM supports `workflows ptm_prepare_public` for CDAP/PDC standardization plus both `ptm_site_diff` and `ptm_site_matrix`; the converters can use the optional alias/ubiquity bundle.
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
 - Morphology supports an optional local reference bundle for reusable perturbation profiles, metadata, and feature stats.
 - Morphology bundles can be resolved directly from `--resources_dir/<bundle_id>.bundle.json` without a separate overlay manifest.

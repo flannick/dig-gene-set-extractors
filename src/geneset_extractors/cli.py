@@ -558,6 +558,21 @@ def _add_ptm_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> 
     parser.add_argument("--bundle_id", required=True)
 
 
+def _add_ptm_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--input_mode", choices=["cdap_files", "pdc_manifest"], default="cdap_files")
+    parser.add_argument("--ptm_report_tsv")
+    parser.add_argument("--protein_report_tsv")
+    parser.add_argument("--sample_design_tsv")
+    parser.add_argument("--sample_annotations_tsv")
+    parser.add_argument("--pdc_manifest_tsv")
+    parser.add_argument("--source_dir")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--ptm_type", choices=["phospho", "acetyl", "ub", "generic"], default="phospho")
+    parser.add_argument("--study_id")
+    parser.add_argument("--study_label")
+
+
 def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile_paths", required=True, help="Comma-separated morphology profile TSV/CSV paths.")
     parser.add_argument("--experimental_metadata_tsv", required=True)
@@ -895,6 +910,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cnmf_select_k_flags(p_cnmf_select_k)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
+    p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
+    _add_ptm_prepare_public_flags(p_ptm_public)
     p_ptm_prepare = wf_sub.add_parser("ptm_prepare_reference_bundle")
     _add_ptm_prepare_reference_bundle_flags(p_ptm_prepare)
     p_jump_prepare = wf_sub.add_parser("jump_prepare_reference_bundle")
@@ -1475,6 +1492,18 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=prism_prepare n_rows={result.get('n_response_rows')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "ptm_prepare_public":
+                from geneset_extractors.workflows.ptm_prepare_public import run as run_ptm_prepare_public
+
+                result = run_ptm_prepare_public(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=ptm_prepare_public n_sites={result.get('ptm_rows_emitted')} "
+                    f"n_samples={result.get('n_samples')} "
+                    f"out={result.get('outputs', {}).get('ptm_matrix_tsv')}",
                     file=sys.stderr,
                 )
                 return 0

@@ -1,0 +1,28 @@
+{
+  "cdap_phosphosite_v1": {
+    "required_columns": ["Phosphosite", "Peptide", "Gene"],
+    "optional_columns": ["Organism", "Description", "Protein"],
+    "drop_columns_regex": [
+      ".*Unshared.*",
+      "^Total .*",
+      "^Description$",
+      "^Chromosome$",
+      "^Locus$",
+      "^Organism$"
+    ]
+  },
+  "cdap_proteome_v1": {
+    "required_columns": ["Gene"],
+    "optional_columns": ["Description", "Organism", "Chromosome", "Locus", "Protein"],
+    "drop_columns_regex": [
+      ".*Unshared.*",
+      "^Total .*",
+      "^Description$",
+      "^Chromosome$",
+      "^Locus$",
+      "^Organism$"
+    ],
+    "shared_value_kind": "log_ratio",
+    "unshared_value_kind": "unshared_log_ratio"
+  }
+}

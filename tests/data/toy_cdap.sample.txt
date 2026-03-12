@@ -1,0 +1,6 @@
+AnalyticalSample	Reporter	LabelReagent	Ratios
+Tumor-A	126	TMT11	126/131
+Tumor-B	127N	TMT11	127N/131
+Normal-A	128N	TMT11	128N/131
+Normal-B	129N	TMT11	129N/131
+POOL-REF	131C	TMT11	131C/131

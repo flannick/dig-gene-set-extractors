@@ -21,6 +21,50 @@ The central object is a gene-level program that captures differential PTM
 occupancy at sites assigned to a gene, optionally adjusted for matched total
 protein abundance and optionally downweighted for highly ubiquitous sites.
 
+\subsection{Workflow W1: public CDAP/PDC report standardization}
+\label{sec:ptm_public_prepare}
+
+Public CPTAC/PDC phosphoproteomics often starts from CDAP-style isobaric text
+reports rather than from a repo-standard site matrix. The implemented workflow
+\texttt{ptm\_prepare\_public} performs only \emph{structural} harmonization:
+
+\begin{enumerate}
+\item detect the phosphosite report, optional matched proteome report, and
+optional sample-design table;
+\item parse each public phosphosite label into either a single resolved
+canonical site key or a deterministic site-group key;
+\item preserve the original public strings
+(\texttt{raw\_site\_label}, \texttt{raw\_peptide}) together with a
+\texttt{site\_parser\_status};
+\item standardize sample columns and metadata into repo-native
+\texttt{ptm\_matrix.tsv}, \texttt{sample\_metadata.tsv}, and optional
+\texttt{protein\_matrix.tsv};
+\item emit provenance/QC sidecars that can feed directly into
+\texttt{ptm\_prepare\_reference\_bundle}.
+\end{enumerate}
+
+This workflow intentionally does \emph{not} perform alias resolution,
+ubiquity weighting, protein-adjusted scoring, duplicate collapse, or gene
+aggregation. Those remain downstream responsibilities of
+\texttt{ptm\_site\_diff}, \texttt{ptm\_site\_matrix}, and the optional PTM
+reference bundle.
+
+\paragraph{Canonicalized public-site outputs.}
+For a public row $r$, the helper attempts to emit either
+\[
+\texttt{site\_id} = (\mathrm{protein\_accession}, \mathrm{residue},
+\mathrm{position}, \mathrm{ptm\_type})
+\]
+when a single site is losslessly parsable, or
+\[
+\texttt{site\_group\_id} = (\mathrm{protein\_accession},
+\mathrm{site\_group\_label}, \mathrm{ptm\_type})
+\]
+for unresolved multi-site groups. If neither can be reconstructed losslessly,
+the helper emits a deterministic fallback site-group key derived from the raw
+public label and marks the row with
+\texttt{site\_parser\_status = unparsed\_fallback}.
+
 \subsection{What the implemented extractor captures}
 \begin{itemize}
 \item \texttt{ptm\_site\_diff} captures a compact gene program from an already

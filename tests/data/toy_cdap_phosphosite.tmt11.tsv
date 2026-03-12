@@ -1,0 +1,4 @@
+Phosphosite	Peptide	Gene	Organism	Description	Tumor-A	Tumor-B	Normal-A	Normal-B	POOL-REF
+NP_000001:S123	AAAApSBBBB	KCNN4	human	potassium channel site	1.4	1.2	-0.3	-0.2	0.0
+NP_000002:S50;T52	CCCCpSTDDD	KCNJ1	human	channel site group	0.9	0.7	0.0	0.1	0.0
+UNPARSED_SITE	EEEEFFFF	MAPK1	human	unparsed fallback row	0.3	0.2	0.4	0.5	0.0

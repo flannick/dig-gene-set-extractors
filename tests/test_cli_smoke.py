@@ -154,6 +154,39 @@ def test_cli_describe_ptm_site_matrix():
     assert "protein_adjustment" in param_names
 
 
+def test_cli_workflow_ptm_prepare_public(tmp_path: Path):
+    out = tmp_path / "ptm_prepare_public_cli"
+    p = _run(
+        "workflows",
+        "ptm_prepare_public",
+        "--input_mode",
+        "cdap_files",
+        "--ptm_report_tsv",
+        "tests/data/toy_cdap_phosphosite.tmt11.tsv",
+        "--protein_report_tsv",
+        "tests/data/toy_cdap_proteome.tmt11.tsv",
+        "--sample_design_tsv",
+        "tests/data/toy_cdap.sample.txt",
+        "--sample_annotations_tsv",
+        "tests/data/toy_ptm_public_sample_annotations.tsv",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--ptm_type",
+        "phospho",
+        "--study_id",
+        "PTM_STUDY_1",
+        "--study_label",
+        "Toy PTM Public Study",
+    )
+    assert p.returncode == 0
+    assert "workflow=ptm_prepare_public" in p.stderr
+    assert (out / "ptm_matrix.tsv").exists()
+    assert (out / "sample_metadata.tsv").exists()
+    assert (out / "prepare_summary.json").exists()
+
+
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
     bad = tmp_path / "bad"
     bad.mkdir()

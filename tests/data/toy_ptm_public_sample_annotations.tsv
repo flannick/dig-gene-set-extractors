@@ -1,0 +1,6 @@
+sample_id_raw	condition	group	study_id	study_label	case_submitter_id	sample_submitter_id	aliquot_submitter_id	sample_type	tissue_type	cohort
+Tumor-A	case	PTM_STUDY_1	PTM_STUDY_1	Toy PTM Public Study	case-1	sample-1	aliquot-1	tumor	tumor	cohortA
+Tumor-B			PTM_STUDY_1	Toy PTM Public Study	case-2	sample-2	aliquot-2	tumor	tumor	cohortA
+Normal-A	control	PTM_STUDY_1	PTM_STUDY_1	Toy PTM Public Study	case-3	sample-3	aliquot-3	normal	normal	cohortA
+Normal-B			PTM_STUDY_1	Toy PTM Public Study	case-4	sample-4	aliquot-4	normal	normal	cohortA
+POOL-REF			PTM_STUDY_1	Toy PTM Public Study			pool	reference	cohortA
