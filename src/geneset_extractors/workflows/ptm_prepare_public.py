@@ -17,5 +17,7 @@ def run(args) -> dict[str, object]:
         ptm_type=args.ptm_type,
         study_id=args.study_id,
         study_label=args.study_label,
+        assay_type_policy=args.assay_type_policy,
+        min_phospho_like_fraction=args.min_phospho_like_fraction,
+        max_k_fraction=args.max_k_fraction,
     )
-

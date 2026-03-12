@@ -93,6 +93,8 @@ geneset-extractors workflows ptm_prepare_public \
 
 That workflow writes `bundle_source_row.tsv`, which you can use directly as a one-study `--sources_tsv` input or concatenate across many prepared studies before building a larger PTM bundle.
 
+`ptm_prepare_public` also performs assay-type QC for phosphoproteomics staging. By default it warns on lysine-dominant or otherwise non-phospho-like public reports; use `--assay_type_policy fail` if you want those studies rejected before bundle construction.
+
 ## Runtime usage
 
 ### Direct bundle layout

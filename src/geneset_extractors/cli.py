@@ -325,6 +325,11 @@ def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
     parser.add_argument("--protein_adjustment", choices=["none", "subtract", "residual"], default="subtract")
+    parser.add_argument(
+        "--protein_adjustment_run_mode",
+        choices=["single", "compare_if_protein", "compare"],
+        default="compare_if_protein",
+    )
     parser.add_argument("--protein_adjustment_lambda", type=float, default=1.0)
     parser.add_argument(
         "--confidence_weight_mode",
@@ -343,6 +348,8 @@ def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
         default="signed_topk_mean",
     )
     parser.add_argument("--gene_topk_sites", type=int, default=3)
+    parser.add_argument("--emit_gene_topk_site_comparison", type=_parse_bool, default=False)
+    parser.add_argument("--gene_topk_site_compare_to", type=int, default=1)
     parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
@@ -571,6 +578,9 @@ def _add_ptm_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ptm_type", choices=["phospho", "acetyl", "ub", "generic"], default="phospho")
     parser.add_argument("--study_id")
     parser.add_argument("--study_label")
+    parser.add_argument("--assay_type_policy", choices=["off", "warn", "fail"], default="warn")
+    parser.add_argument("--min_phospho_like_fraction", type=float, default=0.6)
+    parser.add_argument("--max_k_fraction", type=float, default=0.25)
 
 
 def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:

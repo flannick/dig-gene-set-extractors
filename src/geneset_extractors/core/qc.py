@@ -258,6 +258,25 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
                     lines.append(f"  {k}: {value[k]}")
             else:
                 lines.append(f"{key}: none")
+    if "tumor_intrinsic_confidence" in payload:
+        lines.append(f"tumor_intrinsic_confidence: {payload['tumor_intrinsic_confidence']}")
+    if "composition_warning" in payload:
+        lines.append(f"composition_warning: {payload['composition_warning']}")
+    composition_qc = payload.get("composition_qc")
+    if isinstance(composition_qc, dict):
+        panels = composition_qc.get("panels")
+        if isinstance(panels, list) and panels:
+            lines.append("composition_qc:")
+            for row in panels:
+                if not isinstance(row, dict):
+                    continue
+                lines.append(
+                    "  "
+                    + f"panel={row.get('panel','')} "
+                    + f"top20_hits={row.get('top20_hits','')} "
+                    + f"selected_hits={row.get('selected_hits','')} "
+                    + f"selected_weight_fraction={row.get('selected_weight_fraction','')}"
+                )
 
     marker = payload.get("marker_qc")
     if isinstance(marker, dict):

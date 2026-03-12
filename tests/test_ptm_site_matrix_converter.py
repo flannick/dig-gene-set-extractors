@@ -46,12 +46,15 @@ class Args:
     score_mode = "auto"
     score_transform = "signed"
     protein_adjustment = "subtract"
+    protein_adjustment_run_mode = "single"
     protein_adjustment_lambda = 1.0
     confidence_weight_mode = "combined"
     min_localization_prob = 0.75
     site_dup_policy = "highest_confidence"
     gene_aggregation = "signed_topk_mean"
     gene_topk_sites = 3
+    emit_gene_topk_site_comparison = False
+    gene_topk_site_compare_to = 1
     ambiguous_gene_policy = "drop"
     resources_manifest = None
     resources_dir = None
@@ -163,3 +166,40 @@ def test_ptm_site_matrix_protein_adjustment_changes_scores(tmp_path: Path):
     none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
     assert sub_scores["G_KCNN4"] != none_scores["G_KCNN4"]
 
+
+def test_ptm_site_matrix_default_compare_if_protein_emits_grouped_variants(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    args = Args()
+    args.out_dir = str(tmp_path / "ptm_matrix_compare")
+    args.resources_dir = str(resources_dir)
+    args.protein_adjustment_run_mode = "compare_if_protein"
+    result = ptm_site_matrix.run(args)
+    assert result["grouped_output"]
+    assert result["n_contrasts_emitted"] == 2
+
+    out_dir = Path(args.out_dir)
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert {row["protein_adjustment"] for row in rows} == {"none", "subtract"}
+
+
+def test_ptm_site_matrix_site_cap_comparison_emits_variant(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    args = Args()
+    args.out_dir = str(tmp_path / "ptm_matrix_sitecap")
+    args.resources_dir = str(resources_dir)
+    args.protein_matrix_tsv = None
+    args.emit_gene_topk_site_comparison = True
+    args.gene_topk_site_compare_to = 1
+    result = ptm_site_matrix.run(args)
+    assert result["grouped_output"]
+    assert result["n_contrasts_emitted"] == 2
+
+    out_dir = Path(args.out_dir)
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert {row["gene_topk_sites"] for row in rows} == {"1", "3"}

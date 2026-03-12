@@ -1,0 +1,6 @@
+{
+  "erythrocyte": ["AHSP", "ALAS2", "GYPA", "HBA1", "HBA2", "HBB", "HBM", "SLC4A1"],
+  "endothelial": ["EMCN", "ENG", "ESAM", "FLT1", "KDR", "PECAM1", "PLVAP", "RAMP2", "VWF"],
+  "immune_myeloid": ["C1QA", "C1QB", "C1QC", "CTSS", "FCER1G", "ITGAM", "LST1", "TYROBP"],
+  "platelet": ["CLU", "GNG11", "NRGN", "PF4", "PPBP", "TUBB1"]
+}

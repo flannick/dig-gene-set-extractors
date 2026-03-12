@@ -37,6 +37,14 @@ class ContrastSpec:
     output_subdir: str | None
 
 
+@dataclass(frozen=True)
+class VariantSpec:
+    variant_id: str
+    variant_label: str
+    protein_adjustment: str
+    gene_topk_sites: int
+
+
 @dataclass
 class PTMMatrixWorkflowConfig:
     converter_name: str
@@ -79,12 +87,15 @@ class PTMMatrixWorkflowConfig:
     score_mode: str
     score_transform: str
     protein_adjustment: str
+    protein_adjustment_run_mode: str
     protein_adjustment_lambda: float
     confidence_weight_mode: str
     min_localization_prob: float
     site_dup_policy: str
     gene_aggregation: str
     gene_topk_sites: int
+    emit_gene_topk_site_comparison: bool
+    gene_topk_site_compare_to: int
     ambiguous_gene_policy: str
     select: str
     top_k: int
@@ -474,15 +485,77 @@ def _contrast_rows_for_sites(
 
 
 def _make_child_cfg(cfg: PTMMatrixWorkflowConfig, contrast: ContrastSpec, out_dir: Path) -> PTMWorkflowConfig:
+    return _make_child_cfg_for_variant(cfg, contrast, VariantSpec(
+        variant_id="primary",
+        variant_label="primary",
+        protein_adjustment=cfg.protein_adjustment,
+        gene_topk_sites=cfg.gene_topk_sites,
+    ), out_dir)
+
+
+def _variant_specs(cfg: PTMMatrixWorkflowConfig) -> list[VariantSpec]:
+    variants: list[VariantSpec] = []
+    adjustment_mode = str(cfg.protein_adjustment_run_mode)
+    compare_adjustments = adjustment_mode == "compare" or (
+        adjustment_mode == "compare_if_protein" and bool(cfg.protein_matrix_tsv)
+    )
+
+    adjustment_values: list[str]
+    if compare_adjustments:
+        adjusted = str(cfg.protein_adjustment)
+        if adjusted == "none":
+            adjusted = "subtract"
+        adjustment_values = ["none", adjusted] if adjusted != "none" else ["none"]
+    else:
+        adjustment_values = [str(cfg.protein_adjustment)]
+
+    site_caps = [int(cfg.gene_topk_sites)]
+    compare_to = max(1, int(cfg.gene_topk_site_compare_to))
+    if (
+        bool(cfg.emit_gene_topk_site_comparison)
+        and str(cfg.gene_aggregation) == "signed_topk_mean"
+        and compare_to not in site_caps
+    ):
+        site_caps.append(compare_to)
+
+    seen: set[tuple[str, int]] = set()
+    for protein_adjustment in adjustment_values:
+        for gene_topk_sites in site_caps:
+            key = (protein_adjustment, int(gene_topk_sites))
+            if key in seen:
+                continue
+            seen.add(key)
+            bits = [f"protein_adjustment={protein_adjustment}"]
+            if str(cfg.gene_aggregation) == "signed_topk_mean":
+                bits.append(f"gene_topk_sites={gene_topk_sites}")
+            variant_id = "__".join(bits)
+            variants.append(
+                VariantSpec(
+                    variant_id=variant_id,
+                    variant_label=variant_id,
+                    protein_adjustment=protein_adjustment,
+                    gene_topk_sites=int(gene_topk_sites),
+                )
+            )
+    return variants
+
+
+def _make_child_cfg_for_variant(
+    cfg: PTMMatrixWorkflowConfig,
+    contrast: ContrastSpec,
+    variant: VariantSpec,
+    out_dir: Path,
+) -> PTMWorkflowConfig:
     signature_bits = [
         cfg.signature_name,
         f"study_contrast={contrast.study_contrast}",
         f"contrast={contrast.contrast_id}",
+        variant.variant_id,
     ]
     if contrast.group_label:
         signature_bits.append(f"group={contrast.group_label}")
     signature_name = "__".join(signature_bits)
-    dataset_label = f"{cfg.dataset_label}::{contrast.contrast_label}"
+    dataset_label = f"{cfg.dataset_label}::{contrast.contrast_label}::{variant.variant_id}"
     return PTMWorkflowConfig(
         converter_name=cfg.converter_name,
         out_dir=out_dir,
@@ -509,13 +582,13 @@ def _make_child_cfg(cfg: PTMMatrixWorkflowConfig, contrast: ContrastSpec, out_di
         protein_stat_column=cfg.protein_stat_column,
         score_mode=cfg.score_mode,
         score_transform=cfg.score_transform,
-        protein_adjustment=cfg.protein_adjustment,
+        protein_adjustment=variant.protein_adjustment,
         protein_adjustment_lambda=cfg.protein_adjustment_lambda,
         confidence_weight_mode=cfg.confidence_weight_mode,
         min_localization_prob=cfg.min_localization_prob,
         site_dup_policy=cfg.site_dup_policy,
         gene_aggregation=cfg.gene_aggregation,
-        gene_topk_sites=cfg.gene_topk_sites,
+        gene_topk_sites=variant.gene_topk_sites,
         ambiguous_gene_policy=cfg.ambiguous_gene_policy,
         select=cfg.select,
         top_k=cfg.top_k,
@@ -568,16 +641,16 @@ def run_ptm_site_matrix_workflow(
     contrasts, _qc_seed = _build_contrast_specs(cfg, sample_rows)
     if not contrasts:
         raise ValueError("No PTM matrix contrasts could be constructed from the supplied metadata.")
+    variants = _variant_specs(cfg)
 
     files = list(input_files)
     manifest_rows: list[dict[str, object]] = []
     qc_rows: list[dict[str, object]] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
-    multiple = len(contrasts) > 1
+    multiple = (len(contrasts) * len(variants)) > 1
     emitted = 0
 
     for contrast in contrasts:
-        child_out_dir = out_dir if not multiple else out_dir / str(contrast.output_subdir or f"contrast={sanitize_name_component(contrast.contrast_id)}")
         protein_map = _compute_protein_contrast_map(protein_rows=protein_rows, contrast=contrast, cfg=cfg)
         contrast_rows, contrast_summary = _contrast_rows_for_sites(
             site_rows=matrix_rows,
@@ -585,29 +658,30 @@ def run_ptm_site_matrix_workflow(
             cfg=cfg,
             protein_map=protein_map,
         )
-        qc_row = {
-            "contrast_id": contrast.contrast_id,
-            "contrast_label": contrast.contrast_label,
-            "study_contrast": contrast.study_contrast,
-            "group_label": contrast.group_label or "",
-            "condition_a": contrast.condition_a or "",
-            "condition_b": contrast.condition_b or "",
-            "n_samples_a": len(contrast.sample_ids_a),
-            "n_samples_b": len(contrast.sample_ids_b),
-            "n_input_sites": contrast_summary["n_input_sites"],
-            "n_sites_retained": contrast_summary["n_sites_retained"],
-            "n_sites_dropped_missing": contrast_summary["n_sites_dropped_missing"],
-            "n_sites_with_protein_contrast": contrast_summary["n_sites_with_protein_contrast"],
-            "status": "pending",
-            "reason_if_skipped": "",
-            "path": "",
-        }
         if not contrast_rows:
-            qc_row["status"] = "skipped"
-            qc_row["reason_if_skipped"] = (
-                "No sites passed contrast QC; likely too many missing values or too few samples per condition."
-            )
-            qc_rows.append(qc_row)
+            for variant in variants:
+                qc_rows.append(
+                    {
+                        "contrast_id": contrast.contrast_id,
+                        "contrast_label": contrast.contrast_label,
+                        "study_contrast": contrast.study_contrast,
+                        "group_label": contrast.group_label or "",
+                        "condition_a": contrast.condition_a or "",
+                        "condition_b": contrast.condition_b or "",
+                        "protein_adjustment": variant.protein_adjustment,
+                        "gene_topk_sites": variant.gene_topk_sites,
+                        "variant_id": variant.variant_id,
+                        "n_samples_a": len(contrast.sample_ids_a),
+                        "n_samples_b": len(contrast.sample_ids_b),
+                        "n_input_sites": contrast_summary["n_input_sites"],
+                        "n_sites_retained": contrast_summary["n_sites_retained"],
+                        "n_sites_dropped_missing": contrast_summary["n_sites_dropped_missing"],
+                        "n_sites_with_protein_contrast": contrast_summary["n_sites_with_protein_contrast"],
+                        "status": "skipped",
+                        "reason_if_skipped": "No sites passed contrast QC; likely too many missing values or too few samples per condition.",
+                        "path": "",
+                    }
+                )
             print(
                 f"warning: skipped PTM contrast {contrast.contrast_label}; no sites passed matrix contrast QC. "
                 f"Try lowering --min_samples_per_condition or --min_present_per_condition.",
@@ -615,48 +689,82 @@ def run_ptm_site_matrix_workflow(
             )
             continue
 
-        child_cfg = _make_child_cfg(cfg, contrast, child_out_dir)
-        result = run_ptm_site_diff_workflow(
-            cfg=child_cfg,
-            fieldnames=list(matrix_fieldnames) + ["log2fc", "stat", "pvalue", "padj", "n_group_a", "n_group_b", "protein_log2fc", "protein_stat"],
-            rows=contrast_rows,
-            alias_map=alias_map,
-            ubiquity_map=ubiquity_map,
-            input_files=files,
-            resources_info=resources_info,
-        )
-        emitted += 1
-        qc_row["status"] = "emitted"
-        qc_row["path"] = "." if not multiple else str(child_out_dir.relative_to(out_dir))
-        qc_rows.append(qc_row)
-        if multiple:
-            manifest_rows.append(
-                {
-                    "contrast_id": contrast.contrast_id,
-                    "study_contrast": contrast.study_contrast,
-                    "group_label": contrast.group_label or "",
-                    "condition_a": contrast.condition_a or "",
-                    "condition_b": contrast.condition_b or "",
-                    "path": str(child_out_dir.relative_to(out_dir)),
-                }
+        for variant in variants:
+            suffix = sanitize_name_component(f"{contrast.contrast_id}__{variant.variant_id}")
+            child_out_dir = out_dir if not multiple else out_dir / f"contrast={suffix}"
+            child_cfg = _make_child_cfg_for_variant(cfg, contrast, variant, child_out_dir)
+            _result = run_ptm_site_diff_workflow(
+                cfg=child_cfg,
+                fieldnames=list(matrix_fieldnames) + ["log2fc", "stat", "pvalue", "padj", "n_group_a", "n_group_b", "protein_log2fc", "protein_stat"],
+                rows=contrast_rows,
+                alias_map=alias_map,
+                ubiquity_map=ubiquity_map,
+                input_files=files,
+                resources_info=resources_info,
             )
-        child_gmt_path = child_out_dir / "genesets.gmt"
-        if cfg.emit_gmt and child_gmt_path.exists():
-            with child_gmt_path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.rstrip("\n")
-                    if not line:
-                        continue
-                    parts = line.split("\t")
-                    if len(parts) >= 2:
-                        combined_gmt_sets.append((parts[0], parts[1:]))
+            emitted += 1
+            qc_row = {
+                "contrast_id": contrast.contrast_id,
+                "contrast_label": contrast.contrast_label,
+                "study_contrast": contrast.study_contrast,
+                "group_label": contrast.group_label or "",
+                "condition_a": contrast.condition_a or "",
+                "condition_b": contrast.condition_b or "",
+                "protein_adjustment": variant.protein_adjustment,
+                "gene_topk_sites": variant.gene_topk_sites,
+                "variant_id": variant.variant_id,
+                "n_samples_a": len(contrast.sample_ids_a),
+                "n_samples_b": len(contrast.sample_ids_b),
+                "n_input_sites": contrast_summary["n_input_sites"],
+                "n_sites_retained": contrast_summary["n_sites_retained"],
+                "n_sites_dropped_missing": contrast_summary["n_sites_dropped_missing"],
+                "n_sites_with_protein_contrast": contrast_summary["n_sites_with_protein_contrast"],
+                "status": "emitted",
+                "reason_if_skipped": "",
+                "path": "." if not multiple else str(child_out_dir.relative_to(out_dir)),
+            }
+            qc_rows.append(qc_row)
+            if multiple:
+                manifest_rows.append(
+                    {
+                        "contrast_id": contrast.contrast_id,
+                        "study_contrast": contrast.study_contrast,
+                        "group_label": contrast.group_label or "",
+                        "condition_a": contrast.condition_a or "",
+                        "condition_b": contrast.condition_b or "",
+                        "protein_adjustment": variant.protein_adjustment,
+                        "gene_topk_sites": variant.gene_topk_sites,
+                        "variant_id": variant.variant_id,
+                        "path": str(child_out_dir.relative_to(out_dir)),
+                    }
+                )
+            child_gmt_path = child_out_dir / "genesets.gmt"
+            if cfg.emit_gmt and child_gmt_path.exists():
+                with child_gmt_path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.rstrip("\n")
+                        if not line:
+                            continue
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            combined_gmt_sets.append((parts[0], parts[1:]))
 
     if multiple:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(
                 fh,
                 delimiter="\t",
-                fieldnames=["contrast_id", "study_contrast", "group_label", "condition_a", "condition_b", "path"],
+                fieldnames=[
+                    "contrast_id",
+                    "study_contrast",
+                    "group_label",
+                    "condition_a",
+                    "condition_b",
+                    "protein_adjustment",
+                    "gene_topk_sites",
+                    "variant_id",
+                    "path",
+                ],
             )
             writer.writeheader()
             for row in manifest_rows:
@@ -673,6 +781,9 @@ def run_ptm_site_matrix_workflow(
                 "group_label",
                 "condition_a",
                 "condition_b",
+                "protein_adjustment",
+                "gene_topk_sites",
+                "variant_id",
                 "n_samples_a",
                 "n_samples_b",
                 "n_input_sites",
@@ -701,11 +812,15 @@ def run_ptm_site_matrix_workflow(
         "missing_value_policy": cfg.missing_value_policy,
         "min_samples_per_condition": cfg.min_samples_per_condition,
         "min_present_per_condition": cfg.min_present_per_condition,
+        "protein_adjustment_run_mode": cfg.protein_adjustment_run_mode,
+        "emit_gene_topk_site_comparison": cfg.emit_gene_topk_site_comparison,
+        "gene_topk_site_compare_to": cfg.gene_topk_site_compare_to,
         "n_samples_total": len(sample_rows),
         "n_matrix_rows": len(matrix_rows),
         "n_contrasts_total": len(contrasts),
+        "n_variants_total": len(variants),
         "n_contrasts_emitted": emitted,
-        "n_contrasts_skipped": len(contrasts) - emitted,
+        "n_contrasts_skipped": (len(contrasts) * len(variants)) - emitted,
         "resources": resources_info,
         "contrast_qc_path": "contrast_qc.tsv",
     }
@@ -717,6 +832,7 @@ def run_ptm_site_matrix_workflow(
     return {
         "out_dir": str(out_dir),
         "n_contrasts_total": len(contrasts),
+        "n_variants_total": len(variants),
         "n_contrasts_emitted": emitted,
         "grouped_output": multiple,
     }

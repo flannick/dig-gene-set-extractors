@@ -173,3 +173,36 @@ def test_ptm_prepare_reference_bundle_workflow(tmp_path: Path):
     assert rows["P12345|S|123|phospho"]["df_ref"] == "2"
     assert rows["P12345|S|123|phospho"]["n_samples_ref"] == "2"
 
+
+def test_ptm_site_diff_emits_composition_qc_warning(tmp_path: Path, capsys):
+    ptm_path = tmp_path / "composition_ptm.tsv"
+    ptm_path.write_text(
+        "\n".join(
+            [
+                "site_id\tgene_id\tgene_symbol\tprotein_accession\tresidue\tposition\tlog2fc\tpvalue",
+                "HBB|S|1|phospho\tG_HBB\tHBB\tHBB\tS\t1\t2.0\t0.001",
+                "HBA1|S|2|phospho\tG_HBA1\tHBA1\tHBA1\tS\t2\t1.8\t0.001",
+                "VWF|S|3|phospho\tG_VWF\tVWF\tVWF\tS\t3\t1.5\t0.001",
+                "PECAM1|S|4|phospho\tG_PECAM1\tPECAM1\tPECAM1\tS\t4\t1.4\t0.001",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.ptm_tsv = str(ptm_path)
+    args.out_dir = str(tmp_path / "ptm_composition")
+    args.resources_dir = None
+    args.use_reference_bundle = False
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "4"
+    result = ptm_site_diff.run(args)
+    assert result["n_genes"] == 4
+
+    captured = capsys.readouterr()
+    assert "composition QC suggests possible sample-composition dominance" in captured.err
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["tumor_intrinsic_confidence"] == "low"
+    assert summary["composition_warning"]

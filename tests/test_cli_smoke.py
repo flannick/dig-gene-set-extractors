@@ -141,6 +141,8 @@ def test_cli_describe_ptm_site_diff():
     assert "protein_adjustment" in param_names
     assert "site_alias_resource_id" in param_names
     assert "gene_aggregation" in param_names
+    assert "protein_adjustment_run_mode" not in param_names
+    assert "emit_gene_topk_site_comparison" not in param_names
 
 
 def test_cli_describe_ptm_site_matrix():
@@ -152,6 +154,8 @@ def test_cli_describe_ptm_site_matrix():
     assert "study_contrast" in param_names
     assert "sample_metadata_tsv" not in param_names
     assert "protein_adjustment" in param_names
+    assert "protein_adjustment_run_mode" in param_names
+    assert "emit_gene_topk_site_comparison" in param_names
 
 
 def test_cli_workflow_ptm_prepare_public(tmp_path: Path):

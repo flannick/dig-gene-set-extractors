@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 import gzip
+import json
+from importlib.resources import files
 import math
 from pathlib import Path
 import sys
@@ -623,6 +625,78 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
             writer.writerow(row)
 
 
+def _load_ptm_composition_markers(organism: str) -> dict[str, set[str]]:
+    if str(organism).strip().lower() != "human":
+        return {}
+    path = files("geneset_extractors.resources").joinpath("ptm_composition_markers_human.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    out: dict[str, set[str]] = {}
+    for panel, genes in payload.items():
+        if not isinstance(genes, list):
+            continue
+        out[str(panel)] = {str(g).strip().upper() for g in genes if str(g).strip()}
+    return out
+
+
+def _summarize_composition_qc(
+    *,
+    organism: str,
+    selected_rows: list[dict[str, object]],
+    full_rows: list[dict[str, object]],
+) -> dict[str, object] | None:
+    panels = _load_ptm_composition_markers(organism)
+    if not panels:
+        return None
+
+    def _token(row: dict[str, object]) -> str:
+        symbol = str(row.get("gene_symbol", "")).strip()
+        if symbol:
+            return symbol.upper()
+        return str(row.get("gene_id", "")).strip().upper()
+
+    top_rows = full_rows[: min(20, len(full_rows))]
+    panel_rows: list[dict[str, object]] = []
+    warnings: list[str] = []
+    confidence = "high"
+    for panel_name, genes in sorted(panels.items()):
+        top_hits = [_token(row) for row in top_rows if _token(row) in genes]
+        selected_hits = [_token(row) for row in selected_rows if _token(row) in genes]
+        weight_fraction = sum(float(row.get("weight", 0.0) or 0.0) for row in selected_rows if _token(row) in genes)
+        row = {
+            "panel": panel_name,
+            "top20_hits": len(top_hits),
+            "selected_hits": len(selected_hits),
+            "selected_weight_fraction": float(weight_fraction),
+            "matched_genes_top20": top_hits,
+        }
+        panel_rows.append(row)
+        if float(weight_fraction) >= 0.25 or len(top_hits) >= 3:
+            warnings.append(f"{panel_name}_high")
+            confidence = "low"
+        elif confidence != "low" and (float(weight_fraction) >= 0.15 or len(top_hits) >= 2):
+            confidence = "medium"
+
+    return {
+        "tumor_intrinsic_confidence": confidence,
+        "warnings": warnings,
+        "panels": panel_rows,
+    }
+
+
+def _warn_composition_qc(composition_qc: dict[str, object] | None) -> None:
+    if not isinstance(composition_qc, dict):
+        return
+    warnings = composition_qc.get("warnings")
+    if not isinstance(warnings, list) or not warnings:
+        return
+    confidence = str(composition_qc.get("tumor_intrinsic_confidence", "unknown"))
+    print(
+        "warning: PTM composition QC suggests possible sample-composition dominance; "
+        f"warnings={','.join(str(w) for w in warnings)} tumor_intrinsic_confidence={confidence}",
+        file=sys.stderr,
+    )
+
+
 
 def _warn_gmt_diagnostics(gmt_diagnostics: list[dict[str, object]]) -> None:
     for diag in gmt_diagnostics:
@@ -892,6 +966,12 @@ def run_ptm_site_diff_workflow(
         _warn_gmt_diagnostics(gmt_diagnostics)
 
     skipped_gmt_outputs = _collect_skipped_gmt_outputs(gmt_diagnostics)
+    composition_qc = _summarize_composition_qc(
+        organism=cfg.organism,
+        selected_rows=selected_rows,
+        full_rows=full_rows,
+    )
+    _warn_composition_qc(composition_qc)
     run_summary_payload = {
         "converter": cfg.converter_name,
         "dataset_label": cfg.dataset_label,
@@ -919,6 +999,9 @@ def run_ptm_site_diff_workflow(
         "n_genes_pre_selection": len(gene_scores),
         "n_genes_selected": len(selected_rows),
         "resources": resources_info,
+        "tumor_intrinsic_confidence": composition_qc.get("tumor_intrinsic_confidence") if isinstance(composition_qc, dict) else None,
+        "composition_warning": composition_qc.get("warnings") if isinstance(composition_qc, dict) else [],
+        "composition_qc": composition_qc,
         "gmt_diagnostics": gmt_diagnostics,
         "skipped_programs": skipped_gmt_outputs,
     }
@@ -988,6 +1071,9 @@ def run_ptm_site_diff_workflow(
             "fraction_sites_matched_to_ubiquity_prior": (
                 float(parse_summary["n_sites_matched_to_ubiquity_prior"]) / float(len(base_rows)) if base_rows else 0.0
             ),
+            "tumor_intrinsic_confidence": composition_qc.get("tumor_intrinsic_confidence") if isinstance(composition_qc, dict) else None,
+            "composition_warning": composition_qc.get("warnings") if isinstance(composition_qc, dict) else [],
+            "composition_qc": composition_qc,
             "n_genes_pre_selection": len(gene_scores),
             "n_genes": len(selected_rows),
             "n_features_assigned": len(collapsed_sites),

@@ -104,6 +104,25 @@ This workflow writes:
 
 `bundle_source_row.tsv` is deliberately shaped so you can concatenate many prepared studies and feed them into `workflows ptm_prepare_reference_bundle`.
 
+This workflow also performs assay-type QC for phosphoproteomics staging. `prepare_summary.json` reports:
+
+- `dominant_residue_family`
+- `fraction_s`
+- `fraction_t`
+- `fraction_y`
+- `fraction_k`
+- `phospho_like_fraction`
+
+Default behavior is `--assay_type_policy warn`. For stricter public-data screening, use:
+
+```bash
+geneset-extractors workflows ptm_prepare_public \
+  ... \
+  --assay_type_policy fail
+```
+
+This is mainly intended to catch lysine-dominant or otherwise non-phospho-like public reports before they enter the phospho extractor path.
+
 ### 2c. Convert a standardized site-by-sample PTM matrix
 
 Single study-wide condition contrast:
@@ -121,6 +140,21 @@ geneset-extractors convert ptm_site_matrix \
   --genome_build human \
   --ptm_type phospho \
   --resources_dir <ptm_bundle_dir>
+```
+
+When `--protein_matrix_tsv` is present, the default matrix behavior is:
+
+- `--protein_adjustment_run_mode compare_if_protein`
+
+This emits paired variants for the same biological contrast:
+
+- `protein_adjustment=none`
+- `protein_adjustment=subtract`
+
+If you want a single adjusted or unadjusted run product instead, set:
+
+```bash
+--protein_adjustment_run_mode single
 ```
 
 Per-group condition contrasts:
@@ -242,6 +276,7 @@ The default PTM configuration is intended to produce connectable, direction-awar
 - `--score_mode auto`
 - `--score_transform signed`
 - `--protein_adjustment subtract`
+- `--protein_adjustment_run_mode compare_if_protein`
 - `--protein_adjustment_lambda 1.0`
 - `--confidence_weight_mode combined`
 - `--site_dup_policy highest_confidence`
@@ -255,6 +290,13 @@ The default PTM configuration is intended to produce connectable, direction-awar
 - `--use_reference_bundle true`
 
 If the PTM bundle is missing under `--resource_policy skip`, the converter warns and falls back to direct canonicalization and no ubiquity penalty.
+
+For site-count benchmarking without changing the main default, `ptm_site_matrix` also supports:
+
+- `--emit_gene_topk_site_comparison true`
+- `--gene_topk_site_compare_to 1`
+
+This emits an additional stricter `gene_topk_sites=1` variant beside the default `gene_topk_sites=3`.
 
 ## Output contract
 
@@ -287,6 +329,12 @@ Optional or default extra outputs:
 - root `genesets.gmt` aggregating emitted child GMTs
 - root `run_summary.json` / `run_summary.txt`
 
+When paired protein-adjustment or stricter site-cap variants are emitted, `manifest.tsv` and `contrast_qc.tsv` also include:
+
+- `protein_adjustment`
+- `gene_topk_sites`
+- `variant_id`
+
 ## Conceptual model
 
 A site-level PTM table is not a gene program by itself. The extractor builds one in the following stages:
@@ -297,8 +345,9 @@ A site-level PTM table is not a gene program by itself. The extractor builds one
 4. optionally downweight ubiquitous sites using a local phosphosite prior
 5. collapse duplicate rows to canonical sites
 6. aggregate canonical sites to genes with a site-count-robust rule
-7. select and normalize a compact gene program
-8. optionally emit signed GMT sets
+7. optionally compare unadjusted and protein-adjusted variants
+8. select and normalize a compact gene program
+9. optionally emit signed GMT sets
 
 The most important design choice is the default site-to-gene aggregation. `signed_topk_mean` avoids overweighting proteins with many measured sites while still preserving coherent multi-site regulation.
 
@@ -328,12 +377,17 @@ Bundle guide: `docs/assays/proteomics/reference_bundle.md`
   - If your source table contains many multi-gene site groups, inspect `n_rows_ambiguous_gene` and consider `--ambiguous_gene_policy split_equal` only if that is biologically justified.
 - Protein adjustment changes interpretation.
   - `--protein_adjustment subtract` makes the default output closer to PTM-specific regulation beyond total protein abundance change.
+- Matrix mode defaults to paired adjusted vs unadjusted output when a matched protein matrix is available.
+  - Set `--protein_adjustment_run_mode single` if you only want one variant.
 - Missing bundle resources are non-fatal by default.
   - Under `--resource_policy skip`, the run continues and records missing resources in metadata/run summaries.
 - GMT emission still has size guardrails.
   - Small signed subsets may be skipped unless you set `--emit_small_gene_sets true` or lower `--gmt_min_genes`.
 - `proteomics_diff` is not a PTM substitute.
   - It is a legacy gene-level abundance converter and does not implement site harmonization, protein adjustment, or site ubiquity weighting.
+- PTM outputs can still be dominated by sample composition rather than tumor-intrinsic phosphoregulation.
+  - `run_summary.json` and `run_summary.txt` now report `composition_qc`, `composition_warning`, and `tumor_intrinsic_confidence`.
+  - These are advisory QC flags, not hard filters.
 
 ## Common PTM matrix pitfalls
 
@@ -346,6 +400,8 @@ Bundle guide: `docs/assays/proteomics/reference_bundle.md`
   - `--missing_value_policy drop` is stricter and will skip any site with missing values in compared samples.
 - Matched protein adjustment only works if the protein matrix can be keyed back to the PTM sites.
   - Include `protein_accession`, `gene_id`, or `gene_symbol` in the protein matrix rows.
+- Public PTM reports are not all phosphoproteomics assays.
+  - `ptm_prepare_public` can warn or fail early on lysine-dominant or otherwise non-phospho-like studies via `--assay_type_policy`.
 
 ## Standard public-data path
 

@@ -6,6 +6,7 @@ import json
 from importlib.resources import files
 from pathlib import Path
 import re
+import sys
 from typing import Any
 
 from geneset_extractors.extractors.rnaseq.deg_scoring import sanitize_name_component
@@ -191,6 +192,82 @@ def _parse_site_label(raw_site_label: str, ptm_type: str) -> dict[str, object]:
         "site_parser_status": "unparsed_fallback",
         "n_sites_in_group": max(1, len(tokens)),
     }
+
+
+def _assay_type_qc(
+    site_id_map_rows: list[dict[str, object]],
+    *,
+    ptm_type: str,
+    assay_type_policy: str,
+    min_phospho_like_fraction: float,
+    max_k_fraction: float,
+) -> dict[str, object]:
+    residue_counts: dict[str, int] = {}
+    for row in site_id_map_rows:
+        raw_site_label = _clean(row.get("raw_site_label"))
+        for residue, _position in SITE_TOKEN_RE.findall(raw_site_label):
+            residue_counts[residue] = int(residue_counts.get(residue, 0)) + 1
+
+    total_tokens = int(sum(residue_counts.values()))
+    phospho_like_count = int(residue_counts.get("S", 0) + residue_counts.get("T", 0) + residue_counts.get("Y", 0))
+    lysine_count = int(residue_counts.get("K", 0))
+    phospho_like_fraction = float(phospho_like_count) / float(total_tokens) if total_tokens else 0.0
+    lysine_fraction = float(lysine_count) / float(total_tokens) if total_tokens else 0.0
+
+    if total_tokens == 0:
+        dominant_residue_family = "unknown"
+    elif lysine_count > phospho_like_count:
+        dominant_residue_family = "lysine_dominant"
+    elif phospho_like_count > 0:
+        dominant_residue_family = "phospho_like"
+    else:
+        dominant_residue_family = "other"
+
+    status = "not_applicable"
+    reason = ""
+    if ptm_type == "phospho":
+        if assay_type_policy == "off":
+            status = "unchecked"
+            reason = "Assay-type QC disabled."
+        elif total_tokens == 0:
+            status = "warn"
+            reason = "No parsable residue-position tokens were found; phospho assay typing is uncertain."
+        elif phospho_like_fraction < float(min_phospho_like_fraction) or lysine_fraction > float(max_k_fraction):
+            status = "warn"
+            reason = (
+                f"Public PTM report looks weakly phospho-like: phospho_like_fraction={phospho_like_fraction:.3f}, "
+                f"fraction_k={lysine_fraction:.3f}, dominant_residue_family={dominant_residue_family}."
+            )
+        else:
+            status = "pass"
+            reason = "Residue composition is consistent with a phospho-like public report."
+
+    result = {
+        "status": status,
+        "reason": reason,
+        "dominant_residue_family": dominant_residue_family,
+        "residue_counts": {key: int(residue_counts[key]) for key in sorted(residue_counts)},
+        "n_residue_tokens_parsed": total_tokens,
+        "fraction_s": float(residue_counts.get("S", 0)) / float(total_tokens) if total_tokens else 0.0,
+        "fraction_t": float(residue_counts.get("T", 0)) / float(total_tokens) if total_tokens else 0.0,
+        "fraction_y": float(residue_counts.get("Y", 0)) / float(total_tokens) if total_tokens else 0.0,
+        "fraction_k": lysine_fraction,
+        "phospho_like_fraction": phospho_like_fraction,
+        "thresholds": {
+            "min_phospho_like_fraction": float(min_phospho_like_fraction),
+            "max_k_fraction": float(max_k_fraction),
+        },
+    }
+
+    if ptm_type == "phospho" and status == "warn":
+        if assay_type_policy == "fail":
+            raise ValueError(
+                f"PTM public assay-type QC failed: {reason} "
+                "Use --assay_type_policy warn to continue for exploratory runs."
+            )
+        print(f"warning: {reason}", file=sys.stderr)
+
+    return result
 
 
 def read_cdap_sample_design(path: str | Path | None) -> dict[str, dict[str, str]]:
@@ -530,6 +607,7 @@ def write_qc_outputs(
     ptm_summary: dict[str, int],
     protein_summary: dict[str, int],
     n_samples_with_condition: int,
+    assay_qc: dict[str, object],
 ) -> dict[str, object]:
     ptm_path = out_dir / "ptm_matrix.tsv"
     sample_meta_path = out_dir / "sample_metadata.tsv"
@@ -666,6 +744,7 @@ def write_qc_outputs(
         "protein_rows_dropped": protein_summary["rows_dropped"],
         "n_samples": len(sample_metadata_rows),
         "n_samples_with_condition_labels": n_samples_with_condition,
+        "assay_type_qc": assay_qc,
         "outputs": {
             "ptm_matrix_tsv": str(ptm_path),
             "sample_metadata_tsv": str(sample_meta_path),
@@ -693,6 +772,9 @@ def run_public_prepare(
     ptm_type: str,
     study_id: str | None,
     study_label: str | None,
+    assay_type_policy: str = "warn",
+    min_phospho_like_fraction: float = 0.6,
+    max_k_fraction: float = 0.25,
 ) -> dict[str, object]:
     profiles = _load_profiles()
     phospho_profile = profiles["cdap_phosphosite_v1"]
@@ -749,6 +831,13 @@ def run_public_prepare(
         sample_id_map=sample_id_map,
         kept_sample_ids=kept_sample_ids,
     )
+    assay_qc = _assay_type_qc(
+        site_id_map_rows,
+        ptm_type=ptm_type,
+        assay_type_policy=assay_type_policy,
+        min_phospho_like_fraction=min_phospho_like_fraction,
+        max_k_fraction=max_k_fraction,
+    )
 
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -766,6 +855,7 @@ def run_public_prepare(
         ptm_summary=ptm_summary,
         protein_summary=protein_summary,
         n_samples_with_condition=n_samples_with_condition,
+        assay_qc=assay_qc,
     )
     prepare_summary["out_dir"] = str(out_root)
     return prepare_summary

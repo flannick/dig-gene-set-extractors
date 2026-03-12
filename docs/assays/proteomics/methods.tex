@@ -65,6 +65,19 @@ the helper emits a deterministic fallback site-group key derived from the raw
 public label and marks the row with
 \texttt{site\_parser\_status = unparsed\_fallback}.
 
+\paragraph{Assay-type QC.}
+For phosphoproteomics staging, the public-data workflow also computes residue
+composition summaries from parsed rows:
+\[
+f_S,\; f_T,\; f_Y,\; f_K,\; f_{\mathrm{phospho}} = f_S + f_T + f_Y.
+\]
+These are recorded in \texttt{prepare\_summary.json} together with a dominant
+residue family. The default workflow policy is to warn when
+$f_{\mathrm{phospho}}$ is too low or $f_K$ is too high, because this usually
+indicates that a public report belongs to a different PTM assay family rather
+than to phosphoproteomics. A stricter policy may fail early instead of letting
+the study enter the phospho scoring path.
+
 \subsection{What the implemented extractor captures}
 \begin{itemize}
 \item \texttt{ptm\_site\_diff} captures a compact gene program from an already
@@ -315,6 +328,11 @@ Recommended default:
 \qquad K = 3.
 \]
 
+For benchmarking stricter protection against many-site genes, the implemented
+matrix front-end can also emit an additional comparison variant with a smaller
+\texttt{gene\_topk\_sites} value, typically $K=1$, without changing the primary
+default output.
+
 \subsubsection{Gene set extraction}
 Given gene scores $S_g$, select a compact program by one of the shared
 repository strategies:
@@ -351,6 +369,15 @@ direction-specific evidence when downstream methods require nonnegative weights.
 \item A ubiquity penalty shifts the extractor from ``many changed sites'' toward
 ``selective changed sites''.
 \end{itemize}
+
+\paragraph{Composition-aware QC.}
+Public phosphoproteomics programs can still be dominated by sample composition
+or lineage abundance shifts even when the PTM scorer is working correctly. The
+implemented runtime summaries therefore include small built-in advisory marker
+panels (for example erythrocyte, endothelial, immune/myeloid, and platelet)
+that produce a \texttt{composition\_qc} block and a coarse
+\texttt{tumor\_intrinsic\_confidence} score. These are warnings and summary
+annotations, not hard filters.
 
 \subsection{Extractor E2: \texttt{ptm\_site\_matrix}}
 \label{sec:ptm_site_matrix}
@@ -398,6 +425,19 @@ downstream canonicalization, confidence weighting, protein adjustment, ubiquity
 penalty, duplicate collapse, and gene aggregation remain identical to
 \texttt{ptm\_site\_diff}.
 
+\paragraph{Paired protein-adjustment variants.}
+When a matched protein matrix is available, the implemented default is not to
+silently choose one protein-adjustment setting. Instead,
+\texttt{ptm\_site\_matrix} can emit paired variants of the same biological
+contrast, typically
+\[
+\texttt{protein\_adjustment = none}
+\qquad\text{and}\qquad
+\texttt{protein\_adjustment = subtract},
+\]
+so that abundance-driven and PTM-adjusted programs can be compared directly
+within the same study output directory.
+
 \subsection{Reference bundle design}
 The recommended optional public bundle for the phosphoproteomics use case should
 be intentionally small and derived from public site-level tables.
@@ -426,6 +466,7 @@ A practical default for phosphoproteomics is:
 \item \texttt{score\_mode = auto}
 \item \texttt{score\_transform = signed}
 \item \texttt{protein\_adjustment = subtract}
+\item \texttt{protein\_adjustment\_run\_mode = compare\_if\_protein}
 \item \texttt{confidence\_weight\_mode = combined}
 \item \texttt{site\_dup\_policy = highest\_confidence}
 \item \texttt{gene\_aggregation = signed\_topk\_mean}
@@ -434,6 +475,7 @@ A practical default for phosphoproteomics is:
 \item \texttt{normalize = within\_set\_l1}
 \item \texttt{emit\_gmt = true}, \texttt{gmt\_split\_signed = true}
 \item optional bundle-backed ubiquity penalty when a local bundle is available
+\item public-data staging with assay-type QC enabled in warning mode
 \end{itemize}
 
 This default is intended to capture selective, direction-aware,
@@ -451,7 +493,8 @@ Base site statistic \\
 \texttt{--localization\_prob\_column}, \texttt{--peptide\_count\_column},
 \texttt{--confidence\_weight\_mode} & $\omega_i$ &
 Confidence weighting \\
-\texttt{--protein\_logfc\_column}, \texttt{--protein\_adjustment} &
+\texttt{--protein\_logfc\_column}, \texttt{--protein\_adjustment},
+\texttt{--protein\_adjustment\_run\_mode} &
 $a_g^{\mathrm{prot}}$, $\widetilde{x}_i$ &
 Protein adjustment \\
 \texttt{--study\_contrast}, \texttt{--group\_column},
@@ -461,6 +504,9 @@ Within-study matrix contrast definition \\
 \texttt{--resources\_manifest}, \texttt{--resources\_dir},
 \texttt{--site\_ubiquity\_resource\_id} & $u_k$ &
 Reference ubiquity prior \\
+\texttt{--assay\_type\_policy}, \texttt{--min\_phospho\_like\_fraction},
+\texttt{--max\_k\_fraction} & $(f_S,f_T,f_Y,f_K)$ &
+Public phospho-assay QC gate \\
 \texttt{--site\_dup\_policy} & $\operatorname{Agg}_{\mathrm{site}}$ &
 Collapse duplicate rows to canonical sites \\
 \texttt{--gene\_aggregation}, \texttt{--gene\_topk\_sites} &

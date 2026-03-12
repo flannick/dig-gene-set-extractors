@@ -1,0 +1,4 @@
+Phosphosite	Peptide	Gene	Organism	Tumor-A	Tumor-B	Normal-A	Normal-B
+NP_100001:K48	AAAKBBBB	UBA1	human	1.1	1.0	0.1	0.0
+NP_100002:K63	CCCCKDDD	UBA2	human	0.9	0.8	0.2	0.1
+NP_100003:K120	EEEEKFFF	UBA3	human	0.7	0.6	0.2	0.1

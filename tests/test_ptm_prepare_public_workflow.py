@@ -48,12 +48,15 @@ class MatrixArgs:
     score_mode = "auto"
     score_transform = "signed"
     protein_adjustment = "subtract"
+    protein_adjustment_run_mode = "compare_if_protein"
     protein_adjustment_lambda = 1.0
     confidence_weight_mode = "combined"
     min_localization_prob = 0.75
     site_dup_policy = "highest_confidence"
     gene_aggregation = "signed_topk_mean"
     gene_topk_sites = 3
+    emit_gene_topk_site_comparison = False
+    gene_topk_site_compare_to = 1
     ambiguous_gene_policy = "drop"
     resources_manifest = None
     resources_dir = None
@@ -196,6 +199,62 @@ def test_ptm_prepare_public_pdc_manifest_and_downstream_handoffs(tmp_path: Path)
     matrix_args.resources_dir = str(resources_dir)
     matrix_args.use_reference_bundle = True
     result = ptm_site_matrix.run(matrix_args)
-    assert result["n_contrasts_emitted"] == 1
-    assert (Path(matrix_args.out_dir) / "geneset.tsv").exists()
+    assert result["n_contrasts_emitted"] == 2
+    assert result["grouped_output"]
+    manifest_rows = _read_rows(Path(matrix_args.out_dir) / "manifest.tsv")
+    assert {row["protein_adjustment"] for row in manifest_rows} == {"none", "subtract"}
+    for row in manifest_rows:
+        child_dir = Path(matrix_args.out_dir) / row["path"]
+        assert (child_dir / "geneset.tsv").exists()
     assert (Path(matrix_args.out_dir) / "genesets.gmt").exists()
+
+
+def test_ptm_prepare_public_assay_type_qc_warns_for_lysine_dominant(tmp_path: Path, capsys):
+    out_dir = tmp_path / "prepared_lysine_warn"
+    summary = run_public_prepare(
+        input_mode="cdap_files",
+        ptm_report_tsv="tests/data/toy_cdap_lysine_ptm.tmt11.tsv",
+        protein_report_tsv=None,
+        sample_design_tsv="tests/data/toy_cdap.sample.txt",
+        sample_annotations_tsv="tests/data/toy_ptm_public_sample_annotations.tsv",
+        pdc_manifest_tsv=None,
+        source_dir=None,
+        out_dir=out_dir,
+        organism="human",
+        ptm_type="phospho",
+        study_id="K_STUDY",
+        study_label="Lysine Dominant Study",
+        assay_type_policy="warn",
+        min_phospho_like_fraction=0.6,
+        max_k_fraction=0.25,
+    )
+    captured = capsys.readouterr()
+    assert "weakly phospho-like" in captured.err
+    assert summary["assay_type_qc"]["status"] == "warn"
+    assert summary["assay_type_qc"]["dominant_residue_family"] == "lysine_dominant"
+
+
+def test_ptm_prepare_public_assay_type_qc_can_fail(tmp_path: Path):
+    out_dir = tmp_path / "prepared_lysine_fail"
+    try:
+        run_public_prepare(
+            input_mode="cdap_files",
+            ptm_report_tsv="tests/data/toy_cdap_lysine_ptm.tmt11.tsv",
+            protein_report_tsv=None,
+            sample_design_tsv="tests/data/toy_cdap.sample.txt",
+            sample_annotations_tsv="tests/data/toy_ptm_public_sample_annotations.tsv",
+            pdc_manifest_tsv=None,
+            source_dir=None,
+            out_dir=out_dir,
+            organism="human",
+            ptm_type="phospho",
+            study_id="K_STUDY",
+            study_label="Lysine Dominant Study",
+            assay_type_policy="fail",
+            min_phospho_like_fraction=0.6,
+            max_k_fraction=0.25,
+        )
+    except ValueError as exc:
+        assert "assay-type QC failed" in str(exc)
+    else:
+        raise AssertionError("Expected assay-type QC fail policy to raise")
