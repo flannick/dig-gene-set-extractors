@@ -1,0 +1,437 @@
+\section{Site-level PTM-omics extractors for DIG Gene Set Extractors}
+\label{sec:ptm_site_level}
+
+\subsection{Scope}
+This note defines the site-level PTM-omics extractors currently implemented in
+\texttt{geneset\_extractors}:
+
+\begin{enumerate}
+\item \texttt{ptm\_site\_diff}: convert a precomputed site-level contrast table
+into a gene-weight vector.
+\item \texttt{ptm\_site\_matrix}: convert a site-by-sample abundance matrix plus
+sample metadata into one or more within-study site contrasts, then reuse the
+same downstream scorer.
+\end{enumerate}
+
+The intended primary use case is phosphoproteomics from CPTAC/PDC-style public
+site tables, but the scoring stack also applies to other PTM types when the
+input contains a stable site identifier or enough fields to reconstruct one.
+
+The central object is a gene-level program that captures differential PTM
+occupancy at sites assigned to a gene, optionally adjusted for matched total
+protein abundance and optionally downweighted for highly ubiquitous sites.
+
+\subsection{What the implemented extractor captures}
+\begin{itemize}
+\item \texttt{ptm\_site\_diff} captures a compact gene program from an already
+computed site-level contrast. With signed scores, positive weights indicate
+genes whose measured PTM sites are relatively more modified in the focal
+condition and negative weights indicate the opposite. With protein adjustment,
+the program is interpreted as PTM-specific regulation beyond bulk protein
+abundance changes.
+\end{itemize}
+
+\subsection{Notation}
+\begin{itemize}
+\item Raw site-level rows are indexed by $i \in \{1,\ldots,M\}$.
+\item Canonical sites (or site-groups if the source cannot be localized to a
+single residue) are indexed by $k \in \{1,\ldots,K\}$.
+\item Genes are indexed by $g \in \{1,\ldots,G\}$.
+\item $a(i) = k$ is the alias-resolution map from raw row $i$ to canonical site
+key $k$.
+\item $g(k)$ is the resolved gene assignment for canonical site $k$.
+\item $d_i$ is a site-level effect size, typically a log fold-change.
+\item $t_i$ is a site-level test statistic, when available.
+\item $p_i$ is a site-level $p$-value or adjusted $p$-value, when available.
+\item $\ell_i \in [0,1]$ is a site-localization confidence, when available.
+\item $m_i$ is a peptide or evidence count, when available.
+\item $a_{g(k)}^{\mathrm{prot}}$ is a matched total-protein effect for the gene
+owning site $k$, when available.
+\item $u_k$ is a reference ubiquity weight for site $k$, derived from an
+optional phosphosite reference bundle.
+\item $\psi(\cdot)$ is the user-selected signed or nonnegative score transform.
+\item $S_g$ is the final gene score before selection and normalization.
+\item $w_g$ is the selected and normalized gene weight written to
+\texttt{geneset.tsv}.
+\end{itemize}
+
+\subsection{Canonical site identity and aliasing}
+Public phosphoproteomics tables often use heterogeneous feature labels:
+gene-symbol plus residue-position, UniProt accession plus residue-position,
+study-specific site-group strings, or peptide-centric names. We therefore define
+a canonical site key
+\[
+k = (\mathrm{protein\_accession}, \mathrm{residue}, \mathrm{position},
+\mathrm{ptm\_type}),
+\]
+or, when the source does not fully localize a single residue, a canonical
+site-group key
+\[
+k = (\mathrm{source\_site\_group\_id}, \mathrm{ptm\_type}).
+\]
+
+A reference alias table provides a deterministic mapping
+\[
+a(i) : \text{raw row } i \mapsto \text{canonical feature } k.
+\]
+If no alias table is supplied, the extractor falls back to direct construction
+from the input columns. Ambiguous rows that map to multiple genes should be
+handled explicitly by a policy such as \texttt{drop}, \texttt{split\_equal}, or
+\texttt{first}; the recommended connectable default is \texttt{drop}.
+
+\subsection{Extractor E1: \texttt{ptm\_site\_diff}}
+\label{sec:ptm_site_diff}
+
+\subsubsection{Base site statistic}
+The extractor accepts several score definitions.
+
+\paragraph{Custom score column.}
+If the user already provides a site score column,
+\[
+x_i = c_i.
+\]
+
+\paragraph{Statistic mode.}
+If a moderated $t$, $z$, or similar statistic is provided,
+\[
+x_i = t_i.
+\]
+
+\paragraph{Effect times significance.}
+If a signed effect and a $p$-value are available,
+\begin{equation}
+x_i = d_i \cdot \min \left\{ -\log_{10}\!\bigl(\max(p_i,\varepsilon_p)\bigr),\,
+C_p \right\},
+\label{eq:ptm_effect_times_sig}
+\end{equation}
+where $\varepsilon_p > 0$ avoids taking the log of zero and $C_p$ caps
+extremely small $p$-values.
+
+\paragraph{Auto mode.}
+In \texttt{auto} mode, prefer a supplied statistic, otherwise use
+Equation~\eqref{eq:ptm_effect_times_sig} when both signed effect and
+significance are available, otherwise fall back to a user-specified score
+column.
+
+\subsubsection{Confidence weighting}
+Each site can be downweighted by confidence features:
+\[
+\omega_i = \omega_i^{(p)} \, \omega_i^{(\ell)} \, \omega_i^{(m)}.
+\]
+
+A simple implementation is:
+\[
+\omega_i^{(p)} =
+\begin{cases}
+\min\{-\log_{10}(\max(p_i,\varepsilon_p)), C_p\}/C_p, & p_i \text{ available},\\
+1, & \text{otherwise},
+\end{cases}
+\]
+\[
+\omega_i^{(\ell)} =
+\begin{cases}
+\max\left\{0, \frac{\ell_i - \ell_{\min}}{1-\ell_{\min}}\right\}, &
+\ell_i \text{ available},\\
+1, & \text{otherwise},
+\end{cases}
+\]
+\[
+\omega_i^{(m)} =
+\begin{cases}
+\min\left\{1, \frac{\log(1+m_i)}{\log(1+m_{\max})}\right\}, &
+m_i \text{ available},\\
+1, & \text{otherwise}.
+\end{cases}
+\]
+
+This weighting is optional. If the source table does not contain these fields,
+set the corresponding factors to 1.
+
+\subsubsection{Matched protein adjustment}
+A major design choice is whether the signal should represent raw phosphosite
+change or phosphosite change beyond total protein abundance change.
+
+\paragraph{No adjustment.}
+\[
+\widetilde{x}_i = x_i.
+\]
+
+\paragraph{Direct subtraction.}
+\begin{equation}
+\widetilde{x}_i = x_i - \lambda_{\mathrm{prot}} \,
+a_{g(a(i))}^{\mathrm{prot}},
+\label{eq:ptm_protein_subtract}
+\end{equation}
+where $\lambda_{\mathrm{prot}}$ is typically 1 by default.
+
+\paragraph{Residual mode.}
+A more adaptive option estimates a global coefficient
+\[
+\widehat{\beta} = \arg\min_{\beta} \sum_i v_i
+\left(x_i - \beta \, a_{g(a(i))}^{\mathrm{prot}}\right)^2,
+\]
+with optional weights $v_i$, then uses
+\[
+\widetilde{x}_i = x_i - \widehat{\beta} \,
+a_{g(a(i))}^{\mathrm{prot}}.
+\]
+
+The recommended v1 default is the direct subtraction in
+Equation~\eqref{eq:ptm_protein_subtract} because it is easy to explain,
+deterministic, and usually enough to separate PTM-specific regulation from
+protein-level abundance shifts.
+
+\subsubsection{Reference ubiquity penalty}
+An optional phosphosite reference bundle provides a detection-frequency prior.
+Let $N_{\mathrm{ref}}$ be the number of reference samples used to build the
+bundle and let $df_k$ be the number of those samples in which canonical site $k$
+is detected. Define
+\begin{equation}
+u_k = \log \left( \frac{N_{\mathrm{ref}} + 1}{df_k + 1} \right).
+\label{eq:ptm_idf}
+\end{equation}
+
+This is the phosphosite analogue of an inverse document frequency penalty:
+ubiquitous sites receive smaller weight, rarer and therefore more selective
+sites receive larger weight. When no bundle is available, set $u_k = 1$.
+
+The v1 recommendation is to use only detection-frequency style priors and avoid
+naively pooling raw phosphosite ratios across studies as if they were on a
+common absolute scale.
+
+\subsubsection{Signed or nonnegative site contribution}
+Given a transformed score function $\psi$ selected by
+\texttt{score\_transform}:
+\[
+\psi_{\mathrm{signed}}(x)=x,\quad
+\psi_{\mathrm{abs}}(x)=|x|,\quad
+\psi_{\mathrm{positive}}(x)=\max(x,0),\quad
+\psi_{\mathrm{negative}}(x)=\max(-x,0),
+\]
+the final row-level contribution is
+\begin{equation}
+z_i = \psi(\widetilde{x}_i)\, \omega_i \, u_{a(i)}.
+\label{eq:ptm_row_score}
+\end{equation}
+
+\subsubsection{Duplicate-row collapse to canonical sites}
+Multiple peptide rows can map to the same canonical site. Collapse them using a
+site-level policy:
+\[
+q_k = \operatorname{Agg}_{\mathrm{site}}
+\{ z_i : a(i)=k \}.
+\]
+
+Useful options are:
+\begin{itemize}
+\item \texttt{highest\_confidence}: keep the row with largest
+$\omega_i$ (or a deterministic proxy).
+\item \texttt{max\_abs}: keep the row with largest $|z_i|$.
+\item \texttt{mean} or \texttt{sum}: average or accumulate duplicate evidence.
+\end{itemize}
+
+The recommended default is \texttt{highest\_confidence} because many duplicate
+rows are technical rather than biological repeats.
+
+\subsubsection{Site-to-gene aggregation}
+The core gene score is obtained from site-level scores $q_k$ assigned to gene
+$g(k)$.
+
+A naive sum,
+\[
+S_g^{\mathrm{sum}} = \sum_{k: g(k)=g} q_k,
+\]
+overweights proteins with many measured sites.
+
+A naive mean,
+\[
+S_g^{\mathrm{mean}} = \frac{1}{n_g}\sum_{k: g(k)=g} q_k,
+\]
+can dilute a strong focal phosphosite.
+
+A robust default is therefore a signed top-$K$ mean. Let
+$T_g(K)$ be the subset of up to $K$ sites for gene $g$ with largest absolute
+site score:
+\[
+T_g(K) \subseteq \{k : g(k)=g\}, \qquad
+|T_g(K)| = \min\{K, n_g\}.
+\]
+Then define
+\begin{equation}
+S_g = \frac{1}{|T_g(K)|} \sum_{k \in T_g(K)} q_k.
+\label{eq:ptm_signed_topk_mean}
+\end{equation}
+
+This keeps the sign information, limits site-count bias, and rewards coherent
+multi-site regulation when several strong sites point in the same direction.
+
+Recommended default:
+\[
+\texttt{gene\_aggregation} = \texttt{signed\_topk\_mean},
+\qquad K = 3.
+\]
+
+\subsubsection{Gene set extraction}
+Given gene scores $S_g$, select a compact program by one of the shared
+repository strategies:
+\begin{itemize}
+\item \texttt{top\_k}: keep the genes with largest $|S_g|$.
+\item \texttt{quantile}: keep genes above a chosen score quantile.
+\item \texttt{threshold}: keep genes with $|S_g|$ above a minimum threshold.
+\item \texttt{none}: retain all nonzero genes.
+\end{itemize}
+
+If a signed output is desired and the shared repository utilities support it,
+apply within-set L1 normalization on the selected genes:
+\begin{equation}
+w_g = \frac{S_g}{\sum_{h \in \mathcal{G}_{\mathrm{sel}}} |S_h|}.
+\label{eq:ptm_within_set_l1}
+\end{equation}
+
+The selected weighted set is written to \texttt{geneset.tsv}. When GMT export is
+enabled with signed splitting, emit separate positive and negative sets:
+\[
+\mathcal{G}^+ = \{ g : S_g > 0 \},
+\qquad
+\mathcal{G}^- = \{ g : S_g < 0 \}.
+\]
+
+\subsubsection{Interpretation}
+\begin{itemize}
+\item Signed scores with no protein adjustment capture overall gain or loss of
+measured PTM occupancy.
+\item Signed scores with protein adjustment capture PTM-specific regulation
+beyond total protein abundance changes.
+\item Absolute or positive/negative transforms capture perturbation magnitude or
+direction-specific evidence when downstream methods require nonnegative weights.
+\item A ubiquity penalty shifts the extractor from ``many changed sites'' toward
+``selective changed sites''.
+\end{itemize}
+
+\subsection{Extractor E2: \texttt{ptm\_site\_matrix}}
+\label{sec:ptm_site_matrix}
+
+Let $Y_{kj}$ be a site-by-sample abundance matrix, where $k$ indexes canonical
+sites (or site-groups) and $j \in \{1,\ldots,n\}$ indexes samples. Let
+$\gamma(j)$ denote a group label and let $\chi(j)$ denote a condition label.
+The implemented matrix extractor computes within-study site-level statistics and
+then reuses Section~\ref{sec:ptm_site_diff} onward.
+
+\paragraph{Condition A vs condition B.}
+For sample sets $A$ and $B$,
+\[
+d_k(A,B) =
+\frac{1}{|A_k|}\sum_{j \in A_k} Y_{kj}
+-
+\frac{1}{|B_k|}\sum_{j \in B_k} Y_{kj},
+\]
+where $A_k$ and $B_k$ are the subsets of observed samples for site $k$ in the
+two conditions.
+
+A Welch-style statistic is
+\[
+t_k(A,B) =
+\frac{d_k(A,B)}
+{\sqrt{s_{k,A}^2/|A_k| + s_{k,B}^2/|B_k| + \varepsilon_t}}.
+\]
+
+Matched protein adjustment would use the analogous within-study contrast on a
+matched protein matrix.
+
+\paragraph{Grouped contrasts.}
+The same site-level contrast estimation applies to:
+\begin{itemize}
+\item \texttt{group\_vs\_rest}: compare a focal sample group to all other
+samples in the same matrix.
+\item \texttt{condition\_within\_group}: estimate condition A vs B separately
+inside each sample group and emit one program per group.
+\item \texttt{baseline}: use the within-study site mean when no explicit
+contrast is desired.
+\end{itemize}
+
+In all cases, the matrix front-end is only a contrast estimator. The
+downstream canonicalization, confidence weighting, protein adjustment, ubiquity
+penalty, duplicate collapse, and gene aggregation remain identical to
+\texttt{ptm\_site\_diff}.
+
+\subsection{Reference bundle design}
+The recommended optional public bundle for the phosphoproteomics use case should
+be intentionally small and derived from public site-level tables.
+
+\subsubsection{Bundle contents}
+\begin{itemize}
+\item \texttt{phosphosite\_aliases\_human\_v1.tsv.gz}: maps raw feature labels to
+canonical phosphosite keys and resolved genes.
+\item \texttt{phosphosite\_ubiquity\_human\_v1.tsv.gz}: stores
+$N_{\mathrm{ref}}$, $df_k$, fraction detected, and $u_k$ from
+Equation~\eqref{eq:ptm_idf}.
+\item \texttt{bundle\_provenance.json}: records public source studies and file
+hashes used to build the compact tables.
+\end{itemize}
+
+\subsubsection{Why only a compact ubiquity bundle in v1}
+For public phosphoproteomics, the safest cross-study prior is detection
+frequency. Public relative-abundance tables can still be used inside a study for
+contrasts, but v1 should avoid implying that raw ratios are directly comparable
+across studies.
+
+\subsection{Recommended defaults}
+A practical default for phosphoproteomics is:
+\begin{itemize}
+\item \texttt{ptm\_type = phospho}
+\item \texttt{score\_mode = auto}
+\item \texttt{score\_transform = signed}
+\item \texttt{protein\_adjustment = subtract}
+\item \texttt{confidence\_weight\_mode = combined}
+\item \texttt{site\_dup\_policy = highest\_confidence}
+\item \texttt{gene\_aggregation = signed\_topk\_mean}
+\item \texttt{gene\_topk\_sites = 3}
+\item \texttt{select = top\_k}, \texttt{top\_k = 200}
+\item \texttt{normalize = within\_set\_l1}
+\item \texttt{emit\_gmt = true}, \texttt{gmt\_split\_signed = true}
+\item optional bundle-backed ubiquity penalty when a local bundle is available
+\end{itemize}
+
+This default is intended to capture selective, direction-aware,
+protein-adjusted phosphoregulation rather than raw site-count burden.
+
+\subsection{CLI-to-theory crosswalk}
+\begin{center}
+\begin{tabular}{p{0.30\linewidth} p{0.28\linewidth} p{0.32\linewidth}}
+\hline
+CLI family & Mathematical object & Meaning \\
+\hline
+\texttt{--score\_mode}, \texttt{--score\_column}, \texttt{--logfc\_column},
+\texttt{--padj\_column} & $x_i$ or $(d_i,t_i,p_i)$ &
+Base site statistic \\
+\texttt{--localization\_prob\_column}, \texttt{--peptide\_count\_column},
+\texttt{--confidence\_weight\_mode} & $\omega_i$ &
+Confidence weighting \\
+\texttt{--protein\_logfc\_column}, \texttt{--protein\_adjustment} &
+$a_g^{\mathrm{prot}}$, $\widetilde{x}_i$ &
+Protein adjustment \\
+\texttt{--study\_contrast}, \texttt{--group\_column},
+\texttt{--condition\_column}, \texttt{--effect\_metric} &
+$d_k(A,B), t_k(A,B)$ &
+Within-study matrix contrast definition \\
+\texttt{--resources\_manifest}, \texttt{--resources\_dir},
+\texttt{--site\_ubiquity\_resource\_id} & $u_k$ &
+Reference ubiquity prior \\
+\texttt{--site\_dup\_policy} & $\operatorname{Agg}_{\mathrm{site}}$ &
+Collapse duplicate rows to canonical sites \\
+\texttt{--gene\_aggregation}, \texttt{--gene\_topk\_sites} &
+$S_g$ &
+Site-to-gene aggregation \\
+\texttt{--select}, \texttt{--top\_k}, \texttt{--quantile},
+\texttt{--min\_score}, \texttt{--normalize} & $w_g$ &
+Compact program extraction and normalization \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{Summary}
+The implemented PTM extractor shares one conceptual target with the rest of the
+repository: a compact, interpretable gene program. For PTM-omics, the most
+useful public reference bundle in v1 is a compact alias-plus-ubiquity bundle
+built from public phosphosite tables and used only for harmonization and
+selectivity weighting.

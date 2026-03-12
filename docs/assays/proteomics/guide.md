@@ -1,0 +1,276 @@
+# Proteomics Guide
+
+This assay family now has two distinct entrypoints:
+
+- `proteomics_diff`: legacy gene-level protein abundance table -> gene weights
+- `ptm_site_diff`: site-level PTM contrast table -> compact gene program and GMT sets
+- `ptm_site_matrix`: site-by-sample PTM matrix + sample metadata -> one or more contrast-specific gene programs
+
+`ptm_site_diff` is the recommended PTM entrypoint when you already have a site-level contrast table. It is designed for phosphoproteomics first, but it also supports other site-resolved PTM tables when the input includes stable site identifiers or enough fields to reconstruct them.
+
+`ptm_site_matrix` is the recommended PTM entrypoint for public site-by-sample matrices. It estimates within-study site-level contrasts, then reuses the same downstream scorer as `ptm_site_diff`.
+
+## Quickstart
+
+### 1. Optional: build a local phosphosite bundle
+
+The PTM bundle is optional. It improves harmonization and site ubiquity weighting when local prior tables are available.
+
+```bash
+geneset-extractors workflows ptm_prepare_reference_bundle \
+  --sources_tsv <sources.tsv> \
+  --out_dir <ptm_bundle_dir> \
+  --organism human \
+  --ptm_type phospho \
+  --bundle_id phosphoproteomics_human_v1
+```
+
+This writes compact files such as:
+
+- `phosphosite_aliases_human_v1.tsv.gz`
+- `phosphosite_ubiquity_human_v1.tsv.gz`
+- `bundle_provenance.json`
+- `local_resources_manifest.json`
+
+If you point `--resources_dir` at that directory, both `ptm_site_diff` and `ptm_site_matrix` will auto-resolve the two PTM priors by default for human phosphoproteomics.
+
+### 2. Convert a site-level PTM differential table
+
+```bash
+geneset-extractors convert ptm_site_diff \
+  --ptm_tsv <ptm_site_diff.tsv> \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build human \
+  --ptm_type phospho \
+  --resources_dir <ptm_bundle_dir>
+```
+
+Minimal no-bundle run:
+
+```bash
+geneset-extractors convert ptm_site_diff \
+  --ptm_tsv <ptm_site_diff.tsv> \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build human \
+  --ptm_type phospho \
+  --use_reference_bundle false
+```
+
+### 2b. Convert a site-by-sample PTM matrix
+
+Single study-wide condition contrast:
+
+```bash
+geneset-extractors convert ptm_site_matrix \
+  --ptm_matrix_tsv <ptm_matrix.tsv> \
+  --sample_metadata_tsv <sample_metadata.tsv> \
+  --protein_matrix_tsv <protein_matrix.tsv> \
+  --study_contrast condition_a_vs_b \
+  --condition_a case \
+  --condition_b control \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build human \
+  --ptm_type phospho \
+  --resources_dir <ptm_bundle_dir>
+```
+
+Per-group condition contrasts:
+
+```bash
+geneset-extractors convert ptm_site_matrix \
+  --ptm_matrix_tsv <ptm_matrix.tsv> \
+  --sample_metadata_tsv <sample_metadata.tsv> \
+  --study_contrast condition_within_group \
+  --group_column group \
+  --condition_column condition \
+  --condition_a case \
+  --condition_b control \
+  --out_dir <out_dir> \
+  --organism human \
+  --genome_build human \
+  --ptm_type phospho
+```
+
+### 3. Validate outputs
+
+```bash
+geneset-extractors validate <out_dir>
+```
+
+## Input contract for `ptm_site_diff`
+
+The extractor expects a TSV or TSV.GZ with site-level PTM rows and enough information to do three things:
+
+1. construct or resolve a canonical site key
+2. compute a site score
+3. assign the site to one or more genes
+
+Common columns include:
+
+- `site_id`
+- `site_group_id`
+- `gene_id`
+- `gene_symbol`
+- `protein_accession`
+- `residue`
+- `position`
+- `log2fc`
+- `stat`
+- `pvalue` or `padj`
+- `localization_prob`
+- `peptide_count`
+- `protein_log2fc` or `protein_stat`
+
+The extractor will use explicit column flags when provided, otherwise it falls back to common defaults.
+
+## Input contract for `ptm_site_matrix`
+
+`ptm_site_matrix` expects:
+
+1. a wide PTM matrix TSV with one row per site and one column per sample
+2. a sample metadata TSV with at least `sample_id`, and usually `group` and/or `condition`
+3. optionally, a matched protein matrix with one row per protein and the same sample columns
+
+The PTM matrix should contain the same site metadata used by `ptm_site_diff`, for example:
+
+- `site_id`
+- `gene_id`
+- `gene_symbol`
+- `protein_accession`
+- `residue`
+- `position`
+- optional confidence fields such as `localization_prob` and `peptide_count`
+
+The sample metadata should contain:
+
+- `sample_id`
+- `condition` for `condition_a_vs_b` or `condition_within_group`
+- `group` for `group_vs_rest` or `condition_within_group`
+
+The current matrix front-end supports:
+
+- `--study_contrast condition_a_vs_b`
+- `--study_contrast group_vs_rest`
+- `--study_contrast condition_within_group`
+- `--study_contrast baseline`
+
+For matrix contrasts, the default effect metric is `welch_t`; `mean_diff` is available when you want a simpler within-study contrast.
+
+## Recommended defaults
+
+The default PTM configuration is intended to produce connectable, direction-aware phosphoregulation rather than a raw count of changed sites:
+
+- `--score_mode auto`
+- `--score_transform signed`
+- `--protein_adjustment subtract`
+- `--protein_adjustment_lambda 1.0`
+- `--confidence_weight_mode combined`
+- `--site_dup_policy highest_confidence`
+- `--gene_aggregation signed_topk_mean`
+- `--gene_topk_sites 3`
+- `--select top_k --top_k 200`
+- `--normalize within_set_l1`
+- `--emit_full true`
+- `--emit_gmt true`
+- `--gmt_split_signed true`
+- `--use_reference_bundle true`
+
+If the PTM bundle is missing under `--resource_policy skip`, the converter warns and falls back to direct canonicalization and no ubiquity penalty.
+
+## Output contract
+
+`ptm_site_diff` writes:
+
+- `geneset.tsv`
+- `geneset.meta.json`
+
+Optional or default extra outputs:
+
+- `geneset.full.tsv`
+- `genesets.gmt`
+- `run_summary.json`
+- `run_summary.txt`
+
+`geneset.tsv` contains the selected compact program with at least:
+
+- `gene_id`
+- `gene_symbol`
+- `score`
+- `weight`
+- `rank`
+- `n_supporting_sites`
+- `top_sites`
+
+`ptm_site_matrix` writes the same per-contrast files. When the study design produces multiple contrasts, the root output also contains:
+
+- `manifest.tsv`
+- `contrast_qc.tsv`
+- root `genesets.gmt` aggregating emitted child GMTs
+- root `run_summary.json` / `run_summary.txt`
+
+## Conceptual model
+
+A site-level PTM table is not a gene program by itself. The extractor builds one in the following stages:
+
+1. compute a base site statistic
+2. optionally weight it by confidence and localization
+3. optionally subtract matched protein change
+4. optionally downweight ubiquitous sites using a local phosphosite prior
+5. collapse duplicate rows to canonical sites
+6. aggregate canonical sites to genes with a site-count-robust rule
+7. select and normalize a compact gene program
+8. optionally emit signed GMT sets
+
+The most important design choice is the default site-to-gene aggregation. `signed_topk_mean` avoids overweighting proteins with many measured sites while still preserving coherent multi-site regulation.
+
+Theory and equations: `docs/assays/proteomics/methods.tex`
+
+## Resource bundle notes
+
+The optional PTM bundle does two things in v1:
+
+- harmonize heterogeneous site identifiers
+- supply a detection-frequency style ubiquity prior
+
+The recommended human phosphoproteomics resource ids are:
+
+- `phosphosite_aliases_human_v1`
+- `phosphosite_ubiquity_human_v1`
+
+Preset:
+
+- `phosphoproteomics_default_optional_human`
+
+Bundle guide: `docs/assays/proteomics/reference_bundle.md`
+
+## Common pitfalls
+
+- Ambiguous gene assignments are dropped by default.
+  - If your source table contains many multi-gene site groups, inspect `n_rows_ambiguous_gene` and consider `--ambiguous_gene_policy split_equal` only if that is biologically justified.
+- Protein adjustment changes interpretation.
+  - `--protein_adjustment subtract` makes the default output closer to PTM-specific regulation beyond total protein abundance change.
+- Missing bundle resources are non-fatal by default.
+  - Under `--resource_policy skip`, the run continues and records missing resources in metadata/run summaries.
+- GMT emission still has size guardrails.
+  - Small signed subsets may be skipped unless you set `--emit_small_gene_sets true` or lower `--gmt_min_genes`.
+- `proteomics_diff` is not a PTM substitute.
+  - It is a legacy gene-level abundance converter and does not implement site harmonization, protein adjustment, or site ubiquity weighting.
+
+## Common PTM matrix pitfalls
+
+- Matrix columns must match `sample_id` values in the metadata.
+  - Sample metadata rows that do not appear as PTM matrix columns are ignored.
+- `condition_within_group` needs both `group` and `condition`.
+  - By default the converter looks for columns literally named `group` and `condition`.
+- Missing values can suppress site contrasts before PTM scoring even starts.
+  - `--missing_value_policy min_present` is the easier default.
+  - `--missing_value_policy drop` is stricter and will skip any site with missing values in compared samples.
+- Matched protein adjustment only works if the protein matrix can be keyed back to the PTM sites.
+  - Include `protein_accession`, `gene_id`, or `gene_symbol` in the protein matrix rows.
+
+## Extending the assay
+
+The next natural extension is a public-data standardization helper for raw PDC/CPTAC site matrices before they reach `ptm_site_matrix`.

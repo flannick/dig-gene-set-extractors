@@ -1,0 +1,9 @@
+sample_id	group	condition
+A_case_1	alpha	case
+A_case_2	alpha	case
+A_control_1	alpha	control
+A_control_2	alpha	control
+B_case_1	beta	case
+B_case_2	beta	case
+B_control_1	beta	control
+B_control_2	beta	control

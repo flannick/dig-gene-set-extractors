@@ -1,0 +1,8 @@
+site_id	gene_id	gene_symbol	protein_accession	residue	position	localization_prob	peptide_count	A_case_1	A_case_2	A_control_1	A_control_2	B_case_1	B_case_2	B_control_1	B_control_2
+KCNN4_S123	G_KCNN4	KCNN4	P12345	S	123	0.95	3	8.0	7.5	2.0	1.5	3.0	3.2	3.0	2.8
+KCNN4_S123_dup	G_KCNN4	KCNN4	P12345	S	123	0.80	1	6.5	6.0	2.5	2.0	3.0	3.0	2.5	2.5
+KCNN4_T200	G_KCNN4	KCNN4	P12345	T	200	0.90	2	7.0	6.5	3.0	2.5	3.5	3.6	3.1	3.0
+MAPK1_Y187	G_MAPK1	MAPK1	Q11111	Y	187	0.98	4	1.2	1.0	6.0	7.0	3.0	3.0	3.5	3.2
+MAPK1_T185	G_MAPK1	MAPK1	Q11111	T	185	0.85	2	1.5	1.2	5.5	6.5	3.5	3.2	3.8	3.6
+AKT1_S473	G_AKT1	AKT1	A00001	S	473	0.96	3	2.0	2.1	2.0	2.0	8.0	7.5	2.0	1.8
+BAD1_S10	G_BAD1	BAD1	Z99999	S	10	0.40	1	1.0		1.0	1.0	1.0	1.0	1.0	1.0

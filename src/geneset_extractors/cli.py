@@ -281,6 +281,93 @@ def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_name")
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--ptm_type", choices=["phospho", "acetyl", "ub", "generic"], default="phospho")
+    parser.add_argument("--matrix_format", choices=["wide_sites_by_sample"], default="wide_sites_by_sample")
+    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--protein_matrix_tsv")
+    parser.add_argument("--sample_id_column", default="sample_id")
+    parser.add_argument("--group_column", default="group")
+    parser.add_argument("--condition_column", default="condition")
+    parser.add_argument(
+        "--study_contrast",
+        choices=["condition_a_vs_b", "group_vs_rest", "condition_within_group", "baseline"],
+        default="condition_a_vs_b",
+    )
+    parser.add_argument("--condition_a")
+    parser.add_argument("--condition_b")
+    parser.add_argument("--min_samples_per_condition", type=int, default=2)
+    parser.add_argument("--effect_metric", choices=["welch_t", "mean_diff"], default="welch_t")
+    parser.add_argument("--missing_value_policy", choices=["drop", "min_present"], default="min_present")
+    parser.add_argument("--min_present_per_condition", type=int, default=2)
+    parser.add_argument("--site_id_column")
+    parser.add_argument("--site_group_column")
+    parser.add_argument("--gene_id_column")
+    parser.add_argument("--gene_symbol_column")
+    parser.add_argument("--protein_accession_column")
+    parser.add_argument("--residue_column")
+    parser.add_argument("--position_column")
+    parser.add_argument("--score_column")
+    parser.add_argument("--stat_column", default="stat")
+    parser.add_argument("--logfc_column", default="log2fc")
+    parser.add_argument("--padj_column", default="padj")
+    parser.add_argument("--pvalue_column", default="pvalue")
+    parser.add_argument("--localization_prob_column")
+    parser.add_argument("--peptide_count_column")
+    parser.add_argument("--protein_logfc_column", default="protein_log2fc")
+    parser.add_argument("--protein_stat_column", default="protein_stat")
+    parser.add_argument(
+        "--score_mode",
+        choices=["auto", "stat", "logfc_times_neglog10p", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
+    parser.add_argument("--protein_adjustment", choices=["none", "subtract", "residual"], default="subtract")
+    parser.add_argument("--protein_adjustment_lambda", type=float, default=1.0)
+    parser.add_argument(
+        "--confidence_weight_mode",
+        choices=["none", "pvalue", "localization", "combined"],
+        default="combined",
+    )
+    parser.add_argument("--min_localization_prob", type=float, default=0.75)
+    parser.add_argument(
+        "--site_dup_policy",
+        choices=["highest_confidence", "max_abs", "mean", "sum"],
+        default="highest_confidence",
+    )
+    parser.add_argument(
+        "--gene_aggregation",
+        choices=["signed_topk_mean", "max_abs", "sum", "mean"],
+        default="signed_topk_mean",
+    )
+    parser.add_argument("--gene_topk_sites", type=int, default=3)
+    parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--use_reference_bundle", type=_parse_bool, default=True)
+    parser.add_argument("--site_alias_resource_id")
+    parser.add_argument("--site_ubiquity_resource_id")
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+    )
+
+
 def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program_loadings_tsv")
     parser.add_argument(
@@ -1186,6 +1273,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_ptm.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_ptm.add_argument("--genome_build", required=True)
     _add_ptm_site_diff_flags(p_ptm)
+
+    p_ptm_matrix = conv.add_parser("ptm_site_matrix")
+    p_ptm_matrix.add_argument("--ptm_matrix_tsv", required=True)
+    p_ptm_matrix.add_argument("--out_dir", required=True)
+    p_ptm_matrix.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_ptm_matrix.add_argument("--genome_build", required=True)
+    _add_ptm_site_matrix_flags(p_ptm_matrix)
 
     p_scrna = conv.add_parser("sc_rna_marker")
     p_scrna.add_argument("--counts_tsv", required=True)

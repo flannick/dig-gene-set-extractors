@@ -21,6 +21,8 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/atac/guide.md` (ATAC practical guide)
 - `docs/assays/rnaseq/guide.md` (RNA practical guide)
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
+- `docs/assays/proteomics/guide.md` (proteomics PTM practical guide)
+- `docs/assays/proteomics/reference_bundle.md` (proteomics PTM bundle guide)
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
 - `docs/assays/cnv/guide.md` (CNV practical guide)
 - `docs/assays/drug_response/guide.md` (drug response practical guide)
@@ -76,6 +78,13 @@ RNA workflow commands:
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
 - `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
+- `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
+
+Proteomics converters:
+
+- `proteomics_diff` (legacy gene-level abundance)
+- `ptm_site_diff` (site-level PTM differential table to gene program)
+- `ptm_site_matrix` (site-by-sample PTM matrix plus sample metadata to one or more study-specific gene programs)
 
 DNA methylation converters:
 
@@ -109,6 +118,8 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/atac/guide.md`
 - `docs/assays/rnaseq/guide.md`
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- `docs/assays/proteomics/guide.md`
+- `docs/assays/proteomics/reference_bundle.md`
 - `docs/assays/methylation/guide.md`
 - `docs/assays/methylation/resources.md`
 - `docs/assays/cnv/guide.md`
@@ -123,6 +134,7 @@ Method notes and equations (split by assay + index):
 
 - `docs/assays/atac/methods.tex`
 - `docs/assays/rnaseq/methods.tex`
+- `docs/assays/proteomics/methods.tex`
 - `docs/assays/methylation/methods.tex`
 - `docs/assays/cnv/methods.tex`
 - `docs/assays/drug_response/methods.tex`
@@ -143,6 +155,16 @@ ATAC reference bundle setup:
 - `qc`, `experimental`, and `all` presets are opt-in for broader/non-recommended outputs
 - when reference-backed calibration methods cannot run, converters warn and continue with available methods by default
 - production guidance: run with `--resource_policy fail` after `resources status --check_schema`
+
+Proteomics PTM optional bundle setup:
+
+- `docs/assays/proteomics/reference_bundle.md`
+- current v1 PTM bundle is intentionally compact:
+  - site alias harmonization
+  - phosphosite ubiquity weighting
+- preferred workflow:
+  - `geneset-extractors workflows ptm_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --ptm_type phospho --bundle_id ...`
+  - then run `ptm_site_diff --resources_dir <bundle_dir>` or `ptm_site_matrix --resources_dir <bundle_dir>`
 
 Not recommended by default:
 
@@ -190,6 +212,10 @@ dig-gene-set-extractors/
         guide.md
         methods.tex
         scrna_cnmf_workflow.md
+      proteomics/
+        guide.md
+        methods.tex
+        reference_bundle.md
       methylation/
         guide.md
         methods.tex

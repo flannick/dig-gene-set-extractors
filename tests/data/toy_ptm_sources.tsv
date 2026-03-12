@@ -1,0 +1,3 @@
+path	source_dataset
+tests/data/toy_ptm_source_a.tsv	study_a
+tests/data/toy_ptm_source_b.tsv	study_b

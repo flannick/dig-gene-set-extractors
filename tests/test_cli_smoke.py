@@ -27,6 +27,7 @@ def test_cli_list():
     assert "drug_response_screen" in p.stdout
     assert "morphology_profile_query" in p.stdout
     assert "ptm_site_diff" in p.stdout
+    assert "ptm_site_matrix" in p.stdout
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
     assert "rna_sc_programs" in p.stdout
@@ -140,6 +141,17 @@ def test_cli_describe_ptm_site_diff():
     assert "protein_adjustment" in param_names
     assert "site_alias_resource_id" in param_names
     assert "gene_aggregation" in param_names
+
+
+def test_cli_describe_ptm_site_matrix():
+    p = _run("describe", "ptm_site_matrix")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "ptm_site_matrix"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "study_contrast" in param_names
+    assert "sample_metadata_tsv" not in param_names
+    assert "protein_adjustment" in param_names
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
@@ -258,6 +270,45 @@ def test_cli_convert_ptm_site_diff(tmp_path: Path):
         "10",
         "--gmt_topk_list",
         "2",
+        "--emit_small_gene_sets",
+        "true",
+    )
+    assert convert.returncode == 0
+    validate = _run("validate", str(out))
+    assert validate.returncode == 0
+
+
+def test_cli_convert_ptm_site_matrix(tmp_path: Path):
+    resources = tmp_path / "resources"
+    resources.mkdir()
+    for name in ("phosphosite_aliases_human_v1.tsv.gz", "phosphosite_ubiquity_human_v1.tsv.gz"):
+        (resources / name).write_bytes((Path("tests/data") / name).read_bytes())
+    out = tmp_path / "ptm_matrix_cli"
+    convert = _run(
+        "convert",
+        "ptm_site_matrix",
+        "--ptm_matrix_tsv",
+        "tests/data/toy_ptm_matrix.tsv",
+        "--sample_metadata_tsv",
+        "tests/data/toy_ptm_sample_metadata.tsv",
+        "--protein_matrix_tsv",
+        "tests/data/toy_protein_matrix.tsv",
+        "--study_contrast",
+        "condition_within_group",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "human",
+        "--resources_dir",
+        str(resources),
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "20",
+        "--gmt_topk_list",
+        "3",
         "--emit_small_gene_sets",
         "true",
     )
