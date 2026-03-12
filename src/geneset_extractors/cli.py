@@ -211,6 +211,76 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_name")
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--ptm_type", choices=["phospho", "acetyl", "ub", "generic"], default="phospho")
+    parser.add_argument("--site_id_column")
+    parser.add_argument("--site_group_column")
+    parser.add_argument("--gene_id_column")
+    parser.add_argument("--gene_symbol_column")
+    parser.add_argument("--protein_accession_column")
+    parser.add_argument("--residue_column")
+    parser.add_argument("--position_column")
+    parser.add_argument("--score_column")
+    parser.add_argument("--stat_column")
+    parser.add_argument("--logfc_column")
+    parser.add_argument("--padj_column")
+    parser.add_argument("--pvalue_column")
+    parser.add_argument("--localization_prob_column")
+    parser.add_argument("--peptide_count_column")
+    parser.add_argument("--protein_logfc_column")
+    parser.add_argument("--protein_stat_column")
+    parser.add_argument(
+        "--score_mode",
+        choices=["auto", "stat", "logfc_times_neglog10p", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
+    parser.add_argument("--protein_adjustment", choices=["none", "subtract", "residual"], default="subtract")
+    parser.add_argument("--protein_adjustment_lambda", type=float, default=1.0)
+    parser.add_argument(
+        "--confidence_weight_mode",
+        choices=["none", "pvalue", "localization", "combined"],
+        default="combined",
+    )
+    parser.add_argument("--min_localization_prob", type=float, default=0.75)
+    parser.add_argument(
+        "--site_dup_policy",
+        choices=["highest_confidence", "max_abs", "mean", "sum"],
+        default="highest_confidence",
+    )
+    parser.add_argument(
+        "--gene_aggregation",
+        choices=["signed_topk_mean", "max_abs", "sum", "mean"],
+        default="signed_topk_mean",
+    )
+    parser.add_argument("--gene_topk_sites", type=int, default=3)
+    parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--use_reference_bundle", type=_parse_bool, default=True)
+    parser.add_argument("--site_alias_resource_id")
+    parser.add_argument("--site_ubiquity_resource_id")
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+    )
+
+
 def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program_loadings_tsv")
     parser.add_argument(
@@ -391,6 +461,14 @@ def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--balance_by")
     parser.add_argument("--min_per_balance_bin", type=int, default=5)
     parser.add_argument("--keep_raw_downloads", type=_parse_bool, default=False)
+
+
+def _add_ptm_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--sources_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--ptm_type", choices=["phospho", "acetyl", "ub", "generic"], default="phospho")
+    parser.add_argument("--bundle_id", required=True)
 
 
 def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
@@ -730,6 +808,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cnmf_select_k_flags(p_cnmf_select_k)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
+    p_ptm_prepare = wf_sub.add_parser("ptm_prepare_reference_bundle")
+    _add_ptm_prepare_reference_bundle_flags(p_ptm_prepare)
     p_jump_prepare = wf_sub.add_parser("jump_prepare_reference_bundle")
     _add_jump_prepare_reference_bundle_flags(p_jump_prepare)
 
@@ -1100,6 +1180,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prot.add_argument("--score_column", default="log2fc")
     _add_transform_flags(p_prot, default="abs")
 
+    p_ptm = conv.add_parser("ptm_site_diff")
+    p_ptm.add_argument("--ptm_tsv", required=True)
+    p_ptm.add_argument("--out_dir", required=True)
+    p_ptm.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_ptm.add_argument("--genome_build", required=True)
+    _add_ptm_site_diff_flags(p_ptm)
+
     p_scrna = conv.add_parser("sc_rna_marker")
     p_scrna.add_argument("--counts_tsv", required=True)
     p_scrna.add_argument("--out_dir", required=True)
@@ -1293,6 +1380,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=prism_prepare n_rows={result.get('n_response_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "ptm_prepare_reference_bundle":
+                from geneset_extractors.workflows.ptm_prepare_reference_bundle import run as run_ptm_prepare_reference_bundle
+
+                result = run_ptm_prepare_reference_bundle(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=ptm_prepare_reference_bundle n_canonical_sites={result.get('n_canonical_sites')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

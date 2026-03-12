@@ -263,6 +263,30 @@
       "url": "",
       "sha256": "",
       "license": "JUMP-derived bundle provenance documented in local bundle manifest"
+    },
+    {
+      "id": "phosphosite_aliases_human_v1",
+      "description": "Canonical human phosphosite alias table with columns input_site_key,canonical_site_key,gene_id,gene_symbol,protein_accession,residue,position,ptm_type,source_dataset",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:phosphosite_aliases_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "phosphosite_aliases_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived phosphosite harmonization table; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "phosphosite_ubiquity_human_v1",
+      "description": "Canonical human phosphosite ubiquity prior with columns canonical_site_key,gene_id,gene_symbol,ptm_type,n_samples_ref,df_ref,fraction_ref,idf_ref,n_datasets_ref",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:phosphosite_ubiquity_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "phosphosite_ubiquity_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived phosphosite ubiquity prior; document upstream public sources and versions in local bundle provenance"
     }
   ],
   "presets": {
@@ -313,6 +337,10 @@
     "morphology_optional_human": [
       "morphology_jump_target_pilot_u2os_48h_v1",
       "morphology_jump_target_pilot_a549_48h_v1"
+    ],
+    "phosphoproteomics_default_optional_human": [
+      "phosphosite_aliases_human_v1",
+      "phosphosite_ubiquity_human_v1"
     ]
   }
 }

@@ -20,6 +20,7 @@ Both CLI names dispatch to the same implementation.
 - RNA-seq: `docs/assays/rnaseq/guide.md`
 - scRNA cNMF prep workflow: `docs/assays/rnaseq/scrna_cnmf_workflow.md`
 - DNA methylation: `docs/assays/methylation/guide.md`
+- Proteomics PTM: `docs/assays/proteomics/guide.md`
 - DNA methylation resources: `docs/assays/methylation/resources.md`
 - CNV segments: `docs/assays/cnv/guide.md`
 - Drug response screens: `docs/assays/drug_response/guide.md`
@@ -34,6 +35,7 @@ Both CLI names dispatch to the same implementation.
 - ATAC-seq methods: `docs/assays/atac/methods.tex`
 - RNA-seq methods: `docs/assays/rnaseq/methods.tex`
 - DNA methylation methods: `docs/assays/methylation/methods.tex`
+- Proteomics PTM methods: `docs/assays/proteomics/methods.tex`
 - CNV methods: `docs/assays/cnv/methods.tex`
 - Drug response methods: `docs/assays/drug_response/methods.tex`
 - Morphology methods: `docs/assays/morphology/methods.tex`
@@ -51,6 +53,7 @@ Reference resources are managed via `src/geneset_extractors/resources/manifest.j
 Assay-specific resource instructions:
 
 - ATAC resources and bundles: `docs/assays/atac/reference_bundle.md`
+- Proteomics PTM bundle guide: `docs/assays/proteomics/reference_bundle.md`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
