@@ -209,6 +209,53 @@ def test_ptm_prepare_public_pdc_manifest_and_downstream_handoffs(tmp_path: Path)
     assert (Path(matrix_args.out_dir) / "genesets.gmt").exists()
 
 
+def test_ptm_prepare_public_bundle_auto_resolves_from_resources_dir_only(tmp_path: Path, capsys):
+    prepared_dir = tmp_path / "prepared_public"
+    run_public_prepare(
+        input_mode="cdap_files",
+        ptm_report_tsv="tests/data/toy_cdap_phosphosite.tmt11.tsv",
+        protein_report_tsv="tests/data/toy_cdap_proteome.tmt11.tsv",
+        sample_design_tsv="tests/data/toy_cdap.sample.txt",
+        sample_annotations_tsv="tests/data/toy_ptm_public_sample_annotations.tsv",
+        pdc_manifest_tsv=None,
+        source_dir=None,
+        out_dir=prepared_dir,
+        organism="human",
+        ptm_type="phospho",
+        study_id="PTM_STUDY_1",
+        study_label="Toy PTM Public Study",
+    )
+
+    bundle_args = BundleArgs()
+    bundle_args.sources_tsv = str(prepared_dir / "bundle_source_row.tsv")
+    bundle_args.out_dir = str(tmp_path / "ptm_bundle_auto")
+    run_ptm_prepare_reference_bundle(bundle_args)
+
+    matrix_args = MatrixArgs()
+    matrix_args.ptm_matrix_tsv = str(prepared_dir / "ptm_matrix.tsv")
+    matrix_args.sample_metadata_tsv = str(prepared_dir / "sample_metadata.tsv")
+    matrix_args.protein_matrix_tsv = str(prepared_dir / "protein_matrix.tsv")
+    matrix_args.out_dir = str(tmp_path / "ptm_from_bundle_auto")
+    matrix_args.resources_dir = bundle_args.out_dir
+    matrix_args.use_reference_bundle = True
+    matrix_args.resources_manifest = None
+    matrix_args.site_alias_resource_id = None
+    matrix_args.site_ubiquity_resource_id = None
+    result = ptm_site_matrix.run(matrix_args)
+    assert result["n_contrasts_emitted"] == 2
+
+    captured = capsys.readouterr()
+    assert "Missing site_alias resource file" not in captured.err
+    assert "Missing site_ubiquity resource file" not in captured.err
+
+    run_summary = json.loads((Path(matrix_args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    resources = run_summary["resources"]
+    assert resources is not None
+    assert resources["missing"] == []
+    used_ids = {str(item["id"]) for item in resources["used"]}
+    assert used_ids == {"phosphosite_aliases_human_v1", "phosphosite_ubiquity_human_v1"}
+
+
 def test_ptm_prepare_public_assay_type_qc_warns_for_lysine_dominant(tmp_path: Path, capsys):
     out_dir = tmp_path / "prepared_lysine_warn"
     summary = run_public_prepare(

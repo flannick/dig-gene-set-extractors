@@ -19,8 +19,14 @@ class ResourceContext:
 
 
 def load_resource_context(resources_manifest: str | None, resources_dir: str | None) -> ResourceContext:
-    manifest_label, resources, _presets, warnings = load_manifest(resources_manifest)
     root = Path(resources_dir).expanduser() if resources_dir else default_resources_dir()
+    manifest_path = resources_manifest
+    if manifest_path is None:
+        local_manifest = root / "local_resources_manifest.json"
+        if local_manifest.exists():
+            manifest_path = str(local_manifest)
+
+    manifest_label, resources, _presets, warnings = load_manifest(manifest_path)
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return ResourceContext(
@@ -48,8 +54,13 @@ def resolve_resource_path(
     if rid not in ctx.resources:
         raise ValueError(f"Unknown {role_label} resource id: {rid}")
     entry = ctx.resources[rid]
-    path = ctx.resources_dir / str(entry.get("filename", ""))
-    if path.exists():
+    filename = str(entry.get("filename", ""))
+    candidates = [
+        ctx.resources_dir / filename,
+        ctx.resources_dir / "bundle" / filename,
+    ]
+    path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if path is not None:
         ctx.used.append(
             resource_metadata_record(
                 resource_id=rid,
@@ -60,11 +71,15 @@ def resolve_resource_path(
         )
         return path
 
-    message = f"Missing {role_label} resource file: {path}. {enablement_hint}"
+    message = (
+        f"Missing {role_label} resource file. Tried: "
+        + ", ".join(str(candidate) for candidate in candidates)
+        + f". {enablement_hint}"
+    )
     ctx.missing.append(
         {
             "resource_id": rid,
-            "expected_path": str(path),
+            "expected_path": str(candidates[0]),
             "role_label": role_label,
         }
     )

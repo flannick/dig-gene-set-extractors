@@ -122,6 +122,8 @@ geneset-extractors convert ptm_site_matrix \
   --resources_dir <ptm_bundle_dir>
 ```
 
+If `--resources_dir` contains `local_resources_manifest.json`, the PTM converters now auto-discover and merge that local manifest even when `--resources_manifest` is not passed explicitly. Direct file layouts and `bundle/<filename>` layouts are both accepted for the runtime PTM priors.
+
 ### Local manifest overlay
 
 The bundle workflow also writes `local_resources_manifest.json`. You can use it explicitly if you want the generated bundle to behave like a manifest overlay:
