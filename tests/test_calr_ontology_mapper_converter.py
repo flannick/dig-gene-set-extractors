@@ -47,6 +47,9 @@ class Args:
     gmt_split_signed = False
     gmt_format = "classic"
     emit_small_gene_sets = True
+    output_gene_species = "human"
+    ortholog_policy = "unique_only"
+    mouse_human_orthologs_tsv = None
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -69,11 +72,13 @@ def test_calr_ontology_mapper_end_to_end(tmp_path: Path):
     thermogenesis_path = out_dir / "program=thermogenesis__mode=core__contrast=KO" / "geneset.tsv"
     rows = _read_rows(thermogenesis_path)
     gene_symbols = {row["gene_symbol"] for row in rows}
-    assert "Ucp1" in gene_symbols or "Ppargc1a" in gene_symbols
+    assert "UCP1" in gene_symbols or "PPARGC1A" in gene_symbols
 
     meta = json.loads((out_dir / "program=thermogenesis__mode=core__contrast=KO" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["summary"]["session_mode"] == "explicit"
     assert meta["summary"]["routing_summary"]["n_terms_with_gene_support"] >= 1
+    assert meta["summary"]["output_gene_species"] == "human"
+    assert meta["summary"]["orthology_summary"]["n_mapped_source_genes"] >= 1
     validate_output_dir(out_dir, Path("src/geneset_extractors/schemas/geneset_metadata.schema.json"))
 
 

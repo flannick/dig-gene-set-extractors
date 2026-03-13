@@ -2,6 +2,12 @@
 
 This assay family is for CalR-compatible indirect calorimetry datasets. It is a phenotype-to-gene extractor family, not a direct molecular assay. The extractor first summarizes physiology in a CalR-aware way, then routes that physiology to genes through either phenotype terms or a gene-labeled reference library.
 
+The calorimetry physiology and packaged ontology resources are mouse-first, but the default emitted gene lists are now humanized. By default:
+
+- source mouse genes are mapped to human orthologs
+- only unique mouse-to-human mappings are kept
+- source mouse gene provenance remains in metadata and public-study reference tables
+
 Current public entrypoints:
 
 - `calr_ontology_mapper`
@@ -29,6 +35,7 @@ This uses packaged default files for:
 - term templates
 - phenotype-gene edges
 - term hierarchy
+- mouse-to-human ortholog table used to humanize emitted genes
 
 ### Profile query with explicit reference tables
 
@@ -44,6 +51,12 @@ geneset-extractors convert calr_profile_query \
   --organism mouse \
   --genome_build mm39
 ```
+
+By default this emits human gene programs even when the reference metadata is still mouse-first. Override with:
+
+- `--output_gene_species source`
+- `--ortholog_policy expand_all`
+- `--mouse_human_orthologs_tsv <custom.tsv.gz>`
 
 ### Build and use a local calorimetry reference bundle
 
@@ -114,6 +127,16 @@ This writes:
 - `prepare_summary.json`
 - `bundle/<bundle_id>.bundle.json`
 
+and, by default for mouse studies, humanized reference metadata fields:
+
+- `output_gene_id`
+- `output_gene_symbol`
+- `output_gene_species`
+- `source_gene_id`
+- `source_gene_symbol`
+- `source_gene_species`
+- `gene_mapping_status`
+
 You can then query that bundle directly with `calr_profile_query`.
 
 ## Input expectations
@@ -138,6 +161,11 @@ For wide CalR layouts the extractor derives and records:
 
 - `session_group_layout_mode = wide_membership`
 - `session_window_layout_mode = calr_matrix`
+
+For mouse-first ontology or reference bundles, the default output routing also records:
+
+- `output_gene_species = human`
+- `orthology_summary`
 
 The session file is strongly preferred. If it is absent, the extractor can still run only in exploratory mode. That mode emits a hard warning and records:
 
@@ -220,6 +248,8 @@ At the dataset root:
 
 Low-confidence retrieval is warned explicitly. Provenance mismatches such as different mass-covariate or acclimation metadata are penalized, not silently ignored.
 
+When a reference bundle already carries humanized `output_gene_*` fields, those are used directly. Otherwise the profile-query output is humanized after retrieval using the bundled or packaged mouse-human ortholog table.
+
 ## Selection and GMT defaults
 
 Calorimetry follows the repo-wide conservative GMT defaults:
@@ -237,6 +267,7 @@ Calorimetry follows the repo-wide conservative GMT defaults:
 
 - No session file: the run is exploratory and may not match a CalR analysis window.
 - Human runs with packaged defaults: packaged ontology resources are mouse-only; use explicit human resources or a human bundle.
+- Ambiguous orthologs: default `--ortholog_policy unique_only` drops ambiguous mouse-to-human mappings rather than guessing.
 - Full-trace analysis: if acclimation is included, the output may not match a typical post-acclimation calorimetry analysis.
 - Missing body-composition covariate: mass-dependent variables will fall back and warn.
 - Combined or crossover designs: v1 is intended for straightforward baseline or chronic grouped designs, not silent crossover handling.

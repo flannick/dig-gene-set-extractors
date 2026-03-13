@@ -18,6 +18,7 @@ def _resolve_inputs(args):
         "reference_metadata_tsv": str(args.reference_metadata_tsv or "").strip() or None,
         "feature_schema_tsv": str(args.feature_schema_tsv or "").strip() or None,
         "feature_stats_tsv": str(args.feature_stats_tsv or "").strip() or None,
+        "mouse_human_orthologs_tsv": str(getattr(args, "mouse_human_orthologs_tsv", None) or "").strip() or None,
     }
     if explicit["reference_profiles_tsv"] and explicit["reference_metadata_tsv"]:
         return explicit, None
@@ -44,6 +45,8 @@ def _resolve_inputs(args):
         resolved["feature_schema_tsv"] = bundle_file_path(bundle_manifest_path, bundle_manifest, "feature_schema")
     if not resolved["feature_stats_tsv"]:
         resolved["feature_stats_tsv"] = bundle_file_path(bundle_manifest_path, bundle_manifest, "feature_stats")
+    if not resolved["mouse_human_orthologs_tsv"]:
+        resolved["mouse_human_orthologs_tsv"] = bundle_file_path(bundle_manifest_path, bundle_manifest, "mouse_human_orthologs")
     return resolved, bundle_resources_info(ctx)
 
 
@@ -85,6 +88,8 @@ def run(args) -> dict[str, object]:
         exclusions_tsv=args.exclusions_tsv,
         mass_covariate=args.mass_covariate,
         min_group_size=int(args.min_group_size),
+        output_gene_species=getattr(args, "output_gene_species", "human"),
+        ortholog_policy=getattr(args, "ortholog_policy", "unique_only"),
         similarity_metric=args.similarity_metric,
         similarity_floor=float(args.similarity_floor),
         similarity_power=float(args.similarity_power),
@@ -102,5 +107,6 @@ def run(args) -> dict[str, object]:
         reference_metadata_tsv=resolved_inputs["reference_metadata_tsv"],
         feature_schema_tsv=resolved_inputs["feature_schema_tsv"],
         feature_stats_tsv=resolved_inputs["feature_stats_tsv"],
+        mouse_human_orthologs_tsv=resolved_inputs["mouse_human_orthologs_tsv"],
         resources_info=resources_info,
     )

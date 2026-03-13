@@ -155,6 +155,12 @@ The current implementation emits:
 \item \texttt{mode=expanded}: small hierarchy-aware term expansion when a hierarchy is available
 \end{itemize}
 
+For mouse-first ontology resources, the emitted gene program is humanized by default after phenotype routing. Let $M(g_m)$ denote the set of human ortholog targets for mouse gene $g_m$. The current default uses a conservative unique-mapping policy:
+\begin{equation}
+S^{\mathrm{onto,human}}_{g_h}(q) = \sum_{g_m : M(g_m)=\{g_h\}} S^{\mathrm{onto}}_{g_m}(q),
+\end{equation}
+and ambiguous mouse genes are dropped rather than expanded by default.
+
 \section{Extractor 2: \texttt{calr\_profile\_query}}
 Let $x_r$ be a reference feature profile aligned to the same feature schema as the query. After optional centering/scaling, similarity is
 \begin{equation}
@@ -180,6 +186,11 @@ With one primary perturbed gene per reference, the direct profile-query score is
 S^{\mathrm{prof}}_g(q) = \sum_r w_r(q)\mathbf{1}\{g_r = g\}.
 \end{equation}
 
+When reference metadata already carries humanized \texttt{output\_gene\_*} fields, those identifiers are used directly. Otherwise a mouse-first reference library is humanized after retrieval with the same conservative orthology rule:
+\begin{equation}
+S^{\mathrm{prof,human}}_{g_h}(q) = \sum_{g_m : M(g_m)=\{g_h\}} S^{\mathrm{prof}}_{g_m}(q).
+\end{equation}
+
 The current implementation is intentionally conservative: it emits \texttt{mode=core} only and warns when retrieval confidence is low or when query/reference provenance looks mismatched.
 
 \section{Reference bundles}
@@ -192,6 +203,13 @@ The current implementation is intentionally conservative: it emits \texttt{mode=
 \item \texttt{resolved\_studies.tsv}
 \end{itemize}
 
+For mouse studies, the public-preparation workflow now humanizes the reference gene label by default while preserving source provenance:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{gene\_id}, \texttt{gene\_symbol}: emitted human identifiers
+\item \texttt{source\_gene\_id}, \texttt{source\_gene\_symbol}: original mouse study labels
+\item \texttt{gene\_mapping\_status}: unique, ambiguous, or source
+\end{itemize}
+
 `workflows calr_prepare_reference_bundle` then packages:
 \begin{itemize}[leftmargin=2em]
 \item reference profiles,
@@ -199,6 +217,7 @@ The current implementation is intentionally conservative: it emits \texttt{mode=
 \item feature schema,
 \item feature stats,
 \item ontology resources,
+\item optional mouse-human ortholog table for mouse bundles,
 \item bundle manifest and summary,
 \item optional tarball distribution artifact.
 \end{itemize}

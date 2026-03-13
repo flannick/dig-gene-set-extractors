@@ -16,6 +16,7 @@ A calorimetry bundle contains:
 - `term_templates.tsv.gz`
 - `phenotype_gene_edges.tsv.gz`
 - optional `term_hierarchy.tsv.gz`
+- optional `mouse_human_orthologs.tsv.gz`
 - `<bundle_id>.bundle.json`
 - `bundle_summary.json`
 - `bundle_summary.txt`
@@ -42,6 +43,7 @@ Ontology-mapper can also use the same bundle for:
 - `calr_term_templates_mouse_v1.tsv`
 - `calr_phenotype_gene_edges_mouse_v1.tsv`
 - `calr_term_hierarchy_mouse_v1.tsv`
+- `calr_mouse_human_orthologs_v1.tsv.gz`
 
 `calr_profile_query` cannot run without either:
 
@@ -71,6 +73,7 @@ Optional explicit inputs:
 
 If the schema/stats are not provided, the workflow derives them from `reference_profiles_tsv`.
 If the ontology files are not provided, the workflow falls back to the packaged mouse defaults.
+If `--organism mouse`, the workflow also includes the packaged mouse-human ortholog table unless `--mouse_human_orthologs_tsv` overrides it.
 
 ## Public-data path from Cal-Repository studies
 
@@ -93,6 +96,17 @@ geneset-extractors workflows calr_prepare_public \
 - `gene_symbol`
 
 This workflow writes standardized reference tables plus `bundle/<bundle_id>.bundle.json`, so the output can be used directly as a profile-query bundle or inspected before packaging further.
+
+For mouse studies, `reference_metadata.tsv` is humanized by default:
+
+- `gene_id` / `gene_symbol` become the emitted human gene identifiers
+- `source_gene_id` / `source_gene_symbol` preserve the original mouse study label
+- `gene_mapping_status` records whether the mapping was unique
+
+The default policy is conservative:
+
+- `--output_gene_species human`
+- `--ortholog_policy unique_only`
 
 ## Distribution artifact
 
@@ -131,6 +145,7 @@ Bundle resolution follows the local-manifest pattern used elsewhere in the repo:
 The bundle is more useful when `reference_metadata.tsv` records at least:
 
 - primary perturbed gene or reference id
+- source mouse gene and emitted human gene when a mouse study is humanized
 - perturbation type
 - selected mass covariate
 - acclimation state

@@ -17,6 +17,7 @@ def test_calr_prepare_reference_bundle_workflow(tmp_path: Path):
         "out_dir": str(tmp_path / "calr_bundle"),
         "organism": "mouse",
         "bundle_id": "toy_calr_bundle_v1",
+        "mouse_human_orthologs_tsv": None,
         "write_distribution_artifact": True,
         "distribution_dir": None,
     })()
@@ -30,6 +31,7 @@ def test_calr_prepare_reference_bundle_workflow(tmp_path: Path):
     assert (out_dir / "term_templates.tsv.gz").exists()
     assert (out_dir / "phenotype_gene_edges.tsv.gz").exists()
     assert (out_dir / "term_hierarchy.tsv.gz").exists()
+    assert (out_dir / "mouse_human_orthologs.tsv.gz").exists()
     assert (out_dir / "toy_calr_bundle_v1.bundle.json").exists()
     assert (out_dir / "bundle_summary.json").exists()
     assert (out_dir / "bundle_summary.txt").exists()
@@ -39,3 +41,4 @@ def test_calr_prepare_reference_bundle_workflow(tmp_path: Path):
     summary = json.loads((out_dir / "bundle_summary.json").read_text(encoding="utf-8"))
     assert summary["term_templates_source"] == "packaged_default"
     assert summary["n_reference_profiles"] == 4
+    assert summary["mouse_human_orthologs_source"] == "packaged_default"

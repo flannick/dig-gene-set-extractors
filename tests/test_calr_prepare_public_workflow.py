@@ -54,6 +54,9 @@ class QueryArgs:
     gmt_split_signed = False
     gmt_format = "classic"
     emit_small_gene_sets = True
+    output_gene_species = "human"
+    ortholog_policy = "unique_only"
+    mouse_human_orthologs_tsv = None
 
 
 def test_calr_prepare_public_builds_reference_tables_and_bundle(tmp_path: Path):
@@ -63,6 +66,9 @@ def test_calr_prepare_public_builds_reference_tables_and_bundle(tmp_path: Path):
             studies_tsv="tests/data/toy_calr_public_studies.tsv",
             out_dir=str(out_dir),
             organism="mouse",
+            output_gene_species="human",
+            ortholog_policy="unique_only",
+            mouse_human_orthologs_tsv=None,
             bundle_id="toy_calr_public_bundle_v1",
             build_bundle=True,
             write_distribution_artifact=False,
@@ -91,10 +97,12 @@ def test_calr_prepare_public_builds_reference_tables_and_bundle(tmp_path: Path):
     summary = json.loads((out_dir / "prepare_summary.json").read_text(encoding="utf-8"))
     assert summary["n_reference_profiles"] == 2
     assert summary["n_explicit_session_studies"] == 2
+    assert summary["orthology_summary"]["mapped"] == 2
 
     metadata_lines = (out_dir / "reference_metadata.tsv").read_text(encoding="utf-8").splitlines()
     assert any("wide_membership" in line for line in metadata_lines)
-    assert any("Ppargc1a" in line for line in metadata_lines)
+    assert any("PPARGC1A" in line for line in metadata_lines)
+    assert any("source_gene_symbol" in line for line in metadata_lines)
 
 
 def test_calr_prepare_public_bundle_runs_profile_query(tmp_path: Path):
@@ -104,6 +112,9 @@ def test_calr_prepare_public_bundle_runs_profile_query(tmp_path: Path):
             studies_tsv="tests/data/toy_calr_public_studies.tsv",
             out_dir=str(public_out),
             organism="mouse",
+            output_gene_species="human",
+            ortholog_policy="unique_only",
+            mouse_human_orthologs_tsv=None,
             bundle_id="toy_calr_public_bundle_v1",
             build_bundle=True,
             write_distribution_artifact=False,
@@ -127,4 +138,6 @@ def test_calr_prepare_public_bundle_runs_profile_query(tmp_path: Path):
     args.resources_dir = str(public_out / "bundle")
     result = calr_profile_query.run(args)
     assert result["n_groups"] > 0
+    rows = (Path(args.out_dir) / "program=thermogenesis__mode=core__contrast=KO" / "geneset.tsv").read_text(encoding="utf-8")
+    assert "PPARGC1A" in rows or "LEPR" in rows
     validate_output_dir(Path(args.out_dir), Path("src/geneset_extractors/schemas/geneset_metadata.schema.json"))

@@ -253,6 +253,18 @@
       "license": "Curated calorimetry phenotype-edge table distributed with the package; provenance documented in assay docs"
     },
     {
+      "id": "calorimetry_mouse_human_orthologs_v1",
+      "description": "Packaged mouse-to-human ortholog table for humanized calorimetry gene outputs, derived from MGI HOM_MouseHumanSequence.rpt",
+      "provider": "packaged_default_or_bundle",
+      "stable_id": "package:calorimetry_mouse_human_orthologs_v1",
+      "version": "v1",
+      "genome_build": "mouse_to_human",
+      "filename": "calr_mouse_human_orthologs_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived from MGI HOM_MouseHumanSequence.rpt; provenance documented in calorimetry assay docs"
+    },
+    {
       "id": "calorimetry_term_hierarchy_mouse_v1",
       "description": "Packaged mouse calorimetry phenotype term hierarchy with columns parent_term_id,child_term_id",
       "provider": "packaged_default_or_bundle",

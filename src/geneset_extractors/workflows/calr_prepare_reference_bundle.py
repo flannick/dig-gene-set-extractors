@@ -11,6 +11,7 @@ from statistics import mean
 import tarfile
 
 from geneset_extractors.extractors.calorimetry.ontology import packaged_resource_path
+from geneset_extractors.extractors.calorimetry.orthology import packaged_resource_path as packaged_orthology_resource_path
 from geneset_extractors.extractors.morphology.io import write_bundle_manifest
 
 
@@ -128,12 +129,15 @@ def run(args) -> dict[str, object]:
         term_templates_src = args.term_templates_tsv
         phenotype_gene_edges_src = args.phenotype_gene_edges_tsv
         term_hierarchy_src = args.term_hierarchy_tsv
+        ortholog_src = getattr(args, "mouse_human_orthologs_tsv", None)
         if not term_templates_src:
             term_templates_src = str(stack.enter_context(as_file(packaged_resource_path(DEFAULT_TERM_TEMPLATES))))
         if not phenotype_gene_edges_src:
             phenotype_gene_edges_src = str(stack.enter_context(as_file(packaged_resource_path(DEFAULT_GENE_EDGES))))
         if not term_hierarchy_src and bool(args.include_packaged_term_hierarchy):
             term_hierarchy_src = str(stack.enter_context(as_file(packaged_resource_path(DEFAULT_TERM_HIERARCHY))))
+        if str(args.organism).strip().lower() == "mouse" and not ortholog_src:
+            ortholog_src = str(stack.enter_context(as_file(packaged_orthology_resource_path("calr_mouse_human_orthologs_v1.tsv.gz"))))
 
         profiles_out = out_dir / "reference_profiles.tsv.gz"
         metadata_out = out_dir / "reference_metadata.tsv.gz"
@@ -142,6 +146,7 @@ def run(args) -> dict[str, object]:
         templates_out = out_dir / "term_templates.tsv.gz"
         edges_out = out_dir / "phenotype_gene_edges.tsv.gz"
         hierarchy_out = out_dir / "term_hierarchy.tsv.gz"
+        ortholog_out = out_dir / "mouse_human_orthologs.tsv.gz"
 
         n_profiles, _ = _copy_to_tsv_gz(args.reference_profiles_tsv, profiles_out)
         n_metadata, _ = _copy_to_tsv_gz(args.reference_metadata_tsv, metadata_out)
@@ -150,6 +155,9 @@ def run(args) -> dict[str, object]:
         n_hierarchy_rows = 0
         if term_hierarchy_src:
             n_hierarchy_rows, _ = _copy_to_tsv_gz(term_hierarchy_src, hierarchy_out)
+        n_ortholog_rows = 0
+        if ortholog_src:
+            n_ortholog_rows, _ = _copy_to_tsv_gz(ortholog_src, ortholog_out)
 
         if args.feature_schema_tsv:
             n_schema_rows, _ = _copy_to_tsv_gz(args.feature_schema_tsv, schema_out)
@@ -179,9 +187,11 @@ def run(args) -> dict[str, object]:
                 "n_term_template_rows": n_template_rows,
                 "n_phenotype_gene_edges": n_edge_rows,
                 "n_term_hierarchy_rows": n_hierarchy_rows,
+                "n_mouse_human_ortholog_rows": n_ortholog_rows,
                 "term_templates_source": "explicit" if args.term_templates_tsv else "packaged_default",
                 "phenotype_gene_edges_source": "explicit" if args.phenotype_gene_edges_tsv else "packaged_default",
                 "term_hierarchy_source": "explicit" if args.term_hierarchy_tsv else ("packaged_default" if term_hierarchy_src else "absent"),
+                "mouse_human_orthologs_source": "explicit" if getattr(args, "mouse_human_orthologs_tsv", None) else ("packaged_default" if ortholog_src else "absent"),
             },
             "files": {
                 "reference_profiles": profiles_out.name,
@@ -191,6 +201,7 @@ def run(args) -> dict[str, object]:
                 "term_templates": templates_out.name,
                 "phenotype_gene_edges": edges_out.name,
                 **({"term_hierarchy": hierarchy_out.name} if term_hierarchy_src else {}),
+                **({"mouse_human_orthologs": ortholog_out.name} if ortholog_src else {}),
             },
         }
         bundle_manifest_path = out_dir / f"{bundle_id}.bundle.json"
@@ -205,9 +216,11 @@ def run(args) -> dict[str, object]:
             "n_term_template_rows": n_template_rows,
             "n_phenotype_gene_edges": n_edge_rows,
             "n_term_hierarchy_rows": n_hierarchy_rows,
+            "n_mouse_human_ortholog_rows": n_ortholog_rows,
             "term_templates_source": bundle_manifest["summary"]["term_templates_source"],
             "phenotype_gene_edges_source": bundle_manifest["summary"]["phenotype_gene_edges_source"],
             "term_hierarchy_source": bundle_manifest["summary"]["term_hierarchy_source"],
+            "mouse_human_orthologs_source": bundle_manifest["summary"]["mouse_human_orthologs_source"],
         }
         (out_dir / "bundle_summary.json").write_text(json.dumps(bundle_summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (out_dir / "bundle_summary.txt").write_text(
@@ -222,9 +235,11 @@ def run(args) -> dict[str, object]:
                     f"n_term_template_rows: {n_template_rows}",
                     f"n_phenotype_gene_edges: {n_edge_rows}",
                     f"n_term_hierarchy_rows: {n_hierarchy_rows}",
+                    f"n_mouse_human_ortholog_rows: {n_ortholog_rows}",
                     f"term_templates_source: {bundle_summary['term_templates_source']}",
                     f"phenotype_gene_edges_source: {bundle_summary['phenotype_gene_edges_source']}",
                     f"term_hierarchy_source: {bundle_summary['term_hierarchy_source']}",
+                    f"mouse_human_orthologs_source: {bundle_summary['mouse_human_orthologs_source']}",
                 ]
             )
             + "\n",
@@ -245,6 +260,8 @@ def run(args) -> dict[str, object]:
             ]
             if term_hierarchy_src:
                 included.append(hierarchy_out)
+            if ortholog_src:
+                included.append(ortholog_out)
             distribution_info = _write_distribution_artifact(
                 dist_dir=Path(args.distribution_dir).expanduser() if args.distribution_dir else (out_dir / "dist"),
                 bundle_id=bundle_id,

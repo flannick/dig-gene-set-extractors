@@ -19,6 +19,13 @@ from geneset_extractors.extractors.calorimetry.bundle import bundle_resources_in
 from geneset_extractors.extractors.calorimetry.contrasts import ContrastSignature, build_group_contrasts
 from geneset_extractors.extractors.calorimetry.features import CalorimetryFeatureConfig, FeatureExtractionResult, PROGRAM_VARIABLES, extract_subject_features, feature_base_variable
 from geneset_extractors.extractors.calorimetry.io import read_calr_data_csv, read_exclusions_tsv, read_session_csv
+from geneset_extractors.extractors.calorimetry.orthology import (
+    ORTHOLOG_RESOURCE_ID,
+    map_gene_scores_to_human,
+    ortholog_resource_record,
+    read_mouse_human_orthologs_tsv,
+    read_packaged_mouse_human_orthologs_tsv,
+)
 from geneset_extractors.extractors.calorimetry.ontology import (
     build_gene_edge_index,
     build_term_neighbors,
@@ -66,12 +73,65 @@ class CalRWorkflowConfig:
     exclusions_tsv: str | None
     mass_covariate: str | None
     min_group_size: int
+    output_gene_species: str = "human"
+    ortholog_policy: str = "unique_only"
     similarity_metric: str = "cosine"
     similarity_floor: float = 0.0
     similarity_power: float = 1.0
     hubness_penalty: str = "inverse_linear"
     provenance_mismatch_penalty: float = 0.15
     reference_bundle_id: str | None = None
+
+
+def _resources_info_object(resources_info: dict[str, object] | None) -> dict[str, object] | None:
+    if resources_info is None:
+        return {"manifest": None, "resources_dir": None, "used": [], "missing": [], "warnings": []}
+    resources_info.setdefault("used", [])
+    resources_info.setdefault("missing", [])
+    resources_info.setdefault("warnings", [])
+    return resources_info
+
+
+def _append_resource_use(resources_info: dict[str, object] | None, record: dict[str, object]) -> None:
+    payload = _resources_info_object(resources_info)
+    if payload is None:
+        return
+    used = payload.setdefault("used", [])
+    record_path = str(record.get("path", ""))
+    record_id = str(record.get("id", ""))
+    for existing in used:
+        if str(existing.get("id", "")) == record_id and str(existing.get("path", "")) == record_path:
+            return
+    used.append(record)
+
+
+def _load_mouse_human_orthologs(
+    *,
+    output_gene_species: str,
+    mouse_human_orthologs_tsv: str | None,
+    resources_info: dict[str, object] | None,
+) -> tuple[dict[str, object] | None, dict[str, object]]:
+    if str(output_gene_species).strip().lower() != "human":
+        return None, {"output_gene_species": "source", "orthology_applied": False}
+    if mouse_human_orthologs_tsv:
+        orthologs = read_mouse_human_orthologs_tsv(mouse_human_orthologs_tsv)
+        _append_resource_use(resources_info, ortholog_resource_record(path=str(mouse_human_orthologs_tsv), method="explicit_or_bundle"))
+        return orthologs, {
+            "output_gene_species": "human",
+            "orthology_applied": True,
+            "ortholog_resource": orthologs.get("summary", {}),
+        }
+    orthologs = read_packaged_mouse_human_orthologs_tsv()
+    ortholog_summary = orthologs.get("summary", {})
+    _append_resource_use(
+        resources_info,
+        ortholog_resource_record(path=str(ortholog_summary.get("path", "")), method="packaged_default"),
+    )
+    return orthologs, {
+        "output_gene_species": "human",
+        "orthology_applied": True,
+        "ortholog_resource": ortholog_summary,
+    }
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -465,10 +525,13 @@ def run_calr_ontology_workflow(
     term_templates_tsv: str,
     phenotype_gene_edges_tsv: str,
     term_hierarchy_tsv: str | None,
+    mouse_human_orthologs_tsv: str | None,
     resources_info: dict[str, object] | None,
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if cfg.output_gene_species == "human":
+        resources_info = _resources_info_object(resources_info)
     data_fieldnames, data_rows = read_calr_data_csv(calr_data_csv)
     session_fieldnames, session_rows = read_session_csv(session_csv)
     exclusion_rows = read_exclusions_tsv(exclusions_tsv)
@@ -498,6 +561,11 @@ def run_calr_ontology_workflow(
     templates = build_term_template_index(template_rows)
     gene_edges = build_gene_edge_index(edge_rows)
     term_neighbors = build_term_neighbors(hierarchy_rows)
+    orthologs, orthology_base_summary = _load_mouse_human_orthologs(
+        output_gene_species=cfg.output_gene_species,
+        mouse_human_orthologs_tsv=mouse_human_orthologs_tsv,
+        resources_info=resources_info,
+    )
 
     input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
     if session_csv:
@@ -508,6 +576,8 @@ def run_calr_ontology_workflow(
     input_files.append(input_file_record(phenotype_gene_edges_tsv, "phenotype_gene_edges_tsv"))
     if term_hierarchy_tsv:
         input_files.append(input_file_record(term_hierarchy_tsv, "term_hierarchy_tsv"))
+    if mouse_human_orthologs_tsv:
+        input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
 
     manifest_rows: list[dict[str, object]] = []
     combined_gmt: list[tuple[str, list[str]]] = []
@@ -526,6 +596,16 @@ def run_calr_ontology_workflow(
                     term_neighbors=term_neighbors,
                     mode=mode_label,
                 )
+                orthology_summary = dict(orthology_base_summary)
+                if cfg.output_gene_species == "human":
+                    gene_scores, gene_symbols, mapping_summary = map_gene_scores_to_human(
+                        gene_scores=gene_scores,
+                        gene_symbols=gene_symbols,
+                        orthologs=orthologs,
+                        policy=cfg.ortholog_policy,
+                        fallback_to_source=False,
+                    )
+                    orthology_summary.update(mapping_summary)
                 if not gene_scores:
                     continue
                 child_dir = out_dir / f"program={program_name}__mode={mode_label}__contrast={contrast.contrast_id}"
@@ -551,6 +631,8 @@ def run_calr_ontology_workflow(
                         "excluded_subjects": extracted.metadata_summary["excluded_subjects"],
                         "top_terms": top_terms(scored_terms),
                         "routing_summary": routing_summary,
+                        "output_gene_species": cfg.output_gene_species,
+                        "orthology_summary": orthology_summary,
                         "warnings": extracted.warnings + contrast_warnings,
                     },
                     parse_summary={
@@ -593,6 +675,8 @@ def run_calr_ontology_workflow(
         "run_ids": extracted.metadata_summary["run_ids"],
         "n_subjects": extracted.metadata_summary["n_subjects"],
         "n_outputs": len(manifest_rows),
+        "output_gene_species": cfg.output_gene_species,
+        "orthology_summary": orthology_base_summary,
         "warnings": extracted.warnings + contrast_warnings,
         "resources": resources_info,
     }
@@ -610,10 +694,13 @@ def run_calr_profile_workflow(
     reference_metadata_tsv: str,
     feature_schema_tsv: str | None,
     feature_stats_tsv: str | None,
+    mouse_human_orthologs_tsv: str | None,
     resources_info: dict[str, object] | None,
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if cfg.output_gene_species == "human":
+        resources_info = _resources_info_object(resources_info)
     data_fieldnames, data_rows = read_calr_data_csv(calr_data_csv)
     session_fieldnames, session_rows = read_session_csv(session_csv)
     exclusion_rows = read_exclusions_tsv(exclusions_tsv)
@@ -641,6 +728,11 @@ def run_calr_profile_workflow(
     reference_metadata, ref_meta_summary = _read_reference_metadata(reference_metadata_tsv)
     feature_schema, schema_summary = _read_feature_schema(feature_schema_tsv)
     feature_stats, feature_stats_summary = _read_feature_stats(feature_stats_tsv)
+    orthologs, orthology_base_summary = _load_mouse_human_orthologs(
+        output_gene_species=cfg.output_gene_species,
+        mouse_human_orthologs_tsv=mouse_human_orthologs_tsv,
+        resources_info=resources_info,
+    )
     input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
     if session_csv:
         input_files.append(input_file_record(session_csv, "session_csv"))
@@ -652,6 +744,8 @@ def run_calr_profile_workflow(
         input_files.append(input_file_record(feature_schema_tsv, "feature_schema_tsv"))
     if feature_stats_tsv:
         input_files.append(input_file_record(feature_stats_tsv, "feature_stats_tsv"))
+    if mouse_human_orthologs_tsv:
+        input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
 
     manifest_rows: list[dict[str, object]] = []
     combined_gmt: list[tuple[str, list[str]]] = []
@@ -675,13 +769,32 @@ def run_calr_profile_workflow(
                 evidence *= qc_weight * prov_penalty
                 if evidence <= 0.0:
                     continue
+                has_output_gene = bool(str(ref_meta.get("output_gene_id", "")).strip() or str(ref_meta.get("output_gene_symbol", "")).strip())
                 neighbors.append(
                     {
                         "reference_id": reference_id,
                         "similarity": sim,
                         "evidence": evidence,
-                        "gene_id": str(ref_meta.get("gene_id", ref_meta.get("gene_symbol", reference_id))).strip() or reference_id,
-                        "gene_symbol": str(ref_meta.get("gene_symbol", ref_meta.get("gene_id", reference_id))).strip() or reference_id,
+                        "gene_id": str(
+                            ref_meta.get(
+                                "output_gene_id",
+                                ref_meta.get("gene_id", ref_meta.get("gene_symbol", reference_id)),
+                            )
+                        ).strip()
+                        or reference_id,
+                        "gene_symbol": str(
+                            ref_meta.get(
+                                "output_gene_symbol",
+                                ref_meta.get("gene_symbol", ref_meta.get("gene_id", reference_id)),
+                            )
+                        ).strip()
+                        or reference_id,
+                        "gene_species": (
+                            str(ref_meta.get("output_gene_species", "")).strip()
+                            or ("human" if has_output_gene else "")
+                            or str(ref_meta.get("gene_species", ref_meta.get("source_gene_species", cfg.organism))).strip()
+                            or str(cfg.organism)
+                        ),
                         "mismatch_reasons": mismatch_reasons,
                     }
                 )
@@ -693,11 +806,32 @@ def run_calr_profile_workflow(
                 )
             gene_scores: dict[str, float] = {}
             gene_symbols: dict[str, str] = {}
+            source_gene_scores: dict[str, float] = {}
+            source_gene_symbols: dict[str, str] = {}
             for neighbor in neighbors[: max(1, min(25, len(neighbors)))]:
                 gene_id = str(neighbor["gene_id"])
                 gene_symbol = str(neighbor["gene_symbol"])
+                gene_species = str(neighbor.get("gene_species", "")).strip().lower()
+                if cfg.output_gene_species == "human" and gene_species not in {"human", ""}:
+                    source_gene_scores[gene_id] = float(source_gene_scores.get(gene_id, 0.0)) + float(neighbor["evidence"])
+                    source_gene_symbols[gene_id] = gene_symbol
+                    continue
                 gene_scores[gene_id] = float(gene_scores.get(gene_id, 0.0)) + float(neighbor["evidence"])
                 gene_symbols[gene_id] = gene_symbol
+            orthology_summary = dict(orthology_base_summary)
+            if cfg.output_gene_species == "human" and source_gene_scores:
+                mapped_scores, mapped_symbols, mapping_summary = map_gene_scores_to_human(
+                    gene_scores=source_gene_scores,
+                    gene_symbols=source_gene_symbols,
+                    orthologs=orthologs,
+                    policy=cfg.ortholog_policy,
+                    fallback_to_source=False,
+                )
+                for gene_id, score in mapped_scores.items():
+                    gene_scores[gene_id] = float(gene_scores.get(gene_id, 0.0)) + float(score)
+                    if gene_id in mapped_symbols:
+                        gene_symbols[gene_id] = str(mapped_symbols[gene_id])
+                orthology_summary.update(mapping_summary)
             if not gene_scores:
                 continue
             retrieval_confidence = "low"
@@ -727,11 +861,13 @@ def run_calr_profile_workflow(
                     "ee_source": extracted.metadata_summary["ee_source"],
                     "rer_source": extracted.metadata_summary["rer_source"],
                     "excluded_subjects": extracted.metadata_summary["excluded_subjects"],
-                    "retrieval_confidence": retrieval_confidence,
-                    "top_neighbors": neighbors[:10],
-                    "alignment_summary": alignment_summary,
-                    "warnings": extracted.warnings + contrast_warnings,
-                },
+                        "retrieval_confidence": retrieval_confidence,
+                        "top_neighbors": neighbors[:10],
+                        "alignment_summary": alignment_summary,
+                        "output_gene_species": cfg.output_gene_species,
+                        "orthology_summary": orthology_summary,
+                        "warnings": extracted.warnings + contrast_warnings,
+                    },
                 parse_summary={
                     "feature_extraction": extracted.metadata_summary,
                     "reference_profiles": ref_summary,
@@ -775,6 +911,8 @@ def run_calr_profile_workflow(
         "n_subjects": extracted.metadata_summary["n_subjects"],
         "n_outputs": len(manifest_rows),
         "reference_bundle_id": cfg.reference_bundle_id,
+        "output_gene_species": cfg.output_gene_species,
+        "orthology_summary": orthology_base_summary,
         "warnings": extracted.warnings + contrast_warnings,
         "resources": resources_info,
     }

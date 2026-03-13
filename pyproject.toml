@@ -42,4 +42,5 @@ geneset_extractors = [
   "extractors/converters/specs/*.json",
   "resources/*.json",
   "resources/*.tsv",
+  "resources/*.tsv.gz",
 ]

@@ -186,6 +186,7 @@ Calorimetry optional reference-bundle setup:
 - packaged mouse ontology defaults allow `calr_ontology_mapper` to run without a bundle
 - `calr_profile_query` requires either explicit reference files or a local bundle
 - `workflows calr_prepare_reference_bundle` writes both an unpacked bundle directory and an optional tarball/checksum distribution artifact
+- mouse calorimetry outputs are humanized by default via a packaged or bundled mouse-human ortholog table, while source mouse genes remain in metadata
 - the current packaged defaults are mouse-first; human runs should supply explicit human resources or a human-calibrated bundle
 
 Not recommended by default:

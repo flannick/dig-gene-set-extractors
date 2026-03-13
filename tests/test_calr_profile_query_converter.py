@@ -54,6 +54,9 @@ class Args:
     gmt_split_signed = False
     gmt_format = "classic"
     emit_small_gene_sets = True
+    output_gene_species = "human"
+    ortholog_policy = "unique_only"
+    mouse_human_orthologs_tsv = None
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -73,9 +76,10 @@ def test_calr_profile_query_explicit_reference_files(tmp_path: Path):
     core_path = out_dir / "program=thermogenesis__mode=core__contrast=KO" / "geneset.tsv"
     rows = _read_rows(core_path)
     assert rows
-    assert rows[0]["gene_symbol"] in {"Ucp1", "Mlxipl", "Clock", "Npy"}
+    assert rows[0]["gene_symbol"] in {"UCP1", "MLXIPL", "CLOCK", "NPY"}
     meta = json.loads((out_dir / "program=thermogenesis__mode=core__contrast=KO" / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["summary"]["retrieval_confidence"] in {"medium", "high", "low"}
+    assert meta["summary"]["output_gene_species"] == "human"
     validate_output_dir(out_dir, Path("src/geneset_extractors/schemas/geneset_metadata.schema.json"))
 
 
@@ -109,6 +113,8 @@ def test_calr_profile_query_bundle_mode(tmp_path: Path):
     resources = meta["summary"]["resources"]
     assert resources is not None
     assert any(row["id"] == "toy_calr_bundle_v1" for row in resources["used"])
+    assert any(row["id"] == "calorimetry_mouse_human_orthologs_v1" for row in resources["used"])
+    assert meta["summary"]["output_gene_species"] == "human"
 
 
 def test_calr_profile_query_low_confidence_warning(tmp_path: Path, capsys):
@@ -130,6 +136,7 @@ def test_calr_profile_query_low_confidence_warning(tmp_path: Path, capsys):
     args.out_dir = str(tmp_path / "calr_profile_low")
     args.reference_profiles_tsv = str(ref_profiles)
     args.reference_metadata_tsv = str(ref_meta)
+    args.output_gene_species = "source"
     result = calr_profile_query.run(args)
     assert result["n_groups"] > 0
     captured = capsys.readouterr()

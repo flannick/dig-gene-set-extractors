@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from geneset_extractors.extractors.calorimetry.contrasts import build_group_contrasts
 from geneset_extractors.extractors.calorimetry.features import CalorimetryFeatureConfig, extract_subject_features
 from geneset_extractors.extractors.calorimetry.io import read_calr_data_csv, read_exclusions_tsv, read_session_csv
+from geneset_extractors.extractors.calorimetry.orthology import map_mouse_gene_to_human, read_mouse_human_orthologs_tsv, read_packaged_mouse_human_orthologs_tsv
 from geneset_extractors.workflows.calr_prepare_reference_bundle import run as run_prepare_bundle
 
 
@@ -116,6 +117,9 @@ def run_public_prepare(
     studies_tsv: str,
     out_dir: str,
     organism: str,
+    output_gene_species: str,
+    ortholog_policy: str,
+    mouse_human_orthologs_tsv: str | None,
     bundle_id: str | None,
     build_bundle: bool,
     write_distribution_artifact: bool,
@@ -144,6 +148,10 @@ def run_public_prepare(
     reference_metadata: list[dict[str, object]] = []
     resolved_studies: list[dict[str, object]] = []
     all_warnings: list[str] = []
+    orthologs = None
+    orthology_counts = {"mapped": 0, "unmapped": 0, "ambiguous": 0}
+    if str(organism).strip().lower() == "mouse" and str(output_gene_species).strip().lower() == "human":
+        orthologs = read_mouse_human_orthologs_tsv(mouse_human_orthologs_tsv) if mouse_human_orthologs_tsv else read_packaged_mouse_human_orthologs_tsv()
 
     for study_row in study_rows:
         study_id = _first_nonempty(study_row, ("study_id",))
@@ -156,10 +164,33 @@ def run_public_prepare(
         session_csv = _resolve_path(studies_base, _first_nonempty(study_row, ("session_csv",)))
         exclusions_tsv = _resolve_path(studies_base, _first_nonempty(study_row, ("exclusions_tsv",)))
 
-        gene_symbol = _first_nonempty(study_row, ("gene_symbol", "target_gene_symbol", "perturbed_gene_symbol"))
-        gene_id = _first_nonempty(study_row, ("gene_id", "target_gene_id", "perturbed_gene_id")) or gene_symbol
-        if not gene_symbol:
+        source_gene_symbol = _first_nonempty(study_row, ("gene_symbol", "target_gene_symbol", "perturbed_gene_symbol"))
+        source_gene_id = _first_nonempty(study_row, ("gene_id", "target_gene_id", "perturbed_gene_id")) or source_gene_symbol
+        if not source_gene_symbol:
             raise ValueError(f"Study {study_id} requires gene_symbol in studies_tsv for a gene-labeled reference bundle")
+        output_gene_symbol = source_gene_symbol
+        output_gene_id = source_gene_id
+        output_gene_species_resolved = str(organism).strip().lower() or "mouse"
+        output_gene_hgnc_id = ""
+        gene_mapping_status = "source"
+        if orthologs is not None:
+            targets, gene_mapping_status = map_mouse_gene_to_human(
+                mouse_gene_id=source_gene_id,
+                mouse_gene_symbol=source_gene_symbol,
+                orthologs=orthologs,
+                policy=ortholog_policy,
+            )
+            if not targets:
+                orthology_counts["ambiguous" if gene_mapping_status == "ambiguous" else "unmapped"] += 1
+                raise ValueError(
+                    f"Study {study_id} gene {source_gene_symbol!r} could not be mapped uniquely to human under ortholog_policy={ortholog_policy}"
+                )
+            target = targets[0]
+            output_gene_symbol = str(target.get("human_gene_symbol", "")).strip() or source_gene_symbol
+            output_gene_id = output_gene_symbol
+            output_gene_hgnc_id = str(target.get("human_hgnc_id", "")).strip()
+            output_gene_species_resolved = "human"
+            orthology_counts["mapped"] += 1
 
         data_fieldnames, data_rows = read_calr_data_csv(calr_data_csv)
         session_fieldnames, session_rows = read_session_csv(session_csv) if session_csv else ([], None)
@@ -186,7 +217,7 @@ def run_public_prepare(
         )
         contrast = _select_contrast(contrasts, study_row)
 
-        reference_id = _first_nonempty(study_row, ("reference_id",)) or f"{study_id}__group={contrast.contrast_id}__gene={gene_symbol}"
+        reference_id = _first_nonempty(study_row, ("reference_id",)) or f"{study_id}__group={contrast.contrast_id}__gene={output_gene_symbol}"
         profile_row: dict[str, object] = {"reference_id": reference_id}
         for feature_name, score in sorted(contrast.feature_scores.items()):
             profile_row[feature_name] = float(score)
@@ -194,8 +225,16 @@ def run_public_prepare(
 
         meta_row: dict[str, object] = {
             "reference_id": reference_id,
-            "gene_id": gene_id,
-            "gene_symbol": gene_symbol,
+            "gene_id": output_gene_id,
+            "gene_symbol": output_gene_symbol,
+            "output_gene_id": output_gene_id,
+            "output_gene_symbol": output_gene_symbol,
+            "output_gene_species": output_gene_species_resolved,
+            "output_gene_hgnc_id": output_gene_hgnc_id,
+            "source_gene_id": source_gene_id,
+            "source_gene_symbol": source_gene_symbol,
+            "source_gene_species": str(organism).strip().lower() or "mouse",
+            "gene_mapping_status": gene_mapping_status,
             "study_id": study_id,
             "study_label": study_label,
             "contrast_id": contrast.contrast_id,
@@ -239,7 +278,9 @@ def run_public_prepare(
                 "study_id": study_id,
                 "study_label": study_label,
                 "reference_id": reference_id,
-                "gene_symbol": gene_symbol,
+                "source_gene_symbol": source_gene_symbol,
+                "output_gene_symbol": output_gene_symbol,
+                "gene_mapping_status": gene_mapping_status,
                 "contrast_id": contrast.contrast_id,
                 "session_mode": extracted.metadata_summary.get("session_mode", ""),
                 "analysis_window_source": extracted.metadata_summary.get("analysis_window_source", ""),
@@ -269,6 +310,14 @@ def run_public_prepare(
             "reference_id",
             "gene_id",
             "gene_symbol",
+            "output_gene_id",
+            "output_gene_symbol",
+            "output_gene_species",
+            "output_gene_hgnc_id",
+            "source_gene_id",
+            "source_gene_symbol",
+            "source_gene_species",
+            "gene_mapping_status",
             "study_id",
             "study_label",
             "contrast_id",
@@ -312,7 +361,9 @@ def run_public_prepare(
             "study_id",
             "study_label",
             "reference_id",
-            "gene_symbol",
+            "source_gene_symbol",
+            "output_gene_symbol",
+            "gene_mapping_status",
             "contrast_id",
             "session_mode",
             "analysis_window_source",
@@ -329,12 +380,19 @@ def run_public_prepare(
     summary = {
         "workflow": "calr_prepare_public",
         "organism": organism,
+        "output_gene_species": output_gene_species,
+        "ortholog_policy": ortholog_policy,
         "studies_tsv": str(studies_path),
         "n_studies": len(study_rows),
         "n_reference_profiles": len(reference_profiles),
         "n_features": len(feature_names),
         "n_explicit_session_studies": sum(1 for row in resolved_studies if row["session_mode"] == "explicit"),
         "n_exploratory_studies": sum(1 for row in resolved_studies if row["session_mode"] != "explicit"),
+        "orthology_summary": {
+            "output_gene_species": output_gene_species,
+            "ortholog_policy": ortholog_policy,
+            **orthology_counts,
+        },
         "output_files": {
             "reference_profiles_tsv": str(profiles_path),
             "reference_metadata_tsv": str(metadata_path),
@@ -367,6 +425,7 @@ def run_public_prepare(
             out_dir=str(bundle_dir),
             organism=organism,
             bundle_id=bundle_id or "calorimetry_public_bundle_v1",
+            mouse_human_orthologs_tsv=mouse_human_orthologs_tsv,
             write_distribution_artifact=write_distribution_artifact,
             distribution_dir=None,
         )

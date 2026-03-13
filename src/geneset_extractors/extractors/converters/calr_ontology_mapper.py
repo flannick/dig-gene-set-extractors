@@ -20,11 +20,13 @@ def _resolve_inputs(args, stack: ExitStack):
     explicit_templates = str(args.term_templates_tsv or "").strip() or None
     explicit_edges = str(args.phenotype_gene_edges_tsv or "").strip() or None
     explicit_hierarchy = str(args.term_hierarchy_tsv or "").strip() or None
+    explicit_orthologs = str(getattr(args, "mouse_human_orthologs_tsv", None) or "").strip() or None
     if explicit_templates and explicit_edges:
         return {
             "term_templates_tsv": explicit_templates,
             "phenotype_gene_edges_tsv": explicit_edges,
             "term_hierarchy_tsv": explicit_hierarchy,
+            "mouse_human_orthologs_tsv": explicit_orthologs,
         }, None
 
     if args.reference_bundle_id:
@@ -40,6 +42,7 @@ def _resolve_inputs(args, stack: ExitStack):
             "term_templates_tsv": explicit_templates or bundle_file_path(bundle_manifest_path, bundle_manifest, "term_templates"),
             "phenotype_gene_edges_tsv": explicit_edges or bundle_file_path(bundle_manifest_path, bundle_manifest, "phenotype_gene_edges"),
             "term_hierarchy_tsv": explicit_hierarchy or bundle_file_path(bundle_manifest_path, bundle_manifest, "term_hierarchy"),
+            "mouse_human_orthologs_tsv": explicit_orthologs or bundle_file_path(bundle_manifest_path, bundle_manifest, "mouse_human_orthologs"),
         }
         if not resolved["term_templates_tsv"] or not resolved["phenotype_gene_edges_tsv"]:
             raise ValueError("Calorimetry bundle is missing term_templates or phenotype_gene_edges entries.")
@@ -52,6 +55,7 @@ def _resolve_inputs(args, stack: ExitStack):
         "term_templates_tsv": str(term_templates_path),
         "phenotype_gene_edges_tsv": str(phenotype_gene_edges_path),
         "term_hierarchy_tsv": str(term_hierarchy_path),
+        "mouse_human_orthologs_tsv": explicit_orthologs,
     }, {
         "manifest": "packaged_defaults",
         "resources_dir": None,
@@ -103,6 +107,8 @@ def run(args) -> dict[str, object]:
         exclusions_tsv=args.exclusions_tsv,
         mass_covariate=args.mass_covariate,
         min_group_size=int(args.min_group_size),
+        output_gene_species=getattr(args, "output_gene_species", "human"),
+        ortholog_policy=getattr(args, "ortholog_policy", "unique_only"),
         reference_bundle_id=args.reference_bundle_id,
     )
     with ExitStack() as stack:
@@ -115,5 +121,6 @@ def run(args) -> dict[str, object]:
             term_templates_tsv=resolved_inputs["term_templates_tsv"],
             phenotype_gene_edges_tsv=resolved_inputs["phenotype_gene_edges_tsv"],
             term_hierarchy_tsv=resolved_inputs["term_hierarchy_tsv"],
+            mouse_human_orthologs_tsv=resolved_inputs["mouse_human_orthologs_tsv"],
             resources_info=resources_info,
         )
