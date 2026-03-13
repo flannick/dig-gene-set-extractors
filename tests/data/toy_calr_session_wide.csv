@@ -1,0 +1,5 @@
+,group1,group2,group_names,diet_names,dietCal,colors,xrange,outliers,errorbars,mri,light,exc,Total.Mass,Lean.Mass,Fat.Mass,id
+1,A1,B1,LFD,Chow,3.82,#000000,21,No,Yes,Yes,6,96,30,20,5,A1
+2,A2,B2,HFD,HFDiet,5.21,#CC79A7,93,NA,NA,,18,96,32,21,6,A2
+3,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,96,31,20,6,B1
+4,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,96,33,22,7,B2

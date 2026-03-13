@@ -132,3 +132,40 @@ def test_calr_interaction_kept_vs_dropped():
     kept_model = contrasts_kept[0].feature_models["vo2_mean_selected"]
     assert kept_model["interaction_tested"] is True
     assert kept_model["interaction_retained"] is True
+
+
+def test_calr_wide_session_layout_parses_membership_groups_and_window():
+    fieldnames, rows = read_calr_data_csv("tests/data/toy_calr_data_wide.csv")
+    session_fieldnames, session_rows = read_session_csv("tests/data/toy_calr_session_wide.csv")
+    result = extract_subject_features(
+        data_rows=rows,
+        data_fieldnames=fieldnames,
+        session_rows=session_rows,
+        session_fieldnames=session_fieldnames,
+        exclusion_rows=[],
+        cfg=CalorimetryFeatureConfig(
+            analysis_start_hour=None,
+            analysis_end_hour=None,
+            photoperiod_lights_on_hour=None,
+            photoperiod_hours_light=12.0,
+            exclusions_tsv=None,
+            exploratory_without_session=True,
+        ),
+    )
+    assert result.metadata_summary["session_mode"] == "explicit"
+    assert result.metadata_summary["analysis_window_source"] == "session"
+    assert result.metadata_summary["analysis_start"] == 21.0
+    assert result.metadata_summary["analysis_end"] == 96.0
+    assert result.metadata_summary["session_group_layout_mode"] == "wide_membership"
+    assert result.subjects["A1"].group == "LFD"
+    assert result.subjects["A2"].group == "LFD"
+    assert result.subjects["B1"].group == "HFD"
+    assert result.subjects["B2"].group == "HFD"
+    assert result.metadata_summary["n_rows_selected"] == 8
+
+    contrasts, _warnings = build_group_contrasts(
+        subjects_by_id=result.subjects,
+        explicit_mass_covariate=None,
+        min_group_size=2,
+    )
+    assert {contrast.contrast_id for contrast in contrasts} == {"HFD", "LFD"}

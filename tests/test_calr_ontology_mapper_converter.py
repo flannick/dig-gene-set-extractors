@@ -87,3 +87,28 @@ def test_calr_ontology_mapper_exploratory_without_session_warns(tmp_path: Path, 
     assert "not fully CalR-equivalent" in captured.err
     root_summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert root_summary["session_mode"] == "exploratory"
+
+
+def test_calr_ontology_mapper_wide_session_layout_propagates_summary(tmp_path: Path):
+    args = Args()
+    args.calr_data_csv = "tests/data/toy_calr_data_wide.csv"
+    args.session_csv = "tests/data/toy_calr_session_wide.csv"
+    args.exclusions_tsv = None
+    args.out_dir = str(tmp_path / "calr_ontology_wide")
+    result = calr_ontology_mapper.run(args)
+    assert result["n_groups"] > 0
+
+    out_dir = Path(args.out_dir)
+    manifest_rows = _read_rows(out_dir / "manifest.tsv")
+    assert manifest_rows
+    assert {row["contrast_id"] for row in manifest_rows} == {"HFD", "LFD"}
+
+    meta = json.loads((out_dir / "program=thermogenesis__mode=core__contrast=HFD" / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["summary"]["session_mode"] == "explicit"
+    assert meta["summary"]["analysis_window_source"] == "session"
+    assert meta["summary"]["session_group_layout_mode"] == "wide_membership"
+    assert meta["summary"]["session_window_layout_mode"] == "calr_matrix"
+
+    root_summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert root_summary["session_group_layout_mode"] == "wide_membership"
+    assert root_summary["session_window_layout_mode"] == "calr_matrix"

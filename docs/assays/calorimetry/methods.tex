@@ -34,6 +34,7 @@ The extractor preserves the following constraints from CalR-style analysis:
 \begin{itemize}[leftmargin=2em]
 \item the selected analysis window is not silently the full trace,
 \item session metadata is preferred and recorded as \texttt{session\_mode=explicit},
+\item authentic wide CalR session matrices with membership columns (\texttt{group1}, \texttt{group2}, \ldots), \texttt{group\_names}, \texttt{xrange}, \texttt{light}, and \texttt{exc} are parsed as session metadata rather than naively treated as subject-level group labels,
 \item missing session metadata is allowed only in exploratory mode with strong warnings,
 \item mass-dependent variables are not naively divided by body weight,
 \item \texttt{ee} and \texttt{rer} are used as reported when present,
@@ -48,6 +49,14 @@ Practical covariate priority is:
 \item \texttt{Total.Mass},
 \item \texttt{subject.mass},
 \item no covariate only as an exploratory fallback.
+\end{enumerate}
+
+For authentic wide CalR session layouts, the extractor derives subject-level session annotations by:
+\begin{enumerate}[leftmargin=2em]
+\item treating \texttt{group1}, \texttt{group2}, \ldots as membership columns containing subject identifiers,
+\item aligning those columns to ordered labels from \texttt{group\_names},
+\item deriving the selected analysis window from \texttt{xrange} and \texttt{exc},
+\item recording these decisions as \texttt{session\_group\_layout\_mode} and \texttt{session\_window\_layout\_mode}.
 \end{enumerate}
 
 \section{Selected-window feature derivation}

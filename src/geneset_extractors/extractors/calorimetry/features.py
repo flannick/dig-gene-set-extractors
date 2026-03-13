@@ -138,6 +138,19 @@ def _photoperiod_from_session(session_rows: dict[str, dict[str, str]] | None) ->
     return None, "default"
 
 
+def _session_exclusion_hour(session_row: dict[str, str] | None) -> float | None:
+    if not session_row:
+        return None
+    for candidates in (("session_exclusion_hour",), ("exc",)):
+        col = find_first_column(list(session_row.keys()), candidates)
+        if col is None:
+            continue
+        value = parse_float(session_row.get(col))
+        if value is not None:
+            return float(value)
+    return None
+
+
 def _subject_level_metadata(row_values: dict[str, str], session_row: dict[str, str] | None, *, group_col: str | None, run_col: str | None) -> dict[str, object]:
     out: dict[str, object] = {}
     source_keys = list(row_values.keys()) + (list(session_row.keys()) if session_row else [])
@@ -264,15 +277,24 @@ def extract_subject_features(
     rows_by_subject: dict[str, list[tuple[float, CalRRow]]] = {}
     time_source = "implicit_index"
     exclusion_notices_emitted: set[tuple[str, float | None, str]] = set()
+    session_exclusion_notices_emitted: set[tuple[str, float]] = set()
     for idx, row in enumerate(data_rows):
         subject_id = str(row.values.get(subject_col, "")).strip()
         if not subject_id:
             continue
         time_value, source = _resolve_time_value(row, hour_col=hour_col, day_col=day_col, datetime_col=datetime_col, fallback_index=idx)
         time_source = source
+        session_row = session_rows.get(subject_id) if session_rows else None
         if analysis_start is not None and time_value < analysis_start:
             continue
         if analysis_end is not None and time_value > analysis_end:
+            continue
+        session_exc_hour = _session_exclusion_hour(session_row)
+        if session_exc_hour is not None and time_value > float(session_exc_hour):
+            notice_key = (subject_id, float(session_exc_hour))
+            if notice_key not in session_exclusion_notices_emitted:
+                warnings.append(f"session exclusion applied for subject={subject_id} after hour={session_exc_hour}")
+                session_exclusion_notices_emitted.add(notice_key)
             continue
         excluded = False
         for start_hour, reason in exclusion_map.get(subject_id, []):
@@ -362,6 +384,22 @@ def extract_subject_features(
     session_missing = max(0, len(subjects) - session_rows_used) if session_rows else len(subjects)
     summary = {
         "session_mode": session_mode,
+        "session_group_layout_mode": next(
+            (
+                str(row.get("_session_group_layout_mode", "")).strip()
+                for row in (session_rows or {}).values()
+                if str(row.get("_session_group_layout_mode", "")).strip()
+            ),
+            "",
+        ),
+        "session_window_layout_mode": next(
+            (
+                str(row.get("_session_window_layout_mode", "")).strip()
+                for row in (session_rows or {}).values()
+                if str(row.get("_session_window_layout_mode", "")).strip()
+            ),
+            "",
+        ),
         "analysis_start": analysis_start,
         "analysis_end": analysis_end,
         "analysis_window_source": window_source,
@@ -385,6 +423,10 @@ def extract_subject_features(
         summary["acclimation_state"] = "mixed_or_full_run"
     else:
         summary["acclimation_state"] = "post_window_selected"
+    if session_rows and window_source == "full_trace":
+        warning = "session file present but selected-window semantics were not fully parsed; falling back to full trace"
+        warnings.append(warning)
+        print(f"warning: {warning}", file=sys.stderr)
     if window_source == "full_trace":
         warning = "analysis window includes the apparent full run; results may include acclimation and differ from a typical post-acclimation CalR analysis"
         warnings.append(warning)

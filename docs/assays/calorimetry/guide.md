@@ -89,6 +89,16 @@ Optional:
 
 - `--exclusions_tsv`
 
+Supported session layouts now include both:
+
+- direct row-per-subject session tables with explicit group/window columns
+- authentic wide CalR session layouts where `group1`, `group2`, ... contain subject membership, `group_names` provides the display labels, and `xrange` / `light` / `exc` define the analysis window and photoperiod
+
+For wide CalR layouts the extractor derives and records:
+
+- `session_group_layout_mode = wide_membership`
+- `session_window_layout_mode = calr_matrix`
+
 The session file is strongly preferred. If it is absent, the extractor can still run only in exploratory mode. That mode emits a hard warning and records:
 
 - `session_mode = exploratory`
@@ -96,6 +106,8 @@ The session file is strongly preferred. If it is absent, the extractor can still
 If a session file is present, the output records:
 
 - `session_mode = explicit`
+- `session_group_layout_mode`
+- `session_window_layout_mode`
 
 ## CalR processing rules preserved by the extractor
 
@@ -109,6 +121,7 @@ These are the important semantics that the implementation keeps from CalR:
 - `ee` and `rer` are used as reported when present; they are not silently recomputed
 - interaction with the mass covariate is tested and retained only when warranted
 - exclusions are explicit and auditable
+- authentic CalR session matrices are not treated as subject-vs-rest group labels
 
 Current covariate preference order:
 
