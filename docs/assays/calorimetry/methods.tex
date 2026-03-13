@@ -183,7 +183,16 @@ S^{\mathrm{prof}}_g(q) = \sum_r w_r(q)\mathbf{1}\{g_r = g\}.
 The current implementation is intentionally conservative: it emits \texttt{mode=core} only and warns when retrieval confidence is low or when query/reference provenance looks mismatched.
 
 \section{Reference bundles}
-`workflows calr_prepare_reference_bundle` packages:
+`workflows calr_prepare_public` is the public-data staging layer for `calr_profile_query`: it takes raw local CalR-style studies plus a small study manifest, reuses the same CalR-compliant feature extraction and grouped-contrast logic as the converters, selects one reference contrast per study, and writes:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{reference\_profiles.tsv}
+\item \texttt{reference\_metadata.tsv}
+\item \texttt{feature\_schema.tsv}
+\item \texttt{feature\_stats.tsv}
+\item \texttt{resolved\_studies.tsv}
+\end{itemize}
+
+`workflows calr_prepare_reference_bundle` then packages:
 \begin{itemize}[leftmargin=2em]
 \item reference profiles,
 \item reference metadata,

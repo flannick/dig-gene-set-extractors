@@ -82,6 +82,7 @@ RNA workflow commands:
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
 - `workflows ptm_prepare_public` (standardize local CDAP/PDC public phosphosite/proteome reports into repo-native PTM matrices)
 - `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
+- `workflows calr_prepare_public` (derive gene-labeled calorimetry reference tables from raw local Cal-Repository-style studies)
 - `workflows calr_prepare_reference_bundle` (prepare a local indirect calorimetry reference bundle)
 
 Proteomics converters:

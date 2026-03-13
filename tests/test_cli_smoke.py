@@ -215,6 +215,29 @@ def test_cli_workflow_ptm_prepare_public(tmp_path: Path):
     assert (out / "prepare_summary.json").exists()
 
 
+def test_cli_workflow_calr_prepare_public(tmp_path: Path):
+    out = tmp_path / "calr_prepare_public_cli"
+    p = _run(
+        "workflows",
+        "calr_prepare_public",
+        "--studies_tsv",
+        "tests/data/toy_calr_public_studies.tsv",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "mouse",
+        "--bundle_id",
+        "toy_calr_public_bundle_v1",
+        "--write_distribution_artifact",
+        "false",
+    )
+    assert p.returncode == 0
+    assert "workflow=calr_prepare_public" in p.stderr
+    assert (out / "reference_profiles.tsv").exists()
+    assert (out / "reference_metadata.tsv").exists()
+    assert (out / "bundle" / "toy_calr_public_bundle_v1.bundle.json").exists()
+
+
 def test_cli_validate_fails_on_malformed(tmp_path: Path):
     bad = tmp_path / "bad"
     bad.mkdir()

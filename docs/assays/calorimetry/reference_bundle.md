@@ -1,6 +1,9 @@
 # Calorimetry Reference Bundles
 
-`calr_profile_query` is most useful when a query can be compared against a reusable calorimetry reference library. `workflows calr_prepare_reference_bundle` builds that local bundle in the same pattern used by the morphology bundle workflow: one unpacked bundle directory plus an optional distribution tarball.
+`calr_profile_query` is most useful when a query can be compared against a reusable calorimetry reference library. There are now two workflow layers:
+
+- `workflows calr_prepare_public`: derive `reference_profiles.tsv` and `reference_metadata.tsv` from raw local Cal-Repository-style studies plus a small study manifest
+- `workflows calr_prepare_reference_bundle`: package those reference tables into the reusable bundle layout used by the converters
 
 ## Bundle contents
 
@@ -68,6 +71,28 @@ Optional explicit inputs:
 
 If the schema/stats are not provided, the workflow derives them from `reference_profiles_tsv`.
 If the ontology files are not provided, the workflow falls back to the packaged mouse defaults.
+
+## Public-data path from Cal-Repository studies
+
+If your starting point is raw local `*_data.csv` plus `*_Session.csv` studies, the recommended first step is:
+
+```bash
+geneset-extractors workflows calr_prepare_public \
+  --studies_tsv <studies.tsv> \
+  --out_dir <public_prepare_out> \
+  --organism mouse \
+  --bundle_id calorimetry_public_mouse_v1
+```
+
+`studies.tsv` should provide one row per reference study/group and at minimum:
+
+- `study_id`
+- `calr_data_csv`
+- `session_csv`
+- `reference_group`
+- `gene_symbol`
+
+This workflow writes standardized reference tables plus `bundle/<bundle_id>.bundle.json`, so the output can be used directly as a profile-query bundle or inspected before packaging further.
 
 ## Distribution artifact
 

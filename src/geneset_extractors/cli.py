@@ -654,6 +654,26 @@ def _add_calr_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) ->
     parser.add_argument("--distribution_dir")
 
 
+def _add_calr_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--studies_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["mouse", "human"], required=True)
+    parser.add_argument("--bundle_id")
+    parser.add_argument("--build_bundle", type=_parse_bool, default=True)
+    parser.add_argument("--write_distribution_artifact", type=_parse_bool, default=True)
+    parser.add_argument("--term_templates_tsv")
+    parser.add_argument("--phenotype_gene_edges_tsv")
+    parser.add_argument("--term_hierarchy_tsv")
+    parser.add_argument("--include_packaged_term_hierarchy", type=_parse_bool, default=True)
+    parser.add_argument("--exploratory_without_session", type=_parse_bool, default=True)
+    parser.add_argument("--min_group_size", type=int, default=2)
+    parser.add_argument("--mass_covariate")
+    parser.add_argument("--analysis_start_hour", type=float)
+    parser.add_argument("--analysis_end_hour", type=float)
+    parser.add_argument("--photoperiod_lights_on_hour", type=float)
+    parser.add_argument("--photoperiod_hours_light", type=float, default=12.0)
+
+
 def _add_jump_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile_paths", required=True, help="Comma-separated morphology profile TSV/CSV paths.")
     parser.add_argument("--experimental_metadata_tsv", required=True)
@@ -995,6 +1015,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_ptm_prepare_public_flags(p_ptm_public)
     p_ptm_prepare = wf_sub.add_parser("ptm_prepare_reference_bundle")
     _add_ptm_prepare_reference_bundle_flags(p_ptm_prepare)
+    p_calr_public = wf_sub.add_parser("calr_prepare_public")
+    _add_calr_prepare_public_flags(p_calr_public)
     p_calr_prepare = wf_sub.add_parser("calr_prepare_reference_bundle")
     _add_calr_prepare_reference_bundle_flags(p_calr_prepare)
     p_jump_prepare = wf_sub.add_parser("jump_prepare_reference_bundle")
@@ -1622,6 +1644,18 @@ def main(argv: list[str] | None = None) -> int:
                     f"workflow=calr_prepare_reference_bundle n_profiles={result.get('n_profiles')} "
                     f"out={result.get('bundle_manifest')} "
                     f"tarball={result.get('tarball')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "calr_prepare_public":
+                from geneset_extractors.workflows.calr_prepare_public import run as run_calr_prepare_public
+
+                result = run_calr_prepare_public(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=calr_prepare_public n_profiles={result.get('n_profiles')} "
+                    f"out={result.get('out_dir')} "
+                    f"bundle={result.get('bundle_manifest')}",
                     file=sys.stderr,
                 )
                 return 0

@@ -6,6 +6,7 @@ Current public entrypoints:
 
 - `calr_ontology_mapper`
 - `calr_profile_query`
+- `workflows calr_prepare_public`
 - `workflows calr_prepare_reference_bundle`
 
 The implementation is mouse-first. The packaged ontology defaults are mouse phenotype resources. For human runs, provide explicit ontology resources or a human-calibrated reference bundle instead of relying on packaged defaults.
@@ -75,6 +76,45 @@ geneset-extractors convert calr_profile_query \
 - `term_templates`
 - `phenotype_gene_edges`
 - optional `term_hierarchy`
+
+### Build a profile-query bundle from raw public Cal-Repository studies
+
+First create a small `studies.tsv` manifest with one row per reference study/group. Required columns are:
+
+- `study_id`
+- `calr_data_csv`
+- `session_csv`
+- `reference_group`
+- `gene_symbol`
+
+Minimal example:
+
+```tsv
+study_id\tcalr_data_csv\tsession_csv\treference_group\tgene_symbol
+FIG2_HFD\t/path/Fig2_CalR_data.csv\t/path/Fig2_CalR_Davis_Session.csv\tHFD\tLepr
+```
+
+Then run:
+
+```bash
+geneset-extractors workflows calr_prepare_public \
+  --studies_tsv <studies.tsv> \
+  --out_dir <public_bundle_out> \
+  --organism mouse \
+  --bundle_id calorimetry_public_mouse_v1
+```
+
+This writes:
+
+- `reference_profiles.tsv`
+- `reference_metadata.tsv`
+- `feature_schema.tsv`
+- `feature_stats.tsv`
+- `resolved_studies.tsv`
+- `prepare_summary.json`
+- `bundle/<bundle_id>.bundle.json`
+
+You can then query that bundle directly with `calr_profile_query`.
 
 ## Input expectations
 
@@ -214,3 +254,9 @@ Use `calr_profile_query` when:
 - you have a local calorimetry reference library
 - you want nearest-profile evidence with provenance-aware penalties
 - you want to reuse the same reference bundle across many studies
+
+Use `workflows calr_prepare_public` when:
+
+- your starting point is raw local Cal-Repository-style `*_data.csv` plus `*_Session.csv` files
+- you want a reproducible bridge from public studies to a gene-labeled `calr_profile_query` bundle
+- you want the bundle to preserve CalR window/group semantics rather than hand-building reference profiles

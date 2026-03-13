@@ -1,0 +1,3 @@
+study_id	study_label	calr_data_csv	session_csv	reference_group	gene_symbol	gene_id	perturbation_type	site	sex	strain	diet	acclimation_state
+TOY_KO	Toy KO study	toy_calr_data.csv	toy_calr_session.csv	KO	Ppargc1a	Ppargc1a	knockout	TestSite	female	C57BL6J	chow	post_acclimation
+TOY_HFD	Toy HFD study	toy_calr_data_wide.csv	toy_calr_session_wide.csv	HFD	Lepr	Lepr	diet_model	UC Davis	male	C57BL6J	hfd	post_acclimation
