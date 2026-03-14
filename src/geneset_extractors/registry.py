@@ -23,6 +23,8 @@ from geneset_extractors.extractors.converters import (
     rna_deg_multi,
     rna_sc_programs,
     sc_rna_marker,
+    splice_event_diff,
+    splice_event_matrix,
 )
 
 
@@ -46,6 +48,8 @@ CONVERTERS = {
     "rna_deg_multi": rna_deg_multi,
     "rna_sc_programs": rna_sc_programs,
     "sc_rna_marker": sc_rna_marker,
+    "splice_event_diff": splice_event_diff,
+    "splice_event_matrix": splice_event_matrix,
 }
 
 

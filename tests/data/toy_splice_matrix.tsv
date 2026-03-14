@@ -1,0 +1,6 @@
+event_id	event_group	event_type	gene_id	gene_symbol	chrom	start	end	strand	annotation_status	K_case1	K_case2	K_ctrl1	K_ctrl2	L_case1	L_ctrl1
+E1	CL1	exon_skip	G_KCNN4	KCNN4	chr19	100	200	+	annotated_coding	0.80	0.75	0.20	0.25	0.45	0.40
+E2	CL2	retained_intron	G_MAPK1	MAPK1	chr22	300	420	-	novel	0.20	0.15	0.70	0.65	0.55	0.50
+E3	CL3	exon_skip	G_A;G_B	GENEA;GENEB	chr1	500	580	+	annotated_coding	0.90	0.85	0.10	0.20	0.50	0.45
+E4	CL4	alt_donor	G_EGFR	EGFR	chr7	700	820	+	annotated_coding	0.40	0.45	0.42	0.41	0.85	0.20
+E5	CL5	retained_intron	G_RI	RIGENE	chr3	900	990	+	novel	0.10		0.15		0.12	

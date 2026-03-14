@@ -335,6 +335,42 @@
       "url": "",
       "sha256": "",
       "license": "Derived phosphosite ubiquity prior; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_event_aliases_human_v1",
+      "description": "Canonical human splice-event alias table with columns input_event_key,canonical_event_key,gene_id,gene_symbol,event_type,chrom,start,end,strand,source_dataset",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_event_aliases_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_event_aliases_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event harmonization table; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_event_ubiquity_human_v1",
+      "description": "Canonical human splice-event ubiquity prior with columns canonical_event_key,gene_id,gene_symbol,event_type,n_samples_ref,df_ref,fraction_ref,idf_ref,n_datasets_ref",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_event_ubiquity_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_event_ubiquity_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event ubiquity prior; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_event_impact_human_v1",
+      "description": "Conservative human splice-event impact prior with columns canonical_event_key,gene_id,gene_symbol,event_type,impact_weight_raw,impact_evidence,annotation_status",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_event_impact_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_event_impact_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event impact prior; document upstream public sources and versions in local bundle provenance"
     }
   ],
   "presets": {
@@ -389,6 +425,11 @@
     "phosphoproteomics_default_optional_human": [
       "phosphosite_aliases_human_v1",
       "phosphosite_ubiquity_human_v1"
+    ],
+    "splicing_default_optional_human": [
+      "splice_event_aliases_human_v1",
+      "splice_event_ubiquity_human_v1",
+      "splice_event_impact_human_v1"
     ]
   }
 }

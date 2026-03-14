@@ -583,6 +583,208 @@ def _add_ptm_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max_k_fraction", type=float, default=0.25)
 
 
+def _add_splice_event_diff_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_name")
+    parser.add_argument("--dataset_label")
+    parser.add_argument(
+        "--tool_family",
+        choices=["auto", "generic", "leafcutter", "majiq", "whippet", "tcga_spliceseq"],
+        default="auto",
+    )
+    parser.add_argument("--cluster_stats_tsv")
+    parser.add_argument("--event_id_column")
+    parser.add_argument("--event_group_column")
+    parser.add_argument("--event_type_column")
+    parser.add_argument("--gene_id_column")
+    parser.add_argument("--gene_symbol_column")
+    parser.add_argument("--chrom_column")
+    parser.add_argument("--start_column")
+    parser.add_argument("--end_column")
+    parser.add_argument("--strand_column")
+    parser.add_argument("--score_column")
+    parser.add_argument("--stat_column")
+    parser.add_argument("--delta_psi_column")
+    parser.add_argument("--psi_column")
+    parser.add_argument("--padj_column")
+    parser.add_argument("--pvalue_column")
+    parser.add_argument("--probability_column")
+    parser.add_argument("--read_support_column")
+    parser.add_argument("--novel_flag_column")
+    parser.add_argument("--annotation_status_column")
+    parser.add_argument(
+        "--score_mode",
+        choices=["auto", "stat", "delta_psi_times_neglog10p", "delta_psi_times_confidence", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
+    parser.add_argument(
+        "--confidence_weight_mode",
+        choices=["none", "pvalue", "probability", "read_support", "combined"],
+        default="combined",
+    )
+    parser.add_argument("--min_probability", type=float, default=0.8)
+    parser.add_argument("--min_read_support", type=float, default=10.0)
+    parser.add_argument(
+        "--event_dup_policy",
+        choices=["highest_confidence", "max_abs", "mean", "sum"],
+        default="highest_confidence",
+    )
+    parser.add_argument(
+        "--gene_aggregation",
+        choices=["signed_topk_mean", "max_abs", "sum", "mean"],
+        default="signed_topk_mean",
+    )
+    parser.add_argument("--gene_topk_events", type=int, default=3)
+    parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
+    parser.add_argument("--impact_mode", choices=["none", "conservative", "custom_bundle"], default="conservative")
+    parser.add_argument("--impact_min", type=float, default=0.75)
+    parser.add_argument("--impact_max", type=float, default=1.35)
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--use_reference_bundle", type=_parse_bool, default=True)
+    parser.add_argument("--event_alias_resource_id")
+    parser.add_argument("--event_ubiquity_resource_id")
+    parser.add_argument("--event_impact_resource_id")
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+    )
+
+
+def _add_splice_event_matrix_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_name")
+    parser.add_argument("--dataset_label")
+    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--event_metadata_tsv")
+    parser.add_argument("--coverage_matrix_tsv")
+    parser.add_argument("--matrix_format", choices=["wide_events_by_sample"], default="wide_events_by_sample")
+    parser.add_argument("--sample_id_column", default="sample_id")
+    parser.add_argument("--group_column", default="group")
+    parser.add_argument("--condition_column", default="condition")
+    parser.add_argument(
+        "--study_contrast",
+        choices=["condition_a_vs_b", "group_vs_rest", "condition_within_group", "baseline"],
+        default="condition_a_vs_b",
+    )
+    parser.add_argument("--condition_a")
+    parser.add_argument("--condition_b")
+    parser.add_argument("--min_samples_per_condition", type=int, default=3)
+    parser.add_argument("--effect_metric", choices=["welch_t", "mean_diff"], default="welch_t")
+    parser.add_argument("--missing_value_policy", choices=["drop", "min_present"], default="min_present")
+    parser.add_argument("--min_present_per_condition", type=int, default=3)
+    parser.add_argument(
+        "--tool_family",
+        choices=["auto", "generic", "leafcutter", "majiq", "whippet", "tcga_spliceseq"],
+        default="generic",
+    )
+    parser.add_argument("--event_id_column")
+    parser.add_argument("--event_group_column")
+    parser.add_argument("--event_type_column")
+    parser.add_argument("--gene_id_column")
+    parser.add_argument("--gene_symbol_column")
+    parser.add_argument("--chrom_column")
+    parser.add_argument("--start_column")
+    parser.add_argument("--end_column")
+    parser.add_argument("--strand_column")
+    parser.add_argument("--score_column")
+    parser.add_argument("--stat_column", default="stat")
+    parser.add_argument("--delta_psi_column", default="delta_psi")
+    parser.add_argument("--psi_column")
+    parser.add_argument("--padj_column", default="padj")
+    parser.add_argument("--pvalue_column", default="pvalue")
+    parser.add_argument("--probability_column")
+    parser.add_argument("--read_support_column", default="read_support")
+    parser.add_argument("--novel_flag_column")
+    parser.add_argument("--annotation_status_column", default="annotation_status")
+    parser.add_argument(
+        "--score_mode",
+        choices=["auto", "stat", "delta_psi_times_neglog10p", "delta_psi_times_confidence", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default="signed")
+    parser.add_argument(
+        "--confidence_weight_mode",
+        choices=["none", "pvalue", "probability", "read_support", "combined"],
+        default="combined",
+    )
+    parser.add_argument("--min_probability", type=float, default=0.8)
+    parser.add_argument("--min_read_support", type=float, default=10.0)
+    parser.add_argument("--impact_mode", choices=["none", "conservative", "custom_bundle"], default="conservative")
+    parser.add_argument("--impact_min", type=float, default=0.75)
+    parser.add_argument("--impact_max", type=float, default=1.35)
+    parser.add_argument(
+        "--event_dup_policy",
+        choices=["highest_confidence", "max_abs", "mean", "sum"],
+        default="highest_confidence",
+    )
+    parser.add_argument(
+        "--gene_aggregation",
+        choices=["signed_topk_mean", "max_abs", "sum", "mean"],
+        default="signed_topk_mean",
+    )
+    parser.add_argument("--gene_topk_events", type=int, default=3)
+    parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
+    parser.add_argument("--neglog10p_cap", type=float, default=50.0)
+    parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument("--resources_manifest")
+    parser.add_argument("--resources_dir")
+    parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")
+    parser.add_argument("--use_reference_bundle", type=_parse_bool, default=True)
+    parser.add_argument("--event_alias_resource_id")
+    parser.add_argument("--event_ubiquity_resource_id")
+    parser.add_argument("--event_impact_resource_id")
+    parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--top_k", type=int, default=200)
+    parser.add_argument("--quantile", type=float, default=0.01)
+    parser.add_argument("--min_score", type=float, default=0.0)
+    parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--emit_full", type=_parse_bool, default=True)
+    _add_gmt_flags(parser)
+    parser.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_topk_list="200",
+        gmt_min_genes=100,
+        gmt_max_genes=500,
+    )
+
+
+def _add_splice_prepare_public_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--input_mode", choices=["tcga_spliceseq"], default="tcga_spliceseq")
+    parser.add_argument("--psi_tsv")
+    parser.add_argument("--sample_annotations_tsv")
+    parser.add_argument("--event_metadata_tsv")
+    parser.add_argument("--sample_id_map_tsv")
+    parser.add_argument("--event_type_allowlist")
+    parser.add_argument("--missing_psi_policy", choices=["retain", "drop"], default="retain")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--genome_build", required=True)
+    parser.add_argument("--study_id")
+    parser.add_argument("--study_label")
+
+
+def _add_splice_prepare_reference_bundle_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--sources_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--bundle_id", required=True)
+    parser.add_argument("--min_ref_read_support", type=float, default=0.0)
+
+
 def _add_calr_common_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--calr_data_csv", required=True)
     parser.add_argument("--session_csv")
@@ -1022,6 +1224,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_ptm_prepare_public_flags(p_ptm_public)
     p_ptm_prepare = wf_sub.add_parser("ptm_prepare_reference_bundle")
     _add_ptm_prepare_reference_bundle_flags(p_ptm_prepare)
+    p_splice_public = wf_sub.add_parser("splice_prepare_public")
+    _add_splice_prepare_public_flags(p_splice_public)
+    p_splice_prepare = wf_sub.add_parser("splice_prepare_reference_bundle")
+    _add_splice_prepare_reference_bundle_flags(p_splice_prepare)
     p_calr_public = wf_sub.add_parser("calr_prepare_public")
     _add_calr_prepare_public_flags(p_calr_public)
     p_calr_prepare = wf_sub.add_parser("calr_prepare_reference_bundle")
@@ -1422,6 +1628,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_ptm_matrix.add_argument("--genome_build", required=True)
     _add_ptm_site_matrix_flags(p_ptm_matrix)
 
+    p_splice = conv.add_parser("splice_event_diff")
+    p_splice.add_argument("--splice_tsv", required=True)
+    p_splice.add_argument("--out_dir", required=True)
+    p_splice.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_splice.add_argument("--genome_build", required=True)
+    _add_splice_event_diff_flags(p_splice)
+
+    p_splice_matrix = conv.add_parser("splice_event_matrix")
+    p_splice_matrix.add_argument("--psi_matrix_tsv", required=True)
+    p_splice_matrix.add_argument("--out_dir", required=True)
+    p_splice_matrix.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_splice_matrix.add_argument("--genome_build", required=True)
+    _add_splice_event_matrix_flags(p_splice_matrix)
+
     p_scrna = conv.add_parser("sc_rna_marker")
     p_scrna.add_argument("--counts_tsv", required=True)
     p_scrna.add_argument("--out_dir", required=True)
@@ -1638,6 +1858,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=ptm_prepare_reference_bundle n_canonical_sites={result.get('n_canonical_sites')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "splice_prepare_public":
+                from geneset_extractors.workflows.splice_prepare_public import run as run_splice_prepare_public
+
+                result = run_splice_prepare_public(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=splice_prepare_public n_events={result.get('n_events')} "
+                    f"n_samples={result.get('n_samples')} "
+                    f"out={result.get('outputs', {}).get('psi_matrix_tsv')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "splice_prepare_reference_bundle":
+                from geneset_extractors.workflows.splice_prepare_reference_bundle import run as run_splice_prepare_reference_bundle
+
+                result = run_splice_prepare_reference_bundle(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=splice_prepare_reference_bundle n_canonical_events={result.get('n_canonical_events')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

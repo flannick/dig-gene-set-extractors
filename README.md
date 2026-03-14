@@ -5,7 +5,7 @@
 This repository is designed to host multiple extractor families over time.  
 Current implemented family:
 
-- `geneset_extractors` (ATAC-seq, RNA-seq, proteomics PTM, indirect calorimetry, DNA methylation, CNV, drug response, and morphology extractors)
+- `geneset_extractors` (ATAC-seq, RNA-seq, alternative splicing, proteomics PTM, indirect calorimetry, DNA methylation, CNV, drug response, and morphology extractors)
   - exposed via CLI names `geneset-extractors` / `geneset_extractors`
 
 ## Repository Scope
@@ -23,6 +23,8 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/assays/proteomics/guide.md` (proteomics PTM practical guide)
 - `docs/assays/proteomics/reference_bundle.md` (proteomics PTM bundle guide)
+- `docs/assays/splicing/guide.md` (alternative splicing practical guide)
+- `docs/assays/splicing/reference_bundle.md` (alternative splicing bundle guide)
 - `docs/assays/calorimetry/guide.md` (indirect calorimetry practical guide)
 - `docs/assays/calorimetry/reference_bundle.md` (indirect calorimetry bundle guide)
 - `docs/assays/methylation/guide.md` (DNA methylation practical guide)
@@ -82,6 +84,8 @@ RNA workflow commands:
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
 - `workflows ptm_prepare_public` (standardize local CDAP/PDC public phosphosite/proteome reports into repo-native PTM matrices)
 - `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
+- `workflows splice_prepare_public` (standardize TCGA SpliceSeq-like PSI matrices into repo-native splicing matrices)
+- `workflows splice_prepare_reference_bundle` (prepare a local splice-event alias/ubiquity/impact bundle)
 - `workflows calr_prepare_public` (derive gene-labeled calorimetry reference tables from raw local Cal-Repository-style studies)
 - `workflows calr_prepare_reference_bundle` (prepare a local indirect calorimetry reference bundle)
 
@@ -90,6 +94,11 @@ Proteomics converters:
 - `proteomics_diff` (legacy gene-level abundance)
 - `ptm_site_diff` (site-level PTM differential table to gene program)
 - `ptm_site_matrix` (site-by-sample PTM matrix plus sample metadata to one or more study-specific gene programs)
+
+Alternative splicing converters:
+
+- `splice_event_diff`
+- `splice_event_matrix`
 
 Indirect calorimetry converters:
 
@@ -128,6 +137,8 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/atac/guide.md`
 - `docs/assays/rnaseq/guide.md`
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- `docs/assays/splicing/guide.md`
+- `docs/assays/splicing/reference_bundle.md`
 - `docs/assays/proteomics/guide.md`
 - `docs/assays/proteomics/reference_bundle.md`
 - `docs/assays/calorimetry/guide.md`
@@ -146,6 +157,7 @@ Method notes and equations (split by assay + index):
 
 - `docs/assays/atac/methods.tex`
 - `docs/assays/rnaseq/methods.tex`
+- `docs/assays/splicing/methods.tex`
 - `docs/assays/proteomics/methods.tex`
 - `docs/assays/calorimetry/methods.tex`
 - `docs/assays/methylation/methods.tex`
@@ -179,6 +191,18 @@ Proteomics PTM optional bundle setup:
   - `geneset-extractors workflows ptm_prepare_public --input_mode cdap_files ...`
   - `geneset-extractors workflows ptm_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --ptm_type phospho --bundle_id ...`
   - then run `ptm_site_diff --resources_dir <bundle_dir>` or `ptm_site_matrix --resources_dir <bundle_dir>`
+
+Alternative splicing optional bundle setup:
+
+- `docs/assays/splicing/reference_bundle.md`
+- current v1 splicing bundle is intentionally compact:
+  - event alias harmonization
+  - event ubiquity weighting
+  - conservative event-impact prior
+- preferred workflow:
+  - `geneset-extractors workflows splice_prepare_public --input_mode tcga_spliceseq ...`
+  - `geneset-extractors workflows splice_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --bundle_id ...`
+  - then run `splice_event_diff --resources_dir <bundle_dir>` or `splice_event_matrix --resources_dir <bundle_dir>`
 
 Calorimetry optional reference-bundle setup:
 

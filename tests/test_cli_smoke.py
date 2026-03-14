@@ -33,6 +33,8 @@ def test_cli_list():
     assert "rna_deg" in p.stdout
     assert "rna_deg_multi" in p.stdout
     assert "rna_sc_programs" in p.stdout
+    assert "splice_event_diff" in p.stdout
+    assert "splice_event_matrix" in p.stdout
 
 
 def test_cli_describe():
@@ -182,6 +184,28 @@ def test_cli_describe_ptm_site_matrix():
     assert "emit_gene_topk_site_comparison" in param_names
 
 
+def test_cli_describe_splice_event_diff():
+    p = _run("describe", "splice_event_diff")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "splice_event_diff"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "tool_family" in param_names
+    assert "impact_mode" in param_names
+    assert "event_alias_resource_id" in param_names
+
+
+def test_cli_describe_splice_event_matrix():
+    p = _run("describe", "splice_event_matrix")
+    assert p.returncode == 0
+    payload = json.loads(p.stdout)
+    assert payload["name"] == "splice_event_matrix"
+    param_names = {str(param.get("name")) for param in payload.get("parameters", [])}
+    assert "study_contrast" in param_names
+    assert "effect_metric" in param_names
+    assert "sample_metadata_tsv" not in param_names
+
+
 def test_cli_workflow_ptm_prepare_public(tmp_path: Path):
     out = tmp_path / "ptm_prepare_public_cli"
     p = _run(
@@ -236,6 +260,35 @@ def test_cli_workflow_calr_prepare_public(tmp_path: Path):
     assert (out / "reference_profiles.tsv").exists()
     assert (out / "reference_metadata.tsv").exists()
     assert (out / "bundle" / "toy_calr_public_bundle_v1.bundle.json").exists()
+
+
+def test_cli_workflow_splice_prepare_public(tmp_path: Path):
+    out = tmp_path / "splice_prepare_public_cli"
+    p = _run(
+        "workflows",
+        "splice_prepare_public",
+        "--input_mode",
+        "tcga_spliceseq",
+        "--psi_tsv",
+        "tests/data/toy_spliceseq_public.tsv",
+        "--sample_annotations_tsv",
+        "tests/data/toy_spliceseq_sample_annotations.tsv",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--study_id",
+        "TCGA_TOY",
+        "--study_label",
+        "Toy TCGA SpliceSeq",
+    )
+    assert p.returncode == 0
+    assert "workflow=splice_prepare_public" in p.stderr
+    assert (out / "psi_matrix.tsv").exists()
+    assert (out / "event_metadata.tsv").exists()
+    assert (out / "prepare_summary.json").exists()
 
 
 def test_cli_validate_fails_on_malformed(tmp_path: Path):

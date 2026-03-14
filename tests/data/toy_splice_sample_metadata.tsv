@@ -1,0 +1,7 @@
+sample_id	condition	group
+K_case1	case	kidney
+K_case2	case	kidney
+K_ctrl1	control	kidney
+K_ctrl2	control	kidney
+L_case1	case	lung
+L_ctrl1	control	lung

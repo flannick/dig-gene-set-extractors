@@ -1,0 +1,5 @@
+sample_id	condition	group	cohort
+TCGA-01	case	study1	A
+TCGA-02	case	study1	A
+TCGA-03	control	study1	A
+TCGA-04	control	study1	A

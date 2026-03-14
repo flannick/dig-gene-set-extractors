@@ -14,6 +14,9 @@ Canonical assay docs:
 - RNA practical guide: `docs/assays/rnaseq/guide.md`
 - RNA methods note: `docs/assays/rnaseq/methods.tex`
 - scRNA cNMF workflow: `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- Alternative splicing practical guide: `docs/assays/splicing/guide.md`
+- Alternative splicing reference bundle: `docs/assays/splicing/reference_bundle.md`
+- Alternative splicing methods note: `docs/assays/splicing/methods.tex`
 - DNA methylation practical guide: `docs/assays/methylation/guide.md`
 - DNA methylation methods note: `docs/assays/methylation/methods.tex`
 - DNA methylation resources: `docs/assays/methylation/resources.md`

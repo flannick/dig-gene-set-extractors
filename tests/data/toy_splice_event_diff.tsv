@@ -1,0 +1,6 @@
+event_id	event_group	event_type	gene_id	gene_symbol	chrom	start	end	strand	delta_psi	pvalue	probability	read_support	novel_flag	annotation_status
+E1	CL1	exon_skip	G_KCNN4	KCNN4	chr19	100	200	+	0.45	0.0001	0.98	40	false	annotated_coding
+E1_dup	CL1	exon_skip	G_KCNN4	KCNN4	chr19	100	200	+	0.30	0.05	0.70	8	false	annotated_coding
+E2	CL2	retained_intron	G_MAPK1	MAPK1	chr22	300	420	-	-0.35	0.001	0.90	25	true	novel
+E3	CL3	exon_skip	G_A;G_B	GENEA;GENEB	chr1	500	580	+	0.50	0.002	0.95	30	false	annotated_coding
+E4	CL4	alt_donor	G_KCNN4	KCNN4	chr19	240	310	+	0.20	0.02	0.88	18	false	annotated_coding
