@@ -25,7 +25,7 @@ The proposed entrypoints are:
 \item \texttt{splice\_event\_diff}: event-level differential splicing table to signed gene program and GMT gene sets.
 \item \texttt{splice\_event\_matrix}: PSI matrix plus sample metadata to one or more contrast-specific gene programs.
 \item \texttt{workflows splice\_prepare\_public}: narrow public-data normalizer, centered on TCGA SpliceSeq-like PSI matrices.
-\item \texttt{workflows splice\_prepare\_reference\_bundle}: builder for a lightweight event alias, ubiquity, and conservative impact bundle.
+\item \texttt{workflows splice\_prepare\_reference\_bundle}: builder for a lightweight event alias, ubiquity, conservative impact, and gene-burden bundle.
 \end{itemize}
 
 This family is intentionally event-centric rather than transcript-centric. LeafCutter, MAJIQ, Whippet, and TCGA SpliceSeq differ in their event definitions and file layouts, but all can be normalized to a common abstraction:
@@ -97,7 +97,7 @@ This section is meant to line up with a future \texttt{docs/assays/splicing/guid
 \item Gene aggregation:
   \texttt{--gene\_aggregation}, \texttt{--gene\_topk\_events}.
 \item Reference bundle:
-  \texttt{--resources\_dir}, \texttt{--resources\_manifest}, \texttt{--resource\_policy}, \texttt{--use\_reference\_bundle}, and resource ids for event alias, ubiquity, and impact priors.
+  \texttt{--resources\_dir}, \texttt{--resources\_manifest}, \texttt{--resource\_policy}, \texttt{--use\_reference\_bundle}, and resource ids for event alias, ubiquity, impact, and gene-burden priors.
 \item Gene selection and weighting:
   \texttt{--select}, \texttt{--top\_k}, \texttt{--quantile}, \texttt{--min\_score}, \texttt{--normalize}.
 \item GMT export:
@@ -250,10 +250,16 @@ u_i = \log\!\left(1 + \frac{N+\tau}{df_i+\tau}\right),
 \end{equation}
 or use a precomputed bounded \texttt{idf\_ref} column from the bundle. If the bundle is absent, use $u_i = 1$.
 
+If event $i$ is only available through a low-confidence cohort-local raw identifier, then the prior contribution is shrunk more strongly toward neutrality. A simple v1 rule is
+\[
+u_i^{\star} = 1 + \lambda_i (u_i - 1),
+\]
+with $\lambda_i = 1$ for coordinate-canonical events and $\lambda_i \ll 1$ for \texttt{raw\_id\_fallback} events.
+
 \subsection{Step 6: final event score}
 The final event score is:
 \begin{equation}
-z_i = T(x_i) \cdot \omega_i \cdot \eta_i \cdot u_i,
+z_i = T(x_i) \cdot \phi_i \cdot \omega_i \cdot \eta_i \cdot u_i^{\star},
 \label{eq:final_event_score}
 \end{equation}
 where $T(\cdot)$ is the requested score transform:
@@ -266,6 +272,16 @@ x & \texttt{signed},\\
 \max(-x,0) & \texttt{negative}.
 \end{cases}
 \]
+
+Here $\phi_i$ is an optional soft effect-size floor when a usable $\Delta \psi_i$ is available:
+\[
+\phi_i =
+\begin{cases}
+\min\{1, |\Delta \psi_i| / \delta_0\} & \text{if a usable } \Delta \psi_i \text{ exists},\\
+1 & \text{otherwise,}
+\end{cases}
+\]
+with a conservative default such as $\delta_0 = 0.05$. This downweights tiny absolute PSI shifts instead of hard-dropping them.
 
 \section{Duplicate-row collapse}
 Multiple raw rows can map to the same canonical event key. This happens with replicated summaries, alternate event labels, or tool-specific decompositions.
@@ -303,6 +319,23 @@ s_g = \frac{1}{|\mathrm{TopK}(g)|} \sum_{i \in \mathrm{TopK}(g)} z_i.
 \end{equation}
 
 This is the recommended default because it avoids rewarding genes simply for having many measured events, while still allowing a gene to be supported by more than one coherent splice change.
+
+\subsection{G1b. Conservative burden shrinkage}
+Even after top-$K$ aggregation, some cohorts still favor genes with many measurable splice events. The runtime therefore applies an additional conservative multiplicity penalty:
+\[
+\widetilde{s}_g = s_g \cdot \beta_g,
+\qquad
+\beta_g = \max\!\left(\beta_{\min}, \sqrt{\frac{K}{\max(K, n_g)}}\right),
+\]
+where $n_g$ is a burden count for gene $g$ and $\beta_{\min}$ is a conservative lower clip such as $0.35$.
+
+The burden count can come from:
+\begin{itemize}[leftmargin=2em]
+\item the current input after duplicate collapse, or
+\item a compact reference-bundle table such as \texttt{splice\_gene\_event\_burden\_human\_v1.tsv.gz}.
+\end{itemize}
+
+The goal is not to erase event-rich genes, only to stop them from winning by event-count opportunity alone.
 
 \subsection{G2. Alternatives}
 \begin{itemize}[leftmargin=2em]
@@ -405,12 +438,15 @@ A splicing public-data normalizer should be intentionally narrow in v1. The main
 
 The output \texttt{bundle\_source\_row.tsv} should be shaped so that many staged studies can be concatenated and passed directly to \texttt{workflows splice\_prepare\_reference\_bundle}.
 
+The public workflow should accept raw MD Anderson style header aliases such as \texttt{symbol} for \texttt{gene\_symbol} and \texttt{as\_id} for \texttt{event\_id}. If an explicit sample annotation table is not available, a narrow fallback can infer tumor versus adjacent-normal from the \texttt{\_Norm} suffix on sample columns, recording the inference rule and any barcode-consistency checks in \texttt{prepare\_summary.json}.
+
 \section{Reference bundle design}
 The safest v1 bundle is intentionally compact, exactly as in the PTM family. It should not try to pool raw PSI distributions across unrelated studies for direct biological scoring. Instead, it should provide:
 \begin{itemize}[leftmargin=2em]
 \item event alias harmonization,
 \item event ubiquity priors,
-\item conservative event impact priors.
+\item conservative event impact priors,
+\item a compact per-gene event burden table.
 \end{itemize}
 
 \subsection{Recommended files}
@@ -418,6 +454,7 @@ The safest v1 bundle is intentionally compact, exactly as in the PTM family. It 
 \item \texttt{splice\_event\_aliases\_human\_v1.tsv.gz}
 \item \texttt{splice\_event\_ubiquity\_human\_v1.tsv.gz}
 \item \texttt{splice\_event\_impact\_human\_v1.tsv.gz}
+\item \texttt{splice\_gene\_event\_burden\_human\_v1.tsv.gz}
 \item \texttt{bundle\_provenance.json}
 \item \texttt{local\_resources\_manifest.json}
 \end{itemize}
@@ -427,6 +464,8 @@ Required columns:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{input\_event\_key}
 \item \texttt{canonical\_event\_key}
+\item \texttt{canonicalization\_status}
+\item \texttt{canonicalization\_confidence}
 \item \texttt{gene\_id}
 \item \texttt{gene\_symbol}
 \item \texttt{event\_type}
@@ -444,6 +483,8 @@ Required columns:
 \item \texttt{gene\_id}
 \item \texttt{gene\_symbol}
 \item \texttt{event\_type}
+\item \texttt{canonicalization\_status}
+\item \texttt{canonicalization\_confidence}
 \item \texttt{n\_samples\_ref}
 \item \texttt{df\_ref}
 \item \texttt{fraction\_ref}
@@ -458,12 +499,23 @@ Required columns:
 \item \texttt{gene\_id}
 \item \texttt{gene\_symbol}
 \item \texttt{event\_type}
+\item \texttt{canonicalization\_status}
+\item \texttt{canonicalization\_confidence}
 \item \texttt{impact\_weight\_raw}
 \item \texttt{impact\_evidence}
 \item \texttt{annotation\_status}
 \end{itemize}
 
 Optional columns can include \texttt{is\_coding}, \texttt{frame\_class}, \texttt{nmd\_risk}, or \texttt{domain\_disruption\_flag}, but v1 should work when these are absent.
+
+\subsection{Gene-burden schema}
+Required columns:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{gene\_symbol}
+\item \texttt{n\_canonical\_events\_ref}
+\item \texttt{n\_high\_confidence\_events\_ref}
+\item \texttt{n\_low\_confidence\_events\_ref}
+\end{itemize}
 
 \section{QC and artifact detection}
 Splicing gene programs can be biologically rich, but they are also vulnerable to technical and representational artifacts. The extractor should therefore emit explicit run summaries and warnings.
@@ -473,10 +525,13 @@ Recommended summary fields:
 \item counts of input rows, canonical events, and output genes,
 \item event-type composition,
 \item fraction of events matched to alias, ubiquity, and impact priors,
+\item canonicalization confidence counts for both retained events and selected support events,
 \item fraction of ambiguous multi-gene events dropped,
 \item fraction of selected genes driven by a single event,
 \item fraction of low-support events,
-\item fraction of novel events.
+\item fraction of novel events,
+\item delta-PSI soft-floor downweight counts,
+\item whether low-confidence priors contributed to selected events.
 \end{itemize}
 
 Recommended warning heuristics:
@@ -499,6 +554,8 @@ A reasonable first-pass default configuration is:
 \item \texttt{event\_dup\_policy=highest\_confidence}
 \item \texttt{gene\_aggregation=signed\_topk\_mean}
 \item \texttt{gene\_topk\_events=3}
+\item \texttt{gene\_burden\_penalty\_mode=auto}
+\item \texttt{delta\_psi\_soft\_floor=0.05}, \texttt{delta\_psi\_soft\_floor\_mode=auto}
 \item \texttt{ambiguous\_gene\_policy=drop}
 \item \texttt{use\_reference\_bundle=true}
 \item \texttt{resource\_policy=skip}

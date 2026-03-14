@@ -5,7 +5,7 @@ This assay family adds two converter entrypoints plus two workflow helpers:
 - `splice_event_diff`: event-level differential splicing table -> signed gene program and GMT sets
 - `splice_event_matrix`: PSI matrix plus sample metadata -> one or more contrast-specific gene programs
 - `workflows splice_prepare_public`: narrow public-data normalizer for TCGA SpliceSeq-like PSI matrices
-- `workflows splice_prepare_reference_bundle`: compact alias/ubiquity/impact bundle builder
+- `workflows splice_prepare_reference_bundle`: compact alias/ubiquity/impact/burden bundle builder
 
 The modeling stance is deliberately narrow:
 
@@ -31,10 +31,11 @@ This writes compact files such as:
 - `splice_event_aliases_human_v1.tsv.gz`
 - `splice_event_ubiquity_human_v1.tsv.gz`
 - `splice_event_impact_human_v1.tsv.gz`
+- `splice_gene_event_burden_human_v1.tsv.gz`
 - `bundle_provenance.json`
 - `local_resources_manifest.json`
 
-If you point `--resources_dir` at that directory, both splicing converters auto-resolve the three priors by default for human runs.
+If you point `--resources_dir` at that directory, both splicing converters auto-resolve the four splicing resources by default for human runs.
 
 ### 2. Convert an event-level differential splicing table
 
@@ -63,8 +64,11 @@ Useful explicit flags:
 - `--tool_family auto|generic|leafcutter|majiq|whippet|tcga_spliceseq`
 - `--score_mode auto|stat|delta_psi_times_neglog10p|delta_psi_times_confidence|custom_column`
 - `--confidence_weight_mode none|pvalue|probability|read_support|combined`
+- `--delta_psi_soft_floor 0.05`
+- `--delta_psi_soft_floor_mode auto|off`
 - `--impact_mode none|conservative|custom_bundle`
 - `--event_dup_policy highest_confidence|max_abs|mean|sum`
+- `--gene_burden_penalty_mode none|current_input|reference_bundle|auto`
 - `--ambiguous_gene_policy drop|split_equal|first`
 
 LeafCutter nuance:
@@ -125,6 +129,24 @@ This writes:
 
 `bundle_source_row.tsv` is deliberately shaped so many staged studies can be concatenated and then referenced from `--sources_tsv` for `splice_prepare_reference_bundle`.
 
+For raw MD Anderson TCGA SpliceSeq downloads, the staging workflow now accepts the common public header aliases directly:
+
+- `symbol` as `gene_symbol`
+- `as_id` as `event_id`
+
+Preferred sample metadata path:
+
+- pass an explicit `--sample_annotations_tsv`
+
+Fallback path when that table is unavailable:
+
+- columns ending in `_Norm` are treated as adjacent-normal
+- unsuffixed sample columns are treated as tumor
+- the standardized `sample_id` is the header with `_Norm` stripped
+- if the standardized sample ids would collide, the workflow raises and asks for explicit sample annotations
+
+`prepare_summary.json` records whether metadata were explicit or inferred, the exact inference rule, tumor versus adjacent-normal counts, and whether TCGA barcode validation was attempted.
+
 ### 5. Validate outputs
 
 ```bash
@@ -179,6 +201,9 @@ Default direct-converter behavior:
 - `event_dup_policy=highest_confidence`
 - `gene_aggregation=signed_topk_mean`
 - `gene_topk_events=3`
+- `gene_burden_penalty_mode=auto`
+- `delta_psi_soft_floor=0.05`
+- `delta_psi_soft_floor_mode=auto`
 - `ambiguous_gene_policy=drop`
 - `use_reference_bundle=true`
 - `resource_policy=skip`
@@ -206,10 +231,13 @@ When `resource_policy=skip` and bundle resources are missing, the converters:
 The run summaries also surface interpretable QC such as:
 
 - event-type composition
+- canonicalization confidence counts
 - retained-intron fraction
 - novel-event fraction
 - low-support fraction
 - single-event-gene fraction
+- delta-PSI soft-floor downweight counts
+- selected-event low-confidence prior matches
 
 The main warning heuristics are:
 
@@ -217,3 +245,27 @@ The main warning heuristics are:
 - novel event dominance
 - low confidence dominance
 - likely event multiplicity bias
+
+## How the new safeguards work
+
+### Canonicalization confidence
+
+The public workflow and bundle now distinguish:
+
+- `canonicalization_status=coordinate_canonical`, `canonicalization_confidence=high`
+- `canonicalization_status=raw_id_fallback`, `canonicalization_confidence=low`
+
+Low-confidence keys are cohort-local conveniences, not globally harmonized splice identities. Runtime priors can still use them, but their effect is shrunk much more strongly toward neutral.
+
+### Gene burden penalty
+
+After event-to-gene aggregation, the splicing runtime applies a conservative multiplicity penalty:
+
+- if a reference burden table is available, `gene_burden_penalty_mode=auto` uses it
+- otherwise it falls back to the current input after duplicate collapse
+
+This is meant to stop genes with many measurable events from winning on opportunity alone, not to erase them.
+
+### Delta-PSI soft floor
+
+When a usable `delta_psi` exists, very small absolute PSI shifts are softly downweighted instead of hard-dropped. This matters most in large cohorts where tiny but precise shifts can otherwise dominate significance-only scoring.

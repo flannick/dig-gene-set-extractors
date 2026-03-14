@@ -1,0 +1,4 @@
+event_id	event_group	event_type	gene_id	gene_symbol	chrom	start	end	strand	delta_psi	pvalue	probability	read_support	annotation_status
+SE1	CG1	exon_skip	G_KCNN4	KCNN4	chr19	100	200	+	0.35	0.0001	0.98	40	annotated_coding
+SE2	CG2	retained_intron	G_MAPK1	MAPK1	chr22	300	420	-	-0.30	0.001	0.92	28	novel
+SE3	CG3	alt_donor	G_EGFR	EGFR	chr7	700	820	+	0.10	0.03	0.85	12	annotated_coding

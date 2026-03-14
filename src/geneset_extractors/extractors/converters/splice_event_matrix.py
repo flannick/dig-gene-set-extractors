@@ -11,6 +11,7 @@ from geneset_extractors.extractors.splicing.resource_utils import (
 )
 from geneset_extractors.extractors.splicing.splice_event_diff_workflow import (
     read_event_alias_tsv,
+    read_gene_burden_tsv,
     read_event_impact_tsv,
     read_event_ubiquity_tsv,
 )
@@ -23,6 +24,7 @@ from geneset_extractors.extractors.splicing.splice_event_matrix_workflow import 
 DEFAULT_ALIAS_RESOURCE_ID = "splice_event_aliases_human_v1"
 DEFAULT_UBIQUITY_RESOURCE_ID = "splice_event_ubiquity_human_v1"
 DEFAULT_IMPACT_RESOURCE_ID = "splice_event_impact_human_v1"
+DEFAULT_GENE_BURDEN_RESOURCE_ID = "splice_gene_event_burden_human_v1"
 
 
 
@@ -35,6 +37,8 @@ def _default_resource_id(organism: str, kind: str) -> str | None:
         return DEFAULT_UBIQUITY_RESOURCE_ID
     if kind == "impact":
         return DEFAULT_IMPACT_RESOURCE_ID
+    if kind == "gene_burden":
+        return DEFAULT_GENE_BURDEN_RESOURCE_ID
     return None
 
 
@@ -61,6 +65,7 @@ def run(args) -> dict[str, object]:
             or args.event_alias_resource_id
             or args.event_ubiquity_resource_id
             or args.event_impact_resource_id
+            or getattr(args, "gene_burden_resource_id", None)
         )
     )
     ctx = load_resource_context(args.resources_manifest, args.resources_dir) if need_resources else None
@@ -101,10 +106,23 @@ def run(args) -> dict[str, object]:
                 "Provide --resources_dir containing the splice-event impact table, or set --event_impact_resource_id to a valid local resource."
             ),
         )
+    gene_burden_path = None
+    gene_burden_resource_id = getattr(args, "gene_burden_resource_id", None) or _default_resource_id(args.organism, "gene_burden")
+    if use_bundle and gene_burden_resource_id and ctx is not None:
+        gene_burden_path = resolve_resource_path(
+            ctx=ctx,
+            resource_id=gene_burden_resource_id,
+            resource_policy=resource_policy,
+            role_label="gene_burden",
+            enablement_hint=(
+                "Provide --resources_dir containing the splice gene-burden table, or set --gene_burden_resource_id to a valid local resource."
+            ),
+        )
 
     alias_map = read_event_alias_tsv(alias_path) if alias_path is not None else None
     ubiquity_map = read_event_ubiquity_tsv(ubiquity_path) if ubiquity_path is not None else None
     impact_map = read_event_impact_tsv(impact_path) if impact_path is not None else None
+    gene_burden_map = read_gene_burden_tsv(gene_burden_path) if gene_burden_path is not None else None
 
     files = [
         input_file_record(args.psi_matrix_tsv, "psi_matrix_tsv"),
@@ -120,6 +138,8 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(ubiquity_path, "event_ubiquity_table"))
     if impact_path is not None:
         files.append(input_file_record(impact_path, "event_impact_table"))
+    if gene_burden_path is not None:
+        files.append(input_file_record(gene_burden_path, "gene_burden_table"))
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.psi_matrix_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.psi_matrix_tsv).stem
@@ -172,9 +192,13 @@ def run(args) -> dict[str, object]:
         min_read_support=float(args.min_read_support),
         neglog10p_cap=float(args.neglog10p_cap),
         neglog10p_eps=float(args.neglog10p_eps),
+        delta_psi_soft_floor=float(getattr(args, "delta_psi_soft_floor", 0.05)),
+        delta_psi_soft_floor_mode=getattr(args, "delta_psi_soft_floor_mode", "auto"),
         event_dup_policy=args.event_dup_policy,
         gene_aggregation=args.gene_aggregation,
         gene_topk_events=int(args.gene_topk_events),
+        gene_burden_penalty_mode=getattr(args, "gene_burden_penalty_mode", "auto"),
+        min_gene_burden_penalty=float(getattr(args, "min_gene_burden_penalty", 0.35)),
         ambiguous_gene_policy=args.ambiguous_gene_policy,
         impact_mode=args.impact_mode,
         impact_min=float(args.impact_min),
@@ -204,6 +228,7 @@ def run(args) -> dict[str, object]:
         alias_map=alias_map,
         ubiquity_map=ubiquity_map,
         impact_map=impact_map,
+        gene_burden_map=gene_burden_map,
         input_files=files,
         resources_info=resources_info,
     )

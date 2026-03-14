@@ -34,10 +34,14 @@
     {"name": "score_mode", "type": "string", "default": "auto", "enum": ["auto", "stat", "delta_psi_times_neglog10p", "delta_psi_times_confidence", "custom_column"], "help": "Downstream event score definition"},
     {"name": "score_transform", "type": "string", "default": "signed", "enum": ["signed", "abs", "positive", "negative"], "help": "Signed or nonnegative row-score transform"},
     {"name": "confidence_weight_mode", "type": "string", "default": "combined", "enum": ["none", "pvalue", "probability", "read_support", "combined"], "help": "Confidence weighting strategy"},
+    {"name": "delta_psi_soft_floor", "type": "number", "default": 0.05, "help": "Soft absolute delta-PSI floor used when matrix contrasts provide delta_psi"},
+    {"name": "delta_psi_soft_floor_mode", "type": "string", "default": "auto", "enum": ["auto", "off"], "help": "Whether to apply the delta-PSI soft floor when effect-size information exists"},
     {"name": "impact_mode", "type": "string", "default": "conservative", "enum": ["none", "conservative", "custom_bundle"], "help": "Conservative event-impact prior mode"},
     {"name": "event_dup_policy", "type": "string", "default": "highest_confidence", "enum": ["highest_confidence", "max_abs", "mean", "sum"], "help": "Duplicate-row collapse policy per canonical event"},
     {"name": "gene_aggregation", "type": "string", "default": "signed_topk_mean", "enum": ["signed_topk_mean", "max_abs", "sum", "mean"], "help": "Event-to-gene aggregation method"},
     {"name": "gene_topk_events", "type": "integer", "default": 3, "help": "K for gene_aggregation=signed_topk_mean"},
+    {"name": "gene_burden_penalty_mode", "type": "string", "default": "auto", "enum": ["none", "current_input", "reference_bundle", "auto"], "help": "Conservative multiplicity penalty source for gene-level ranking"},
+    {"name": "min_gene_burden_penalty", "type": "number", "default": 0.35, "help": "Lower clip for the gene burden shrinkage factor"},
     {"name": "ambiguous_gene_policy", "type": "string", "default": "drop", "enum": ["drop", "split_equal", "first"], "help": "How ambiguous multi-gene rows are handled"},
     {"name": "resources_manifest", "type": "string", "default": null, "help": "Optional resources manifest path"},
     {"name": "resources_dir", "type": "string", "default": null, "help": "Optional resources directory containing splicing bundle files"},
@@ -45,7 +49,8 @@
     {"name": "use_reference_bundle", "type": "boolean", "default": true, "help": "Attempt to use alias, ubiquity, and impact priors when available"},
     {"name": "event_alias_resource_id", "type": "string", "default": null, "help": "Optional resource id for canonical event alias table"},
     {"name": "event_ubiquity_resource_id", "type": "string", "default": null, "help": "Optional resource id for event ubiquity prior"},
-    {"name": "event_impact_resource_id", "type": "string", "default": null, "help": "Optional resource id for conservative event impact prior"}
+    {"name": "event_impact_resource_id", "type": "string", "default": null, "help": "Optional resource id for conservative event impact prior"},
+    {"name": "gene_burden_resource_id", "type": "string", "default": null, "help": "Optional resource id for reference per-gene event burden counts"}
   ],
   "outputs": [
     {"name": "manifest.tsv", "description": "Per-contrast grouped output manifest when multiple programs are emitted"},

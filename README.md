@@ -85,7 +85,7 @@ RNA workflow commands:
 - `workflows ptm_prepare_public` (standardize local CDAP/PDC public phosphosite/proteome reports into repo-native PTM matrices)
 - `workflows ptm_prepare_reference_bundle` (prepare a local phosphosite alias/ubiquity bundle)
 - `workflows splice_prepare_public` (standardize TCGA SpliceSeq-like PSI matrices into repo-native splicing matrices)
-- `workflows splice_prepare_reference_bundle` (prepare a local splice-event alias/ubiquity/impact bundle)
+- `workflows splice_prepare_reference_bundle` (prepare a local splice-event alias/ubiquity/impact/gene-burden bundle)
 - `workflows calr_prepare_public` (derive gene-labeled calorimetry reference tables from raw local Cal-Repository-style studies)
 - `workflows calr_prepare_reference_bundle` (prepare a local indirect calorimetry reference bundle)
 
@@ -199,6 +199,7 @@ Alternative splicing optional bundle setup:
   - event alias harmonization
   - event ubiquity weighting
   - conservative event-impact prior
+  - conservative gene event-burden prior
 - preferred workflow:
   - `geneset-extractors workflows splice_prepare_public --input_mode tcga_spliceseq ...`
   - `geneset-extractors workflows splice_prepare_reference_bundle --sources_tsv ... --out_dir ... --organism human --bundle_id ...`

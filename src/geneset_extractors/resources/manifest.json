@@ -371,6 +371,18 @@
       "url": "",
       "sha256": "",
       "license": "Derived splice-event impact prior; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_gene_event_burden_human_v1",
+      "description": "Reference per-gene splice-event burden counts with columns gene_symbol,n_canonical_events_ref,n_high_confidence_events_ref,n_low_confidence_events_ref",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_gene_event_burden_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_gene_event_burden_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event burden prior; document upstream public sources and versions in local bundle provenance"
     }
   ],
   "presets": {
@@ -429,7 +441,8 @@
     "splicing_default_optional_human": [
       "splice_event_aliases_human_v1",
       "splice_event_ubiquity_human_v1",
-      "splice_event_impact_human_v1"
+      "splice_event_impact_human_v1",
+      "splice_gene_event_burden_human_v1"
     ]
   }
 }

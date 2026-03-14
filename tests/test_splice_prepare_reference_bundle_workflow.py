@@ -74,6 +74,11 @@ class DiffArgs:
     gmt_split_signed = True
     gmt_format = "dig2col"
     emit_small_gene_sets = True
+    delta_psi_soft_floor = 0.05
+    delta_psi_soft_floor_mode = "auto"
+    gene_burden_penalty_mode = "auto"
+    min_gene_burden_penalty = 0.35
+    gene_burden_resource_id = None
 
 
 class BundleArgs:
@@ -90,10 +95,10 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     source_rows.write_text(
         "\n".join(
             [
-                "source_dataset\tsample_id\tinput_event_key\tcanonical_event_key\tgene_id\tgene_symbol\tevent_type\tpsi\tread_support\tannotation_status\tchrom\tstart\tend\tstrand\ttool_family",
-                "toy\tS1\tE1\tchr19:100-200:+:exon_skip:CL1\tG_KCNN4\tKCNN4\texon_skip\t0.8\t30\tannotated_coding\tchr19\t100\t200\t+\tgeneric",
-                "toy\tS2\tE2\tchr22:300-420:-:retained_intron:CL2\tG_MAPK1\tMAPK1\tretained_intron\t0.6\t15\tnovel\tchr22\t300\t420\t-\tgeneric",
-                "toy\tS3\tE4\tchr19:240-310:+:alt_donor:CL4\tG_KCNN4\tKCNN4\talt_donor\t0.7\t18\tannotated_coding\tchr19\t240\t310\t+\tgeneric",
+                "source_dataset\tsample_id\tinput_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tgene_id\tgene_symbol\tevent_type\tpsi\tread_support\tannotation_status\tchrom\tstart\tend\tstrand\ttool_family",
+                "toy\tS1\tE1\tchr19:100-200:+:exon_skip:CL1\tcoordinate_canonical\thigh\tG_KCNN4\tKCNN4\texon_skip\t0.8\t30\tannotated_coding\tchr19\t100\t200\t+\tgeneric",
+                "toy\tS2\tE2\tE2\traw_id_fallback\tlow\tG_MAPK1\tMAPK1\tretained_intron\t0.6\t15\tnovel\tchr22\t300\t420\t-\tgeneric",
+                "toy\tS3\tE4\tchr19:240-310:+:alt_donor:CL4\tcoordinate_canonical\thigh\tG_KCNN4\tKCNN4\talt_donor\t0.7\t18\tannotated_coding\tchr19\t240\t310\t+\tgeneric",
             ]
         )
         + "\n",
@@ -112,6 +117,7 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert (bundle_dir / "splice_event_aliases_human_v1.tsv.gz").exists()
     assert (bundle_dir / "splice_event_ubiquity_human_v1.tsv.gz").exists()
     assert (bundle_dir / "splice_event_impact_human_v1.tsv.gz").exists()
+    assert (bundle_dir / "splice_gene_event_burden_human_v1.tsv.gz").exists()
     assert (bundle_dir / "bundle_provenance.json").exists()
     assert (bundle_dir / "local_resources_manifest.json").exists()
 
@@ -119,6 +125,7 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert len(rows) == 3
     assert rows[0]["canonical_event_key"]
+    assert {row["canonicalization_confidence"] for row in rows} == {"high", "low"}
 
     diff_args = DiffArgs()
     diff_args.out_dir = str(tmp_path / "runtime")
@@ -135,4 +142,5 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
         "splice_event_aliases_human_v1",
         "splice_event_ubiquity_human_v1",
         "splice_event_impact_human_v1",
+        "splice_gene_event_burden_human_v1",
     }

@@ -1,0 +1,7 @@
+event_id	event_group	event_type	gene_id	gene_symbol	chrom	start	end	strand	delta_psi	pvalue	probability	read_support	annotation_status
+GA1	GA	retained_intron	G_A	GENEA	chr1	100	140	+	0.28	0.0005	0.95	30	annotated_coding
+GA2	GA	retained_intron	G_A	GENEA	chr1	150	190	+	0.27	0.0008	0.95	30	annotated_coding
+GA3	GA	retained_intron	G_A	GENEA	chr1	200	240	+	0.26	0.0010	0.95	30	annotated_coding
+GA4	GA	retained_intron	G_A	GENEA	chr1	250	290	+	0.25	0.0015	0.95	30	annotated_coding
+GB1	GB	exon_skip	G_B	GENEB	chr2	300	360	+	0.46	0.0012	0.95	30	annotated_coding
+GB2	GB	alt_donor	G_B	GENEB	chr2	400	460	+	0.40	0.0015	0.95	30	annotated_coding

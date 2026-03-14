@@ -64,7 +64,7 @@ Assay-specific resource instructions:
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
 - Proteomics PTM supports `workflows ptm_prepare_public` for CDAP/PDC standardization plus both `ptm_site_diff` and `ptm_site_matrix`; the converters can use the optional alias/ubiquity bundle.
-- Alternative splicing supports `workflows splice_prepare_public`, `workflows splice_prepare_reference_bundle`, plus both `splice_event_diff` and `splice_event_matrix`; the converters can use the optional alias/ubiquity/impact bundle.
+- Alternative splicing supports `workflows splice_prepare_public`, `workflows splice_prepare_reference_bundle`, plus both `splice_event_diff` and `splice_event_matrix`; the converters can use the optional alias/ubiquity/impact/gene-burden bundle.
 - Indirect calorimetry supports `workflows calr_prepare_public`, `workflows calr_prepare_reference_bundle`, plus `calr_ontology_mapper` and `calr_profile_query`.
 - Drug response supports an optional local annotation/prior bundle for more connectable defaults.
 - Morphology supports an optional local reference bundle for reusable perturbation profiles, metadata, and feature stats.

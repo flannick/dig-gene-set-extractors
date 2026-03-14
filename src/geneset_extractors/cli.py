@@ -624,6 +624,8 @@ def _add_splice_event_diff_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--min_probability", type=float, default=0.8)
     parser.add_argument("--min_read_support", type=float, default=10.0)
+    parser.add_argument("--delta_psi_soft_floor", type=float, default=0.05)
+    parser.add_argument("--delta_psi_soft_floor_mode", choices=["auto", "off"], default="auto")
     parser.add_argument(
         "--event_dup_policy",
         choices=["highest_confidence", "max_abs", "mean", "sum"],
@@ -635,6 +637,8 @@ def _add_splice_event_diff_flags(parser: argparse.ArgumentParser) -> None:
         default="signed_topk_mean",
     )
     parser.add_argument("--gene_topk_events", type=int, default=3)
+    parser.add_argument("--gene_burden_penalty_mode", choices=["none", "current_input", "reference_bundle", "auto"], default="auto")
+    parser.add_argument("--min_gene_burden_penalty", type=float, default=0.35)
     parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
     parser.add_argument("--impact_mode", choices=["none", "conservative", "custom_bundle"], default="conservative")
     parser.add_argument("--impact_min", type=float, default=0.75)
@@ -648,6 +652,7 @@ def _add_splice_event_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--event_alias_resource_id")
     parser.add_argument("--event_ubiquity_resource_id")
     parser.add_argument("--event_impact_resource_id")
+    parser.add_argument("--gene_burden_resource_id")
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
     parser.add_argument("--top_k", type=int, default=200)
     parser.add_argument("--quantile", type=float, default=0.01)
@@ -722,6 +727,8 @@ def _add_splice_event_matrix_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--min_probability", type=float, default=0.8)
     parser.add_argument("--min_read_support", type=float, default=10.0)
+    parser.add_argument("--delta_psi_soft_floor", type=float, default=0.05)
+    parser.add_argument("--delta_psi_soft_floor_mode", choices=["auto", "off"], default="auto")
     parser.add_argument("--impact_mode", choices=["none", "conservative", "custom_bundle"], default="conservative")
     parser.add_argument("--impact_min", type=float, default=0.75)
     parser.add_argument("--impact_max", type=float, default=1.35)
@@ -736,6 +743,8 @@ def _add_splice_event_matrix_flags(parser: argparse.ArgumentParser) -> None:
         default="signed_topk_mean",
     )
     parser.add_argument("--gene_topk_events", type=int, default=3)
+    parser.add_argument("--gene_burden_penalty_mode", choices=["none", "current_input", "reference_bundle", "auto"], default="auto")
+    parser.add_argument("--min_gene_burden_penalty", type=float, default=0.35)
     parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
@@ -746,6 +755,7 @@ def _add_splice_event_matrix_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--event_alias_resource_id")
     parser.add_argument("--event_ubiquity_resource_id")
     parser.add_argument("--event_impact_resource_id")
+    parser.add_argument("--gene_burden_resource_id")
     parser.add_argument("--select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
     parser.add_argument("--top_k", type=int, default=200)
     parser.add_argument("--quantile", type=float, default=0.01)

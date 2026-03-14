@@ -54,9 +54,13 @@ class Args:
     min_read_support = 5.0
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
+    delta_psi_soft_floor = 0.05
+    delta_psi_soft_floor_mode = "auto"
     event_dup_policy = "highest_confidence"
     gene_aggregation = "signed_topk_mean"
     gene_topk_events = 3
+    gene_burden_penalty_mode = "auto"
+    min_gene_burden_penalty = 0.35
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
@@ -68,6 +72,7 @@ class Args:
     event_alias_resource_id = None
     event_ubiquity_resource_id = None
     event_impact_resource_id = None
+    gene_burden_resource_id = None
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -89,19 +94,24 @@ class Args:
     cluster_stats_tsv = None
 
 
-
 def _copy_resources(resources_dir: Path) -> None:
     resources_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile("tests/data/splice_event_aliases_human_v1.tsv.gz", resources_dir / "splice_event_aliases_human_v1.tsv.gz")
-    shutil.copyfile("tests/data/splice_event_ubiquity_human_v1.tsv.gz", resources_dir / "splice_event_ubiquity_human_v1.tsv.gz")
-    shutil.copyfile("tests/data/splice_event_impact_human_v1.tsv.gz", resources_dir / "splice_event_impact_human_v1.tsv.gz")
-
+    for filename in (
+        "splice_event_aliases_human_v1.tsv.gz",
+        "splice_event_ubiquity_human_v1.tsv.gz",
+        "splice_event_impact_human_v1.tsv.gz",
+        "splice_gene_event_burden_human_v1.tsv.gz",
+    ):
+        shutil.copyfile(Path("tests/data") / filename, resources_dir / filename)
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as fh:
         return list(csv.DictReader(fh, delimiter="\t"))
 
+
+def _score_map(path: Path) -> dict[str, float]:
+    return {row["gene_id"]: float(row["score"]) for row in _read_rows(path)}
 
 
 def test_splice_event_matrix_single_contrast_end_to_end(tmp_path: Path):
@@ -123,7 +133,6 @@ def test_splice_event_matrix_single_contrast_end_to_end(tmp_path: Path):
     rows = _read_rows(out_dir / "geneset.tsv")
     assert rows
     assert rows[0]["gene_symbol"] in {"KCNN4", "MAPK1", "GENEA"}
-
 
 
 def test_splice_event_matrix_grouped_contrast_mode(tmp_path: Path):
@@ -153,7 +162,6 @@ def test_splice_event_matrix_grouped_contrast_mode(tmp_path: Path):
         assert (child_dir / "geneset.meta.json").exists()
 
 
-
 def test_splice_event_matrix_effect_metric_change(tmp_path: Path):
     args_t = Args()
     args_t.out_dir = str(tmp_path / "splice_matrix_t")
@@ -167,10 +175,9 @@ def test_splice_event_matrix_effect_metric_change(tmp_path: Path):
     args_m.effect_metric = "mean_diff"
     splice_event_matrix.run(args_m)
 
-    t_scores = {row["gene_id"]: float(row["score"]) for row in _read_rows(Path(args_t.out_dir) / "geneset.full.tsv")}
-    m_scores = {row["gene_id"]: float(row["score"]) for row in _read_rows(Path(args_m.out_dir) / "geneset.full.tsv")}
+    t_scores = _score_map(Path(args_t.out_dir) / "geneset.full.tsv")
+    m_scores = _score_map(Path(args_m.out_dir) / "geneset.full.tsv")
     assert t_scores["G_KCNN4"] != m_scores["G_KCNN4"]
-
 
 
 def test_splice_event_matrix_min_present_missingness(tmp_path: Path):
@@ -181,3 +188,29 @@ def test_splice_event_matrix_min_present_missingness(tmp_path: Path):
     splice_event_matrix.run(args)
     rows = _read_rows(Path(args.out_dir) / "contrast_qc.tsv")
     assert rows[0]["n_events_dropped_missing"] != "0"
+
+
+def test_splice_event_matrix_bundle_matched_fixture_changes_scores(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    args_bundle = Args()
+    args_bundle.psi_matrix_tsv = "tests/data/toy_splice_matrix_matched.tsv"
+    args_bundle.sample_metadata_tsv = "tests/data/toy_splice_sample_metadata_matched.tsv"
+    args_bundle.coverage_matrix_tsv = None
+    args_bundle.out_dir = str(tmp_path / "matched_bundle")
+    args_bundle.resources_dir = str(resources_dir)
+    splice_event_matrix.run(args_bundle)
+
+    args_none = Args()
+    args_none.psi_matrix_tsv = "tests/data/toy_splice_matrix_matched.tsv"
+    args_none.sample_metadata_tsv = "tests/data/toy_splice_sample_metadata_matched.tsv"
+    args_none.coverage_matrix_tsv = None
+    args_none.out_dir = str(tmp_path / "matched_none")
+    args_none.use_reference_bundle = False
+    splice_event_matrix.run(args_none)
+
+    bundle_scores = _score_map(Path(args_bundle.out_dir) / "geneset.full.tsv")
+    none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
+    assert bundle_scores != none_scores
+    assert bundle_scores["G_MAPK1"] != none_scores["G_MAPK1"]

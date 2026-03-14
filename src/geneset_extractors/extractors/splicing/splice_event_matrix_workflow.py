@@ -85,9 +85,13 @@ class SpliceMatrixWorkflowConfig:
     min_read_support: float
     neglog10p_cap: float
     neglog10p_eps: float
+    delta_psi_soft_floor: float
+    delta_psi_soft_floor_mode: str
     event_dup_policy: str
     gene_aggregation: str
     gene_topk_events: int
+    gene_burden_penalty_mode: str
+    min_gene_burden_penalty: float
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -406,9 +410,13 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
         min_read_support=cfg.min_read_support,
         neglog10p_cap=cfg.neglog10p_cap,
         neglog10p_eps=cfg.neglog10p_eps,
+        delta_psi_soft_floor=cfg.delta_psi_soft_floor,
+        delta_psi_soft_floor_mode=cfg.delta_psi_soft_floor_mode,
         event_dup_policy=cfg.event_dup_policy,
         gene_aggregation=cfg.gene_aggregation,
         gene_topk_events=cfg.gene_topk_events,
+        gene_burden_penalty_mode=cfg.gene_burden_penalty_mode,
+        min_gene_burden_penalty=cfg.min_gene_burden_penalty,
         ambiguous_gene_policy=cfg.ambiguous_gene_policy,
         impact_mode=cfg.impact_mode,
         impact_min=cfg.impact_min,
@@ -435,7 +443,7 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
 
 
 
-def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_map: dict[str, object] | None, ubiquity_map: dict[str, object] | None, impact_map: dict[str, object] | None, input_files: list[dict[str, str]], resources_info: dict[str, object] | None) -> dict[str, object]:
+def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_map: dict[str, object] | None, ubiquity_map: dict[str, object] | None, impact_map: dict[str, object] | None, gene_burden_map: dict[str, object] | None, input_files: list[dict[str, str]], resources_info: dict[str, object] | None) -> dict[str, object]:
     if cfg.matrix_format != "wide_events_by_sample":
         raise ValueError(f"Unsupported matrix_format: {cfg.matrix_format}")
     out_dir = Path(cfg.out_dir)
@@ -497,6 +505,7 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
             alias_map=alias_map,
             ubiquity_map=ubiquity_map,
             impact_map=impact_map,
+            gene_burden_map=gene_burden_map,
             input_files=files,
             resources_info=resources_info,
         )
@@ -562,6 +571,9 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
         "matrix_format": cfg.matrix_format,
         "effect_metric": cfg.effect_metric,
         "missing_value_policy": cfg.missing_value_policy,
+        "delta_psi_soft_floor_mode": cfg.delta_psi_soft_floor_mode,
+        "delta_psi_soft_floor": cfg.delta_psi_soft_floor,
+        "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_samples_per_condition": cfg.min_samples_per_condition,
         "min_present_per_condition": cfg.min_present_per_condition,
         "n_samples_total": len(sample_rows),

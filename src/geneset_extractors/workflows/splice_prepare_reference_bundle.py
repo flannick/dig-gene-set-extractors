@@ -7,16 +7,14 @@ import math
 from pathlib import Path
 from statistics import mean
 
-from geneset_extractors.hashing import sha256_file
 from geneset_extractors.extractors.splicing.splice_event_diff_workflow import _normalize_event_type
-
+from geneset_extractors.hashing import sha256_file
 
 
 def _clean(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
-
 
 
 def _parse_float(value: object) -> float | None:
@@ -29,7 +27,6 @@ def _parse_float(value: object) -> float | None:
         return None
 
 
-
 def _write_tsv_gz(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8", newline="") as fh:
@@ -37,7 +34,6 @@ def _write_tsv_gz(path: Path, fieldnames: list[str], rows: list[dict[str, object
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
-
 
 
 def _impact_defaults(event_type: str, annotation_status: str) -> tuple[float, float]:
@@ -60,6 +56,11 @@ def _impact_defaults(event_type: str, annotation_status: str) -> tuple[float, fl
     return raw, evidence
 
 
+def _bundle_event_key(canonical_event_key: str, source_dataset: str, canonicalization_confidence: str) -> str:
+    if canonicalization_confidence == "high":
+        return canonical_event_key
+    return f"lowconf::{source_dataset}::{canonical_event_key}"
+
 
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
@@ -74,11 +75,15 @@ def run(args) -> dict[str, object]:
         raise ValueError("sources_tsv must contain a path column")
 
     organism = str(args.organism).strip().lower()
-    alias_records: dict[str, dict[str, object]] = {}
+    alias_records: dict[tuple[str, str], dict[str, object]] = {}
+    alias_conflicts: dict[str, int] = {}
     ubiquity_stats: dict[str, dict[str, object]] = {}
     impact_records: dict[str, dict[str, object]] = {}
+    gene_burden: dict[str, dict[str, object]] = {}
     source_file_records: list[dict[str, object]] = []
     total_samples_seen: set[str] = set()
+    canonicalization_status_counts: dict[str, int] = {"coordinate_canonical": 0, "raw_id_fallback": 0}
+    canonicalization_confidence_counts: dict[str, int] = {"high": 0, "low": 0}
 
     for source_row in source_rows:
         source_file = Path(_clean(source_row.get("path")))
@@ -88,11 +93,19 @@ def run(args) -> dict[str, object]:
         with source_file.open("r", encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
         present_by_event: dict[str, set[str]] = {}
+        unique_events_by_gene: dict[str, set[str]] = {}
+        unique_high_events_by_gene: dict[str, set[str]] = {}
+        unique_low_events_by_gene: dict[str, set[str]] = {}
         for row in rows:
             input_event_key = _clean(row.get("input_event_key"))
             canonical = _clean(row.get("canonical_event_key"))
             if not input_event_key or not canonical:
                 continue
+            canonicalization_status = _clean(row.get("canonicalization_status")) or "raw_id_fallback"
+            canonicalization_confidence = _clean(row.get("canonicalization_confidence")).lower() or ("high" if canonicalization_status == "coordinate_canonical" else "low")
+            canonicalization_status_counts[canonicalization_status] = canonicalization_status_counts.get(canonicalization_status, 0) + 1
+            canonicalization_confidence_counts[canonicalization_confidence] = canonicalization_confidence_counts.get(canonicalization_confidence, 0) + 1
+            bundle_event_key = _bundle_event_key(canonical, source_dataset, canonicalization_confidence)
             gene_id = _clean(row.get("gene_id"))
             gene_symbol = _clean(row.get("gene_symbol")) or gene_id
             event_type = _normalize_event_type(_clean(row.get("event_type")))
@@ -101,9 +114,13 @@ def run(args) -> dict[str, object]:
             read_support = _parse_float(row.get("read_support"))
             annotation_status = _clean(row.get("annotation_status"))
             total_samples_seen.add(sample_id)
-            alias_records[input_event_key] = {
+
+            alias_key = (input_event_key, canonicalization_confidence)
+            alias_record = {
                 "input_event_key": input_event_key,
-                "canonical_event_key": canonical,
+                "canonical_event_key": bundle_event_key,
+                "canonicalization_status": canonicalization_status,
+                "canonicalization_confidence": canonicalization_confidence,
                 "gene_id": gene_id,
                 "gene_symbol": gene_symbol,
                 "event_type": event_type,
@@ -113,33 +130,78 @@ def run(args) -> dict[str, object]:
                 "strand": _clean(row.get("strand")),
                 "source_dataset": source_dataset,
             }
+            if alias_key in alias_records:
+                prev = alias_records[alias_key]
+                same_mapping = (
+                    str(prev.get("canonical_event_key")) == alias_record["canonical_event_key"]
+                    and str(prev.get("gene_symbol")) == alias_record["gene_symbol"]
+                )
+                if not same_mapping and canonicalization_confidence == "low":
+                    alias_conflicts[input_event_key] = alias_conflicts.get(input_event_key, 0) + 1
+                    del alias_records[alias_key]
+                elif same_mapping:
+                    alias_records[alias_key] = prev
+            elif alias_conflicts.get(input_event_key, 0) == 0:
+                alias_records[alias_key] = alias_record
+
             if psi is not None and (read_support is None or read_support >= float(args.min_ref_read_support)):
-                present_by_event.setdefault(canonical, set()).add(sample_id)
-            stats = ubiquity_stats.setdefault(canonical, {
-                "canonical_event_key": canonical,
-                "gene_id": gene_id,
-                "gene_symbol": gene_symbol,
-                "event_type": event_type,
-                "datasets": set(),
-                "df_ref": 0,
-            })
+                present_by_event.setdefault(bundle_event_key, set()).add(sample_id)
+            stats = ubiquity_stats.setdefault(
+                bundle_event_key,
+                {
+                    "canonical_event_key": bundle_event_key,
+                    "gene_id": gene_id,
+                    "gene_symbol": gene_symbol,
+                    "event_type": event_type,
+                    "canonicalization_status": canonicalization_status,
+                    "canonicalization_confidence": canonicalization_confidence,
+                    "datasets": set(),
+                    "df_ref": 0,
+                },
+            )
             stats["datasets"].add(source_dataset)
-            impact_records.setdefault(canonical, {
-                "canonical_event_key": canonical,
-                "gene_id": gene_id,
-                "gene_symbol": gene_symbol,
-                "event_type": event_type,
-                "annotation_status": annotation_status,
-            })
-        for canonical, sample_ids in present_by_event.items():
-            ubiquity_stats[canonical]["df_ref"] = int(ubiquity_stats[canonical]["df_ref"]) + len(sample_ids)
-        source_file_records.append({
-            "path": str(source_file),
-            "sha256": sha256_file(source_file),
-            "source_dataset": source_dataset,
-            "n_rows": len(rows),
-            "n_unique_events": len(present_by_event),
-        })
+            impact_records.setdefault(
+                bundle_event_key,
+                {
+                    "canonical_event_key": bundle_event_key,
+                    "gene_id": gene_id,
+                    "gene_symbol": gene_symbol,
+                    "event_type": event_type,
+                    "annotation_status": annotation_status,
+                    "canonicalization_status": canonicalization_status,
+                    "canonicalization_confidence": canonicalization_confidence,
+                },
+            )
+            if gene_symbol:
+                unique_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
+                if canonicalization_confidence == "high":
+                    unique_high_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
+                else:
+                    unique_low_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
+        for canonical_key, sample_ids in present_by_event.items():
+            ubiquity_stats[canonical_key]["df_ref"] = int(ubiquity_stats[canonical_key]["df_ref"]) + len(sample_ids)
+        for gene_symbol, bundle_keys in unique_events_by_gene.items():
+            burden = gene_burden.setdefault(
+                gene_symbol,
+                {
+                    "gene_symbol": gene_symbol,
+                    "n_canonical_events_ref": set(),
+                    "n_high_confidence_events_ref": set(),
+                    "n_low_confidence_events_ref": set(),
+                },
+            )
+            burden["n_canonical_events_ref"].update(bundle_keys)
+            burden["n_high_confidence_events_ref"].update(unique_high_events_by_gene.get(gene_symbol, set()))
+            burden["n_low_confidence_events_ref"].update(unique_low_events_by_gene.get(gene_symbol, set()))
+        source_file_records.append(
+            {
+                "path": str(source_file),
+                "sha256": sha256_file(source_file),
+                "source_dataset": source_dataset,
+                "n_rows": len(rows),
+                "n_unique_events": len(present_by_event),
+            }
+        )
 
     n_samples_ref = max(1, len(total_samples_seen))
     alias_rows = [alias_records[key] for key in sorted(alias_records)]
@@ -150,44 +212,118 @@ def run(args) -> dict[str, object]:
         df_ref = int(stats["df_ref"])
         idf_ref = math.log1p((n_samples_ref + 1.0) / (df_ref + 1.0))
         idf_values.append(idf_ref)
-        ubiquity_rows.append({
-            "canonical_event_key": canonical,
-            "gene_id": stats["gene_id"],
-            "gene_symbol": stats["gene_symbol"],
-            "event_type": stats["event_type"],
-            "n_samples_ref": n_samples_ref,
-            "df_ref": df_ref,
-            "fraction_ref": float(df_ref) / float(n_samples_ref),
-            "idf_ref": idf_ref,
-            "n_datasets_ref": len(stats["datasets"]),
-        })
+        ubiquity_rows.append(
+            {
+                "canonical_event_key": canonical,
+                "gene_id": stats["gene_id"],
+                "gene_symbol": stats["gene_symbol"],
+                "event_type": stats["event_type"],
+                "canonicalization_status": stats["canonicalization_status"],
+                "canonicalization_confidence": stats["canonicalization_confidence"],
+                "n_samples_ref": n_samples_ref,
+                "df_ref": df_ref,
+                "fraction_ref": float(df_ref) / float(n_samples_ref),
+                "idf_ref": idf_ref,
+                "n_datasets_ref": len(stats["datasets"]),
+            }
+        )
 
     impact_rows: list[dict[str, object]] = []
     for canonical in sorted(impact_records):
         record = impact_records[canonical]
         raw, evidence = _impact_defaults(str(record["event_type"]), str(record["annotation_status"]))
-        impact_rows.append({
-            "canonical_event_key": canonical,
-            "gene_id": record["gene_id"],
-            "gene_symbol": record["gene_symbol"],
-            "event_type": record["event_type"],
-            "impact_weight_raw": raw,
-            "impact_evidence": evidence,
-            "annotation_status": record["annotation_status"],
-        })
+        impact_rows.append(
+            {
+                "canonical_event_key": canonical,
+                "gene_id": record["gene_id"],
+                "gene_symbol": record["gene_symbol"],
+                "event_type": record["event_type"],
+                "canonicalization_status": record["canonicalization_status"],
+                "canonicalization_confidence": record["canonicalization_confidence"],
+                "impact_weight_raw": raw,
+                "impact_evidence": evidence,
+                "annotation_status": record["annotation_status"],
+            }
+        )
+
+    burden_rows: list[dict[str, object]] = []
+    for gene_symbol in sorted(gene_burden):
+        record = gene_burden[gene_symbol]
+        burden_rows.append(
+            {
+                "gene_symbol": gene_symbol,
+                "n_canonical_events_ref": len(record["n_canonical_events_ref"]),
+                "n_high_confidence_events_ref": len(record["n_high_confidence_events_ref"]),
+                "n_low_confidence_events_ref": len(record["n_low_confidence_events_ref"]),
+            }
+        )
 
     alias_filename = f"splice_event_aliases_{organism}_v1.tsv.gz"
     ubiquity_filename = f"splice_event_ubiquity_{organism}_v1.tsv.gz"
     impact_filename = f"splice_event_impact_{organism}_v1.tsv.gz"
+    burden_filename = f"splice_gene_event_burden_{organism}_v1.tsv.gz"
     alias_path = out_dir / alias_filename
     ubiquity_path = out_dir / ubiquity_filename
     impact_path = out_dir / impact_filename
+    burden_path = out_dir / burden_filename
     provenance_path = out_dir / "bundle_provenance.json"
     local_manifest_path = out_dir / "local_resources_manifest.json"
 
-    _write_tsv_gz(alias_path, ["input_event_key", "canonical_event_key", "gene_id", "gene_symbol", "event_type", "chrom", "start", "end", "strand", "source_dataset"], alias_rows)
-    _write_tsv_gz(ubiquity_path, ["canonical_event_key", "gene_id", "gene_symbol", "event_type", "n_samples_ref", "df_ref", "fraction_ref", "idf_ref", "n_datasets_ref"], ubiquity_rows)
-    _write_tsv_gz(impact_path, ["canonical_event_key", "gene_id", "gene_symbol", "event_type", "impact_weight_raw", "impact_evidence", "annotation_status"], impact_rows)
+    _write_tsv_gz(
+        alias_path,
+        [
+            "input_event_key",
+            "canonical_event_key",
+            "canonicalization_status",
+            "canonicalization_confidence",
+            "gene_id",
+            "gene_symbol",
+            "event_type",
+            "chrom",
+            "start",
+            "end",
+            "strand",
+            "source_dataset",
+        ],
+        alias_rows,
+    )
+    _write_tsv_gz(
+        ubiquity_path,
+        [
+            "canonical_event_key",
+            "gene_id",
+            "gene_symbol",
+            "event_type",
+            "canonicalization_status",
+            "canonicalization_confidence",
+            "n_samples_ref",
+            "df_ref",
+            "fraction_ref",
+            "idf_ref",
+            "n_datasets_ref",
+        ],
+        ubiquity_rows,
+    )
+    _write_tsv_gz(
+        impact_path,
+        [
+            "canonical_event_key",
+            "gene_id",
+            "gene_symbol",
+            "event_type",
+            "canonicalization_status",
+            "canonicalization_confidence",
+            "impact_weight_raw",
+            "impact_evidence",
+            "annotation_status",
+        ],
+        impact_rows,
+    )
+    _write_tsv_gz(
+        burden_path,
+        ["gene_symbol", "n_canonical_events_ref", "n_high_confidence_events_ref", "n_low_confidence_events_ref"],
+        burden_rows,
+    )
 
     provenance = {
         "bundle_id": args.bundle_id,
@@ -195,9 +331,28 @@ def run(args) -> dict[str, object]:
         "n_sources": len(source_rows),
         "n_alias_rows": len(alias_rows),
         "n_canonical_events": len(ubiquity_rows),
-        "idf_ref_summary": {"min": min(idf_values) if idf_values else 0.0, "mean": mean(idf_values) if idf_values else 0.0, "max": max(idf_values) if idf_values else 0.0},
+        "n_genes_with_burden": len(burden_rows),
+        "canonicalization_status_counts": canonicalization_status_counts,
+        "canonicalization_confidence_counts": canonicalization_confidence_counts,
+        "fraction_high_confidence_events": (
+            float(canonicalization_confidence_counts.get("high", 0)) / float(max(1, sum(canonicalization_confidence_counts.values())))
+        ),
+        "fraction_low_confidence_events": (
+            float(canonicalization_confidence_counts.get("low", 0)) / float(max(1, sum(canonicalization_confidence_counts.values())))
+        ),
+        "low_confidence_alias_conflicts_dropped": sum(alias_conflicts.values()),
+        "idf_ref_summary": {
+            "min": min(idf_values) if idf_values else 0.0,
+            "mean": mean(idf_values) if idf_values else 0.0,
+            "max": max(idf_values) if idf_values else 0.0,
+        },
         "source_files": source_file_records,
-        "outputs": {"alias_table": alias_filename, "ubiquity_table": ubiquity_filename, "impact_table": impact_filename},
+        "outputs": {
+            "alias_table": alias_filename,
+            "ubiquity_table": ubiquity_filename,
+            "impact_table": impact_filename,
+            "gene_burden_table": burden_filename,
+        },
     }
     provenance_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -238,15 +393,28 @@ def run(args) -> dict[str, object]:
                 "url": "",
                 "sha256": sha256_file(impact_path),
                 "license": "Local bundle resource; see bundle_provenance.json",
-            }
+            },
+            {
+                "id": f"splice_gene_event_burden_{organism}_v1",
+                "description": f"Per-gene splicing event burden reference counts for {organism}",
+                "provider": "local_bundle",
+                "stable_id": f"local:splice_gene_event_burden_{organism}_v1",
+                "version": "v1",
+                "genome_build": organism,
+                "filename": burden_filename,
+                "url": "",
+                "sha256": sha256_file(burden_path),
+                "license": "Local bundle resource; see bundle_provenance.json",
+            },
         ],
         "presets": {
             f"splice_event_bundle_{organism}_v1": [
                 f"splice_event_aliases_{organism}_v1",
                 f"splice_event_ubiquity_{organism}_v1",
-                f"splice_event_impact_{organism}_v1"
+                f"splice_event_impact_{organism}_v1",
+                f"splice_gene_event_burden_{organism}_v1",
             ]
-        }
+        },
     }
     local_manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
@@ -256,4 +424,5 @@ def run(args) -> dict[str, object]:
         "n_canonical_events": len(ubiquity_rows),
         "n_alias_rows": len(alias_rows),
         "n_impact_rows": len(impact_rows),
+        "n_gene_burden_rows": len(burden_rows),
     }

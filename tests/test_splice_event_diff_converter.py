@@ -42,9 +42,13 @@ class Args:
     min_read_support = 10.0
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
+    delta_psi_soft_floor = 0.05
+    delta_psi_soft_floor_mode = "auto"
     event_dup_policy = "highest_confidence"
     gene_aggregation = "signed_topk_mean"
     gene_topk_events = 3
+    gene_burden_penalty_mode = "auto"
+    min_gene_burden_penalty = 0.35
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
@@ -56,6 +60,7 @@ class Args:
     event_alias_resource_id = None
     event_ubiquity_resource_id = None
     event_impact_resource_id = None
+    gene_burden_resource_id = None
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -76,19 +81,24 @@ class Args:
     emit_small_gene_sets = True
 
 
-
 def _copy_resources(resources_dir: Path) -> None:
     resources_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile("tests/data/splice_event_aliases_human_v1.tsv.gz", resources_dir / "splice_event_aliases_human_v1.tsv.gz")
-    shutil.copyfile("tests/data/splice_event_ubiquity_human_v1.tsv.gz", resources_dir / "splice_event_ubiquity_human_v1.tsv.gz")
-    shutil.copyfile("tests/data/splice_event_impact_human_v1.tsv.gz", resources_dir / "splice_event_impact_human_v1.tsv.gz")
-
+    for filename in (
+        "splice_event_aliases_human_v1.tsv.gz",
+        "splice_event_ubiquity_human_v1.tsv.gz",
+        "splice_event_impact_human_v1.tsv.gz",
+        "splice_gene_event_burden_human_v1.tsv.gz",
+    ):
+        shutil.copyfile(Path("tests/data") / filename, resources_dir / filename)
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as fh:
         return list(csv.DictReader(fh, delimiter="\t"))
 
+
+def _score_map(path: Path) -> dict[str, float]:
+    return {row["gene_id"]: float(row["score"]) for row in _read_rows(path)}
 
 
 def test_splice_event_diff_end_to_end_with_bundle(tmp_path: Path):
@@ -107,6 +117,7 @@ def test_splice_event_diff_end_to_end_with_bundle(tmp_path: Path):
     rows = _read_rows(Path(args.out_dir) / "geneset.tsv")
     assert rows
     assert rows[0]["gene_symbol"] == "KCNN4"
+    assert "gene_burden_penalty" in rows[0]
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
     gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
@@ -119,8 +130,8 @@ def test_splice_event_diff_end_to_end_with_bundle(tmp_path: Path):
         "splice_event_aliases_human_v1",
         "splice_event_ubiquity_human_v1",
         "splice_event_impact_human_v1",
+        "splice_gene_event_burden_human_v1",
     }
-
 
 
 def test_splice_event_diff_runs_without_bundle(tmp_path: Path, capsys):
@@ -132,7 +143,6 @@ def test_splice_event_diff_runs_without_bundle(tmp_path: Path, capsys):
     assert result["n_genes"] >= 1
     captured = capsys.readouterr()
     assert "Missing" not in captured.err
-
 
 
 def test_splice_event_diff_impact_changes_scores(tmp_path: Path):
@@ -151,13 +161,58 @@ def test_splice_event_diff_impact_changes_scores(tmp_path: Path):
     args_none.impact_mode = "none"
     splice_event_diff.run(args_none)
 
-    def _score_map(path: Path) -> dict[str, float]:
-        return {row["gene_id"]: float(row["score"]) for row in _read_rows(path)}
-
     imp_scores = _score_map(Path(args_imp.out_dir) / "geneset.full.tsv")
     none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
     assert imp_scores["G_KCNN4"] != none_scores["G_KCNN4"]
 
+
+def test_splice_event_diff_bundle_matched_fixture_changes_scores(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    args_bundle = Args()
+    args_bundle.splice_tsv = "tests/data/toy_splice_event_diff_matched.tsv"
+    args_bundle.out_dir = str(tmp_path / "matched_bundle")
+    args_bundle.resources_dir = str(resources_dir)
+    splice_event_diff.run(args_bundle)
+
+    args_none = Args()
+    args_none.splice_tsv = "tests/data/toy_splice_event_diff_matched.tsv"
+    args_none.out_dir = str(tmp_path / "matched_none")
+    args_none.use_reference_bundle = False
+    splice_event_diff.run(args_none)
+
+    bundle_scores = _score_map(Path(args_bundle.out_dir) / "geneset.full.tsv")
+    none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
+    assert bundle_scores != none_scores
+    assert bundle_scores["G_MAPK1"] != none_scores["G_MAPK1"]
+    summary = json.loads((Path(args_bundle.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["n_events_with_low_confidence_prior_match"] >= 1
+
+
+def test_splice_event_diff_gene_burden_penalty_changes_ranking(tmp_path: Path):
+    args_none = Args()
+    args_none.splice_tsv = "tests/data/toy_splice_burden_diff.tsv"
+    args_none.out_dir = str(tmp_path / "burden_none")
+    args_none.use_reference_bundle = False
+    args_none.gene_aggregation = "sum"
+    args_none.gene_topk_events = 1
+    args_none.gene_burden_penalty_mode = "none"
+    splice_event_diff.run(args_none)
+
+    args_pen = Args()
+    args_pen.splice_tsv = "tests/data/toy_splice_burden_diff.tsv"
+    args_pen.out_dir = str(tmp_path / "burden_current")
+    args_pen.use_reference_bundle = False
+    args_pen.gene_aggregation = "sum"
+    args_pen.gene_topk_events = 1
+    args_pen.gene_burden_penalty_mode = "current_input"
+    splice_event_diff.run(args_pen)
+
+    none_rows = _read_rows(Path(args_none.out_dir) / "geneset.tsv")
+    pen_rows = _read_rows(Path(args_pen.out_dir) / "geneset.tsv")
+    assert none_rows[0]["gene_symbol"] != pen_rows[0]["gene_symbol"]
+    assert pen_rows[0]["gene_symbol"] == "GENEB"
 
 
 def test_splice_event_diff_ambiguous_gene_handling(tmp_path: Path):
@@ -179,7 +234,6 @@ def test_splice_event_diff_ambiguous_gene_handling(tmp_path: Path):
     assert {"GENEA", "GENEB"}.issubset(genes_split)
 
 
-
 def test_splice_event_diff_duplicate_event_collapse(tmp_path: Path):
     args_conf = Args()
     args_conf.out_dir = str(tmp_path / "splice_conf")
@@ -193,10 +247,9 @@ def test_splice_event_diff_duplicate_event_collapse(tmp_path: Path):
     args_abs.event_dup_policy = "max_abs"
     splice_event_diff.run(args_abs)
 
-    conf_scores = {row["gene_id"]: float(row["score"]) for row in _read_rows(Path(args_conf.out_dir) / "geneset.full.tsv")}
-    abs_scores = {row["gene_id"]: float(row["score"]) for row in _read_rows(Path(args_abs.out_dir) / "geneset.full.tsv")}
+    conf_scores = _score_map(Path(args_conf.out_dir) / "geneset.full.tsv")
+    abs_scores = _score_map(Path(args_abs.out_dir) / "geneset.full.tsv")
     assert conf_scores["G_KCNN4"] != abs_scores["G_KCNN4"] or conf_scores["G_KCNN4"] > 0
-
 
 
 def test_splice_event_diff_warning_path(tmp_path: Path, capsys):
@@ -205,8 +258,8 @@ def test_splice_event_diff_warning_path(tmp_path: Path, capsys):
         "\n".join(
             [
                 "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
-                "W1\tG1\tretained_intron\tG_R1\tR1\t0.4\t0.2\t0.4\t1\tnovel",
-                "W2\tG2\tretained_intron\tG_R2\tR2\t0.5\t0.3\t0.3\t1\tnovel",
+                "W1\tG1\tretained_intron\tG_R1\tR1\t0.04\t0.2\t0.4\t1\tnovel",
+                "W2\tG2\tretained_intron\tG_R2\tR2\t0.03\t0.3\t0.3\t1\tnovel",
             ]
         )
         + "\n",
@@ -226,3 +279,4 @@ def test_splice_event_diff_warning_path(tmp_path: Path, capsys):
     assert "retained introns dominate" in captured.err or "low-confidence events dominate" in captured.err
     summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert summary["warnings"]
+    assert summary["n_delta_psi_soft_floor_downweighted"] >= 1

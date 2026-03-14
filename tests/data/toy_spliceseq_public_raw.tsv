@@ -1,0 +1,4 @@
+as_id	event_group	event_type	gene_id	symbol	chrom	start	end	strand	annotation_status	TCGA-01A	TCGA-02A	TCGA-03A_Norm	TCGA-04A_Norm
+SE1	CG1	exon_skip	G_KCNN4	KCNN4	chr19	100	200	+	annotated_coding	0.80	0.75	0.20	0.25
+SE2	CG2	retained_intron	G_MAPK1	MAPK1	chr22	300	420	-	novel	0.20	0.15	0.70	0.65
+SE3	CG3	alt_donor	G_EGFR	EGFR	chr7	700	820	+	annotated_coding	0.40	0.42	0.41	0.39

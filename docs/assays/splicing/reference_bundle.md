@@ -9,6 +9,7 @@ The v1 splicing bundle is intentionally compact. It does not try to pool raw PSI
 1. event alias harmonization
 2. a detection-frequency ubiquity prior
 3. a conservative impact prior that shrinks toward neutral
+4. an optional per-gene event-burden reference count
 
 ## Bundle contents
 
@@ -17,6 +18,7 @@ Recommended human splicing bundle files:
 - `splice_event_aliases_human_v1.tsv.gz`
 - `splice_event_ubiquity_human_v1.tsv.gz`
 - `splice_event_impact_human_v1.tsv.gz`
+- `splice_gene_event_burden_human_v1.tsv.gz`
 - `bundle_provenance.json`
 - `local_resources_manifest.json`
 
@@ -25,6 +27,7 @@ Runtime resource ids:
 - `splice_event_aliases_human_v1`
 - `splice_event_ubiquity_human_v1`
 - `splice_event_impact_human_v1`
+- `splice_gene_event_burden_human_v1`
 
 Preset:
 
@@ -38,6 +41,8 @@ Required columns:
 
 - `input_event_key`
 - `canonical_event_key`
+- `canonicalization_status`
+- `canonicalization_confidence`
 - `gene_id`
 - `gene_symbol`
 - `event_type`
@@ -55,6 +60,8 @@ Required columns:
 - `gene_id`
 - `gene_symbol`
 - `event_type`
+- `canonicalization_status`
+- `canonicalization_confidence`
 - `n_samples_ref`
 - `df_ref`
 - `fraction_ref`
@@ -69,9 +76,20 @@ Required columns:
 - `gene_id`
 - `gene_symbol`
 - `event_type`
+- `canonicalization_status`
+- `canonicalization_confidence`
 - `impact_weight_raw`
 - `impact_evidence`
 - `annotation_status`
+
+### `splice_gene_event_burden_human_v1.tsv.gz`
+
+Required columns:
+
+- `gene_symbol`
+- `n_canonical_events_ref`
+- `n_high_confidence_events_ref`
+- `n_low_confidence_events_ref`
 
 ## Build a local bundle
 
@@ -127,6 +145,24 @@ geneset-extractors convert splice_event_matrix \
 ```
 
 If `--resources_dir` contains `local_resources_manifest.json`, the splicing converters auto-discover and merge that local manifest even when `--resources_manifest` is not passed explicitly.
+
+## Canonicalization confidence and low-confidence keys
+
+The bundle now carries explicit canonicalization confidence:
+
+- `coordinate_canonical` / `high`
+- `raw_id_fallback` / `low`
+
+Interpretation rule:
+
+- high-confidence coordinate keys are the closest thing this assay family has to cross-study harmonized event identities
+- low-confidence raw-ID keys are cohort-local and should not be interpreted as globally harmonized events
+
+Runtime implications:
+
+- alias resolution still allows exact-string matches on low-confidence raw ids
+- broader cross-study collapsing is intentionally avoided for those keys
+- ubiquity and impact priors are shrunk strongly toward neutral when only low-confidence matching is available
 
 ## Missing-bundle behavior
 
