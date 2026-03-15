@@ -129,6 +129,8 @@ def test_splice_event_matrix_single_contrast_end_to_end(tmp_path: Path):
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
     assert (out_dir / "contrast_qc.tsv").exists()
+    qc_rows = _read_rows(out_dir / "contrast_qc.tsv")
+    assert int(qc_rows[0]["n_events_with_bh_padj"]) == int(qc_rows[0]["n_events_retained"])
 
     rows = _read_rows(out_dir / "geneset.tsv")
     assert rows
@@ -214,3 +216,13 @@ def test_splice_event_matrix_bundle_matched_fixture_changes_scores(tmp_path: Pat
     none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
     assert bundle_scores != none_scores
     assert bundle_scores["G_MAPK1"] != none_scores["G_MAPK1"]
+
+
+def test_splice_event_matrix_bh_adjustment_helper():
+    from geneset_extractors.extractors.splicing.splice_event_matrix_workflow import _bh_adjust_pvalues
+
+    adjusted = _bh_adjust_pvalues([0.01, 0.02, 0.20, None])
+    assert adjusted[0] == 0.03
+    assert adjusted[1] == 0.03
+    assert abs(float(adjusted[2]) - 0.2) < 1e-12
+    assert adjusted[3] is None

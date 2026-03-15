@@ -140,6 +140,7 @@ Resolve in the following order:
 \item \texttt{delta\_psi\_times\_neglog10p}, if $\Delta \psi_i$ and p-value information are available,
 \item \texttt{delta\_psi\_times\_confidence}, if $\Delta \psi_i$ and posterior or confidence fields are available.
 \end{itemize}
+For \texttt{splice\_event\_matrix}, per-event p-values are Benjamini-Hochberg adjusted within each emitted contrast before this resolver runs, so \texttt{score\_mode=auto} preferentially consumes a contrast-local \texttt{padj} when one can be computed.
 
 \paragraph{A2. \texttt{score\_mode=stat}.}
 If a signed event statistic $t_i$ is available,
@@ -250,11 +251,14 @@ u_i = \log\!\left(1 + \frac{N+\tau}{df_i+\tau}\right),
 \end{equation}
 or use a precomputed bounded \texttt{idf\_ref} column from the bundle. If the bundle is absent, use $u_i = 1$.
 
-If event $i$ is only available through a low-confidence cohort-local raw identifier, then the prior contribution is shrunk more strongly toward neutrality. A simple v1 rule is
+If event $i$ is only available through a low-confidence cohort-local raw identifier, then the ubiquity prior is neutralized:
 \[
-u_i^{\star} = 1 + \lambda_i (u_i - 1),
+u_i^{\star} =
+\begin{cases}
+u_i & \text{high-confidence coordinate-canonical event},\\
+1 & \text{\texttt{raw\_id\_fallback} / low-confidence event.}
+\end{cases}
 \]
-with $\lambda_i = 1$ for coordinate-canonical events and $\lambda_i \ll 1$ for \texttt{raw\_id\_fallback} events.
 
 \subsection{Step 6: final event score}
 The final event score is:
@@ -311,6 +315,13 @@ The default should be conservative because ambiguous event-to-gene mappings can 
 \section{Gene aggregation}
 Let $E_g$ be the set of event contributions assigned to gene $g$. The extractor converts event-level scores $z_i$ to a gene score $s_g$.
 
+\subsection{G0. Event-group-aware independence collapse}
+Several rows from one LeafCutter cluster, MAJIQ LSV, or similar local event family are not independent evidence. The runtime therefore defines an event-group key $c_i$ from \texttt{event\_group} when available, falling back to the canonical event key otherwise, and keeps one representative per $(g, c_i)$ before gene aggregation:
+\[
+E_g^{\star} = \{ \text{best representative of each } (g, c_i) \}.
+\]
+This representative is chosen by strongest absolute final event score, with confidence as a tiebreaker. All gene-level aggregation and current-input burden penalties operate on $E_g^{\star}$ rather than the raw post-duplicate rows.
+
 \subsection{G1. \texttt{gene\_aggregation=signed\_topk\_mean} (recommended)}
 Sort event contributions by decreasing absolute magnitude. Let $\mathrm{TopK}(g)$ be the top $K$ event contributions for gene $g$. Then define:
 \begin{equation}
@@ -331,11 +342,11 @@ where $n_g$ is a burden count for gene $g$ and $\beta_{\min}$ is a conservative 
 
 The burden count can come from:
 \begin{itemize}[leftmargin=2em]
-\item the current input after duplicate collapse, or
+\item the current input after duplicate and event-group collapse, or
 \item a compact reference-bundle table such as \texttt{splice\_gene\_event\_burden\_human\_v1.tsv.gz}.
 \end{itemize}
 
-The goal is not to erase event-rich genes, only to stop them from winning by event-count opportunity alone.
+In the reference-bundle path, $n_g$ is derived from cross-study nuisance summaries such as unique event groups per gene, number of supporting studies, and median per-study unique-group burden. The goal is not to erase event-rich genes, only to stop them from winning by event-count opportunity alone.
 
 \subsection{G2. Alternatives}
 \begin{itemize}[leftmargin=2em]
@@ -412,7 +423,7 @@ t_i = \frac{\overline{\psi}_{iA} - \overline{\psi}_{iB}}{\sqrt{\frac{s_{iA}^2}{n
 \]
 using only samples with finite PSI under the requested missingness rule.
 
-The matrix front-end then emits one standardized per-contrast event table with columns such as \texttt{delta\_psi}, \texttt{stat}, optional support summaries, and all needed event metadata, and feeds that table to the same event-to-gene workflow as \texttt{splice\_event\_diff}.
+The matrix front-end then emits one standardized per-contrast event table with columns such as \texttt{delta\_psi}, \texttt{stat}, BH-adjusted \texttt{padj}, optional support summaries, and all needed event metadata, and feeds that table to the same event-to-gene workflow as \texttt{splice\_event\_diff}.
 
 \section{Public-data normalizer}
 A splicing public-data normalizer should be intentionally narrow in v1. The main initial target is TCGA SpliceSeq-like data because it is large, public, and reasonably standardized.
@@ -490,6 +501,7 @@ Required columns:
 \item \texttt{fraction\_ref}
 \item \texttt{idf\_ref}
 \item \texttt{n\_datasets\_ref}
+\item \texttt{fraction\_datasets\_ref}
 \end{itemize}
 
 \subsection{Impact schema}
@@ -504,6 +516,7 @@ Required columns:
 \item \texttt{impact\_weight\_raw}
 \item \texttt{impact\_evidence}
 \item \texttt{annotation\_status}
+\item \texttt{n\_datasets\_ref}
 \end{itemize}
 
 Optional columns can include \texttt{is\_coding}, \texttt{frame\_class}, \texttt{nmd\_risk}, or \texttt{domain\_disruption\_flag}, but v1 should work when these are absent.
@@ -515,6 +528,11 @@ Required columns:
 \item \texttt{n\_canonical\_events\_ref}
 \item \texttt{n\_high\_confidence\_events\_ref}
 \item \texttt{n\_low\_confidence\_events\_ref}
+\item \texttt{n\_unique\_event\_groups\_ref}
+\item \texttt{n\_studies\_ref}
+\item \texttt{n\_studies\_high\_confidence\_ref}
+\item \texttt{fraction\_low\_confidence\_events\_ref}
+\item \texttt{median\_unique\_groups\_per\_study}
 \end{itemize}
 
 \section{QC and artifact detection}
@@ -523,6 +541,7 @@ Splicing gene programs can be biologically rich, but they are also vulnerable to
 Recommended summary fields:
 \begin{itemize}[leftmargin=2em]
 \item counts of input rows, canonical events, and output genes,
+\item counts of independent event groups after event-group collapse,
 \item event-type composition,
 \item fraction of events matched to alias, ubiquity, and impact priors,
 \item canonicalization confidence counts for both retained events and selected support events,
@@ -531,7 +550,9 @@ Recommended summary fields:
 \item fraction of low-support events,
 \item fraction of novel events,
 \item delta-PSI soft-floor downweight counts,
-\item whether low-confidence priors contributed to selected events.
+\item whether low-confidence priors contributed to selected events,
+\item counts of low-confidence ubiquity and impact priors that were neutralized,
+\item genomic concentration among top genes.
 \end{itemize}
 
 Recommended warning heuristics:
@@ -539,7 +560,8 @@ Recommended warning heuristics:
 \item \textbf{retained intron dominance}: high retained-intron fraction plus weak support,
 \item \textbf{novel event dominance}: many selected genes driven by novel or unmatched events,
 \item \textbf{event multiplicity bias}: selected genes overlap heavily with genes that simply have many measurable events,
-\item \textbf{low confidence}: most selected genes are driven by weak posterior, weak support, or missing confidence fields.
+\item \textbf{low confidence}: most selected genes are driven by weak posterior, weak support, or missing confidence fields,
+\item \textbf{locus density artifact}: top genes concentrate within one genomic window or chromosome.
 \end{itemize}
 
 As in the PTM family, warnings should be written both to stderr and to \texttt{run\_summary.json} / \texttt{run\_summary.txt}.
@@ -555,6 +577,7 @@ A reasonable first-pass default configuration is:
 \item \texttt{gene\_aggregation=signed\_topk\_mean}
 \item \texttt{gene\_topk\_events=3}
 \item \texttt{gene\_burden\_penalty\_mode=auto}
+\item \texttt{locus\_density\_penalty\_mode=none}
 \item \texttt{delta\_psi\_soft\_floor=0.05}, \texttt{delta\_psi\_soft\_floor\_mode=auto}
 \item \texttt{ambiguous\_gene\_policy=drop}
 \item \texttt{use\_reference\_bundle=true}

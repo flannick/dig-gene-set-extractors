@@ -69,6 +69,7 @@ Useful explicit flags:
 - `--impact_mode none|conservative|custom_bundle`
 - `--event_dup_policy highest_confidence|max_abs|mean|sum`
 - `--gene_burden_penalty_mode none|current_input|reference_bundle|auto`
+- `--locus_density_penalty_mode none|window_diversity`
 - `--ambiguous_gene_policy drop|split_equal|first`
 
 LeafCutter nuance:
@@ -101,7 +102,7 @@ Grouped contrasts are also supported:
 - `--study_contrast condition_within_group`
 - `--study_contrast baseline`
 
-The matrix front-end computes standardized event-level contrasts and then reuses the same scorer as `splice_event_diff`.
+The matrix front-end computes standardized event-level contrasts, BH-adjusts event p-values within each emitted contrast, and then reuses the same scorer as `splice_event_diff`.
 
 ### 4. Stage TCGA SpliceSeq-like public PSI data
 
@@ -202,6 +203,7 @@ Default direct-converter behavior:
 - `gene_aggregation=signed_topk_mean`
 - `gene_topk_events=3`
 - `gene_burden_penalty_mode=auto`
+- `locus_density_penalty_mode=none`
 - `delta_psi_soft_floor=0.05`
 - `delta_psi_soft_floor_mode=auto`
 - `ambiguous_gene_policy=drop`
@@ -238,6 +240,9 @@ The run summaries also surface interpretable QC such as:
 - single-event-gene fraction
 - delta-PSI soft-floor downweight counts
 - selected-event low-confidence prior matches
+- low-confidence ubiquity/impact neutralization counts
+- independent event-group counts
+- locus-density concentration summaries
 
 The main warning heuristics are:
 
@@ -245,6 +250,7 @@ The main warning heuristics are:
 - novel event dominance
 - low confidence dominance
 - likely event multiplicity bias
+- likely locus density artifact
 
 ## How the new safeguards work
 
@@ -255,17 +261,35 @@ The public workflow and bundle now distinguish:
 - `canonicalization_status=coordinate_canonical`, `canonicalization_confidence=high`
 - `canonicalization_status=raw_id_fallback`, `canonicalization_confidence=low`
 
-Low-confidence keys are cohort-local conveniences, not globally harmonized splice identities. Runtime priors can still use them, but their effect is shrunk much more strongly toward neutral.
+Low-confidence keys are cohort-local conveniences, not globally harmonized splice identities.
+
+Current runtime rule:
+
+- low-confidence ubiquity priors are neutralized to exactly `1.0`
+- low-confidence bundle impact priors are neutralized unless they recur across at least two source datasets
+- the event can still map to a gene and contribute direct observed evidence
 
 ### Gene burden penalty
 
-After event-to-gene aggregation, the splicing runtime applies a conservative multiplicity penalty:
+The runtime now treats `event_group` as an independence boundary. After duplicate canonical-event collapse, it keeps one representative per `(gene, event_group)` before gene aggregation. This prevents one LeafCutter cluster or MAJIQ-like local event family from stacking many partially redundant rows onto one gene.
+
+After event-group-aware aggregation, the splicing runtime applies a conservative multiplicity penalty:
 
 - if a reference burden table is available, `gene_burden_penalty_mode=auto` uses it
 - otherwise it falls back to the current input after duplicate collapse
 
-This is meant to stop genes with many measurable events from winning on opportunity alone, not to erase them.
+The reference-bundle burden path now uses cross-study group counts rather than only pooled raw event counts. This is meant to stop genes with many measurable events from winning on opportunity alone, not to erase them.
 
 ### Delta-PSI soft floor
 
 When a usable `delta_psi` exists, very small absolute PSI shifts are softly downweighted instead of hard-dropped. This matters most in large cohorts where tiny but precise shifts can otherwise dominate significance-only scoring.
+
+### Locus-density diagnostics
+
+After gene scoring, the runtime checks whether the top genes are unusually concentrated within one chromosome or genomic window. If that concentration is too high, the run summary records `likely_locus_density_artifact`.
+
+Optional soft suppression:
+
+- `--locus_density_penalty_mode window_diversity`
+
+This keeps the highest-scoring local representative unchanged and softly downweights later genes from the same genomic window. It is off by default.

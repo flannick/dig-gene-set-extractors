@@ -108,6 +108,7 @@ class SpliceRow:
 @dataclass
 class SpliceEventRecord:
     canonical_event_key: str
+    event_group: str
     canonicalization_status: str
     canonicalization_confidence: str
     event_type: str
@@ -171,6 +172,9 @@ class SplicingWorkflowConfig:
     gene_topk_events: int
     gene_burden_penalty_mode: str
     min_gene_burden_penalty: float
+    locus_density_penalty_mode: str
+    locus_density_window_bp: int
+    locus_density_top_n: int
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -220,6 +224,7 @@ class UbiquityEntry:
     idf_ref: float
     df_ref: float | None
     n_samples_ref: float | None
+    n_datasets_ref: float | None
 
 
 @dataclass
@@ -233,6 +238,7 @@ class ImpactEntry:
     impact_weight_raw: float
     impact_evidence: float
     annotation_status: str
+    n_datasets_ref: float | None
 
 
 @dataclass
@@ -241,6 +247,11 @@ class GeneBurdenEntry:
     n_canonical_events_ref: float
     n_high_confidence_events_ref: float | None
     n_low_confidence_events_ref: float | None
+    n_unique_event_groups_ref: float | None
+    n_studies_ref: float | None
+    n_studies_high_confidence_ref: float | None
+    fraction_low_confidence_events_ref: float | None
+    median_unique_groups_per_study: float | None
 
 
 EVENT_TYPE_ALIASES = {
@@ -446,6 +457,7 @@ def read_event_ubiquity_tsv(path: str | Path) -> dict[str, UbiquityEntry]:
                 idf_ref=float(idf),
                 df_ref=df_ref,
                 n_samples_ref=n_ref,
+                n_datasets_ref=_parse_float(row.get("n_datasets_ref")),
             )
     return out
 
@@ -472,6 +484,7 @@ def read_event_impact_tsv(path: str | Path) -> dict[str, ImpactEntry]:
                 impact_weight_raw=float(_parse_float(row.get("impact_weight_raw")) or 1.0),
                 impact_evidence=max(0.0, min(1.0, float(_parse_float(row.get("impact_evidence")) or 0.0))),
                 annotation_status=_clean(row.get("annotation_status")),
+                n_datasets_ref=_parse_float(row.get("n_datasets_ref")),
             )
     return out
 
@@ -493,6 +506,11 @@ def read_gene_burden_tsv(path: str | Path) -> dict[str, GeneBurdenEntry]:
                 n_canonical_events_ref=float(_parse_float(row.get("n_canonical_events_ref")) or 0.0),
                 n_high_confidence_events_ref=_parse_float(row.get("n_high_confidence_events_ref")),
                 n_low_confidence_events_ref=_parse_float(row.get("n_low_confidence_events_ref")),
+                n_unique_event_groups_ref=_parse_float(row.get("n_unique_event_groups_ref")),
+                n_studies_ref=_parse_float(row.get("n_studies_ref")),
+                n_studies_high_confidence_ref=_parse_float(row.get("n_studies_high_confidence_ref")),
+                fraction_low_confidence_events_ref=_parse_float(row.get("fraction_low_confidence_events_ref")),
+                median_unique_groups_per_study=_parse_float(row.get("median_unique_groups_per_study")),
             )
     return out
 
@@ -597,6 +615,10 @@ def _prior_confidence_weight(canonicalization_confidence: str) -> float:
 def _shrink_prior_toward_neutral(value: float, canonicalization_confidence: str) -> float:
     weight = _prior_confidence_weight(canonicalization_confidence)
     return 1.0 + weight * (float(value) - 1.0)
+
+
+def _event_group_key(record: SpliceEventRecord) -> str:
+    return record.event_group or record.canonical_event_key
 
 
 def _delta_psi_effect_weight(row: SpliceRow, columns: dict[str, str | None], cfg: SplicingWorkflowConfig) -> tuple[float, bool]:
@@ -743,6 +765,11 @@ def _impact_weight(
     if cfg.impact_mode == "none":
         return 1.0
     if impact_entry is not None:
+        if (
+            str(impact_entry.canonicalization_confidence).lower() != "high"
+            and float(impact_entry.n_datasets_ref or 0.0) < 2.0
+        ):
+            return 1.0
         raw = float(impact_entry.impact_weight_raw)
         evidence = float(impact_entry.impact_evidence)
         base = 1.0 + evidence * (raw - 1.0)
@@ -803,6 +830,7 @@ def _collapse_duplicate_events(records: list[SpliceEventRecord], policy: str) ->
             out.append(
                 SpliceEventRecord(
                     canonical_event_key=first.canonical_event_key,
+                    event_group=first.event_group,
                     canonicalization_status=first.canonicalization_status,
                     canonicalization_confidence=first.canonicalization_confidence,
                     event_type=first.event_type,
@@ -826,6 +854,16 @@ def _collapse_duplicate_events(records: list[SpliceEventRecord], policy: str) ->
             )
             continue
         raise ValueError(f"Unsupported event_dup_policy: {policy}")
+    return out
+
+
+def _collapse_event_groups(records: list[SpliceEventRecord]) -> list[SpliceEventRecord]:
+    grouped: dict[tuple[str, str], list[SpliceEventRecord]] = {}
+    for rec in records:
+        grouped.setdefault((rec.gene_id, _event_group_key(rec)), []).append(rec)
+    out: list[SpliceEventRecord] = []
+    for items in grouped.values():
+        out.append(max(items, key=lambda r: (abs(float(r.final_score)), float(r.quality_value), -int(r.source_line_no))))
     return out
 
 
@@ -853,6 +891,96 @@ def _aggregate_events_to_genes(records: list[SpliceEventRecord], method: str, to
     return scores, gene_symbols, by_gene
 
 
+def _gene_primary_locus(by_gene: dict[str, list[SpliceEventRecord]], window_bp: int) -> dict[str, dict[str, object]]:
+    loci: dict[str, dict[str, object]] = {}
+    window = max(1, int(window_bp))
+    for gene_id, items in by_gene.items():
+        if not items:
+            continue
+        top = max(items, key=lambda r: (abs(float(r.final_score)), float(r.quality_value), -int(r.source_line_no)))
+        chrom = str(top.chrom or "").strip()
+        midpoint = None
+        start = _parse_float(top.start)
+        end = _parse_float(top.end)
+        if start is not None and end is not None:
+            midpoint = 0.5 * (float(start) + float(end))
+        elif start is not None:
+            midpoint = float(start)
+        elif end is not None:
+            midpoint = float(end)
+        if chrom and midpoint is not None:
+            window_index = int(midpoint // float(window))
+            locus_key = f"{chrom}:{window_index}"
+        elif chrom:
+            locus_key = chrom
+        else:
+            locus_key = ""
+        loci[gene_id] = {
+            "chrom": chrom,
+            "midpoint": midpoint,
+            "locus_key": locus_key,
+        }
+    return loci
+
+
+def _apply_locus_density_penalty(
+    *,
+    gene_scores: dict[str, float],
+    by_gene: dict[str, list[SpliceEventRecord]],
+    cfg: SplicingWorkflowConfig,
+) -> tuple[dict[str, float], dict[str, object]]:
+    loci = _gene_primary_locus(by_gene, cfg.locus_density_window_bp)
+    ranked = sorted(gene_scores, key=lambda gid: (-abs(float(gene_scores[gid])), str(gid)))
+    top_ids = ranked[: max(1, int(cfg.locus_density_top_n))]
+    chrom_counts: dict[str, int] = {}
+    locus_counts: dict[str, int] = {}
+    for gene_id in top_ids:
+        chrom = str(loci.get(gene_id, {}).get("chrom", ""))
+        locus_key = str(loci.get(gene_id, {}).get("locus_key", ""))
+        if chrom:
+            chrom_counts[chrom] = chrom_counts.get(chrom, 0) + 1
+        if locus_key:
+            locus_counts[locus_key] = locus_counts.get(locus_key, 0) + 1
+    dominant_chrom, dominant_chrom_count = ("", 0)
+    if chrom_counts:
+        dominant_chrom, dominant_chrom_count = max(chrom_counts.items(), key=lambda item: (item[1], item[0]))
+    dominant_locus, dominant_locus_count = ("", 0)
+    if locus_counts:
+        dominant_locus, dominant_locus_count = max(locus_counts.items(), key=lambda item: (item[1], item[0]))
+    top_n = float(max(1, len(top_ids)))
+    dominant_chrom_fraction = float(dominant_chrom_count) / top_n
+    dominant_locus_fraction = float(dominant_locus_count) / top_n
+    likely_artifact = bool(
+        len(top_ids) >= 5
+        and (dominant_locus_fraction >= 0.5 or dominant_chrom_fraction >= 0.7)
+    )
+    penalized = dict(gene_scores)
+    applied = False
+    if cfg.locus_density_penalty_mode == "window_diversity":
+        locus_seen: dict[str, int] = {}
+        for gene_id in ranked:
+            locus_key = str(loci.get(gene_id, {}).get("locus_key", ""))
+            if not locus_key:
+                continue
+            count = locus_seen.get(locus_key, 0)
+            locus_seen[locus_key] = count + 1
+            if count == 0:
+                continue
+            penalized[gene_id] = float(penalized[gene_id]) / math.sqrt(float(count + 1))
+            applied = True
+    return penalized, {
+        "mode": cfg.locus_density_penalty_mode,
+        "window_bp": int(cfg.locus_density_window_bp),
+        "top_n": int(cfg.locus_density_top_n),
+        "dominant_chrom": dominant_chrom,
+        "dominant_chrom_fraction": dominant_chrom_fraction,
+        "dominant_locus": dominant_locus,
+        "dominant_locus_fraction": dominant_locus_fraction,
+        "likely_artifact": likely_artifact,
+        "penalty_applied": applied,
+    }
+
+
 def _apply_gene_burden_penalty(
     *,
     gene_scores: dict[str, float],
@@ -868,18 +996,26 @@ def _apply_gene_burden_penalty(
     for gene_id, score in gene_scores.items():
         symbol = gene_symbols.get(gene_id, gene_id)
         ref_entry = gene_burden_map.get(symbol) if gene_burden_map else None
+        current_group_count = len({_event_group_key(rec) for rec in by_gene.get(gene_id, [])})
         if cfg.gene_burden_penalty_mode == "none":
-            burden_count = len({rec.canonical_event_key for rec in by_gene.get(gene_id, [])})
+            burden_count = current_group_count
             source = "none"
             penalty = 1.0
         elif cfg.gene_burden_penalty_mode == "reference_bundle" or (
             cfg.gene_burden_penalty_mode == "auto" and ref_entry is not None
         ):
-            burden_count = int(ref_entry.n_canonical_events_ref) if ref_entry is not None else len({rec.canonical_event_key for rec in by_gene.get(gene_id, [])})
+            if ref_entry is not None:
+                unique_groups = float(ref_entry.n_unique_event_groups_ref or ref_entry.n_canonical_events_ref or 0.0)
+                median_per_study = float(ref_entry.median_unique_groups_per_study or 0.0)
+                high_conf_studies = float(ref_entry.n_studies_high_confidence_ref or ref_entry.n_studies_ref or 0.0)
+                effective = max(unique_groups, median_per_study * max(1.0, math.sqrt(max(1.0, high_conf_studies))))
+                burden_count = int(max(1.0, round(effective))) if effective > 0 else 0
+            else:
+                burden_count = current_group_count
             source = "reference_bundle" if ref_entry is not None else "current_input"
             penalty = math.sqrt(float(cfg.gene_topk_events) / float(max(int(cfg.gene_topk_events), burden_count))) if burden_count > 0 else 1.0
         else:
-            burden_count = len({rec.canonical_event_key for rec in by_gene.get(gene_id, [])})
+            burden_count = current_group_count
             source = "current_input"
             penalty = math.sqrt(float(cfg.gene_topk_events) / float(max(int(cfg.gene_topk_events), burden_count))) if burden_count > 0 else 1.0
         penalty = max(float(cfg.min_gene_burden_penalty), min(1.0, float(penalty)))
@@ -977,7 +1113,13 @@ def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> li
     return skipped
 
 
-def _warning_flags(parse_summary: dict[str, object], collapsed_events: list[SpliceEventRecord], selected_rows: list[dict[str, object]], by_gene: dict[str, list[SpliceEventRecord]]) -> list[str]:
+def _warning_flags(
+    parse_summary: dict[str, object],
+    collapsed_events: list[SpliceEventRecord],
+    selected_rows: list[dict[str, object]],
+    by_gene: dict[str, list[SpliceEventRecord]],
+    locus_density_summary: dict[str, object] | None = None,
+) -> list[str]:
     warnings: list[str] = []
     n_events = len(collapsed_events)
     if n_events == 0:
@@ -992,6 +1134,8 @@ def _warning_flags(parse_summary: dict[str, object], collapsed_events: list[Spli
     multi_event_heavy = sum(1 for row in selected_rows if int(row.get("n_events_total", 0) or 0) >= 5)
     if selected_rows and (multi_event_heavy / float(len(selected_rows))) >= 0.4:
         warnings.append("likely_event_multiplicity_bias")
+    if locus_density_summary and bool(locus_density_summary.get("likely_artifact")):
+        warnings.append("likely_locus_density_artifact")
     return warnings
 
 
@@ -1001,6 +1145,7 @@ def _warn_summary_flags(flags: Iterable[str]) -> None:
         "novel_event_dominance": "warning: novel or weakly annotated events dominate the retained event set.",
         "low_confidence_dominance": "warning: low-confidence events dominate the retained event set; consider stronger confidence thresholds.",
         "likely_event_multiplicity_bias": "warning: selected genes appear enriched for high event multiplicity rather than isolated strong events.",
+        "likely_locus_density_artifact": "warning: top genes are unusually concentrated within one genomic locus or chromosome; this may reflect a local splicing artifact.",
     }
     for flag in flags:
         if flag in messages:
@@ -1044,6 +1189,8 @@ def run_splice_event_diff_workflow(
         "n_events_matched_to_ubiquity_prior": 0,
         "n_events_matched_to_impact_prior": 0,
         "n_events_with_low_confidence_prior_match": 0,
+        "n_low_confidence_ubiquity_priors_neutralized": 0,
+        "n_low_confidence_impact_priors_neutralized": 0,
         "n_low_support_rows": 0,
         "n_novel_rows": 0,
         "n_delta_psi_soft_floor_downweighted": 0,
@@ -1122,11 +1269,15 @@ def run_splice_event_diff_workflow(
         prior_confidence_weight = _prior_confidence_weight(canonicalization_confidence)
         low_conf_prior_matched = False
         ubiquity_entry = ubiquity_map.get(canonical_event_key) if ubiquity_map else None
-        ubiquity_weight = (
-            _shrink_prior_toward_neutral(float(ubiquity_entry.idf_ref), ubiquity_entry.canonicalization_confidence)
-            if ubiquity_entry is not None
-            else 1.0
-        )
+        if ubiquity_entry is None:
+            ubiquity_weight = 1.0
+        elif ubiquity_entry.canonicalization_confidence == "high":
+            ubiquity_weight = float(ubiquity_entry.idf_ref)
+        else:
+            ubiquity_weight = 1.0
+            parse_summary["n_low_confidence_ubiquity_priors_neutralized"] = int(
+                parse_summary["n_low_confidence_ubiquity_priors_neutralized"]
+            ) + 1
         if ubiquity_entry is not None:
             parse_summary["n_events_matched_to_ubiquity_prior"] = int(parse_summary["n_events_matched_to_ubiquity_prior"]) + 1
             if ubiquity_entry.canonicalization_confidence != "high":
@@ -1137,6 +1288,10 @@ def run_splice_event_diff_workflow(
             parse_summary["n_events_matched_to_impact_prior"] = int(parse_summary["n_events_matched_to_impact_prior"]) + 1
             if impact_entry.canonicalization_confidence != "high":
                 low_conf_prior_matched = True
+                if abs(float(impact_weight) - 1.0) <= 1e-9:
+                    parse_summary["n_low_confidence_impact_priors_neutralized"] = int(
+                        parse_summary["n_low_confidence_impact_priors_neutralized"]
+                    ) + 1
         if low_conf_prior_matched:
             parse_summary["n_events_with_low_confidence_prior_match"] = int(parse_summary["n_events_with_low_confidence_prior_match"]) + 1
 
@@ -1158,6 +1313,7 @@ def run_splice_event_diff_workflow(
             event_records.append(
                 SpliceEventRecord(
                     canonical_event_key=canonical_event_key,
+                    event_group=_string_value(row, columns, "event_group"),
                     canonicalization_status=canonicalization_status,
                     canonicalization_confidence=canonicalization_confidence,
                     event_type=event_type,
@@ -1182,7 +1338,8 @@ def run_splice_event_diff_workflow(
         parse_summary["n_rows_scored"] = int(parse_summary["n_rows_scored"]) + 1
 
     collapsed_events = _collapse_duplicate_events(event_records, cfg.event_dup_policy)
-    gene_scores, gene_symbols, by_gene = _aggregate_events_to_genes(collapsed_events, cfg.gene_aggregation, cfg.gene_topk_events)
+    grouped_events = _collapse_event_groups(collapsed_events)
+    gene_scores, gene_symbols, by_gene = _aggregate_events_to_genes(grouped_events, cfg.gene_aggregation, cfg.gene_topk_events)
     gene_scores, gene_burden_counts, gene_burden_sources, gene_burden_penalties = _apply_gene_burden_penalty(
         gene_scores=gene_scores,
         gene_symbols=gene_symbols,
@@ -1190,12 +1347,17 @@ def run_splice_event_diff_workflow(
         cfg=cfg,
         gene_burden_map=gene_burden_map,
     )
+    gene_scores, locus_density_summary = _apply_locus_density_penalty(
+        gene_scores=gene_scores,
+        by_gene=by_gene,
+        cfg=cfg,
+    )
     magnitude = {gene_id: abs(float(score)) for gene_id, score in gene_scores.items()}
     selected_gene_ids = _select_gene_ids(magnitude, cfg)
     weights = _selected_weights(magnitude, selected_gene_ids, cfg.normalize)
 
     parse_summary["fraction_retained_intron"] = (
-        sum(1 for rec in collapsed_events if rec.event_type == "retained_intron") / float(len(collapsed_events)) if collapsed_events else 0.0
+        sum(1 for rec in grouped_events if rec.event_type == "retained_intron") / float(len(grouped_events)) if grouped_events else 0.0
     )
     parse_summary["fraction_novel"] = (
         float(parse_summary["n_novel_rows"]) / float(parse_summary["n_rows_scored"]) if parse_summary["n_rows_scored"] else 0.0
@@ -1292,7 +1454,7 @@ def run_splice_event_diff_workflow(
         _warn_gmt_diagnostics(gmt_diagnostics)
 
     skipped_gmt_outputs = _collect_skipped_gmt_outputs(gmt_diagnostics)
-    warning_flags = _warning_flags(parse_summary, collapsed_events, selected_rows, by_gene)
+    warning_flags = _warning_flags(parse_summary, grouped_events, selected_rows, by_gene, locus_density_summary)
     _warn_summary_flags(warning_flags)
 
     run_summary_payload = {
@@ -1309,11 +1471,14 @@ def run_splice_event_diff_workflow(
         "n_input_rows": parse_summary["n_input_rows"],
         "n_rows_scored": parse_summary["n_rows_scored"],
         "n_canonical_events": len({rec.canonical_event_key for rec in collapsed_events}),
+        "n_independent_event_groups": len(grouped_events),
         "n_output_genes": len(selected_rows),
         "n_events_matched_to_alias_prior": parse_summary["n_events_matched_to_alias_prior"],
         "n_events_matched_to_ubiquity_prior": parse_summary["n_events_matched_to_ubiquity_prior"],
         "n_events_matched_to_impact_prior": parse_summary["n_events_matched_to_impact_prior"],
         "n_events_with_low_confidence_prior_match": parse_summary["n_events_with_low_confidence_prior_match"],
+        "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
+        "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
         "selected_events_high_confidence": selected_high_conf,
         "selected_events_low_confidence": selected_low_conf,
         "selected_events_fraction_high_confidence": (float(selected_high_conf) / float(len(selected_support_events))) if selected_support_events else 0.0,
@@ -1331,6 +1496,10 @@ def run_splice_event_diff_workflow(
         "canonicalization_confidence_counts": parse_summary["canonicalization_confidence_counts"],
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
+        "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
+        "locus_density_window_bp": cfg.locus_density_window_bp,
+        "locus_density_top_n": cfg.locus_density_top_n,
+        "locus_density": locus_density_summary,
         "event_type_counts": parse_summary["event_type_counts"],
         "warnings": warning_flags,
         "resources": resources_info,
@@ -1360,6 +1529,9 @@ def run_splice_event_diff_workflow(
         "gene_topk_events": cfg.gene_topk_events,
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
+        "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
+        "locus_density_window_bp": cfg.locus_density_window_bp,
+        "locus_density_top_n": cfg.locus_density_top_n,
         "ambiguous_gene_policy": cfg.ambiguous_gene_policy,
         "select": cfg.select,
         "top_k": cfg.top_k,
@@ -1402,10 +1574,13 @@ def run_splice_event_diff_workflow(
             "n_input_rows": parse_summary["n_input_rows"],
             "n_rows_scored": parse_summary["n_rows_scored"],
             "n_canonical_events": len({rec.canonical_event_key for rec in collapsed_events}),
+            "n_independent_event_groups": len(grouped_events),
             "n_events_matched_to_alias_prior": parse_summary["n_events_matched_to_alias_prior"],
             "n_events_matched_to_ubiquity_prior": parse_summary["n_events_matched_to_ubiquity_prior"],
             "n_events_matched_to_impact_prior": parse_summary["n_events_matched_to_impact_prior"],
             "n_events_with_low_confidence_prior_match": parse_summary["n_events_with_low_confidence_prior_match"],
+            "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
+            "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
             "canonicalization_confidence_counts": parse_summary["canonicalization_confidence_counts"],
             "fraction_retained_intron": parse_summary["fraction_retained_intron"],
             "fraction_novel": parse_summary["fraction_novel"],
@@ -1415,18 +1590,19 @@ def run_splice_event_diff_workflow(
             "n_delta_psi_soft_floor_full_weight": parse_summary["n_delta_psi_soft_floor_full_weight"],
             "n_delta_psi_soft_floor_inactive": parse_summary["n_delta_psi_soft_floor_inactive"],
             "event_type_counts": parse_summary["event_type_counts"],
+            "locus_density": locus_density_summary,
             "warnings": warning_flags,
             "n_genes_pre_selection": len(gene_scores),
             "n_genes": len(selected_rows),
-            "n_features_assigned": len(collapsed_events),
-            "fraction_features_assigned": (float(len(collapsed_events)) / float(parse_summary["n_input_rows"]) if parse_summary["n_input_rows"] else 0.0),
+            "n_features_assigned": len(grouped_events),
+            "fraction_features_assigned": (float(len(grouped_events)) / float(parse_summary["n_input_rows"]) if parse_summary["n_input_rows"] else 0.0),
         },
         program_extraction={
             "selection_method": cfg.select,
             "selection_params": {"k": cfg.top_k, "quantile": cfg.quantile, "min_score": cfg.min_score},
             "normalize": cfg.normalize,
             "n_selected_genes": len(selected_rows),
-            "score_definition": "event-level splicing evidence aggregated to genes after canonical-event collapse",
+            "score_definition": "event-level splicing evidence aggregated to genes after canonical-event and event-group collapse",
         },
         output_files=output_files,
         gmt={

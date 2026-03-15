@@ -92,6 +92,9 @@ class SpliceMatrixWorkflowConfig:
     gene_topk_events: int
     gene_burden_penalty_mode: str
     min_gene_burden_penalty: float
+    locus_density_penalty_mode: str
+    locus_density_window_bp: int
+    locus_density_top_n: int
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -187,6 +190,22 @@ def _welch_t(values_a: list[float], values_b: list[float]) -> float:
 
 def _approx_two_sided_p_from_z(value: float) -> float:
     return math.erfc(abs(float(value)) / math.sqrt(2.0))
+
+
+def _bh_adjust_pvalues(values: list[float | None]) -> list[float | None]:
+    indexed = [(idx, float(val)) for idx, val in enumerate(values) if val is not None]
+    if not indexed:
+        return [None for _ in values]
+    n = len(indexed)
+    adjusted: list[float | None] = [None for _ in values]
+    running = 1.0
+    for rank, (idx, pvalue) in enumerate(sorted(indexed, key=lambda item: item[1]), start=1):
+        candidate = min(1.0, pvalue * float(n) / float(rank))
+        adjusted[idx] = candidate
+    for idx, _pvalue in reversed(sorted(indexed, key=lambda item: item[1])):
+        running = min(running, float(adjusted[idx] or 1.0))
+        adjusted[idx] = running
+    return adjusted
 
 
 
@@ -342,7 +361,8 @@ def _baseline_statistic(row: SpliceRow, *, sample_ids: tuple[str, ...], missing_
 
 def _contrast_rows_for_events(*, event_rows: list[SpliceRow], contrast: ContrastSpec, cfg: SpliceMatrixWorkflowConfig, coverage_lookup: dict[tuple[int, str], float]) -> tuple[list[SpliceRow], dict[str, int]]:
     contrast_rows: list[SpliceRow] = []
-    summary = {"n_input_events": len(event_rows), "n_events_retained": 0, "n_events_dropped_missing": 0, "n_events_with_support": 0}
+    raw_pvalues: list[float | None] = []
+    summary = {"n_input_events": len(event_rows), "n_events_retained": 0, "n_events_dropped_missing": 0, "n_events_with_support": 0, "n_events_with_bh_padj": 0}
     for row in event_rows:
         if contrast.study_contrast == "baseline":
             stat = _baseline_statistic(row, sample_ids=contrast.sample_ids_a, missing_value_policy=cfg.missing_value_policy, min_present_per_condition=cfg.min_present_per_condition)
@@ -355,7 +375,8 @@ def _contrast_rows_for_events(*, event_rows: list[SpliceRow], contrast: Contrast
         values["delta_psi"] = str(stat["delta_psi"])
         values["stat"] = str(stat["stat"])
         values["pvalue"] = str(stat["pvalue"])
-        values["padj"] = values.get("padj", "")
+        values["padj"] = ""
+        raw_pvalues.append(float(stat["pvalue"]))
         support_vals: list[float] = []
         for sample_id in contrast.sample_ids_a + contrast.sample_ids_b:
             val = coverage_lookup.get((row.line_no, sample_id))
@@ -366,6 +387,11 @@ def _contrast_rows_for_events(*, event_rows: list[SpliceRow], contrast: Contrast
             summary["n_events_with_support"] += 1
         contrast_rows.append(SpliceRow(line_no=row.line_no, values=values))
         summary["n_events_retained"] += 1
+    for row, padj in zip(contrast_rows, _bh_adjust_pvalues(raw_pvalues), strict=False):
+        if padj is None:
+            continue
+        row.values["padj"] = str(padj)
+        summary["n_events_with_bh_padj"] += 1
     return contrast_rows, summary
 
 
@@ -417,6 +443,9 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
         gene_topk_events=cfg.gene_topk_events,
         gene_burden_penalty_mode=cfg.gene_burden_penalty_mode,
         min_gene_burden_penalty=cfg.min_gene_burden_penalty,
+        locus_density_penalty_mode=cfg.locus_density_penalty_mode,
+        locus_density_window_bp=cfg.locus_density_window_bp,
+        locus_density_top_n=cfg.locus_density_top_n,
         ambiguous_gene_policy=cfg.ambiguous_gene_policy,
         impact_mode=cfg.impact_mode,
         impact_min=cfg.impact_min,
@@ -486,6 +515,7 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
                 "n_events_retained": contrast_summary["n_events_retained"],
                 "n_events_dropped_missing": contrast_summary["n_events_dropped_missing"],
                 "n_events_with_support": contrast_summary["n_events_with_support"],
+                "n_events_with_bh_padj": contrast_summary["n_events_with_bh_padj"],
                 "status": "skipped",
                 "reason_if_skipped": "No events passed matrix contrast QC; likely too many missing values or too few samples per condition.",
                 "path": "",
@@ -523,6 +553,7 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
             "n_events_retained": contrast_summary["n_events_retained"],
             "n_events_dropped_missing": contrast_summary["n_events_dropped_missing"],
             "n_events_with_support": contrast_summary["n_events_with_support"],
+            "n_events_with_bh_padj": contrast_summary["n_events_with_bh_padj"],
             "status": "emitted",
             "reason_if_skipped": "",
             "path": "." if not multiple else str(child_out_dir.relative_to(out_dir)),
@@ -555,7 +586,7 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
                 writer.writerow(row)
 
     with (out_dir / "contrast_qc.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "contrast_label", "study_contrast", "group_label", "condition_a", "condition_b", "n_samples_a", "n_samples_b", "n_input_events", "n_events_retained", "n_events_dropped_missing", "n_events_with_support", "status", "reason_if_skipped", "path"])
+        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "contrast_label", "study_contrast", "group_label", "condition_a", "condition_b", "n_samples_a", "n_samples_b", "n_input_events", "n_events_retained", "n_events_dropped_missing", "n_events_with_support", "n_events_with_bh_padj", "status", "reason_if_skipped", "path"])
         writer.writeheader()
         for row in qc_rows:
             writer.writerow(row)
@@ -578,6 +609,7 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
         "min_present_per_condition": cfg.min_present_per_condition,
         "n_samples_total": len(sample_rows),
         "n_matrix_rows": len(matrix_rows),
+        "n_events_with_bh_padj": sum(int(row["n_events_with_bh_padj"]) for row in qc_rows),
         "n_contrasts_total": len(contrasts),
         "n_contrasts_emitted": emitted,
         "n_contrasts_skipped": len(contrasts) - emitted,

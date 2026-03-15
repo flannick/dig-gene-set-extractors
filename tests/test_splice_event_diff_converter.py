@@ -1,4 +1,5 @@
 import csv
+import gzip
 import json
 import shutil
 from pathlib import Path
@@ -190,7 +191,48 @@ def test_splice_event_diff_bundle_matched_fixture_changes_scores(tmp_path: Path)
     assert summary["n_events_with_low_confidence_prior_match"] >= 1
 
 
-def test_splice_event_diff_gene_burden_penalty_changes_ranking(tmp_path: Path):
+def test_splice_event_diff_low_confidence_bundle_priors_are_neutralized(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    args_bundle = Args()
+    args_bundle.splice_tsv = "tests/data/toy_splice_event_diff_matched.tsv"
+    args_bundle.out_dir = str(tmp_path / "matched_bundle_neutral")
+    args_bundle.resources_dir = str(resources_dir)
+    args_bundle.gene_burden_penalty_mode = "none"
+    splice_event_diff.run(args_bundle)
+
+    args_none = Args()
+    args_none.splice_tsv = "tests/data/toy_splice_event_diff_matched.tsv"
+    args_none.out_dir = str(tmp_path / "matched_none_neutral")
+    args_none.use_reference_bundle = False
+    args_none.gene_burden_penalty_mode = "none"
+    splice_event_diff.run(args_none)
+
+    bundle_scores = _score_map(Path(args_bundle.out_dir) / "geneset.full.tsv")
+    none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
+    assert abs(bundle_scores["G_MAPK1"] - none_scores["G_MAPK1"]) < 0.002
+    assert bundle_scores["G_KCNN4"] != none_scores["G_KCNN4"]
+    summary = json.loads((Path(args_bundle.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["n_low_confidence_ubiquity_priors_neutralized"] >= 1
+    assert summary["n_low_confidence_impact_priors_neutralized"] >= 1
+
+
+def test_splice_event_diff_gene_burden_penalty_changes_scores(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+    with gzip.open(resources_dir / "splice_gene_event_burden_human_v1.tsv.gz", "wt", encoding="utf-8", newline="") as fh:
+        fh.write(
+            "\n".join(
+                [
+                    "gene_symbol\tn_canonical_events_ref\tn_high_confidence_events_ref\tn_low_confidence_events_ref\tn_unique_event_groups_ref\tn_studies_ref\tn_studies_high_confidence_ref\tfraction_low_confidence_events_ref\tmedian_unique_groups_per_study",
+                    "GENEA\t8\t8\t0\t6\t4\t4\t0.0\t2.0",
+                    "GENEB\t1\t1\t0\t1\t1\t1\t0.0\t1.0",
+                ]
+            )
+            + "\n"
+        )
+
     args_none = Args()
     args_none.splice_tsv = "tests/data/toy_splice_burden_diff.tsv"
     args_none.out_dir = str(tmp_path / "burden_none")
@@ -203,16 +245,32 @@ def test_splice_event_diff_gene_burden_penalty_changes_ranking(tmp_path: Path):
     args_pen = Args()
     args_pen.splice_tsv = "tests/data/toy_splice_burden_diff.tsv"
     args_pen.out_dir = str(tmp_path / "burden_current")
-    args_pen.use_reference_bundle = False
+    args_pen.resources_dir = str(resources_dir)
     args_pen.gene_aggregation = "sum"
     args_pen.gene_topk_events = 1
-    args_pen.gene_burden_penalty_mode = "current_input"
+    args_pen.gene_burden_penalty_mode = "reference_bundle"
     splice_event_diff.run(args_pen)
 
-    none_rows = _read_rows(Path(args_none.out_dir) / "geneset.tsv")
+    none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
+    pen_scores = _score_map(Path(args_pen.out_dir) / "geneset.full.tsv")
+    assert abs(pen_scores["G_A"]) < abs(none_scores["G_A"])
     pen_rows = _read_rows(Path(args_pen.out_dir) / "geneset.tsv")
-    assert none_rows[0]["gene_symbol"] != pen_rows[0]["gene_symbol"]
     assert pen_rows[0]["gene_symbol"] == "GENEB"
+
+
+def test_splice_event_diff_event_group_collapse_reduces_cluster_stacking(tmp_path: Path):
+    args = Args()
+    args.splice_tsv = "tests/data/toy_splice_burden_diff.tsv"
+    args.out_dir = str(tmp_path / "event_group_collapse")
+    args.use_reference_bundle = False
+    args.gene_aggregation = "sum"
+    args.gene_burden_penalty_mode = "none"
+    splice_event_diff.run(args)
+
+    rows = _read_rows(Path(args.out_dir) / "geneset.tsv")
+    assert rows[0]["gene_symbol"] == "GENEB"
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["n_independent_event_groups"] == 2
 
 
 def test_splice_event_diff_ambiguous_gene_handling(tmp_path: Path):
@@ -280,3 +338,47 @@ def test_splice_event_diff_warning_path(tmp_path: Path, capsys):
     summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert summary["warnings"]
     assert summary["n_delta_psi_soft_floor_downweighted"] >= 1
+
+
+def test_splice_event_diff_locus_density_warning_and_penalty(tmp_path: Path):
+    locus_path = tmp_path / "locus.tsv"
+    locus_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "L1\tLG1\texon_skip\tG1\tGENE1\tchr1\t100000\t100120\t+\t0.60\t1e-6\t0.99\t50\tannotated_coding",
+                "L2\tLG2\texon_skip\tG2\tGENE2\tchr1\t150000\t150120\t+\t0.58\t1e-6\t0.99\t50\tannotated_coding",
+                "L3\tLG3\texon_skip\tG3\tGENE3\tchr1\t250000\t250120\t+\t0.56\t1e-6\t0.99\t50\tannotated_coding",
+                "L4\tLG4\texon_skip\tG4\tGENE4\tchr1\t350000\t350120\t+\t0.54\t1e-6\t0.99\t50\tannotated_coding",
+                "L5\tLG5\texon_skip\tG5\tGENE5\tchr1\t450000\t450120\t+\t0.52\t1e-6\t0.99\t50\tannotated_coding",
+                "L6\tLG6\texon_skip\tG6\tGENE6\tchr8\t100000\t100120\t+\t0.40\t1e-6\t0.99\t50\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args_none = Args()
+    args_none.splice_tsv = str(locus_path)
+    args_none.out_dir = str(tmp_path / "locus_none")
+    args_none.use_reference_bundle = False
+    args_none.top_k = 10
+    args_none.locus_density_top_n = 5
+    args_none.locus_density_penalty_mode = "none"
+    splice_event_diff.run(args_none)
+
+    args_pen = Args()
+    args_pen.splice_tsv = str(locus_path)
+    args_pen.out_dir = str(tmp_path / "locus_pen")
+    args_pen.use_reference_bundle = False
+    args_pen.top_k = 10
+    args_pen.locus_density_top_n = 5
+    args_pen.locus_density_penalty_mode = "window_diversity"
+    splice_event_diff.run(args_pen)
+
+    summary = json.loads((Path(args_none.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert "likely_locus_density_artifact" in summary["warnings"]
+
+    none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
+    pen_scores = _score_map(Path(args_pen.out_dir) / "geneset.full.tsv")
+    assert pen_scores["G2"] != none_scores["G2"]

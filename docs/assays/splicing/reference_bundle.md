@@ -67,6 +67,7 @@ Required columns:
 - `fraction_ref`
 - `idf_ref`
 - `n_datasets_ref`
+- `fraction_datasets_ref`
 
 ### `splice_event_impact_human_v1.tsv.gz`
 
@@ -81,6 +82,7 @@ Required columns:
 - `impact_weight_raw`
 - `impact_evidence`
 - `annotation_status`
+- `n_datasets_ref`
 
 ### `splice_gene_event_burden_human_v1.tsv.gz`
 
@@ -90,6 +92,11 @@ Required columns:
 - `n_canonical_events_ref`
 - `n_high_confidence_events_ref`
 - `n_low_confidence_events_ref`
+- `n_unique_event_groups_ref`
+- `n_studies_ref`
+- `n_studies_high_confidence_ref`
+- `fraction_low_confidence_events_ref`
+- `median_unique_groups_per_study`
 
 ## Build a local bundle
 
@@ -99,6 +106,17 @@ geneset-extractors workflows splice_prepare_reference_bundle \
   --out_dir <splice_bundle_dir> \
   --organism human \
   --bundle_id splice_human_v1
+```
+
+For leave-one-cohort-out validation, exclude the target cohort when building the prior bundle:
+
+```bash
+geneset-extractors workflows splice_prepare_reference_bundle \
+  --sources_tsv <sources.tsv> \
+  --out_dir <splice_bundle_dir> \
+  --organism human \
+  --bundle_id splice_human_v1 \
+  --exclude_source_datasets TCGA_BRCA
 ```
 
 `<sources.tsv>` must contain at least:
@@ -162,7 +180,23 @@ Runtime implications:
 
 - alias resolution still allows exact-string matches on low-confidence raw ids
 - broader cross-study collapsing is intentionally avoided for those keys
-- ubiquity and impact priors are shrunk strongly toward neutral when only low-confidence matching is available
+- low-confidence ubiquity priors are neutralized to exactly `1.0`
+- low-confidence impact priors are only allowed to modulate scores when the bundle reports recurrence across at least two source datasets
+
+## Study-level nuisance summaries
+
+The bundle now treats study identity as part of the nuisance model rather than only pooled sample opportunity.
+
+Current v1 summaries include:
+
+- `n_datasets_ref` and `fraction_datasets_ref` for event ubiquity
+- per-gene `n_unique_event_groups_ref`
+- per-gene `n_studies_ref`
+- per-gene `n_studies_high_confidence_ref`
+- per-gene `fraction_low_confidence_events_ref`
+- per-gene `median_unique_groups_per_study`
+
+This keeps one very large source study from defining the prior on its own.
 
 ## Missing-bundle behavior
 

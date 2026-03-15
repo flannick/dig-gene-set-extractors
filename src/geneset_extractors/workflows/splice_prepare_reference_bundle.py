@@ -5,7 +5,7 @@ import gzip
 import json
 import math
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 
 from geneset_extractors.extractors.splicing.splice_event_diff_workflow import _normalize_event_type
 from geneset_extractors.hashing import sha256_file
@@ -25,6 +25,13 @@ def _parse_float(value: object) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _parse_csv_set(value: object) -> set[str]:
+    text = _clean(value)
+    if not text:
+        return set()
+    return {token.strip() for token in text.split(",") if token.strip()}
 
 
 def _write_tsv_gz(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
@@ -73,6 +80,15 @@ def run(args) -> dict[str, object]:
         raise ValueError("sources_tsv must contain at least one row")
     if "path" not in reader.fieldnames:
         raise ValueError("sources_tsv must contain a path column")
+    excluded_datasets = _parse_csv_set(getattr(args, "exclude_source_datasets", ""))
+    if excluded_datasets:
+        source_rows = [
+            row
+            for row in source_rows
+            if (_clean(row.get("source_dataset")) or Path(_clean(row.get("path"))).stem) not in excluded_datasets
+        ]
+        if not source_rows:
+            raise ValueError("All source rows were excluded by --exclude_source_datasets.")
 
     organism = str(args.organism).strip().lower()
     alias_records: dict[tuple[str, str], dict[str, object]] = {}
@@ -82,6 +98,7 @@ def run(args) -> dict[str, object]:
     gene_burden: dict[str, dict[str, object]] = {}
     source_file_records: list[dict[str, object]] = []
     total_samples_seen: set[str] = set()
+    total_source_datasets: set[str] = set()
     canonicalization_status_counts: dict[str, int] = {"coordinate_canonical": 0, "raw_id_fallback": 0}
     canonicalization_confidence_counts: dict[str, int] = {"high": 0, "low": 0}
 
@@ -90,10 +107,15 @@ def run(args) -> dict[str, object]:
         if not source_file.is_absolute() and not source_file.exists():
             source_file = (sources_path.parent / source_file).resolve()
         source_dataset = _clean(source_row.get("source_dataset")) or source_file.stem
+        total_source_datasets.add(source_dataset)
         with source_file.open("r", encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
         present_by_event: dict[str, set[str]] = {}
         unique_events_by_gene: dict[str, set[str]] = {}
+        unique_groups_by_gene: dict[str, set[str]] = {}
+        unique_groups_by_gene_study: dict[str, dict[str, set[str]]] = {}
+        studies_by_gene: dict[str, set[str]] = {}
+        high_conf_studies_by_gene: dict[str, set[str]] = {}
         unique_high_events_by_gene: dict[str, set[str]] = {}
         unique_low_events_by_gene: dict[str, set[str]] = {}
         for row in rows:
@@ -109,6 +131,7 @@ def run(args) -> dict[str, object]:
             gene_id = _clean(row.get("gene_id"))
             gene_symbol = _clean(row.get("gene_symbol")) or gene_id
             event_type = _normalize_event_type(_clean(row.get("event_type")))
+            event_group = _clean(row.get("event_group")) or canonical
             sample_id = _clean(row.get("sample_id"))
             psi = _parse_float(row.get("psi"))
             read_support = _parse_float(row.get("read_support"))
@@ -156,10 +179,13 @@ def run(args) -> dict[str, object]:
                     "canonicalization_status": canonicalization_status,
                     "canonicalization_confidence": canonicalization_confidence,
                     "datasets": set(),
+                    "samples": set(),
                     "df_ref": 0,
                 },
             )
             stats["datasets"].add(source_dataset)
+            if sample_id:
+                stats["samples"].add(sample_id)
             impact_records.setdefault(
                 bundle_event_key,
                 {
@@ -170,12 +196,18 @@ def run(args) -> dict[str, object]:
                     "annotation_status": annotation_status,
                     "canonicalization_status": canonicalization_status,
                     "canonicalization_confidence": canonicalization_confidence,
+                    "datasets": set(),
                 },
             )
+            impact_records[bundle_event_key]["datasets"].add(source_dataset)
             if gene_symbol:
                 unique_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
+                unique_groups_by_gene.setdefault(gene_symbol, set()).add(event_group or bundle_event_key)
+                unique_groups_by_gene_study.setdefault(gene_symbol, {}).setdefault(source_dataset, set()).add(event_group or bundle_event_key)
+                studies_by_gene.setdefault(gene_symbol, set()).add(source_dataset)
                 if canonicalization_confidence == "high":
                     unique_high_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
+                    high_conf_studies_by_gene.setdefault(gene_symbol, set()).add(source_dataset)
                 else:
                     unique_low_events_by_gene.setdefault(gene_symbol, set()).add(bundle_event_key)
         for canonical_key, sample_ids in present_by_event.items():
@@ -188,11 +220,20 @@ def run(args) -> dict[str, object]:
                     "n_canonical_events_ref": set(),
                     "n_high_confidence_events_ref": set(),
                     "n_low_confidence_events_ref": set(),
+                    "n_unique_event_groups_ref": set(),
+                    "studies": set(),
+                    "high_conf_studies": set(),
+                    "study_unique_groups": {},
                 },
             )
             burden["n_canonical_events_ref"].update(bundle_keys)
             burden["n_high_confidence_events_ref"].update(unique_high_events_by_gene.get(gene_symbol, set()))
             burden["n_low_confidence_events_ref"].update(unique_low_events_by_gene.get(gene_symbol, set()))
+            burden["n_unique_event_groups_ref"].update(unique_groups_by_gene.get(gene_symbol, set()))
+            burden["studies"].update(studies_by_gene.get(gene_symbol, set()))
+            burden["high_conf_studies"].update(high_conf_studies_by_gene.get(gene_symbol, set()))
+            for study_id, group_set in unique_groups_by_gene_study.get(gene_symbol, {}).items():
+                burden["study_unique_groups"].setdefault(study_id, set()).update(group_set)
         source_file_records.append(
             {
                 "path": str(source_file),
@@ -204,13 +245,15 @@ def run(args) -> dict[str, object]:
         )
 
     n_samples_ref = max(1, len(total_samples_seen))
+    n_datasets_total = max(1, len(total_source_datasets))
     alias_rows = [alias_records[key] for key in sorted(alias_records)]
     ubiquity_rows: list[dict[str, object]] = []
     idf_values: list[float] = []
     for canonical in sorted(ubiquity_stats):
         stats = ubiquity_stats[canonical]
         df_ref = int(stats["df_ref"])
-        idf_ref = math.log1p((n_samples_ref + 1.0) / (df_ref + 1.0))
+        n_datasets_ref = len(stats["datasets"])
+        idf_ref = math.log1p((n_datasets_total + 1.0) / (n_datasets_ref + 1.0))
         idf_values.append(idf_ref)
         ubiquity_rows.append(
             {
@@ -224,7 +267,8 @@ def run(args) -> dict[str, object]:
                 "df_ref": df_ref,
                 "fraction_ref": float(df_ref) / float(n_samples_ref),
                 "idf_ref": idf_ref,
-                "n_datasets_ref": len(stats["datasets"]),
+                "n_datasets_ref": n_datasets_ref,
+                "fraction_datasets_ref": float(n_datasets_ref) / float(n_datasets_total),
             }
         )
 
@@ -243,18 +287,33 @@ def run(args) -> dict[str, object]:
                 "impact_weight_raw": raw,
                 "impact_evidence": evidence,
                 "annotation_status": record["annotation_status"],
+                "n_datasets_ref": len(record["datasets"]),
             }
         )
 
     burden_rows: list[dict[str, object]] = []
     for gene_symbol in sorted(gene_burden):
         record = gene_burden[gene_symbol]
+        study_group_counts = [
+            len(group_set)
+            for group_set in record["study_unique_groups"].values()
+            if group_set
+        ]
+        total_groups = len(record["n_unique_event_groups_ref"])
+        low_fraction = (
+            float(len(record["n_low_confidence_events_ref"])) / float(max(1, len(record["n_canonical_events_ref"])))
+        )
         burden_rows.append(
             {
                 "gene_symbol": gene_symbol,
                 "n_canonical_events_ref": len(record["n_canonical_events_ref"]),
                 "n_high_confidence_events_ref": len(record["n_high_confidence_events_ref"]),
                 "n_low_confidence_events_ref": len(record["n_low_confidence_events_ref"]),
+                "n_unique_event_groups_ref": total_groups,
+                "n_studies_ref": len(record["studies"]),
+                "n_studies_high_confidence_ref": len(record["high_conf_studies"]),
+                "fraction_low_confidence_events_ref": low_fraction,
+                "median_unique_groups_per_study": float(median(study_group_counts)) if study_group_counts else 0.0,
             }
         )
 
@@ -301,6 +360,7 @@ def run(args) -> dict[str, object]:
             "fraction_ref",
             "idf_ref",
             "n_datasets_ref",
+            "fraction_datasets_ref",
         ],
         ubiquity_rows,
     )
@@ -316,12 +376,23 @@ def run(args) -> dict[str, object]:
             "impact_weight_raw",
             "impact_evidence",
             "annotation_status",
+            "n_datasets_ref",
         ],
         impact_rows,
     )
     _write_tsv_gz(
         burden_path,
-        ["gene_symbol", "n_canonical_events_ref", "n_high_confidence_events_ref", "n_low_confidence_events_ref"],
+        [
+            "gene_symbol",
+            "n_canonical_events_ref",
+            "n_high_confidence_events_ref",
+            "n_low_confidence_events_ref",
+            "n_unique_event_groups_ref",
+            "n_studies_ref",
+            "n_studies_high_confidence_ref",
+            "fraction_low_confidence_events_ref",
+            "median_unique_groups_per_study",
+        ],
         burden_rows,
     )
 
@@ -329,6 +400,8 @@ def run(args) -> dict[str, object]:
         "bundle_id": args.bundle_id,
         "organism": organism,
         "n_sources": len(source_rows),
+        "n_source_datasets": len(total_source_datasets),
+        "excluded_source_datasets": sorted(excluded_datasets),
         "n_alias_rows": len(alias_rows),
         "n_canonical_events": len(ubiquity_rows),
         "n_genes_with_burden": len(burden_rows),
@@ -346,6 +419,7 @@ def run(args) -> dict[str, object]:
             "mean": mean(idf_values) if idf_values else 0.0,
             "max": max(idf_values) if idf_values else 0.0,
         },
+        "idf_ref_basis": "study_level_dataset_frequency",
         "source_files": source_file_records,
         "outputs": {
             "alias_table": alias_filename,
@@ -425,4 +499,5 @@ def run(args) -> dict[str, object]:
         "n_alias_rows": len(alias_rows),
         "n_impact_rows": len(impact_rows),
         "n_gene_burden_rows": len(burden_rows),
+        "n_source_datasets": len(total_source_datasets),
     }

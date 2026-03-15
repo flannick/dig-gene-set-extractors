@@ -87,6 +87,7 @@ class BundleArgs:
     organism = "human"
     bundle_id = "toy_splice_bundle_v1"
     min_ref_read_support = 0.0
+    exclude_source_datasets = None
 
 
 
@@ -126,6 +127,13 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert len(rows) == 3
     assert rows[0]["canonical_event_key"]
     assert {row["canonicalization_confidence"] for row in rows} == {"high", "low"}
+    assert "fraction_datasets_ref" in rows[0]
+
+    with gzip.open(bundle_dir / "splice_gene_event_burden_human_v1.tsv.gz", "rt", encoding="utf-8") as fh:
+        burden_rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert "n_unique_event_groups_ref" in burden_rows[0]
+    assert "n_studies_ref" in burden_rows[0]
+    assert "median_unique_groups_per_study" in burden_rows[0]
 
     diff_args = DiffArgs()
     diff_args.out_dir = str(tmp_path / "runtime")
@@ -144,3 +152,32 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
         "splice_event_impact_human_v1",
         "splice_gene_event_burden_human_v1",
     }
+
+
+def test_splice_prepare_reference_bundle_exclude_source_datasets(tmp_path: Path):
+    source_a = tmp_path / "source_a.tsv"
+    source_b = tmp_path / "source_b.tsv"
+    header = "source_dataset\tsample_id\tinput_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tgene_id\tgene_symbol\tevent_group\tevent_type\tpsi\tread_support\tannotation_status\tchrom\tstart\tend\tstrand\ttool_family\n"
+    source_a.write_text(
+        header
+        + "A\tA1\tE1\tchr1:100-150:+:exon_skip:G1\tcoordinate_canonical\thigh\tG1\tGENE1\tG1\texon_skip\t0.8\t20\tannotated_coding\tchr1\t100\t150\t+\tgeneric\n",
+        encoding="utf-8",
+    )
+    source_b.write_text(
+        header
+        + "B\tB1\tE2\tchr2:200-250:+:exon_skip:G2\tcoordinate_canonical\thigh\tG2\tGENE2\tG2\texon_skip\t0.7\t20\tannotated_coding\tchr2\t200\t250\t+\tgeneric\n",
+        encoding="utf-8",
+    )
+    sources_manifest = tmp_path / "sources.tsv"
+    sources_manifest.write_text(
+        f"path\tsource_dataset\n{source_a}\tA\n{source_b}\tB\n",
+        encoding="utf-8",
+    )
+    args = BundleArgs()
+    args.sources_tsv = str(sources_manifest)
+    args.out_dir = str(tmp_path / "bundle_excluded")
+    args.exclude_source_datasets = "B"
+    result = run_splice_prepare_reference_bundle(args)
+    assert result["n_source_datasets"] == 1
+    provenance = json.loads((Path(args.out_dir) / "bundle_provenance.json").read_text(encoding="utf-8"))
+    assert provenance["excluded_source_datasets"] == ["B"]

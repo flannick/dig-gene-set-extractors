@@ -193,6 +193,7 @@ def test_cli_describe_splice_event_diff():
     assert "tool_family" in param_names
     assert "impact_mode" in param_names
     assert "event_alias_resource_id" in param_names
+    assert "locus_density_penalty_mode" in param_names
 
 
 def test_cli_describe_splice_event_matrix():
@@ -204,6 +205,7 @@ def test_cli_describe_splice_event_matrix():
     assert "study_contrast" in param_names
     assert "effect_metric" in param_names
     assert "sample_metadata_tsv" not in param_names
+    assert "locus_density_penalty_mode" in param_names
 
 
 def test_cli_workflow_ptm_prepare_public(tmp_path: Path):
