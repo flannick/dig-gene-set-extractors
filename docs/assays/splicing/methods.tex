@@ -1,4 +1,3 @@
-% docs/assays/splicing/methods.tex
 \documentclass[11pt]{article}
 
 \usepackage{amsmath, amssymb}
@@ -6,7 +5,6 @@
 \usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{enumitem}
-\usepackage{longtable}
 
 \geometry{margin=1in}
 
@@ -18,43 +16,43 @@
 \maketitle
 
 \section*{Overview and goals}
-This note proposes an assay family for alternative splicing in \texttt{dig-gene-set-extractors}. The design follows the same repo-level pattern used elsewhere in the repository: a direct converter for already-scored assay rows, a matrix front-end for public sample-by-feature matrices, and an optional compact reference bundle that adds harmonization and conservative priors.
+This note describes the alternative splicing assay family in \texttt{dig-gene-set-extractors}. The design follows the same repo pattern used elsewhere in the repository: a direct converter for already-scored rows, a matrix front-end for public sample-by-feature matrices, and an optional compact reference bundle that adds harmonization and conservative nuisance priors.
 
-The proposed entrypoints are:
+The entrypoints are:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{splice\_event\_diff}: event-level differential splicing table to signed gene program and GMT gene sets.
 \item \texttt{splice\_event\_matrix}: PSI matrix plus sample metadata to one or more contrast-specific gene programs.
-\item \texttt{workflows splice\_prepare\_public}: narrow public-data normalizer, centered on TCGA SpliceSeq-like PSI matrices.
-\item \texttt{workflows splice\_prepare\_reference\_bundle}: builder for a lightweight event alias, ubiquity, conservative impact, and gene-burden bundle.
+\item \texttt{workflows splice\_prepare\_public}: narrow public-data normalizer centered on TCGA SpliceSeq-like PSI matrices.
+\item \texttt{workflows splice\_prepare\_reference\_bundle}: builder for a lightweight alias, ubiquity, impact, burden, and dataset-stratified nuisance bundle.
 \end{itemize}
 
-This family is intentionally event-centric rather than transcript-centric. LeafCutter, MAJIQ, Whippet, and TCGA SpliceSeq differ in their event definitions and file layouts, but all can be normalized to a common abstraction:
+This family is intentionally event-centric rather than transcript-centric. LeafCutter, MAJIQ, Whippet, and TCGA SpliceSeq differ in file layout and event definition, but all can be normalized to a common abstraction:
 \begin{enumerate}[leftmargin=2em]
-\item a splice event or event-group identity,
+\item an event identity together with an identity-confidence tier and event-key namespace,
 \item a signed effect such as PSI change or a signed statistic,
 \item optional uncertainty information such as p-value, posterior probability, or read support,
-\item an event-to-gene mapping, and
-\item optional conservative impact priors.
+\item an event-to-gene mapping,
+\item optional conservative event priors,
+\item a gene-level aggregation rule that does not reward genes merely for having many measurable rows.
 \end{enumerate}
 
-The central modeling question is therefore not how to estimate isoform abundance from scratch, but how to convert heterogeneous splicing event outputs into a stable, gene-level mechanistic program that is useful for enrichment analysis and downstream interpretation.
+The central modeling problem is therefore not transcript reconstruction from raw reads. It is the conversion of heterogeneous event outputs into a stable, gene-level mechanistic program that is suitable for enrichment analysis and downstream interpretation.
 
 \section{Why event-to-gene projection is the right first extractor target}
-Gene-centric extractors are easiest when the assay is already gene-indexed, as in differential expression. Splicing is different: the primary measured units are junctions, local splicing variations, cassette exons, retained introns, or more general event groups. These are not yet gene programs.
-
-A practical extractor should do three things:
+Splicing assays do not start from genes. Their natural units are junctions, local splicing variations, cassette exons, retained introns, or broader event groups. A practical extractor should therefore:
 \begin{itemize}[leftmargin=2em]
-\item harmonize raw event identities across tools whenever possible,
-\item score each event with a signed effect weighted by uncertainty, and
-\item collapse event scores to genes using an aggregation rule that is resistant to genes with many measurable events.
+\item harmonize raw event identities whenever possible,
+\item score each event with a signed effect weighted by uncertainty,
+\item use priors conservatively and in a source-aware way,
+\item collapse event scores to genes with protection against duplicate bookkeeping rows, local event stacking, and locus-density artifacts.
 \end{itemize}
 
-This is directly analogous to the PTM site-level design already present in the repository, where site-level evidence is scored, optionally adjusted by priors, and then aggregated to a gene-level program.
+This is closely analogous to the PTM design already present in the repository, except the relevant nuisance structure is event multiplicity, study leakage, and local genomic concentration rather than site ubiquity alone.
 
-\section{Mental model: what splicing tables measure}
+\section{Mental model}
 Let $i \in \mathcal{E}$ index splice events and let $s \in \mathcal{S}$ index samples.
 
-For a PSI matrix input, the basic observation is:
+For a PSI matrix input, the basic observation is
 \[
 \psi_{is} \in [0,1],
 \]
@@ -67,15 +65,13 @@ For a differential table input, common fields include:
 \item a p-value or adjusted p-value $p_i$ or $q_i$,
 \item a posterior probability or confidence score $\pi_i$,
 \item support counts or denominators $r_i$,
-\item event type and annotation metadata,
+\item event metadata including type and optional coordinates,
 \item one or more mapped genes.
 \end{itemize}
 
-The extractor converts event-level evidence into a signed event score $z_i$, then aggregates those event scores to a signed gene score $s_g$, then normalizes the magnitudes into nonnegative weights $w_g$.
+The extractor converts event-level evidence into a signed event score $z_i$, aggregates those event scores to a gene score $s_g$, and then converts magnitudes into nonnegative weights $w_g$ for downstream gene-set use.
 
-\section{How to map CLI arguments to the model in this note}
-This section is meant to line up with a future \texttt{docs/assays/splicing/guide.md}.
-
+\section{How CLI arguments map to the model}
 \begin{itemize}[leftmargin=2em]
 \item Input event table or PSI matrix:
   \begin{itemize}
@@ -87,48 +83,66 @@ This section is meant to line up with a future \texttt{docs/assays/splicing/guid
   \texttt{--chrom\_column}, \texttt{--start\_column}, \texttt{--end\_column}, \texttt{--strand\_column},
   \texttt{--gene\_id\_column}, \texttt{--gene\_symbol\_column}.
 \item Base event score:
-  \texttt{--score\_mode} with columns such as \texttt{--delta\_psi\_column}, \texttt{--stat\_column}, \texttt{--pvalue\_column}, \texttt{--padj\_column}, \texttt{--probability\_column}, or \texttt{--score\_column}.
+  \texttt{--score\_mode} with supporting columns such as \texttt{--delta\_psi\_column}, \texttt{--stat\_column}, \texttt{--pvalue\_column}, \texttt{--padj\_column}, \texttt{--probability\_column}, or \texttt{--score\_column}.
 \item Confidence weighting:
   \texttt{--confidence\_weight\_mode}, \texttt{--read\_support\_column}, \texttt{--min\_read\_support}.
 \item Impact priors:
-  \texttt{--impact\_mode}, \texttt{--event\_impact\_resource\_id}, and optional event annotation columns.
+  \texttt{--impact\_mode}, \texttt{--event\_impact\_resource\_id}.
 \item Duplicate collapse and event-to-gene mapping:
   \texttt{--event\_dup\_policy}, \texttt{--ambiguous\_gene\_policy}.
-\item Gene aggregation:
-  \texttt{--gene\_aggregation}, \texttt{--gene\_topk\_events}.
-\item Reference bundle:
-  \texttt{--resources\_dir}, \texttt{--resources\_manifest}, \texttt{--resource\_policy}, \texttt{--use\_reference\_bundle}, and resource ids for event alias, ubiquity, impact, and gene-burden priors.
+\item Gene aggregation and stability controls:
+  \texttt{--gene\_aggregation}, \texttt{--gene\_topk\_events},
+  \texttt{--gene\_burden\_penalty\_mode}, \texttt{--gene\_support\_penalty\_mode}.
+\item Source-aware bundle use:
+  \texttt{--resources\_dir}, \texttt{--resources\_manifest}, \texttt{--resource\_policy}, \texttt{--use\_reference\_bundle},
+  \texttt{--source\_dataset}, \texttt{--bundle\_same\_dataset\_policy},
+  and resource ids for alias, ubiquity, impact, gene burden, dataset-stratified nuisance summaries, and an optional gene-locus table.
+\item Locality controls:
+  \texttt{--locus\_density\_penalty\_mode}, \texttt{--locus\_density\_window\_bp}, \texttt{--locus\_density\_top\_n}.
 \item Gene selection and weighting:
   \texttt{--select}, \texttt{--top\_k}, \texttt{--quantile}, \texttt{--min\_score}, \texttt{--normalize}.
 \item GMT export:
-  \texttt{--emit\_gmt}, \texttt{--gmt\_split\_signed}, \texttt{--gmt\_topk\_list}, \texttt{--gmt\_mass\_list}, and standard GMT flags shared across the repo.
+  \texttt{--emit\_gmt}, \texttt{--gmt\_split\_signed}, \texttt{--gmt\_topk\_list}, \texttt{--gmt\_mass\_list}.
 \end{itemize}
 
 \section{Formal model}
-Let $i \in \mathcal{E}$ index canonicalized events and let $g \in \mathcal{G}$ index genes. The pipeline has five logical layers:
+Let $i \in \mathcal{E}$ index canonicalized event records and let $g \in \mathcal{G}$ index genes. The pipeline has six logical layers:
 \begin{enumerate}[leftmargin=2em]
-\item canonicalize raw event identities,
+\item assign a canonical event identity, confidence tier, and namespace,
 \item define a signed base event score $x_i$,
-\item apply uncertainty and prior weights to obtain final event score $z_i$,
-\item aggregate events to gene scores $s_g$,
-\item select genes and normalize magnitudes into weights $w_g$.
+\item apply uncertainty and prior weights to obtain a final event score $z_i$,
+\item collapse duplicate rows and local event-group dependence,
+\item aggregate events to gene scores with conservative burden and support shrinkage,
+\item optionally apply locus-diversity suppression, then select and normalize the gene program.
 \end{enumerate}
 
-\subsection{Step 1: canonical event identity}
-Each raw row is mapped to a canonical event key $k(i)$.
+\subsection{Step 1: event identity, confidence tier, and namespace}
+Each raw row is mapped to a canonical event key $k(i)$, a confidence tier $c(i)$, and a namespace $n(i)$.
 
 Preferred order:
 \begin{enumerate}[leftmargin=2em]
-\item If an alias bundle maps the raw event key to a shared key, use the bundle key.
+\item If an alias bundle maps a raw event key to a shared key, use the bundle key.
 \item Otherwise, if stable coordinates and event type are available, construct a deterministic coordinate-based key.
-\item Otherwise, fall back to a tool-specific sanitized identifier.
+\item Otherwise, if the source family is TCGA SpliceSeq-like and the row exposes a structured AS identifier together with gene and event type, construct a source-family-stable key.
+\item Otherwise, fall back to a sanitized raw identifier.
 \end{enumerate}
 
-A coordinate-based key can use a normalized tuple such as:
+A coordinate-based key can use a tuple such as
 \[
 (\mathrm{chrom}, \mathrm{start}, \mathrm{end}, \mathrm{strand}, \mathrm{event\_type}, \mathrm{event\_group}).
 \]
-This key need not claim perfect biological equivalence across tools. It only needs to be deterministic enough for duplicate collapse and optional bundle lookup.
+
+The implemented identity tiers are:
+\[
+(c(i), n(i)) =
+\begin{cases}
+(\texttt{high}, \texttt{global\_coordinate}) & \text{coordinate-canonical event},\\
+(\texttt{medium}, \texttt{tcga\_spliceseq\_asid}) & \text{TCGA SpliceSeq source-family-stable key},\\
+(\texttt{low}, \texttt{raw\_id\_fallback}) & \text{generic raw fallback.}
+\end{cases}
+\]
+
+The medium tier is intentionally narrow. It is only for TCGA SpliceSeq-style event identities and should be treated as reusable within that source family, not as a general cross-tool splice identity.
 
 \subsection{Step 2: base event score}
 The extractor supports several base score definitions.
@@ -138,16 +152,17 @@ Resolve in the following order:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{stat}, if a signed statistic is available,
 \item \texttt{delta\_psi\_times\_neglog10p}, if $\Delta \psi_i$ and p-value information are available,
-\item \texttt{delta\_psi\_times\_confidence}, if $\Delta \psi_i$ and posterior or confidence fields are available.
+\item \texttt{delta\_psi\_times\_confidence}, if $\Delta \psi_i$ and posterior or support fields are available,
+\item \texttt{custom\_column}, if an explicit score column was requested.
 \end{itemize}
-For \texttt{splice\_event\_matrix}, per-event p-values are Benjamini-Hochberg adjusted within each emitted contrast before this resolver runs, so \texttt{score\_mode=auto} preferentially consumes a contrast-local \texttt{padj} when one can be computed.
+
+For \texttt{splice\_event\_matrix}, per-event p-values are Benjamini-Hochberg adjusted within each emitted contrast before the shared scorer runs, so \texttt{score\_mode=auto} preferentially uses \texttt{padj} when it can be computed.
 
 \paragraph{A2. \texttt{score\_mode=stat}.}
-If a signed event statistic $t_i$ is available,
+If a signed statistic $t_i$ is available,
 \[
 x_i = t_i.
 \]
-This is preferred because it already combines effect and variability.
 
 \paragraph{A3. \texttt{score\_mode=delta\_psi\_times\_neglog10p}.}
 If a signed PSI effect $\Delta \psi_i$ and p-value $q_i$ are available,
@@ -163,7 +178,6 @@ If a signed PSI effect $\Delta \psi_i$ and posterior or confidence $\pi_i$ are a
 x_i = \Delta \psi_i \cdot \pi_i.
 \label{eq:dpsi_conf}
 \end{equation}
-This is especially natural for Whippet- or MAJIQ-like outputs that report differential confidence directly.
 
 \paragraph{A5. \texttt{score\_mode=custom\_column}.}
 If the user provides a custom signed score column,
@@ -172,7 +186,7 @@ x_i = \mathrm{custom}(i).
 \]
 
 \subsection{Step 3: confidence weighting}
-Differential splicing outputs are noisier than differential gene tables, so the event score should be shrunk by bounded uncertainty weights.
+Differential splicing outputs are noisy, so the base event score is shrunk by bounded uncertainty weights.
 
 Define optional components:
 \begin{align}
@@ -180,15 +194,8 @@ w_i^{(p)} &= \frac{\min\{-\log_{10}(p_i + \epsilon), C\}}{C}, \\
 w_i^{(\pi)} &= \mathrm{clip}\!\left(\frac{\pi_i - \pi_0}{1-\pi_0}, 0, 1\right), \\
 w_i^{(r)} &= \min\!\left\{\frac{\log(1+r_i)}{\log(1+r_0)}, 1\right\}.
 \end{align}
-Here:
-\begin{itemize}[leftmargin=2em]
-\item $p_i$ is a p-value or adjusted p-value if present,
-\item $\pi_i$ is a posterior or confidence score if present,
-\item $r_i$ is a read-support or denominator-like support field if present,
-\item $\pi_0$ and $r_0$ are user-configurable soft thresholds.
-\end{itemize}
 
-Then define:
+Then
 \[
 \omega_i =
 \begin{cases}
@@ -200,20 +207,12 @@ w_i^{(p)} w_i^{(\pi)} w_i^{(r)} & \texttt{confidence\_weight\_mode=combined}.
 \end{cases}
 \]
 
-This is deliberately conservative: the uncertainty weight can downweight weak events, but should not by itself reverse sign or inflate magnitude beyond the base score.
+This weighting can only shrink weak evidence. It does not reverse sign and is not allowed to dominate the base score.
 
 \subsection{Step 4: conservative impact prior}
-The extractor can optionally use a compact event impact bundle. This should not attempt a high-variance full transcript consequence model in v1. Instead, it should encode a bounded, uncertainty-aware prior.
+The extractor can optionally use a compact impact bundle. This remains conservative in v1 and does not attempt full transcript-consequence inference.
 
-Let $b_i^{(\mathrm{coding})}$, $b_i^{(\mathrm{frame})}$, $b_i^{(\mathrm{nmd})}$, and $b_i^{(\mathrm{novel})}$ be binary or bounded indicators extracted from event annotations or the impact bundle. Examples:
-\begin{itemize}[leftmargin=2em]
-\item coding overlap,
-\item predicted frame-disrupting versus frame-preserving event,
-\item predicted NMD risk,
-\item novel or weakly annotated event flag.
-\end{itemize}
-
-Define a raw impact multiplier:
+Let $b_i^{(\mathrm{coding})}$, $b_i^{(\mathrm{frame})}$, $b_i^{(\mathrm{nmd})}$, and $b_i^{(\mathrm{novel})}$ be bounded indicators from event annotations or the bundle. Define a raw impact multiplier
 \begin{equation}
 \widetilde{\eta}_i =
 \exp\!\left(
@@ -224,49 +223,69 @@ Define a raw impact multiplier:
 \right),
 \label{eq:impact_raw}
 \end{equation}
-with small coefficients $\beta_{\cdot}$ so that $\widetilde{\eta}_i$ remains close to 1.
+with small coefficients so that $\widetilde{\eta}_i$ stays close to $1$.
 
-Let $\rho_i \in [0,1]$ be an evidence-quality term from the bundle. Then shrink the raw prior toward neutrality:
+Let $\rho_i \in [0,1]$ be an evidence-quality term. The usable impact prior is shrunk toward neutrality:
 \begin{equation}
 \eta_i = \mathrm{clip}\!\left(1 + \rho_i(\widetilde{\eta}_i - 1), \eta_{\min}, \eta_{\max}\right).
 \label{eq:impact_shrunk}
 \end{equation}
 
-This means:
+Recommended defaults are narrow, for example $\eta_{\min}=0.75$ and $\eta_{\max}=1.35$.
+
+Impact use is stricter for non-high-confidence identities:
 \begin{itemize}[leftmargin=2em]
-\item when impact evidence is weak, $\rho_i \approx 0$ and $\eta_i \approx 1$,
-\item when impact evidence is stronger, $\eta_i$ can modestly upweight or downweight the event,
-\item the prior remains bounded and cannot dominate the extractor.
+\item high-confidence events can use the bundle impact prior directly, after bounded shrinkage,
+\item medium-confidence events can use impact priors only within their matching namespace,
+\item low-confidence raw fallbacks are neutral unless the bundle reports recurrence across at least two non-self datasets.
 \end{itemize}
 
-Recommended v1 defaults are narrow, for example $\eta_{\min}=0.75$ and $\eta_{\max}=1.35$.
+\subsection{Step 5: ubiquity prior and same-dataset exclusion}
+Frequently observed events should be somewhat less informative than rarer events. The bundle therefore stores a pooled detection-frequency prior together with dataset-stratified nuisance tables.
 
-\subsection{Step 5: ubiquity prior}
-Commonly observed splice events should be somewhat less informative than rarer, more condition-specific ones. The reference bundle therefore stores a simple detection-frequency prior.
-
-Let $N$ be the number of reference samples and let $df_i$ be the number of reference samples where event $i$ is detected under a standard rule (for example finite PSI plus minimal support). Define:
+Let $N$ be the number of reference samples and let $df_i$ be the number of reference samples where event $i$ is observed. A pooled prior can be written as
 \begin{equation}
-u_i = \log\!\left(1 + \frac{N+\tau}{df_i+\tau}\right),
+u_i = \log\!\left(1 + \frac{N+\tau}{df_i+\tau}\right).
 \label{eq:idf}
 \end{equation}
-or use a precomputed bounded \texttt{idf\_ref} column from the bundle. If the bundle is absent, use $u_i = 1$.
 
-If event $i$ is only available through a low-confidence cohort-local raw identifier, then the ubiquity prior is neutralized:
+When the target run knows its own source dataset $d^\star$ and the bundle contains dataset-level nuisance summaries, the runtime first removes matching same-dataset contributions under the default \texttt{bundle\_same\_dataset\_policy=exclude}. If no non-self reference remains, the prior becomes neutral:
 \[
-u_i^{\star} =
-\begin{cases}
-u_i & \text{high-confidence coordinate-canonical event},\\
-1 & \text{\texttt{raw\_id\_fallback} / low-confidence event.}
-\end{cases}
+u_i^{(-d^\star)} = 1.
 \]
 
+If non-self references remain, the runtime replaces the pooled event prior with an effective leave-one-dataset-out prior based on remaining dataset counts:
+\[
+u_i^{(-d^\star)} \approx \log\!\left(1 + \frac{D_{\neg d^\star}+1}{df_i^{(\mathrm{dataset}, \neg d^\star)}+1}\right),
+\]
+where $D_{\neg d^\star}$ is the number of remaining reference datasets and $df_i^{(\mathrm{dataset}, \neg d^\star)}$ is the number of remaining datasets in which event $i$ appears.
+
+The final usable ubiquity prior is tier- and namespace-aware:
+\[
+u_i^\star =
+\begin{cases}
+u_i^{(-d^\star)} & c(i)=\texttt{high},\\
+1 + \lambda_{\mathrm{med}} \left(u_i^{(-d^\star)} - 1\right) & c(i)=\texttt{medium} \text{ and } n(i)=n_{\mathrm{prior}}(i),\\
+1 & c(i)=\texttt{medium} \text{ and } n(i)\neq n_{\mathrm{prior}}(i),\\
+1 & c(i)=\texttt{low},
+\end{cases}
+\]
+with a moderate shrinkage factor such as $\lambda_{\mathrm{med}} \approx 0.6$.
+
+So the runtime behavior is:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{high}: strongest prior use,
+\item \texttt{medium}: bounded prior use only within the matching source-family namespace,
+\item \texttt{low}: event-to-gene mapping can still benefit from aliasing, but ubiquity is neutralized.
+\end{itemize}
+
 \subsection{Step 6: final event score}
-The final event score is:
+The final event score is
 \begin{equation}
-z_i = T(x_i) \cdot \phi_i \cdot \omega_i \cdot \eta_i \cdot u_i^{\star},
+z_i = T(x_i) \cdot \phi_i \cdot \omega_i \cdot \eta_i \cdot u_i^\star,
 \label{eq:final_event_score}
 \end{equation}
-where $T(\cdot)$ is the requested score transform:
+where the score transform is
 \[
 T(x) =
 \begin{cases}
@@ -285,54 +304,52 @@ Here $\phi_i$ is an optional soft effect-size floor when a usable $\Delta \psi_i
 1 & \text{otherwise,}
 \end{cases}
 \]
-with a conservative default such as $\delta_0 = 0.05$. This downweights tiny absolute PSI shifts instead of hard-dropping them.
+with a conservative default such as $\delta_0 = 0.05$.
 
 \section{Duplicate-row collapse}
-Multiple raw rows can map to the same canonical event key. This happens with replicated summaries, alternate event labels, or tool-specific decompositions.
-
-Supported policies:
+Multiple raw rows can map to the same canonical event key. Supported policies are:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{highest\_confidence} (recommended default): retain the row with the largest uncertainty-weight proxy, breaking ties by largest $|z_i|$.
-\item \texttt{max\_abs}: keep the row with largest $|z_i|$.
-\item \texttt{mean}: average signed scores across duplicates.
+\item \texttt{highest\_confidence} (recommended default): retain the row with the largest confidence proxy, breaking ties by largest $|z_i|$,
+\item \texttt{max\_abs}: keep the row with the largest $|z_i|$,
+\item \texttt{mean}: average signed scores across duplicates,
 \item \texttt{sum}: sum signed scores across duplicates.
 \end{itemize}
 
-The default should favor one representative event row rather than inflating genes with repeated bookkeeping records.
+The default favors one representative row rather than inflating genes with repeated bookkeeping records.
 
 \section{Event-to-gene mapping}
-A splice event may map to one gene, several genes, or no high-confidence gene. Let $M_i \subseteq \mathcal{G}$ denote the mapped genes.
+Let $M_i \subseteq \mathcal{G}$ denote the mapped genes for event $i$.
 
-Supported policies:
+Supported policies are:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{drop} (recommended default): discard ambiguous multi-gene events.
-\item \texttt{split\_equal}: distribute $z_i / |M_i|$ to each mapped gene.
+\item \texttt{drop} (recommended default): discard ambiguous multi-gene events,
+\item \texttt{split\_equal}: distribute $z_i / |M_i|$ to each mapped gene,
 \item \texttt{first}: choose the first mapped gene after deterministic sorting.
 \end{itemize}
 
-The default should be conservative because ambiguous event-to-gene mappings can create false biological narratives.
+The default remains conservative because ambiguous event-to-gene mappings can create false biological narratives.
 
 \section{Gene aggregation}
-Let $E_g$ be the set of event contributions assigned to gene $g$. The extractor converts event-level scores $z_i$ to a gene score $s_g$.
+Let $E_g$ be the set of event contributions assigned to gene $g$.
 
 \subsection{G0. Event-group-aware independence collapse}
-Several rows from one LeafCutter cluster, MAJIQ LSV, or similar local event family are not independent evidence. The runtime therefore defines an event-group key $c_i$ from \texttt{event\_group} when available, falling back to the canonical event key otherwise, and keeps one representative per $(g, c_i)$ before gene aggregation:
+Several rows from one LeafCutter cluster, MAJIQ LSV, or similar local family are not independent evidence. The runtime therefore defines an event-group key $c_i$ from \texttt{event\_group} when available, falling back to the canonical event key otherwise, and keeps one representative per $(g, c_i)$:
 \[
-E_g^{\star} = \{ \text{best representative of each } (g, c_i) \}.
+E_g^\star = \{ \text{best representative of each } (g, c_i) \}.
 \]
-This representative is chosen by strongest absolute final event score, with confidence as a tiebreaker. All gene-level aggregation and current-input burden penalties operate on $E_g^{\star}$ rather than the raw post-duplicate rows.
+The representative is chosen by strongest absolute final event score, with confidence as a tiebreaker.
 
 \subsection{G1. \texttt{gene\_aggregation=signed\_topk\_mean} (recommended)}
-Sort event contributions by decreasing absolute magnitude. Let $\mathrm{TopK}(g)$ be the top $K$ event contributions for gene $g$. Then define:
+Sort event contributions by decreasing absolute magnitude. Let $\mathrm{TopK}(g)$ be the top $K$ event-group-collapsed contributions for gene $g$. Then
 \begin{equation}
 s_g = \frac{1}{|\mathrm{TopK}(g)|} \sum_{i \in \mathrm{TopK}(g)} z_i.
 \label{eq:topk_gene}
 \end{equation}
 
-This is the recommended default because it avoids rewarding genes simply for having many measured events, while still allowing a gene to be supported by more than one coherent splice change.
+This default avoids rewarding genes simply for having many measurable rows while still allowing a gene to be supported by more than one coherent event.
 
 \subsection{G1b. Conservative burden shrinkage}
-Even after top-$K$ aggregation, some cohorts still favor genes with many measurable splice events. The runtime therefore applies an additional conservative multiplicity penalty:
+Even after top-$K$ aggregation, some cohorts still favor genes with many measurable events. The runtime therefore applies a conservative multiplicity penalty:
 \[
 \widetilde{s}_g = s_g \cdot \beta_g,
 \qquad
@@ -346,31 +363,81 @@ The burden count can come from:
 \item a compact reference-bundle table such as \texttt{splice\_gene\_event\_burden\_human\_v1.tsv.gz}.
 \end{itemize}
 
-In the reference-bundle path, $n_g$ is derived from cross-study nuisance summaries such as unique event groups per gene, number of supporting studies, and median per-study unique-group burden. The goal is not to erase event-rich genes, only to stop them from winning by event-count opportunity alone.
+In the reference-bundle path, $n_g$ is derived from cross-study nuisance summaries such as unique event groups per gene, number of supporting studies, and median unique groups per study. When dataset-stratified burden tables are available, same-dataset contributions are excluded before this prior is used. If no non-self burden data remain, the burden prior becomes neutral.
+
+\subsection{G1c. Soft gene-support and sign-coherence shrinkage}
+Genes supported by multiple independent event groups with coherent sign should be ranked more stably than genes supported by one weak or internally inconsistent signal. After event-group collapse and base aggregation, the runtime therefore computes:
+\begin{align}
+n_g^{(\mathrm{grp})} &= \text{number of independent event groups retained for } g,\\
+n_g^{(\mathrm{evt})} &= \text{number of retained event contributions used for } g,\\
+\kappa_g &= \frac{\left|\sum_{i \in \mathrm{TopK}(g)} z_i\right|}{\sum_{i \in \mathrm{TopK}(g)} |z_i|}.
+\end{align}
+Here $\kappa_g \in [0,1]$ is a sign-coherence statistic.
+
+Under \texttt{gene\_support\_penalty\_mode=auto}, the runtime applies a modest support factor
+\[
+\gamma_g = \max\!\left(0.55, f_{\mathrm{grp}}(n_g^{(\mathrm{grp})}) \cdot f_{\mathrm{coh}}(\kappa_g)\right),
+\]
+with a conservative implementation such as
+\[
+f_{\mathrm{grp}}(n) =
+\begin{cases}
+1 & n \ge 2,\\
+0.85 & n = 1,
+\end{cases}
+\qquad
+f_{\mathrm{coh}}(\kappa) = 0.75 + 0.25\kappa.
+\]
+
+The support-adjusted score is then
+\[
+\widehat{s}_g = \widetilde{s}_g \cdot \gamma_g.
+\]
+This is intentionally soft. Genes with a single retained group are not dropped; they are only downweighted modestly relative to equally strong genes with better support structure.
 
 \subsection{G2. Alternatives}
+Supported alternatives remain:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{max\_abs}: use the single strongest event.
-\item \texttt{sum}: sum all event contributions.
-\item \texttt{mean}: average all event contributions.
+\item \texttt{max\_abs},
+\item \texttt{sum},
+\item \texttt{mean}.
 \end{itemize}
 
 For splicing, \texttt{sum} is often too sensitive to event multiplicity and is not recommended as the default.
 
-\section{From gene scores to a compact gene program}
-After aggregation, define the magnitude
-\[
-m_g = |s_g|.
-\]
-Select a subset $S \subseteq \mathcal{G}$ using one of the shared repo-wide selection strategies:
-\begin{itemize}[leftmargin=2em]
-\item \texttt{top\_k}
-\item \texttt{threshold}
-\item \texttt{quantile}
-\item \texttt{none}
-\end{itemize}
+\section{Active locus-diversity suppression}
+Some cohort-scale runs produce top genes that are implausibly concentrated within one genomic window, chromosome arm, or whole chromosome. The extractor therefore supports both diagnostic and active locus-density handling.
 
-Then compute nonnegative weights:
+Let genes be ordered by decreasing $|\widehat{s}_g|$. Using either event-derived coordinates or an optional compact gene-locus table, define concentration summaries among the top $N$ genes:
+\[
+f_{\mathrm{window}}, \qquad f_{\mathrm{arm}}, \qquad f_{\mathrm{chrom}},
+\]
+where each quantity is the fraction of the top-$N$ genes falling in the dominant local window, chromosome arm, or chromosome.
+
+Under \texttt{locus\_density\_penalty\_mode=auto}, the runtime checks whether one of these concentrations exceeds conservative thresholds. If no likely artifact is detected, no penalty is applied. If a likely artifact is detected, the top local representative is preserved and later genes from the same overrepresented region are softly downweighted. A representative form is
+\[
+\ell_g =
+\begin{cases}
+1 & \text{first representative from a local region},\\
+\frac{1}{\sqrt{m_g}} & \text{later window- or arm-level duplicate},\\
+\frac{1}{1 + 0.3(m_g - 1)} & \text{later chromosome-level duplicate},
+\end{cases}
+\]
+where $m_g$ is the repetition count encountered while traversing the ranked list.
+
+The final score entering selection is
+\[
+s_g^{(\mathrm{final})} = \widehat{s}_g \cdot \ell_g.
+\]
+
+This keeps the strongest local gene unchanged while reducing the chance that an entire program is dominated by one locus. The implementation records diagnostics such as \texttt{top\_n\_fraction\_same\_chromosome}, \texttt{top\_n\_fraction\_same\_chromosome\_arm}, \texttt{top\_n\_fraction\_same\_window}, and \texttt{likely\_locus\_density\_artifact}.
+
+\section{From gene scores to a compact gene program}
+After all aggregation and optional locus suppression, define the magnitude
+\[
+m_g = |s_g^{(\mathrm{final})}|.
+\]
+Select a subset $S \subseteq \mathcal{G}$ using shared repo-wide strategies such as \texttt{top\_k}, \texttt{threshold}, \texttt{quantile}, or \texttt{none}. Then compute nonnegative weights:
 \begin{equation}
 w_g =
 \begin{cases}
@@ -380,25 +447,26 @@ w_g =
 \label{eq:weights}
 \end{equation}
 
-As in other extractors in the repository, the signed score $s_g$ and nonnegative weight $w_g$ should both be preserved in output tables.
+The signed score and nonnegative weight are both preserved in output tables.
 
 \section{Matrix front-end}
-\texttt{splice\_event\_matrix} should mirror the role of \texttt{ptm\_site\_matrix}: estimate within-study event-level contrasts from a PSI matrix, then reuse the same downstream scorer used by \texttt{splice\_event\_diff}.
+\texttt{splice\_event\_matrix} estimates within-study event-level contrasts from a PSI matrix and then reuses the same downstream scorer used by \texttt{splice\_event\_diff}.
 
 \subsection{Input contract}
 Required:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{psi\_matrix.tsv}: one row per event, one column per sample, plus event metadata columns.
+\item \texttt{psi\_matrix.tsv}: one row per event, one column per sample, plus optional event metadata columns.
 \item \texttt{sample\_metadata.tsv}: at least \texttt{sample\_id}; usually \texttt{condition} and possibly \texttt{group}.
 \end{itemize}
+
 Optional:
 \begin{itemize}[leftmargin=2em]
-\item \texttt{event\_metadata.tsv}: if event metadata is not embedded in the PSI matrix.
-\item \texttt{coverage\_matrix.tsv}: if a public dataset supplies event-level denominators or support.
+\item \texttt{event\_metadata.tsv}, if event metadata are not embedded in the PSI matrix.
+\item \texttt{coverage\_matrix.tsv}, if a public source supplies event-level support.
 \end{itemize}
 
 \subsection{Study contrast modes}
-The same contrast modes as the PTM matrix front-end are appropriate:
+Supported contrast modes are:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{condition\_a\_vs\_b}
 \item \texttt{group\_vs\_rest}
@@ -407,33 +475,31 @@ The same contrast modes as the PTM matrix front-end are appropriate:
 \end{itemize}
 
 \subsection{Effect metrics}
-Recommended options:
+Recommended options are:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{welch\_t} (preferred default)
 \item \texttt{mean\_diff}
 \end{itemize}
 
-For a two-group contrast with groups $A$ and $B$, define:
+For a two-group contrast with groups $A$ and $B$,
 \[
 \Delta \psi_i = \overline{\psi}_{iA} - \overline{\psi}_{iB}.
 \]
-If \texttt{effect\_metric=welch\_t}, also compute a signed event statistic:
+If \texttt{effect\_metric=welch\_t}, the front-end also computes
 \[
 t_i = \frac{\overline{\psi}_{iA} - \overline{\psi}_{iB}}{\sqrt{\frac{s_{iA}^2}{n_A} + \frac{s_{iB}^2}{n_B}}},
 \]
-using only samples with finite PSI under the requested missingness rule.
-
-The matrix front-end then emits one standardized per-contrast event table with columns such as \texttt{delta\_psi}, \texttt{stat}, BH-adjusted \texttt{padj}, optional support summaries, and all needed event metadata, and feeds that table to the same event-to-gene workflow as \texttt{splice\_event\_diff}.
+using only samples with finite PSI under the missingness rule. Event-level p-values are BH-adjusted within each emitted contrast before the shared scorer runs.
 
 \section{Public-data normalizer}
-A splicing public-data normalizer should be intentionally narrow in v1. The main initial target is TCGA SpliceSeq-like data because it is large, public, and reasonably standardized.
+The public normalizer is intentionally narrow in v1 and is centered on TCGA SpliceSeq-like data.
 
-\subsection{Recommended public workflow}
-\texttt{workflows splice\_prepare\_public} should:
+\subsection{Recommended workflow}
+\texttt{workflows splice\_prepare\_public}:
 \begin{enumerate}[leftmargin=2em]
-\item ingest TCGA SpliceSeq-like PSI tables and sample annotations,
-\item standardize event ids and metadata,
-\item write:
+\item ingests TCGA SpliceSeq-like PSI tables and sample annotations,
+\item standardizes event ids and metadata,
+\item writes
   \begin{itemize}
   \item \texttt{psi\_matrix.tsv}
   \item \texttt{sample\_metadata.tsv}
@@ -443,29 +509,40 @@ A splicing public-data normalizer should be intentionally narrow in v1. The main
   \item \texttt{prepare\_summary.json}
   \item \texttt{bundle\_source\_row.tsv}
   \end{itemize}
-\item preserve numeric PSI values exactly,
-\item record any coercions, dropped samples, and event-parser status in the summary files.
+\item preserves numeric PSI values exactly,
+\item records coercions, dropped samples, parser status, and metadata provenance in the summary.
 \end{enumerate}
 
-The output \texttt{bundle\_source\_row.tsv} should be shaped so that many staged studies can be concatenated and passed directly to \texttt{workflows splice\_prepare\_reference\_bundle}.
+The workflow accepts common public aliases such as \texttt{symbol} for \texttt{gene\_symbol} and \texttt{as\_id} for \texttt{event\_id}. If explicit sample annotations are absent, a narrow fallback can infer tumor versus adjacent-normal from the \texttt{\_Norm} suffix, recording the inference rule and barcode diagnostics in \texttt{prepare\_summary.json}.
 
-The public workflow should accept raw MD Anderson style header aliases such as \texttt{symbol} for \texttt{gene\_symbol} and \texttt{as\_id} for \texttt{event\_id}. If an explicit sample annotation table is not available, a narrow fallback can infer tumor versus adjacent-normal from the \texttt{\_Norm} suffix on sample columns, recording the inference rule and any barcode-consistency checks in \texttt{prepare\_summary.json}.
+For TCGA SpliceSeq-like rows without explicit coordinates, the staging workflow promotes structured AS identifiers to the medium-confidence source-family tier:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{canonicalization\_status=source\_family\_stable\_id}
+\item \texttt{canonicalization\_confidence=medium}
+\item \texttt{event\_key\_namespace=tcga\_spliceseq\_asid}
+\end{itemize}
+This is stronger than a generic raw fallback but still weaker than coordinate-based harmonization.
 
 \section{Reference bundle design}
-The safest v1 bundle is intentionally compact, exactly as in the PTM family. It should not try to pool raw PSI distributions across unrelated studies for direct biological scoring. Instead, it should provide:
+The v1 splicing bundle is intentionally compact. It does not pool raw PSI distributions across unrelated studies for direct biological scoring. Instead, it provides:
 \begin{itemize}[leftmargin=2em]
 \item event alias harmonization,
 \item event ubiquity priors,
 \item conservative event impact priors,
-\item a compact per-gene event burden table.
+\item a compact per-gene event burden table,
+\item dataset-stratified nuisance summaries for same-dataset exclusion,
+\item an optional compact gene-locus table for locality-aware suppression.
 \end{itemize}
 
 \subsection{Recommended files}
 \begin{itemize}[leftmargin=2em]
 \item \texttt{splice\_event\_aliases\_human\_v1.tsv.gz}
 \item \texttt{splice\_event\_ubiquity\_human\_v1.tsv.gz}
+\item \texttt{splice\_event\_ubiquity\_by\_dataset\_human\_v1.tsv.gz}
 \item \texttt{splice\_event\_impact\_human\_v1.tsv.gz}
 \item \texttt{splice\_gene\_event\_burden\_human\_v1.tsv.gz}
+\item \texttt{splice\_gene\_event\_burden\_by\_dataset\_human\_v1.tsv.gz}
+\item optional \texttt{splice\_gene\_locus\_human\_v1.tsv.gz}
 \item \texttt{bundle\_provenance.json}
 \item \texttt{local\_resources\_manifest.json}
 \end{itemize}
@@ -477,6 +554,7 @@ Required columns:
 \item \texttt{canonical\_event\_key}
 \item \texttt{canonicalization\_status}
 \item \texttt{canonicalization\_confidence}
+\item \texttt{event\_key\_namespace}
 \item \texttt{gene\_id}
 \item \texttt{gene\_symbol}
 \item \texttt{event\_type}
@@ -496,6 +574,7 @@ Required columns:
 \item \texttt{event\_type}
 \item \texttt{canonicalization\_status}
 \item \texttt{canonicalization\_confidence}
+\item \texttt{event\_key\_namespace}
 \item \texttt{n\_samples\_ref}
 \item \texttt{df\_ref}
 \item \texttt{fraction\_ref}
@@ -513,13 +592,12 @@ Required columns:
 \item \texttt{event\_type}
 \item \texttt{canonicalization\_status}
 \item \texttt{canonicalization\_confidence}
+\item \texttt{event\_key\_namespace}
 \item \texttt{impact\_weight\_raw}
 \item \texttt{impact\_evidence}
 \item \texttt{annotation\_status}
 \item \texttt{n\_datasets\_ref}
 \end{itemize}
-
-Optional columns can include \texttt{is\_coding}, \texttt{frame\_class}, \texttt{nmd\_risk}, or \texttt{domain\_disruption\_flag}, but v1 should work when these are absent.
 
 \subsection{Gene-burden schema}
 Required columns:
@@ -527,6 +605,7 @@ Required columns:
 \item \texttt{gene\_symbol}
 \item \texttt{n\_canonical\_events\_ref}
 \item \texttt{n\_high\_confidence\_events\_ref}
+\item \texttt{n\_medium\_confidence\_events\_ref}
 \item \texttt{n\_low\_confidence\_events\_ref}
 \item \texttt{n\_unique\_event\_groups\_ref}
 \item \texttt{n\_studies\_ref}
@@ -535,39 +614,66 @@ Required columns:
 \item \texttt{median\_unique\_groups\_per\_study}
 \end{itemize}
 
-\section{QC and artifact detection}
-Splicing gene programs can be biologically rich, but they are also vulnerable to technical and representational artifacts. The extractor should therefore emit explicit run summaries and warnings.
+\subsection{Dataset-stratified nuisance summaries}
+The bundle also carries compact dataset-level summaries such as:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{splice\_event\_ubiquity\_by\_dataset\_human\_v1.tsv.gz}
+\item \texttt{splice\_gene\_event\_burden\_by\_dataset\_human\_v1.tsv.gz}
+\end{itemize}
 
-Recommended summary fields:
+These files are not intended for direct biological interpretation. Their role is defensive: at scoring time they let the runtime remove same-dataset contributions so a naively pooled bundle can behave like a leave-one-dataset-out prior when provenance is available.
+
+\subsection{Confidence tiers and namespaces}
+The bundle makes identity confidence and namespace explicit:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{coordinate\_canonical} / \texttt{high} / \texttt{global\_coordinate}
+\item \texttt{source\_family\_stable\_id} / \texttt{medium} / \texttt{tcga\_spliceseq\_asid}
+\item \texttt{raw\_id\_fallback} / \texttt{low} / \texttt{raw\_id\_fallback}
+\end{itemize}
+
+The practical meaning is:
+\begin{itemize}[leftmargin=2em]
+\item high-confidence coordinate keys are the closest thing this assay family has to cross-study harmonized event identities,
+\item medium-confidence TCGA keys are reusable across TCGA SpliceSeq-like studies only,
+\item low-confidence raw IDs are cohort-local and should not carry strong cross-study priors.
+\end{itemize}
+
+\section{QC and artifact detection}
+Splicing programs can be biologically rich, but they are vulnerable to technical and representational artifacts. The extractor therefore emits explicit summaries and warnings.
+
+Recommended summary fields include:
 \begin{itemize}[leftmargin=2em]
 \item counts of input rows, canonical events, and output genes,
 \item counts of independent event groups after event-group collapse,
 \item event-type composition,
 \item fraction of events matched to alias, ubiquity, and impact priors,
-\item canonicalization confidence counts for both retained events and selected support events,
+\item canonicalization confidence counts for retained events and selected support events,
+\item same-dataset exclusion / neutralization counts for event ubiquity and gene burden,
 \item fraction of ambiguous multi-gene events dropped,
 \item fraction of selected genes driven by a single event,
+\item sign-coherence and independent-group support summaries for selected genes,
 \item fraction of low-support events,
 \item fraction of novel events,
 \item delta-PSI soft-floor downweight counts,
-\item whether low-confidence priors contributed to selected events,
-\item counts of low-confidence ubiquity and impact priors that were neutralized,
+\item counts of low-confidence priors neutralized,
+\item counts of medium-confidence namespace mismatches neutralized,
 \item genomic concentration among top genes.
 \end{itemize}
 
-Recommended warning heuristics:
+Recommended warning heuristics include:
 \begin{itemize}[leftmargin=2em]
-\item \textbf{retained intron dominance}: high retained-intron fraction plus weak support,
-\item \textbf{novel event dominance}: many selected genes driven by novel or unmatched events,
-\item \textbf{event multiplicity bias}: selected genes overlap heavily with genes that simply have many measurable events,
-\item \textbf{low confidence}: most selected genes are driven by weak posterior, weak support, or missing confidence fields,
-\item \textbf{locus density artifact}: top genes concentrate within one genomic window or chromosome.
+\item \textbf{retained intron dominance},
+\item \textbf{novel event dominance},
+\item \textbf{event multiplicity bias},
+\item \textbf{low confidence},
+\item \textbf{bundle same dataset match},
+\item \textbf{locus density artifact}.
 \end{itemize}
 
-As in the PTM family, warnings should be written both to stderr and to \texttt{run\_summary.json} / \texttt{run\_summary.txt}.
+Warnings are written both to stderr and to structured summary outputs.
 
 \section{Recommended defaults}
-A reasonable first-pass default configuration is:
+A reasonable default configuration is:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{score\_mode=auto}
 \item \texttt{score\_transform=signed}
@@ -577,11 +683,13 @@ A reasonable first-pass default configuration is:
 \item \texttt{gene\_aggregation=signed\_topk\_mean}
 \item \texttt{gene\_topk\_events=3}
 \item \texttt{gene\_burden\_penalty\_mode=auto}
+\item \texttt{gene\_support\_penalty\_mode=auto}
 \item \texttt{locus\_density\_penalty\_mode=none}
 \item \texttt{delta\_psi\_soft\_floor=0.05}, \texttt{delta\_psi\_soft\_floor\_mode=auto}
 \item \texttt{ambiguous\_gene\_policy=drop}
 \item \texttt{use\_reference\_bundle=true}
 \item \texttt{resource\_policy=skip}
+\item \texttt{bundle\_same\_dataset\_policy=exclude}
 \item \texttt{select=top\_k}, \texttt{top\_k=200}
 \item \texttt{normalize=within\_set\_l1}
 \item \texttt{emit\_gmt=true}, \texttt{gmt\_split\_signed=true}, \texttt{gmt\_topk\_list=200}
@@ -595,24 +703,27 @@ For matrix inputs:
 \item \texttt{min\_samples\_per\_condition=3}
 \end{itemize}
 
+For public TCGA-like cohort runs, \texttt{locus\_density\_penalty\_mode=auto} is often a better operational choice than the conservative global default \texttt{none}, because it can suppress chromosome- or window-dominated artifact programs while preserving the strongest local representative.
+
 \section{What should not be in v1}
-The v1 extractor should avoid overreach:
+The v1 extractor deliberately avoids overreach:
 \begin{itemize}[leftmargin=2em]
-\item no attempt to infer full transcript consequences de novo from raw BAMs,
-\item no heavy transcript-assembly dependencies,
-\item no aggressive domain-loss or NMD scoring without explicit evidence and strong shrinkage,
-\item no gene aggregation rule that rewards genes merely for having many measurable junctions.
+\item no heavy transcript-level consequence engine,
+\item no transcript assembly from raw reads,
+\item no aggressive consequence priors without strong shrinkage,
+\item no gene aggregation rule that rewards genes merely for having many measurable junctions,
+\item no broad promotion of non-TCGA raw event ids into medium confidence without explicit source-family evidence.
 \end{itemize}
 
 \section{Interpretation}
-This design should produce gene programs that are distinctive when splicing is genuinely mechanistic. Examples include:
+This design should produce gene programs that are distinctive when splicing is genuinely mechanistic, for example:
 \begin{itemize}[leftmargin=2em]
-\item programs driven by core spliceosome or RNA-binding proteins,
+\item programs driven by spliceosome or RNA-binding protein perturbation,
 \item exon-skipping or junction-switching programs that map to coherent pathways,
-\item intron-retention programs consistent with stress, RNA quality, or altered post-transcriptional control.
+\item intron-retention programs consistent with stress or altered post-transcriptional control.
 \end{itemize}
 
-At the same time, the extractor preserves enough diagnostics to distinguish plausible biology from artifacts. That balance is the main reason to prefer event-to-gene projection plus conservative uncertainty-aware priors over more aggressive consequence models in the initial implementation.
+At the same time, the extractor preserves enough diagnostics to distinguish plausible biology from artifacts. That balance is the main reason to prefer event-to-gene projection plus conservative, source-aware priors over a heavier transcript-consequence stack in the initial implementation.
 
 \section*{References}
 \begin{thebibliography}{9}

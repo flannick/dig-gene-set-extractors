@@ -5,13 +5,17 @@ from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
 from geneset_extractors.extractors.splicing.resource_utils import (
+    ResourceContext,
     build_resources_info,
     load_resource_context,
     resolve_resource_path,
 )
 from geneset_extractors.extractors.splicing.splice_event_diff_workflow import (
     read_event_alias_tsv,
+    read_event_ubiquity_by_dataset_tsv,
     read_gene_burden_tsv,
+    read_gene_burden_by_dataset_tsv,
+    read_gene_locus_tsv,
     read_event_impact_tsv,
     read_event_ubiquity_tsv,
 )
@@ -23,8 +27,11 @@ from geneset_extractors.extractors.splicing.splice_event_matrix_workflow import 
 
 DEFAULT_ALIAS_RESOURCE_ID = "splice_event_aliases_human_v1"
 DEFAULT_UBIQUITY_RESOURCE_ID = "splice_event_ubiquity_human_v1"
+DEFAULT_UBIQUITY_BY_DATASET_RESOURCE_ID = "splice_event_ubiquity_by_dataset_human_v1"
 DEFAULT_IMPACT_RESOURCE_ID = "splice_event_impact_human_v1"
 DEFAULT_GENE_BURDEN_RESOURCE_ID = "splice_gene_event_burden_human_v1"
+DEFAULT_GENE_BURDEN_BY_DATASET_RESOURCE_ID = "splice_gene_event_burden_by_dataset_human_v1"
+DEFAULT_GENE_LOCUS_RESOURCE_ID = "splice_gene_locus_human_v1"
 
 
 
@@ -39,7 +46,30 @@ def _default_resource_id(organism: str, kind: str) -> str | None:
         return DEFAULT_IMPACT_RESOURCE_ID
     if kind == "gene_burden":
         return DEFAULT_GENE_BURDEN_RESOURCE_ID
+    if kind == "ubiquity_by_dataset":
+        return DEFAULT_UBIQUITY_BY_DATASET_RESOURCE_ID
+    if kind == "gene_burden_by_dataset":
+        return DEFAULT_GENE_BURDEN_BY_DATASET_RESOURCE_ID
+    if kind == "gene_locus":
+        return DEFAULT_GENE_LOCUS_RESOURCE_ID
     return None
+
+
+def _clean(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _resource_file_exists(ctx: ResourceContext, resource_id: str | None) -> bool:
+    rid = _clean(resource_id)
+    if not rid or rid not in ctx.resources:
+        return False
+    filename = _clean(ctx.resources[rid].get("filename"))
+    if not filename:
+        return False
+    candidates = [ctx.resources_dir / filename, ctx.resources_dir / "bundle" / filename]
+    return any(candidate.exists() for candidate in candidates)
 
 
 
@@ -106,6 +136,21 @@ def run(args) -> dict[str, object]:
                 "Provide --resources_dir containing the splice-event impact table, or set --event_impact_resource_id to a valid local resource."
             ),
         )
+    ubiquity_by_dataset_path = None
+    ubiquity_by_dataset_resource_id = getattr(args, "event_ubiquity_by_dataset_resource_id", None) or _default_resource_id(args.organism, "ubiquity_by_dataset")
+    if use_bundle and ubiquity_by_dataset_resource_id and ctx is not None and (
+        getattr(args, "event_ubiquity_by_dataset_resource_id", None) or _resource_file_exists(ctx, ubiquity_by_dataset_resource_id)
+    ):
+        ubiquity_by_dataset_path = resolve_resource_path(
+            ctx=ctx,
+            resource_id=ubiquity_by_dataset_resource_id,
+            resource_policy=resource_policy,
+            role_label="event_ubiquity_by_dataset",
+            enablement_hint=(
+                "Provide --resources_dir containing the dataset-stratified splice-event ubiquity table, or set "
+                "--event_ubiquity_by_dataset_resource_id to a valid local resource."
+            ),
+        )
     gene_burden_path = None
     gene_burden_resource_id = getattr(args, "gene_burden_resource_id", None) or _default_resource_id(args.organism, "gene_burden")
     if use_bundle and gene_burden_resource_id and ctx is not None:
@@ -118,11 +163,43 @@ def run(args) -> dict[str, object]:
                 "Provide --resources_dir containing the splice gene-burden table, or set --gene_burden_resource_id to a valid local resource."
             ),
         )
+    gene_burden_by_dataset_path = None
+    gene_burden_by_dataset_resource_id = getattr(args, "gene_burden_by_dataset_resource_id", None) or _default_resource_id(args.organism, "gene_burden_by_dataset")
+    if use_bundle and gene_burden_by_dataset_resource_id and ctx is not None and (
+        getattr(args, "gene_burden_by_dataset_resource_id", None) or _resource_file_exists(ctx, gene_burden_by_dataset_resource_id)
+    ):
+        gene_burden_by_dataset_path = resolve_resource_path(
+            ctx=ctx,
+            resource_id=gene_burden_by_dataset_resource_id,
+            resource_policy=resource_policy,
+            role_label="gene_burden_by_dataset",
+            enablement_hint=(
+                "Provide --resources_dir containing the dataset-stratified splice gene-burden table, or set "
+                "--gene_burden_by_dataset_resource_id to a valid local resource."
+            ),
+        )
+    gene_locus_path = None
+    gene_locus_resource_id = getattr(args, "gene_locus_resource_id", None) or _default_resource_id(args.organism, "gene_locus")
+    if getattr(args, "locus_density_penalty_mode", "none") in {"chromosome_diversity", "auto"} and gene_locus_resource_id and ctx is not None and (
+        getattr(args, "gene_locus_resource_id", None) or _resource_file_exists(ctx, gene_locus_resource_id)
+    ):
+        gene_locus_path = resolve_resource_path(
+            ctx=ctx,
+            resource_id=gene_locus_resource_id,
+            resource_policy=resource_policy,
+            role_label="gene_locus",
+            enablement_hint=(
+                "Provide --resources_dir containing the optional splice gene-locus table if you want chromosome-arm-aware locus suppression."
+            ),
+        )
 
     alias_map = read_event_alias_tsv(alias_path) if alias_path is not None else None
     ubiquity_map = read_event_ubiquity_tsv(ubiquity_path) if ubiquity_path is not None else None
+    event_ubiquity_by_dataset_map = read_event_ubiquity_by_dataset_tsv(ubiquity_by_dataset_path) if ubiquity_by_dataset_path is not None else None
     impact_map = read_event_impact_tsv(impact_path) if impact_path is not None else None
     gene_burden_map = read_gene_burden_tsv(gene_burden_path) if gene_burden_path is not None else None
+    gene_burden_by_dataset_map = read_gene_burden_by_dataset_tsv(gene_burden_by_dataset_path) if gene_burden_by_dataset_path is not None else None
+    gene_locus_map = read_gene_locus_tsv(gene_locus_path) if gene_locus_path is not None else None
 
     files = [
         input_file_record(args.psi_matrix_tsv, "psi_matrix_tsv"),
@@ -136,10 +213,16 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(alias_path, "event_alias_table"))
     if ubiquity_path is not None:
         files.append(input_file_record(ubiquity_path, "event_ubiquity_table"))
+    if ubiquity_by_dataset_path is not None:
+        files.append(input_file_record(ubiquity_by_dataset_path, "event_ubiquity_by_dataset_table"))
     if impact_path is not None:
         files.append(input_file_record(impact_path, "event_impact_table"))
     if gene_burden_path is not None:
         files.append(input_file_record(gene_burden_path, "gene_burden_table"))
+    if gene_burden_by_dataset_path is not None:
+        files.append(input_file_record(gene_burden_by_dataset_path, "gene_burden_by_dataset_table"))
+    if gene_locus_path is not None:
+        files.append(input_file_record(gene_locus_path, "gene_locus_table"))
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.psi_matrix_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.psi_matrix_tsv).stem
@@ -199,9 +282,12 @@ def run(args) -> dict[str, object]:
         gene_topk_events=int(args.gene_topk_events),
         gene_burden_penalty_mode=getattr(args, "gene_burden_penalty_mode", "auto"),
         min_gene_burden_penalty=float(getattr(args, "min_gene_burden_penalty", 0.35)),
+        gene_support_penalty_mode=getattr(args, "gene_support_penalty_mode", "auto"),
         locus_density_penalty_mode=getattr(args, "locus_density_penalty_mode", "none"),
         locus_density_window_bp=int(getattr(args, "locus_density_window_bp", 20000000)),
         locus_density_top_n=int(getattr(args, "locus_density_top_n", 20)),
+        source_dataset=str(getattr(args, "source_dataset", "")).strip() or None,
+        bundle_same_dataset_policy=str(getattr(args, "bundle_same_dataset_policy", "exclude")),
         ambiguous_gene_policy=args.ambiguous_gene_policy,
         impact_mode=args.impact_mode,
         impact_min=float(args.impact_min),
@@ -230,8 +316,11 @@ def run(args) -> dict[str, object]:
         cfg=cfg,
         alias_map=alias_map,
         ubiquity_map=ubiquity_map,
+        event_ubiquity_by_dataset_map=event_ubiquity_by_dataset_map,
         impact_map=impact_map,
         gene_burden_map=gene_burden_map,
+        gene_burden_by_dataset_map=gene_burden_by_dataset_map,
+        gene_locus_map=gene_locus_map,
         input_files=files,
         resources_info=resources_info,
     )

@@ -2,64 +2,580 @@
   "name": "splice_event_matrix",
   "description": "PSI matrix plus sample metadata converted to one or more splicing-derived gene programs",
   "inputs": [
-    {"name": "psi_matrix_tsv", "type": "tsv", "description": "Wide event-by-sample PSI matrix", "required": true},
-    {"name": "sample_metadata_tsv", "type": "tsv", "description": "Sample metadata table with sample_id and contrast labels", "required": true},
-    {"name": "event_metadata_tsv", "type": "tsv", "description": "Optional event metadata table keyed by event_id", "required": false},
-    {"name": "coverage_matrix_tsv", "type": "tsv", "description": "Optional event-by-sample coverage/support matrix", "required": false}
+    {
+      "name": "psi_matrix_tsv",
+      "type": "tsv",
+      "description": "Wide event-by-sample PSI matrix",
+      "required": true
+    },
+    {
+      "name": "sample_metadata_tsv",
+      "type": "tsv",
+      "description": "Sample metadata table with sample_id and contrast labels",
+      "required": true
+    },
+    {
+      "name": "event_metadata_tsv",
+      "type": "tsv",
+      "description": "Optional event metadata table keyed by event_id",
+      "required": false
+    },
+    {
+      "name": "coverage_matrix_tsv",
+      "type": "tsv",
+      "description": "Optional event-by-sample coverage/support matrix",
+      "required": false
+    }
   ],
   "parameters": [
-    {"name": "signature_name", "type": "string", "default": null, "help": "Optional signature label for metadata/GMT naming; default uses psi_matrix_tsv stem"},
-    {"name": "dataset_label", "type": "string", "default": null, "help": "Optional dataset label for run summaries; default uses input filename"},
-    {"name": "matrix_format", "type": "string", "default": "wide_events_by_sample", "enum": ["wide_events_by_sample"], "help": "PSI matrix layout"},
-    {"name": "sample_id_column", "type": "string", "default": "sample_id", "help": "Sample-id column in sample_metadata_tsv"},
-    {"name": "group_column", "type": "string", "default": "group", "help": "Optional grouping column for grouped contrasts"},
-    {"name": "condition_column", "type": "string", "default": "condition", "help": "Condition column for within-study contrasts"},
-    {"name": "study_contrast", "type": "string", "default": "condition_a_vs_b", "enum": ["condition_a_vs_b", "group_vs_rest", "condition_within_group", "baseline"], "help": "Matrix contrast mode"},
-    {"name": "condition_a", "type": "string", "default": null, "help": "Optional explicit case/condition A label"},
-    {"name": "condition_b", "type": "string", "default": null, "help": "Optional explicit control/condition B label"},
-    {"name": "min_samples_per_condition", "type": "integer", "default": 3, "help": "Minimum samples per condition for non-baseline contrasts"},
-    {"name": "effect_metric", "type": "string", "default": "welch_t", "enum": ["welch_t", "mean_diff"], "help": "Event-level contrast statistic"},
-    {"name": "missing_value_policy", "type": "string", "default": "min_present", "enum": ["drop", "min_present"], "help": "Missing-value handling across samples"},
-    {"name": "min_present_per_condition", "type": "integer", "default": 3, "help": "Minimum present PSI values per condition"},
-    {"name": "tool_family", "type": "string", "default": "generic", "enum": ["auto", "generic", "leafcutter", "majiq", "whippet", "tcga_spliceseq"], "help": "Tool-family parser preset for event metadata"},
-    {"name": "event_id_column", "type": "string", "default": null, "help": "Optional event identifier column override"},
-    {"name": "event_group_column", "type": "string", "default": null, "help": "Optional event-group column override"},
-    {"name": "event_type_column", "type": "string", "default": null, "help": "Optional event-type column override"},
-    {"name": "gene_id_column", "type": "string", "default": null, "help": "Optional gene_id column override"},
-    {"name": "gene_symbol_column", "type": "string", "default": null, "help": "Optional gene_symbol column override"},
-    {"name": "chrom_column", "type": "string", "default": null, "help": "Optional chromosome column override"},
-    {"name": "start_column", "type": "string", "default": null, "help": "Optional start coordinate column override"},
-    {"name": "end_column", "type": "string", "default": null, "help": "Optional end coordinate column override"},
-    {"name": "strand_column", "type": "string", "default": null, "help": "Optional strand column override"},
-    {"name": "score_mode", "type": "string", "default": "auto", "enum": ["auto", "stat", "delta_psi_times_neglog10p", "delta_psi_times_confidence", "custom_column"], "help": "Downstream event score definition; auto prefers BH-adjusted padj when matrix contrasts provide p-values"},
-    {"name": "score_transform", "type": "string", "default": "signed", "enum": ["signed", "abs", "positive", "negative"], "help": "Signed or nonnegative row-score transform"},
-    {"name": "confidence_weight_mode", "type": "string", "default": "combined", "enum": ["none", "pvalue", "probability", "read_support", "combined"], "help": "Confidence weighting strategy"},
-    {"name": "delta_psi_soft_floor", "type": "number", "default": 0.05, "help": "Soft absolute delta-PSI floor used when matrix contrasts provide delta_psi"},
-    {"name": "delta_psi_soft_floor_mode", "type": "string", "default": "auto", "enum": ["auto", "off"], "help": "Whether to apply the delta-PSI soft floor when effect-size information exists"},
-    {"name": "impact_mode", "type": "string", "default": "conservative", "enum": ["none", "conservative", "custom_bundle"], "help": "Conservative event-impact prior mode"},
-    {"name": "event_dup_policy", "type": "string", "default": "highest_confidence", "enum": ["highest_confidence", "max_abs", "mean", "sum"], "help": "Duplicate-row collapse policy per canonical event"},
-    {"name": "gene_aggregation", "type": "string", "default": "signed_topk_mean", "enum": ["signed_topk_mean", "max_abs", "sum", "mean"], "help": "Event-to-gene aggregation method"},
-    {"name": "gene_topk_events", "type": "integer", "default": 3, "help": "K for gene_aggregation=signed_topk_mean"},
-    {"name": "gene_burden_penalty_mode", "type": "string", "default": "auto", "enum": ["none", "current_input", "reference_bundle", "auto"], "help": "Conservative multiplicity penalty source for gene-level ranking"},
-    {"name": "min_gene_burden_penalty", "type": "number", "default": 0.35, "help": "Lower clip for the gene burden shrinkage factor"},
-    {"name": "locus_density_penalty_mode", "type": "string", "default": "none", "enum": ["none", "window_diversity"], "help": "Optional soft suppression of dense same-locus gene clusters after scoring"},
-    {"name": "locus_density_window_bp", "type": "integer", "default": 20000000, "help": "Window size used for locus-density diagnostics and optional suppression"},
-    {"name": "locus_density_top_n", "type": "integer", "default": 20, "help": "Number of top genes inspected for locus-density concentration diagnostics"},
-    {"name": "ambiguous_gene_policy", "type": "string", "default": "drop", "enum": ["drop", "split_equal", "first"], "help": "How ambiguous multi-gene rows are handled"},
-    {"name": "resources_manifest", "type": "string", "default": null, "help": "Optional resources manifest path"},
-    {"name": "resources_dir", "type": "string", "default": null, "help": "Optional resources directory containing splicing bundle files"},
-    {"name": "resource_policy", "type": "string", "default": "skip", "enum": ["skip", "fail"], "help": "Behavior when requested splicing resources are missing"},
-    {"name": "use_reference_bundle", "type": "boolean", "default": true, "help": "Attempt to use alias, ubiquity, and impact priors when available"},
-    {"name": "event_alias_resource_id", "type": "string", "default": null, "help": "Optional resource id for canonical event alias table"},
-    {"name": "event_ubiquity_resource_id", "type": "string", "default": null, "help": "Optional resource id for event ubiquity prior"},
-    {"name": "event_impact_resource_id", "type": "string", "default": null, "help": "Optional resource id for conservative event impact prior"},
-    {"name": "gene_burden_resource_id", "type": "string", "default": null, "help": "Optional resource id for reference per-gene event burden counts"}
+    {
+      "name": "signature_name",
+      "type": "string",
+      "default": null,
+      "help": "Optional signature label for metadata/GMT naming; default uses psi_matrix_tsv stem"
+    },
+    {
+      "name": "dataset_label",
+      "type": "string",
+      "default": null,
+      "help": "Optional dataset label for run summaries; default uses input filename"
+    },
+    {
+      "name": "matrix_format",
+      "type": "string",
+      "default": "wide_events_by_sample",
+      "enum": [
+        "wide_events_by_sample"
+      ],
+      "help": "PSI matrix layout"
+    },
+    {
+      "name": "sample_id_column",
+      "type": "string",
+      "default": "sample_id",
+      "help": "Sample-id column in sample_metadata_tsv"
+    },
+    {
+      "name": "group_column",
+      "type": "string",
+      "default": "group",
+      "help": "Optional grouping column for grouped contrasts"
+    },
+    {
+      "name": "condition_column",
+      "type": "string",
+      "default": "condition",
+      "help": "Condition column for within-study contrasts"
+    },
+    {
+      "name": "study_contrast",
+      "type": "string",
+      "default": "condition_a_vs_b",
+      "enum": [
+        "condition_a_vs_b",
+        "group_vs_rest",
+        "condition_within_group",
+        "baseline"
+      ],
+      "help": "Matrix contrast mode"
+    },
+    {
+      "name": "condition_a",
+      "type": "string",
+      "default": null,
+      "help": "Optional explicit case/condition A label"
+    },
+    {
+      "name": "condition_b",
+      "type": "string",
+      "default": null,
+      "help": "Optional explicit control/condition B label"
+    },
+    {
+      "name": "min_samples_per_condition",
+      "type": "integer",
+      "default": 3,
+      "help": "Minimum samples per condition for non-baseline contrasts"
+    },
+    {
+      "name": "effect_metric",
+      "type": "string",
+      "default": "welch_t",
+      "enum": [
+        "welch_t",
+        "mean_diff"
+      ],
+      "help": "Event-level contrast statistic"
+    },
+    {
+      "name": "missing_value_policy",
+      "type": "string",
+      "default": "min_present",
+      "enum": [
+        "drop",
+        "min_present"
+      ],
+      "help": "Missing-value handling across samples"
+    },
+    {
+      "name": "min_present_per_condition",
+      "type": "integer",
+      "default": 3,
+      "help": "Minimum present PSI values per condition"
+    },
+    {
+      "name": "tool_family",
+      "type": "string",
+      "default": "generic",
+      "enum": [
+        "auto",
+        "generic",
+        "leafcutter",
+        "majiq",
+        "whippet",
+        "tcga_spliceseq"
+      ],
+      "help": "Tool-family parser preset for event metadata"
+    },
+    {
+      "name": "event_id_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional event identifier column override"
+    },
+    {
+      "name": "event_group_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional event-group column override"
+    },
+    {
+      "name": "event_type_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional event-type column override"
+    },
+    {
+      "name": "gene_id_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional gene_id column override"
+    },
+    {
+      "name": "gene_symbol_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional gene_symbol column override"
+    },
+    {
+      "name": "chrom_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional chromosome column override"
+    },
+    {
+      "name": "start_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional start coordinate column override"
+    },
+    {
+      "name": "end_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional end coordinate column override"
+    },
+    {
+      "name": "strand_column",
+      "type": "string",
+      "default": null,
+      "help": "Optional strand column override"
+    },
+    {
+      "name": "score_mode",
+      "type": "string",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "stat",
+        "delta_psi_times_neglog10p",
+        "delta_psi_times_confidence",
+        "custom_column"
+      ],
+      "help": "Downstream event score definition; auto prefers BH-adjusted padj when matrix contrasts provide p-values"
+    },
+    {
+      "name": "score_transform",
+      "type": "string",
+      "default": "signed",
+      "enum": [
+        "signed",
+        "abs",
+        "positive",
+        "negative"
+      ],
+      "help": "Signed or nonnegative row-score transform"
+    },
+    {
+      "name": "confidence_weight_mode",
+      "type": "string",
+      "default": "combined",
+      "enum": [
+        "none",
+        "pvalue",
+        "probability",
+        "read_support",
+        "combined"
+      ],
+      "help": "Confidence weighting strategy"
+    },
+    {
+      "name": "delta_psi_soft_floor",
+      "type": "number",
+      "default": 0.05,
+      "help": "Soft absolute delta-PSI floor used when matrix contrasts provide delta_psi"
+    },
+    {
+      "name": "delta_psi_soft_floor_mode",
+      "type": "string",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "off"
+      ],
+      "help": "Whether to apply the delta-PSI soft floor when effect-size information exists"
+    },
+    {
+      "name": "impact_mode",
+      "type": "string",
+      "default": "conservative",
+      "enum": [
+        "none",
+        "conservative",
+        "custom_bundle"
+      ],
+      "help": "Conservative event-impact prior mode"
+    },
+    {
+      "name": "event_dup_policy",
+      "type": "string",
+      "default": "highest_confidence",
+      "enum": [
+        "highest_confidence",
+        "max_abs",
+        "mean",
+        "sum"
+      ],
+      "help": "Duplicate-row collapse policy per canonical event"
+    },
+    {
+      "name": "gene_aggregation",
+      "type": "string",
+      "default": "signed_topk_mean",
+      "enum": [
+        "signed_topk_mean",
+        "max_abs",
+        "sum",
+        "mean"
+      ],
+      "help": "Event-to-gene aggregation method"
+    },
+    {
+      "name": "gene_topk_events",
+      "type": "integer",
+      "default": 3,
+      "help": "K for gene_aggregation=signed_topk_mean"
+    },
+    {
+      "name": "gene_burden_penalty_mode",
+      "type": "string",
+      "default": "auto",
+      "enum": [
+        "none",
+        "current_input",
+        "reference_bundle",
+        "auto"
+      ],
+      "help": "Conservative multiplicity penalty source for gene-level ranking"
+    },
+    {
+      "name": "min_gene_burden_penalty",
+      "type": "number",
+      "default": 0.35,
+      "help": "Lower clip for the gene burden shrinkage factor"
+    },
+    {
+      "name": "gene_support_penalty_mode",
+      "type": "string",
+      "default": "auto",
+      "enum": [
+        "none",
+        "independent_groups",
+        "auto"
+      ],
+      "help": "Soft stability penalty based on independent event-group support and sign coherence"
+    },
+    {
+      "name": "locus_density_penalty_mode",
+      "type": "string",
+      "default": "none",
+      "enum": [
+        "none",
+        "window_diversity",
+        "chromosome_diversity",
+        "auto"
+      ],
+      "help": "Optional soft suppression of dense same-locus or same-chromosome gene clusters after scoring"
+    },
+    {
+      "name": "locus_density_window_bp",
+      "type": "integer",
+      "default": 20000000,
+      "help": "Window size used for locus-density diagnostics and optional suppression"
+    },
+    {
+      "name": "locus_density_top_n",
+      "type": "integer",
+      "default": 20,
+      "help": "Number of top genes inspected for locus-density concentration diagnostics"
+    },
+    {
+      "name": "ambiguous_gene_policy",
+      "type": "string",
+      "default": "drop",
+      "enum": [
+        "drop",
+        "split_equal",
+        "first"
+      ],
+      "help": "How ambiguous multi-gene rows are handled"
+    },
+    {
+      "name": "resources_manifest",
+      "type": "string",
+      "default": null,
+      "help": "Optional resources manifest path"
+    },
+    {
+      "name": "resources_dir",
+      "type": "string",
+      "default": null,
+      "help": "Optional resources directory containing splicing bundle files"
+    },
+    {
+      "name": "resource_policy",
+      "type": "string",
+      "default": "skip",
+      "enum": [
+        "skip",
+        "fail"
+      ],
+      "help": "Behavior when requested splicing resources are missing"
+    },
+    {
+      "name": "use_reference_bundle",
+      "type": "boolean",
+      "default": true,
+      "help": "Attempt to use alias, ubiquity, and impact priors when available"
+    },
+    {
+      "name": "source_dataset",
+      "type": "string",
+      "default": null,
+      "help": "Optional target source dataset used to exclude same-dataset bundle contributions when dataset-level bundle tables are available"
+    },
+    {
+      "name": "bundle_same_dataset_policy",
+      "type": "string",
+      "default": "exclude",
+      "enum": [
+        "exclude",
+        "warn",
+        "fail",
+        "ignore"
+      ],
+      "help": "How to handle matching source-dataset contributions in dataset-stratified splicing bundles"
+    },
+    {
+      "name": "event_alias_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for canonical event alias table"
+    },
+    {
+      "name": "event_ubiquity_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for event ubiquity prior"
+    },
+    {
+      "name": "event_ubiquity_by_dataset_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for dataset-stratified event ubiquity summaries"
+    },
+    {
+      "name": "event_impact_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for conservative event impact prior"
+    },
+    {
+      "name": "gene_burden_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for reference per-gene event burden counts"
+    },
+    {
+      "name": "gene_burden_by_dataset_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for dataset-stratified per-gene burden summaries"
+    },
+    {
+      "name": "gene_locus_resource_id",
+      "type": "string",
+      "default": null,
+      "help": "Optional resource id for a compact gene-locus table used by chromosome/arm-aware locus suppression"
+    },
+    {
+      "name": "select",
+      "type": "string",
+      "default": "top_k",
+      "enum": [
+        "none",
+        "top_k",
+        "quantile",
+        "threshold"
+      ],
+      "help": "Gene selection method using abs(score)"
+    },
+    {
+      "name": "top_k",
+      "type": "integer",
+      "default": 200,
+      "help": "K for select=top_k"
+    },
+    {
+      "name": "quantile",
+      "type": "number",
+      "default": 0.01,
+      "help": "Fraction for select=quantile"
+    },
+    {
+      "name": "min_score",
+      "type": "number",
+      "default": 0.0,
+      "help": "Minimum abs(score) for select=threshold"
+    },
+    {
+      "name": "normalize",
+      "type": "string",
+      "default": "within_set_l1",
+      "enum": [
+        "none",
+        "l1",
+        "within_set_l1"
+      ],
+      "help": "Weight normalization on selected genes"
+    },
+    {
+      "name": "emit_full",
+      "type": "boolean",
+      "default": true,
+      "help": "Write geneset.full.tsv in child contrast outputs"
+    },
+    {
+      "name": "emit_gmt",
+      "type": "boolean",
+      "default": true,
+      "help": "Write genesets.gmt"
+    },
+    {
+      "name": "gmt_format",
+      "type": "string",
+      "default": "dig2col",
+      "enum": [
+        "dig2col",
+        "classic"
+      ],
+      "help": "GMT serialization format"
+    },
+    {
+      "name": "gmt_prefer_symbol",
+      "type": "boolean",
+      "default": true,
+      "help": "Prefer gene_symbol tokens in GMT"
+    },
+    {
+      "name": "gmt_require_symbol",
+      "type": "boolean",
+      "default": true,
+      "help": "Drop rows without usable symbol tokens for GMT"
+    },
+    {
+      "name": "gmt_biotype_allowlist",
+      "type": "string",
+      "default": "protein_coding",
+      "help": "Comma-separated allowed biotypes for GMT"
+    },
+    {
+      "name": "gmt_split_signed",
+      "type": "boolean",
+      "default": true,
+      "help": "Emit __pos and __neg GMT families from signed scores"
+    },
+    {
+      "name": "gmt_topk_list",
+      "type": "string",
+      "default": "200",
+      "help": "Comma-separated top-K GMT plans"
+    },
+    {
+      "name": "gmt_mass_list",
+      "type": "string",
+      "default": "",
+      "help": "Comma-separated mass GMT plans"
+    },
+    {
+      "name": "gmt_min_genes",
+      "type": "integer",
+      "default": 100,
+      "help": "Minimum genes per GMT set"
+    },
+    {
+      "name": "gmt_max_genes",
+      "type": "integer",
+      "default": 500,
+      "help": "Maximum genes per GMT set"
+    },
+    {
+      "name": "emit_small_gene_sets",
+      "type": "boolean",
+      "default": false,
+      "help": "Emit sets below gmt_min_genes with warning"
+    }
   ],
   "outputs": [
-    {"name": "manifest.tsv", "description": "Per-contrast grouped output manifest when multiple programs are emitted"},
-    {"name": "contrast_qc.tsv", "description": "Per-contrast QC and skip/emission reasons"},
-    {"name": "genesets.gmt", "description": "Combined directional GMT gene sets when multiple programs are emitted"},
-    {"name": "run_summary.json", "description": "Machine-readable matrix run summary"},
-    {"name": "run_summary.txt", "description": "Human-readable matrix run summary"}
+    {
+      "name": "manifest.tsv",
+      "description": "Per-contrast grouped output manifest when multiple programs are emitted"
+    },
+    {
+      "name": "contrast_qc.tsv",
+      "description": "Per-contrast QC and skip/emission reasons"
+    },
+    {
+      "name": "genesets.gmt",
+      "description": "Combined directional GMT gene sets when multiple programs are emitted"
+    },
+    {
+      "name": "run_summary.json",
+      "description": "Machine-readable matrix run summary"
+    },
+    {
+      "name": "run_summary.txt",
+      "description": "Human-readable matrix run summary"
+    }
   ]
 }

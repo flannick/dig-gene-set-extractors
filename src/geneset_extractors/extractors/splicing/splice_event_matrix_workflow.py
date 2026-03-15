@@ -92,9 +92,12 @@ class SpliceMatrixWorkflowConfig:
     gene_topk_events: int
     gene_burden_penalty_mode: str
     min_gene_burden_penalty: float
+    gene_support_penalty_mode: str
     locus_density_penalty_mode: str
     locus_density_window_bp: int
     locus_density_top_n: int
+    source_dataset: str | None
+    bundle_same_dataset_policy: str
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -161,6 +164,14 @@ def _sample_rows_by_id(rows: list[SampleMetaRecord], sample_id_column: str) -> d
     if not out:
         raise ValueError(f"No non-empty sample ids found in sample metadata column '{sample_id_column}'.")
     return out
+
+
+def _infer_source_dataset_from_sample_rows(rows: dict[str, SampleMetaRecord]) -> str | None:
+    for candidate in ("study_id", "source_dataset"):
+        values = sorted({_clean(row.values.get(candidate)) for row in rows.values() if _clean(row.values.get(candidate))})
+        if len(values) == 1:
+            return values[0]
+    return None
 
 
 
@@ -443,9 +454,12 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
         gene_topk_events=cfg.gene_topk_events,
         gene_burden_penalty_mode=cfg.gene_burden_penalty_mode,
         min_gene_burden_penalty=cfg.min_gene_burden_penalty,
+        gene_support_penalty_mode=cfg.gene_support_penalty_mode,
         locus_density_penalty_mode=cfg.locus_density_penalty_mode,
         locus_density_window_bp=cfg.locus_density_window_bp,
         locus_density_top_n=cfg.locus_density_top_n,
+        source_dataset=cfg.source_dataset,
+        bundle_same_dataset_policy=cfg.bundle_same_dataset_policy,
         ambiguous_gene_policy=cfg.ambiguous_gene_policy,
         impact_mode=cfg.impact_mode,
         impact_min=cfg.impact_min,
@@ -472,7 +486,19 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
 
 
 
-def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_map: dict[str, object] | None, ubiquity_map: dict[str, object] | None, impact_map: dict[str, object] | None, gene_burden_map: dict[str, object] | None, input_files: list[dict[str, str]], resources_info: dict[str, object] | None) -> dict[str, object]:
+def run_splice_event_matrix_workflow(
+    *,
+    cfg: SpliceMatrixWorkflowConfig,
+    alias_map: dict[str, object] | None,
+    ubiquity_map: dict[str, object] | None,
+    event_ubiquity_by_dataset_map: dict[str, object] | None,
+    impact_map: dict[str, object] | None,
+    gene_burden_map: dict[str, object] | None,
+    gene_burden_by_dataset_map: dict[str, object] | None,
+    gene_locus_map: dict[str, object] | None,
+    input_files: list[dict[str, str]],
+    resources_info: dict[str, object] | None,
+) -> dict[str, object]:
     if cfg.matrix_format != "wide_events_by_sample":
         raise ValueError(f"Unsupported matrix_format: {cfg.matrix_format}")
     out_dir = Path(cfg.out_dir)
@@ -486,6 +512,8 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
     if not available_sample_ids:
         raise ValueError("No sample IDs from sample_metadata_tsv were found as columns in psi_matrix_tsv.")
     sample_rows = {sid: sample_rows[sid] for sid in available_sample_ids}
+    if not cfg.source_dataset:
+        cfg.source_dataset = _infer_source_dataset_from_sample_rows(sample_rows)
 
     coverage_lookup = _coverage_map(cfg.coverage_matrix_tsv)
     contrasts = _build_contrast_specs(cfg, sample_rows)
@@ -534,8 +562,11 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
             rows=contrast_rows,
             alias_map=alias_map,
             ubiquity_map=ubiquity_map,
+            event_ubiquity_by_dataset_map=event_ubiquity_by_dataset_map,
             impact_map=impact_map,
             gene_burden_map=gene_burden_map,
+            gene_burden_by_dataset_map=gene_burden_by_dataset_map,
+            gene_locus_map=gene_locus_map,
             input_files=files,
             resources_info=resources_info,
         )
@@ -605,6 +636,9 @@ def run_splice_event_matrix_workflow(*, cfg: SpliceMatrixWorkflowConfig, alias_m
         "delta_psi_soft_floor_mode": cfg.delta_psi_soft_floor_mode,
         "delta_psi_soft_floor": cfg.delta_psi_soft_floor,
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
+        "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
+        "source_dataset": cfg.source_dataset,
+        "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
         "min_samples_per_condition": cfg.min_samples_per_condition,
         "min_present_per_condition": cfg.min_present_per_condition,
         "n_samples_total": len(sample_rows),

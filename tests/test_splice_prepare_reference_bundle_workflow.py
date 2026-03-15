@@ -78,7 +78,16 @@ class DiffArgs:
     delta_psi_soft_floor_mode = "auto"
     gene_burden_penalty_mode = "auto"
     min_gene_burden_penalty = 0.35
+    gene_support_penalty_mode = "auto"
+    locus_density_penalty_mode = "none"
+    locus_density_window_bp = 20000000
+    locus_density_top_n = 20
+    source_dataset = None
+    bundle_same_dataset_policy = "exclude"
     gene_burden_resource_id = None
+    event_ubiquity_by_dataset_resource_id = None
+    gene_burden_by_dataset_resource_id = None
+    gene_locus_resource_id = None
 
 
 class BundleArgs:
@@ -117,8 +126,10 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     bundle_dir = Path(args.out_dir)
     assert (bundle_dir / "splice_event_aliases_human_v1.tsv.gz").exists()
     assert (bundle_dir / "splice_event_ubiquity_human_v1.tsv.gz").exists()
+    assert (bundle_dir / "splice_event_ubiquity_by_dataset_human_v1.tsv.gz").exists()
     assert (bundle_dir / "splice_event_impact_human_v1.tsv.gz").exists()
     assert (bundle_dir / "splice_gene_event_burden_human_v1.tsv.gz").exists()
+    assert (bundle_dir / "splice_gene_event_burden_by_dataset_human_v1.tsv.gz").exists()
     assert (bundle_dir / "bundle_provenance.json").exists()
     assert (bundle_dir / "local_resources_manifest.json").exists()
 
@@ -134,6 +145,12 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert "n_unique_event_groups_ref" in burden_rows[0]
     assert "n_studies_ref" in burden_rows[0]
     assert "median_unique_groups_per_study" in burden_rows[0]
+    assert "n_medium_confidence_events_ref" in burden_rows[0]
+
+    with gzip.open(bundle_dir / "splice_event_ubiquity_by_dataset_human_v1.tsv.gz", "rt", encoding="utf-8") as fh:
+        ubiq_by_dataset_rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert {row["source_dataset"] for row in ubiq_by_dataset_rows} == {"toy"}
+    assert "event_key_namespace" in ubiq_by_dataset_rows[0]
 
     diff_args = DiffArgs()
     diff_args.out_dir = str(tmp_path / "runtime")
@@ -149,8 +166,10 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert used_ids == {
         "splice_event_aliases_human_v1",
         "splice_event_ubiquity_human_v1",
+        "splice_event_ubiquity_by_dataset_human_v1",
         "splice_event_impact_human_v1",
         "splice_gene_event_burden_human_v1",
+        "splice_gene_event_burden_by_dataset_human_v1",
     }
 
 
@@ -181,3 +200,76 @@ def test_splice_prepare_reference_bundle_exclude_source_datasets(tmp_path: Path)
     assert result["n_source_datasets"] == 1
     provenance = json.loads((Path(args.out_dir) / "bundle_provenance.json").read_text(encoding="utf-8"))
     assert provenance["excluded_source_datasets"] == ["B"]
+
+
+def test_splice_runtime_same_dataset_exclusion_defaults_to_neutral(tmp_path: Path):
+    source_rows = tmp_path / "bundle_source_row.tsv"
+    source_rows.write_text(
+        "\n".join(
+            [
+                "source_dataset\tsample_id\tinput_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tgene_id\tgene_symbol\tevent_group\tevent_type\tpsi\tread_support\tannotation_status\tchrom\tstart\tend\tstrand\ttool_family",
+                "toy\tS1\tE1\tchr19:100-200:+:exon_skip:G1\tcoordinate_canonical\thigh\tglobal_coordinate\tG_KCNN4\tKCNN4\tG1\texon_skip\t0.8\t20\tannotated_coding\tchr19\t100\t200\t+\tgeneric",
+                "toy\tS2\tE2\tchr7:300-360:+:alt_donor:G2\tcoordinate_canonical\thigh\tglobal_coordinate\tG_MAPK1\tMAPK1\tG2\talt_donor\t0.7\t20\tannotated_coding\tchr7\t300\t360\t+\tgeneric",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sources_manifest = tmp_path / "sources.tsv"
+    sources_manifest.write_text(f"path\tsource_dataset\n{source_rows}\ttoy\n", encoding="utf-8")
+    bundle_args = BundleArgs()
+    bundle_args.sources_tsv = str(sources_manifest)
+    bundle_args.out_dir = str(tmp_path / "bundle")
+    run_splice_prepare_reference_bundle(bundle_args)
+
+    args_self = DiffArgs()
+    args_self.out_dir = str(tmp_path / "runtime_self")
+    args_self.resources_dir = str(bundle_args.out_dir)
+    args_self.source_dataset = "toy"
+    result = splice_event_diff.run(args_self)
+    assert result["n_genes"] >= 1
+    summary = json.loads((Path(args_self.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["n_same_dataset_ubiquity_priors_neutralized"] >= 1
+    assert summary["n_same_dataset_gene_burden_neutralized"] >= 1
+    assert "bundle_same_dataset_match" in summary["warnings"]
+
+
+def test_splice_runtime_same_dataset_warn_and_fail_policies(tmp_path: Path):
+    source_rows = tmp_path / "bundle_source_row.tsv"
+    source_rows.write_text(
+        "\n".join(
+            [
+                "source_dataset\tsample_id\tinput_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tgene_id\tgene_symbol\tevent_group\tevent_type\tpsi\tread_support\tannotation_status\tchrom\tstart\tend\tstrand\ttool_family",
+                "toy\tS1\tE1\tchr19:100-200:+:exon_skip:G1\tcoordinate_canonical\thigh\tglobal_coordinate\tG_KCNN4\tKCNN4\tG1\texon_skip\t0.8\t20\tannotated_coding\tchr19\t100\t200\t+\tgeneric",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sources_manifest = tmp_path / "sources.tsv"
+    sources_manifest.write_text(f"path\tsource_dataset\n{source_rows}\ttoy\n", encoding="utf-8")
+    bundle_args = BundleArgs()
+    bundle_args.sources_tsv = str(sources_manifest)
+    bundle_args.out_dir = str(tmp_path / "bundle_warn")
+    run_splice_prepare_reference_bundle(bundle_args)
+
+    args_warn = DiffArgs()
+    args_warn.out_dir = str(tmp_path / "runtime_warn")
+    args_warn.resources_dir = str(bundle_args.out_dir)
+    args_warn.source_dataset = "toy"
+    args_warn.bundle_same_dataset_policy = "warn"
+    splice_event_diff.run(args_warn)
+    summary = json.loads((Path(args_warn.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["same_dataset_event_prior_summary"]["warning"]
+
+    args_fail = DiffArgs()
+    args_fail.out_dir = str(tmp_path / "runtime_fail")
+    args_fail.resources_dir = str(bundle_args.out_dir)
+    args_fail.source_dataset = "toy"
+    args_fail.bundle_same_dataset_policy = "fail"
+    try:
+        splice_event_diff.run(args_fail)
+    except ValueError as exc:
+        assert "bundle_same_dataset_policy=fail" in str(exc)
+    else:
+        raise AssertionError("Expected fail policy to reject matching source_dataset bundles")

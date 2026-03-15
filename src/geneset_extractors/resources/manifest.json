@@ -361,6 +361,18 @@
       "license": "Derived splice-event ubiquity prior; document upstream public sources and versions in local bundle provenance"
     },
     {
+      "id": "splice_event_ubiquity_by_dataset_human_v1",
+      "description": "Dataset-stratified human splice-event ubiquity summary with columns canonical_event_key,source_dataset,gene_id,gene_symbol,event_type,n_samples_ref,df_ref",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_event_ubiquity_by_dataset_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_event_ubiquity_by_dataset_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event ubiquity summary; document upstream public sources and versions in local bundle provenance"
+    },
+    {
       "id": "splice_event_impact_human_v1",
       "description": "Conservative human splice-event impact prior with columns canonical_event_key,gene_id,gene_symbol,event_type,impact_weight_raw,impact_evidence,annotation_status",
       "provider": "manual_or_bundle",
@@ -383,6 +395,30 @@
       "url": "",
       "sha256": "",
       "license": "Derived splice-event burden prior; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_gene_event_burden_by_dataset_human_v1",
+      "description": "Dataset-stratified per-gene splice-event burden counts with columns gene_symbol,source_dataset,n_canonical_events_ref,n_unique_event_groups_ref",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_gene_event_burden_by_dataset_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_gene_event_burden_by_dataset_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Derived splice-event burden summary; document upstream public sources and versions in local bundle provenance"
+    },
+    {
+      "id": "splice_gene_locus_human_v1",
+      "description": "Optional compact human gene-locus table with columns gene_symbol,gene_id,chrom,start,end,chromosome_arm",
+      "provider": "manual_or_bundle",
+      "stable_id": "manual:splice_gene_locus_human_v1",
+      "version": "v1",
+      "genome_build": "human",
+      "filename": "splice_gene_locus_human_v1.tsv.gz",
+      "url": "",
+      "sha256": "",
+      "license": "Compact gene-locus table license; document source/version in local bundle provenance"
     }
   ],
   "presets": {
@@ -441,8 +477,11 @@
     "splicing_default_optional_human": [
       "splice_event_aliases_human_v1",
       "splice_event_ubiquity_human_v1",
+      "splice_event_ubiquity_by_dataset_human_v1",
       "splice_event_impact_human_v1",
-      "splice_gene_event_burden_human_v1"
+      "splice_gene_event_burden_human_v1",
+      "splice_gene_event_burden_by_dataset_human_v1",
+      "splice_gene_locus_human_v1"
     ]
   }
 }

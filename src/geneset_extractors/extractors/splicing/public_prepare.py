@@ -112,7 +112,7 @@ def _event_key(row: dict[str, str]) -> str:
     return f"row_{abs(hash(tuple(sorted(row.items()))))}"
 
 
-def _canonical_event_key(row: dict[str, str]) -> tuple[str, str, str]:
+def _canonical_event_key(row: dict[str, str], *, input_mode: str) -> tuple[str, str, str, str]:
     chrom = _first_value(row, RAW_CHROM_COLUMNS)
     start = _first_value(row, RAW_START_COLUMNS)
     end = _first_value(row, RAW_END_COLUMNS)
@@ -122,8 +122,23 @@ def _canonical_event_key(row: dict[str, str]) -> tuple[str, str, str]:
     group_key = _first_value(row, RAW_EVENT_GROUP_COLUMNS)
     if chrom and start and end:
         suffix = group_key or raw_key
-        return f"{chrom}:{start}-{end}:{strand}:{event_type}:{suffix}", "coordinate_canonical", "high"
-    return raw_key, "raw_id_fallback", "low"
+        return (
+            f"{chrom}:{start}-{end}:{strand}:{event_type}:{suffix}",
+            "coordinate_canonical",
+            "high",
+            "global_coordinate",
+        )
+    if input_mode == "tcga_spliceseq":
+        stable_event_id = _first_value(row, RAW_EVENT_ID_COLUMNS)
+        gene_symbol = _first_value(row, RAW_GENE_SYMBOL_COLUMNS) or _first_value(row, RAW_GENE_ID_COLUMNS)
+        if stable_event_id and gene_symbol and event_type and event_type != "unknown":
+            return (
+                f"tcga_spliceseq_asid::{gene_symbol}::{event_type}::{stable_event_id}",
+                "source_family_stable_id",
+                "medium",
+                "tcga_spliceseq_asid",
+            )
+    return raw_key, "raw_id_fallback", "low", "raw_id_fallback"
 
 
 def _load_sample_id_map(path: str | None) -> dict[str, str]:
@@ -340,7 +355,7 @@ def run_public_prepare(
     allowlist = {_normalize_event_type(x) for x in str(event_type_allowlist or "").split(",") if _clean(x)}
     unknown_event_types = 0
     parser_status_counts: dict[str, int] = {}
-    canonicalization_confidence_counts: dict[str, int] = {"high": 0, "low": 0}
+    canonicalization_confidence_counts: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
     sample_id_map_rows: list[dict[str, object]] = []
     for raw_id, sample_id in raw_to_sample.items():
         sample_id_map_rows.append({"sample_id_raw": raw_id, "sample_id": sample_id, "drop_status": "retained"})
@@ -365,7 +380,10 @@ def run_public_prepare(
             for key, value in metadata_rows_by_event[event_id].items():
                 row_values.setdefault(key, value)
         raw_event_key = _event_key(row_values)
-        canonical_event_key, canonicalization_status, canonicalization_confidence = _canonical_event_key(row_values)
+        canonical_event_key, canonicalization_status, canonicalization_confidence, event_key_namespace = _canonical_event_key(
+            row_values,
+            input_mode=input_mode,
+        )
         parser_status_counts[canonicalization_status] = parser_status_counts.get(canonicalization_status, 0) + 1
         canonicalization_confidence_counts[canonicalization_confidence] = canonicalization_confidence_counts.get(canonicalization_confidence, 0) + 1
         event_type = _normalize_event_type(_first_value(row_values, RAW_EVENT_TYPE_COLUMNS))
@@ -393,6 +411,7 @@ def run_public_prepare(
             "strand": _first_value(row_values, RAW_STRAND_COLUMNS),
             "canonicalization_status": canonicalization_status,
             "canonicalization_confidence": canonicalization_confidence,
+            "event_key_namespace": event_key_namespace,
             "parser_status": canonicalization_status,
             "source_study_id": study_id_resolved,
             "source_file_name": Path(psi_tsv).name,
@@ -408,6 +427,7 @@ def run_public_prepare(
                 "event_type": event_type,
                 "canonicalization_status": canonicalization_status,
                 "canonicalization_confidence": canonicalization_confidence,
+                "event_key_namespace": event_key_namespace,
                 "parser_status": canonicalization_status,
             }
         )
@@ -425,6 +445,7 @@ def run_public_prepare(
             "strand",
             "canonicalization_status",
             "canonicalization_confidence",
+            "event_key_namespace",
         ):
             psi_row[key] = meta_row[key]
         for raw_sample in sample_columns:
@@ -445,6 +466,7 @@ def run_public_prepare(
                     "canonical_event_key": canonical_event_key,
                     "canonicalization_status": canonicalization_status,
                     "canonicalization_confidence": canonicalization_confidence,
+                    "event_key_namespace": event_key_namespace,
                     "gene_id": gene_id,
                     "gene_symbol": gene_symbol,
                     "event_type": event_type,
@@ -484,6 +506,7 @@ def run_public_prepare(
             "strand",
             "canonicalization_status",
             "canonicalization_confidence",
+            "event_key_namespace",
         ] + sample_ids,
         psi_matrix_rows,
     )
@@ -504,6 +527,7 @@ def run_public_prepare(
             "strand",
             "canonicalization_status",
             "canonicalization_confidence",
+            "event_key_namespace",
             "parser_status",
             "source_study_id",
             "source_file_name",
@@ -522,6 +546,7 @@ def run_public_prepare(
             "event_type",
             "canonicalization_status",
             "canonicalization_confidence",
+            "event_key_namespace",
             "parser_status",
         ],
         event_id_map_rows,
@@ -535,6 +560,7 @@ def run_public_prepare(
             "canonical_event_key",
             "canonicalization_status",
             "canonicalization_confidence",
+            "event_key_namespace",
             "gene_id",
             "gene_symbol",
             "event_type",
@@ -555,6 +581,8 @@ def run_public_prepare(
         warnings.append("event_types_overwhelmingly_unknown")
     if event_metadata_rows and (len([r for r in event_metadata_rows if r["canonicalization_status"] == "raw_id_fallback"]) / float(len(event_metadata_rows))) >= 0.8:
         warnings.append("most_events_failed_canonicalization")
+    if event_metadata_rows and (len([r for r in event_metadata_rows if r["canonicalization_confidence"] == "medium"]) / float(len(event_metadata_rows))) >= 0.5:
+        warnings.append("many_events_use_tcga_medium_confidence_ids")
     if total_values and (missing_values / float(total_values)) >= 0.9:
         warnings.append("psi_matrix_mostly_missing")
     if sample_meta_summary.get("sample_annotation_source") == "inferred_header":

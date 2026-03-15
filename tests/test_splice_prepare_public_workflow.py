@@ -214,6 +214,8 @@ def test_splice_prepare_public_to_matrix_and_bundle_handoff(tmp_path: Path):
     matrix_args.condition_b = "control"
     result = splice_event_matrix.run(matrix_args)
     assert result["n_contrasts_emitted"] == 1
+    run_summary = json.loads((Path(matrix_args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert run_summary["source_dataset"] == "TCGA_TOY"
 
 
 def test_splice_prepare_public_low_confidence_propagates_into_bundle(tmp_path: Path):
@@ -253,8 +255,39 @@ def test_splice_prepare_public_low_confidence_propagates_into_bundle(tmp_path: P
 
     provenance = json.loads((Path(bundle_args.out_dir) / "bundle_provenance.json").read_text(encoding="utf-8"))
     assert provenance["canonicalization_confidence_counts"]["high"] > 0
-    assert provenance["canonicalization_confidence_counts"]["low"] > 0
+    assert provenance["canonicalization_confidence_counts"]["medium"] > 0
 
     manifest = json.loads((Path(bundle_args.out_dir) / "local_resources_manifest.json").read_text(encoding="utf-8"))
     resource_ids = {item["id"] for item in manifest["resources"]}
     assert "splice_gene_event_burden_human_v1" in resource_ids
+
+
+def test_splice_prepare_public_tcga_medium_confidence_without_coordinates(tmp_path: Path):
+    out_dir = tmp_path / "prepared_medium"
+    psi_path = tmp_path / "medium.tsv"
+    psi_path.write_text(
+        "\n".join(
+            [
+                "as_id\tevent_group\tevent_type\tgene_id\tsymbol\tannotation_status\tTCGA-01A\tTCGA-02A\tTCGA-03A_Norm\tTCGA-04A_Norm",
+                "A123\tCG1\texon_skip\tG_KCNN4\tKCNN4\tannotated_coding\t0.80\t0.75\t0.20\t0.25",
+                "A124\tCG2\tretained_intron\tG_MAPK1\tMAPK1\tnovel\t0.20\t0.15\t0.70\t0.65",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary = run_public_prepare(
+        input_mode="tcga_spliceseq",
+        psi_tsv=str(psi_path),
+        sample_annotations_tsv=None,
+        out_dir=out_dir,
+        organism="human",
+        genome_build="hg38",
+        study_id="TCGA_MEDIUM",
+        study_label="Toy Medium TCGA",
+    )
+    assert summary["canonicalization_confidence_counts"]["medium"] == 2
+    rows = _read_rows(out_dir / "event_metadata.tsv")
+    assert {row["canonicalization_confidence"] for row in rows} == {"medium"}
+    assert {row["event_key_namespace"] for row in rows} == {"tcga_spliceseq_asid"}
+    assert rows[0]["canonicalization_status"] == "source_family_stable_id"

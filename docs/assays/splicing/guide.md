@@ -30,12 +30,14 @@ This writes compact files such as:
 
 - `splice_event_aliases_human_v1.tsv.gz`
 - `splice_event_ubiquity_human_v1.tsv.gz`
+- `splice_event_ubiquity_by_dataset_human_v1.tsv.gz`
 - `splice_event_impact_human_v1.tsv.gz`
 - `splice_gene_event_burden_human_v1.tsv.gz`
+- `splice_gene_event_burden_by_dataset_human_v1.tsv.gz`
 - `bundle_provenance.json`
 - `local_resources_manifest.json`
 
-If you point `--resources_dir` at that directory, both splicing converters auto-resolve the four splicing resources by default for human runs.
+If you point `--resources_dir` at that directory, both splicing converters auto-resolve the splicing resources by default for human runs. The dataset-stratified tables are optional for older bundles, but when present they activate same-dataset exclusion automatically.
 
 ### 2. Convert an event-level differential splicing table
 
@@ -69,7 +71,10 @@ Useful explicit flags:
 - `--impact_mode none|conservative|custom_bundle`
 - `--event_dup_policy highest_confidence|max_abs|mean|sum`
 - `--gene_burden_penalty_mode none|current_input|reference_bundle|auto`
-- `--locus_density_penalty_mode none|window_diversity`
+- `--gene_support_penalty_mode none|independent_groups|auto`
+- `--locus_density_penalty_mode none|window_diversity|chromosome_diversity|auto`
+- `--source_dataset <dataset_id>`
+- `--bundle_same_dataset_policy exclude|warn|fail|ignore`
 - `--ambiguous_gene_policy drop|split_equal|first`
 
 LeafCutter nuance:
@@ -148,6 +153,16 @@ Fallback path when that table is unavailable:
 
 `prepare_summary.json` records whether metadata were explicit or inferred, the exact inference rule, tumor versus adjacent-normal counts, and whether TCGA barcode validation was attempted.
 
+TCGA-specific identity nuance:
+
+- if coordinates are available, staged events remain `coordinate_canonical / high`
+- if coordinates are absent but the row is still clearly a TCGA SpliceSeq AS event, staging emits:
+  - `canonicalization_status=source_family_stable_id`
+  - `canonicalization_confidence=medium`
+  - `event_key_namespace=tcga_spliceseq_asid`
+
+These `medium` keys are reusable across TCGA SpliceSeq-like studies, but they are not treated as globally harmonized across arbitrary splicing tool families.
+
 ### 5. Validate outputs
 
 ```bash
@@ -203,6 +218,7 @@ Default direct-converter behavior:
 - `gene_aggregation=signed_topk_mean`
 - `gene_topk_events=3`
 - `gene_burden_penalty_mode=auto`
+- `gene_support_penalty_mode=auto`
 - `locus_density_penalty_mode=none`
 - `delta_psi_soft_floor=0.05`
 - `delta_psi_soft_floor_mode=auto`
@@ -234,10 +250,67 @@ The run summaries also surface interpretable QC such as:
 
 - event-type composition
 - canonicalization confidence counts
+- same-dataset bundle exclusion / neutralization counts
 - retained-intron fraction
 - novel-event fraction
 - low-support fraction
 - single-event-gene fraction
+- locus-density concentration diagnostics
+- per-gene support coherence diagnostics
+
+## Same-dataset bundle exclusion
+
+When the bundle includes dataset-stratified nuisance tables and the target run can identify its own `source_dataset`, runtime prior use defaults to:
+
+- `--bundle_same_dataset_policy exclude`
+
+Under `exclude`, the scorer removes matching source-dataset contributions from:
+
+- event ubiquity priors
+- cross-study impact recurrence counts
+- gene-burden reference counts
+
+If exclusion leaves no non-self reference support, the corresponding prior falls back to neutral behavior and the run summary records that fallback explicitly.
+
+How the target dataset is identified:
+
+- `splice_event_diff`: explicit `--source_dataset` is preferred; a constant `source_dataset` or `source_study_id` column can also be inferred
+- `splice_event_matrix`: a unique `study_id` or `source_dataset` in `sample_metadata.tsv` is inferred automatically; `--source_dataset` overrides it
+
+If you intentionally want to inspect self-referential priors during debugging:
+
+- `--bundle_same_dataset_policy warn`
+- or `--bundle_same_dataset_policy ignore`
+
+Use `warn` for inspection and `ignore` only when you are sure self-cohort priors are acceptable.
+
+## Locus-density suppression
+
+The splicing family now supports stronger locality-aware post-score suppression:
+
+- `none`
+- `window_diversity`
+- `chromosome_diversity`
+- `auto`
+
+`auto` is designed for cohort-level public runs where chromosome- or locus-heavy artifact programs are a known failure mode. It:
+
+- inspects the pre-penalty top genes
+- detects concentration by genomic window, chromosome arm when available, and whole chromosome
+- keeps the top local representative unchanged
+- softly downweights later genes from the same overrepresented locus
+
+The global default remains `none` to avoid silently changing older generic runs. For TCGA SpliceSeq-like public cohorts, `auto` is the recommended setting.
+
+## Gene-support stability penalty
+
+The scorer now computes conservative gene-level support diagnostics after event-group collapse:
+
+- `n_independent_event_groups_used`
+- `n_events_used`
+- `sign_coherence`
+
+With `--gene_support_penalty_mode auto`, genes backed by multiple coherent event groups stay near full strength, while genes supported by weak or internally mixed-sign evidence are only modestly downweighted. This is meant to improve ranking stability, not to erase single-event genes entirely.
 - delta-PSI soft-floor downweight counts
 - selected-event low-confidence prior matches
 - low-confidence ubiquity/impact neutralization counts

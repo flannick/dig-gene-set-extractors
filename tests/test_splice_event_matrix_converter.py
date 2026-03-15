@@ -61,6 +61,10 @@ class Args:
     gene_topk_events = 3
     gene_burden_penalty_mode = "auto"
     min_gene_burden_penalty = 0.35
+    gene_support_penalty_mode = "auto"
+    locus_density_penalty_mode = "none"
+    locus_density_window_bp = 20000000
+    locus_density_top_n = 20
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
@@ -71,8 +75,13 @@ class Args:
     use_reference_bundle = True
     event_alias_resource_id = None
     event_ubiquity_resource_id = None
+    event_ubiquity_by_dataset_resource_id = None
     event_impact_resource_id = None
     gene_burden_resource_id = None
+    gene_burden_by_dataset_resource_id = None
+    gene_locus_resource_id = None
+    source_dataset = None
+    bundle_same_dataset_policy = "exclude"
     select = "top_k"
     top_k = 200
     quantile = 0.01

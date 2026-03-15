@@ -50,6 +50,10 @@ class Args:
     gene_topk_events = 3
     gene_burden_penalty_mode = "auto"
     min_gene_burden_penalty = 0.35
+    gene_support_penalty_mode = "auto"
+    locus_density_penalty_mode = "none"
+    locus_density_window_bp = 20000000
+    locus_density_top_n = 20
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
@@ -60,8 +64,13 @@ class Args:
     use_reference_bundle = True
     event_alias_resource_id = None
     event_ubiquity_resource_id = None
+    event_ubiquity_by_dataset_resource_id = None
     event_impact_resource_id = None
     gene_burden_resource_id = None
+    gene_burden_by_dataset_resource_id = None
+    gene_locus_resource_id = None
+    source_dataset = None
+    bundle_same_dataset_policy = "exclude"
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -100,6 +109,11 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
 
 def _score_map(path: Path) -> dict[str, float]:
     return {row["gene_id"]: float(row["score"]) for row in _read_rows(path)}
+
+
+def _write_gz_tsv(path: Path, text: str) -> None:
+    with gzip.open(path, "wt", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 def test_splice_event_diff_end_to_end_with_bundle(tmp_path: Path):
@@ -382,3 +396,190 @@ def test_splice_event_diff_locus_density_warning_and_penalty(tmp_path: Path):
     none_scores = _score_map(Path(args_none.out_dir) / "geneset.full.tsv")
     pen_scores = _score_map(Path(args_pen.out_dir) / "geneset.full.tsv")
     assert pen_scores["G2"] != none_scores["G2"]
+
+
+def test_splice_event_diff_generic_raw_id_is_not_promoted_to_medium(tmp_path: Path):
+    raw_path = tmp_path / "generic_raw.tsv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "A123\tCG1\texon_skip\tG_KCNN4\tKCNN4\t0.8\t1e-6\t0.99\t30\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.splice_tsv = str(raw_path)
+    args.out_dir = str(tmp_path / "generic_raw_run")
+    args.use_reference_bundle = False
+    splice_event_diff.run(args)
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["canonicalization_confidence_counts"].get("medium", 0) == 0
+
+
+def test_splice_event_diff_medium_priors_are_namespace_safe(tmp_path: Path):
+    resources_dir = tmp_path / "resources_ns"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    _write_gz_tsv(
+        resources_dir / "splice_event_aliases_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "input_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tgene_id\tgene_symbol\tevent_type\tchrom\tstart\tend\tstrand\tsource_dataset",
+                "A123\ttcga_spliceseq_asid::KCNN4::exon_skip::A123\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\tG_KCNN4\tKCNN4\texon_skip\t\t\t\t\tTCGA_X",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_ubiquity_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tn_samples_ref\tdf_ref\tfraction_ref\tidf_ref\tn_datasets_ref\tfraction_datasets_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::A123\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t10\t4\t0.4\t2.0\t2\t1.0",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_ubiquity_by_dataset_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tsource_dataset\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tn_samples_ref\tdf_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::A123\tTCGA_X\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t5\t2",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::A123\tTCGA_Y\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t5\t2",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_impact_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\timpact_weight_raw\timpact_evidence\tannotation_status\tn_datasets_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::A123\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t1.2\t0.6\tannotated_coding\t2",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_gene_event_burden_human_v1.tsv.gz",
+        "gene_symbol\tn_canonical_events_ref\tn_high_confidence_events_ref\tn_medium_confidence_events_ref\tn_low_confidence_events_ref\tn_unique_event_groups_ref\tn_studies_ref\tn_studies_high_confidence_ref\tfraction_low_confidence_events_ref\tmedian_unique_groups_per_study\nKCNN4\t1\t0\t1\t0\t1\t2\t0\t0.0\t1.0\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_gene_event_burden_by_dataset_human_v1.tsv.gz",
+        "gene_symbol\tsource_dataset\tn_canonical_events_ref\tn_high_confidence_events_ref\tn_medium_confidence_events_ref\tn_low_confidence_events_ref\tn_unique_event_groups_ref\nKCNN4\tTCGA_X\t1\t0\t1\t0\t1\nKCNN4\tTCGA_Y\t1\t0\t1\t0\t1\n",
+    )
+
+    generic_path = tmp_path / "generic.tsv"
+    generic_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "A123\tCG1\texon_skip\tG_KCNN4\tKCNN4\t0.8\t1e-6\t0.99\t30\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    tcga_path = tmp_path / "tcga.tsv"
+    tcga_path.write_text(generic_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    args_generic = Args()
+    args_generic.splice_tsv = str(generic_path)
+    args_generic.out_dir = str(tmp_path / "generic_bundle")
+    args_generic.resources_dir = str(resources_dir)
+    args_generic.tool_family = "generic"
+    splice_event_diff.run(args_generic)
+
+    args_tcga = Args()
+    args_tcga.splice_tsv = str(tcga_path)
+    args_tcga.out_dir = str(tmp_path / "tcga_bundle")
+    args_tcga.resources_dir = str(resources_dir)
+    args_tcga.tool_family = "tcga_spliceseq"
+    splice_event_diff.run(args_tcga)
+
+    generic_scores = _score_map(Path(args_generic.out_dir) / "geneset.full.tsv")
+    tcga_scores = _score_map(Path(args_tcga.out_dir) / "geneset.full.tsv")
+    assert tcga_scores["G_KCNN4"] != generic_scores["G_KCNN4"]
+    generic_summary = json.loads((Path(args_generic.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    tcga_summary = json.loads((Path(args_tcga.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert generic_summary["canonicalization_confidence_counts"].get("medium", 0) == 0
+    assert tcga_summary["canonicalization_confidence_counts"].get("medium", 0) == 1
+
+
+def test_splice_event_diff_auto_locus_density_penalty_diversifies_top_genes(tmp_path: Path):
+    locus_path = tmp_path / "locus_auto.tsv"
+    locus_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "L1\tLG1\texon_skip\tG1\tGENE1\tchr1\t100000\t100120\t+\t0.60\t1e-6\t0.99\t50\tannotated_coding",
+                "L2\tLG2\texon_skip\tG2\tGENE2\tchr1\t150000\t150120\t+\t0.58\t1e-6\t0.99\t50\tannotated_coding",
+                "L3\tLG3\texon_skip\tG3\tGENE3\tchr1\t250000\t250120\t+\t0.56\t1e-6\t0.99\t50\tannotated_coding",
+                "L4\tLG4\texon_skip\tG4\tGENE4\tchr1\t350000\t350120\t+\t0.54\t1e-6\t0.99\t50\tannotated_coding",
+                "L5\tLG5\texon_skip\tG5\tGENE5\tchr1\t450000\t450120\t+\t0.52\t1e-6\t0.99\t50\tannotated_coding",
+                "L6\tLG6\texon_skip\tG6\tGENE6\tchr8\t100000\t100120\t+\t0.50\t1e-6\t0.99\t50\tannotated_coding",
+                "L7\tLG7\texon_skip\tG7\tGENE7\tchr9\t100000\t100120\t+\t0.49\t1e-6\t0.99\t50\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.splice_tsv = str(locus_path)
+    args.out_dir = str(tmp_path / "locus_auto")
+    args.use_reference_bundle = False
+    args.top_k = 10
+    args.locus_density_top_n = 5
+    args.locus_density_penalty_mode = "auto"
+    splice_event_diff.run(args)
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["locus_density"]["likely_artifact"] is True
+    assert summary["locus_density"]["n_genes_penalized_for_locus_density"] >= 1
+    rows = _read_rows(Path(args.out_dir) / "geneset.full.tsv")
+    penalty_map = {row["gene_symbol"]: float(row["locus_density_penalty"]) for row in rows}
+    assert penalty_map["GENE1"] == 1.0
+    assert penalty_map["GENE2"] < 1.0
+
+
+def test_splice_event_diff_gene_support_penalty_rewards_coherent_multi_group_support(tmp_path: Path):
+    support_path = tmp_path / "support.tsv"
+    support_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "A1\tGA1\texon_skip\tG_A\tGENEA\t1.60\t1e-8\t0.99\t40\tannotated_coding",
+                "A2\tGA2\texon_skip\tG_A\tGENEA\t-0.50\t1e-8\t0.99\t40\tannotated_coding",
+                "B1\tGB1\texon_skip\tG_B\tGENEB\t0.55\t1e-8\t0.99\t40\tannotated_coding",
+                "B2\tGB2\talt_donor\tG_B\tGENEB\t0.52\t1e-8\t0.99\t40\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args_none = Args()
+    args_none.splice_tsv = str(support_path)
+    args_none.out_dir = str(tmp_path / "support_none")
+    args_none.use_reference_bundle = False
+    args_none.gene_support_penalty_mode = "none"
+    args_none.gene_aggregation = "sum"
+    splice_event_diff.run(args_none)
+
+    args_auto = Args()
+    args_auto.splice_tsv = str(support_path)
+    args_auto.out_dir = str(tmp_path / "support_auto")
+    args_auto.use_reference_bundle = False
+    args_auto.gene_support_penalty_mode = "auto"
+    args_auto.gene_aggregation = "sum"
+    splice_event_diff.run(args_auto)
+
+    none_rows = _read_rows(Path(args_none.out_dir) / "geneset.tsv")
+    auto_rows = _read_rows(Path(args_auto.out_dir) / "geneset.tsv")
+    assert none_rows[0]["gene_symbol"] == "GENEA"
+    assert auto_rows[0]["gene_symbol"] == "GENEB"
+    auto_full = _read_rows(Path(args_auto.out_dir) / "geneset.full.tsv")
+    gene_b = next(row for row in auto_full if row["gene_symbol"] == "GENEB")
+    assert int(gene_b["n_independent_event_groups_used"]) == 2
+    assert float(gene_b["sign_coherence"]) > 0.9

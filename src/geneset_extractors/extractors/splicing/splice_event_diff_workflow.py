@@ -111,6 +111,7 @@ class SpliceEventRecord:
     event_group: str
     canonicalization_status: str
     canonicalization_confidence: str
+    event_key_namespace: str
     event_type: str
     gene_id: str
     gene_symbol: str
@@ -172,9 +173,12 @@ class SplicingWorkflowConfig:
     gene_topk_events: int
     gene_burden_penalty_mode: str
     min_gene_burden_penalty: float
+    gene_support_penalty_mode: str
     locus_density_penalty_mode: str
     locus_density_window_bp: int
     locus_density_top_n: int
+    source_dataset: str | None
+    bundle_same_dataset_policy: str
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -204,6 +208,7 @@ class AliasEntry:
     canonical_event_key: str
     canonicalization_status: str
     canonicalization_confidence: str
+    event_key_namespace: str
     gene_id: str
     gene_symbol: str
     event_type: str
@@ -218,6 +223,7 @@ class UbiquityEntry:
     canonical_event_key: str
     canonicalization_status: str
     canonicalization_confidence: str
+    event_key_namespace: str
     gene_id: str
     gene_symbol: str
     event_type: str
@@ -232,6 +238,7 @@ class ImpactEntry:
     canonical_event_key: str
     canonicalization_status: str
     canonicalization_confidence: str
+    event_key_namespace: str
     gene_id: str
     gene_symbol: str
     event_type: str
@@ -246,12 +253,48 @@ class GeneBurdenEntry:
     gene_symbol: str
     n_canonical_events_ref: float
     n_high_confidence_events_ref: float | None
+    n_medium_confidence_events_ref: float | None
     n_low_confidence_events_ref: float | None
     n_unique_event_groups_ref: float | None
     n_studies_ref: float | None
     n_studies_high_confidence_ref: float | None
     fraction_low_confidence_events_ref: float | None
     median_unique_groups_per_study: float | None
+
+
+@dataclass
+class UbiquityByDatasetEntry:
+    canonical_event_key: str
+    source_dataset: str
+    canonicalization_status: str
+    canonicalization_confidence: str
+    event_key_namespace: str
+    gene_id: str
+    gene_symbol: str
+    event_type: str
+    df_ref: float | None
+    n_samples_ref: float | None
+
+
+@dataclass
+class GeneBurdenByDatasetEntry:
+    gene_symbol: str
+    source_dataset: str
+    n_canonical_events_ref: float
+    n_high_confidence_events_ref: float | None
+    n_medium_confidence_events_ref: float | None
+    n_low_confidence_events_ref: float | None
+    n_unique_event_groups_ref: float | None
+
+
+@dataclass
+class GeneLocusEntry:
+    gene_id: str
+    gene_symbol: str
+    chrom: str
+    start: float | None
+    end: float | None
+    chromosome_arm: str
 
 
 EVENT_TYPE_ALIASES = {
@@ -416,6 +459,7 @@ def read_event_alias_tsv(path: str | Path) -> dict[str, AliasEntry]:
                 canonical_event_key=canonical,
                 canonicalization_status=_clean(row.get("canonicalization_status")) or ("coordinate_canonical" if canonical.startswith("chr") else "raw_id_fallback"),
                 canonicalization_confidence=_clean(row.get("canonicalization_confidence")).lower() or ("high" if canonical.startswith("chr") else "low"),
+                event_key_namespace=_clean(row.get("event_key_namespace")) or ("global_coordinate" if canonical.startswith("chr") else "raw_id_fallback"),
                 gene_id=_clean(row.get("gene_id")),
                 gene_symbol=_clean(row.get("gene_symbol")),
                 event_type=_normalize_event_type(_clean(row.get("event_type"))),
@@ -451,6 +495,7 @@ def read_event_ubiquity_tsv(path: str | Path) -> dict[str, UbiquityEntry]:
                 canonical_event_key=canonical,
                 canonicalization_status=_clean(row.get("canonicalization_status")) or ("coordinate_canonical" if canonical.startswith("chr") else "raw_id_fallback"),
                 canonicalization_confidence=_clean(row.get("canonicalization_confidence")).lower() or ("high" if canonical.startswith("chr") else "low"),
+                event_key_namespace=_clean(row.get("event_key_namespace")) or ("global_coordinate" if canonical.startswith("chr") else "raw_id_fallback"),
                 gene_id=_clean(row.get("gene_id")),
                 gene_symbol=_clean(row.get("gene_symbol")),
                 event_type=_normalize_event_type(_clean(row.get("event_type"))),
@@ -478,6 +523,7 @@ def read_event_impact_tsv(path: str | Path) -> dict[str, ImpactEntry]:
                 canonical_event_key=canonical,
                 canonicalization_status=_clean(row.get("canonicalization_status")) or ("coordinate_canonical" if canonical.startswith("chr") else "raw_id_fallback"),
                 canonicalization_confidence=_clean(row.get("canonicalization_confidence")).lower() or ("high" if canonical.startswith("chr") else "low"),
+                event_key_namespace=_clean(row.get("event_key_namespace")) or ("global_coordinate" if canonical.startswith("chr") else "raw_id_fallback"),
                 gene_id=_clean(row.get("gene_id")),
                 gene_symbol=_clean(row.get("gene_symbol")),
                 event_type=_normalize_event_type(_clean(row.get("event_type"))),
@@ -505,6 +551,7 @@ def read_gene_burden_tsv(path: str | Path) -> dict[str, GeneBurdenEntry]:
                 gene_symbol=gene_symbol,
                 n_canonical_events_ref=float(_parse_float(row.get("n_canonical_events_ref")) or 0.0),
                 n_high_confidence_events_ref=_parse_float(row.get("n_high_confidence_events_ref")),
+                n_medium_confidence_events_ref=_parse_float(row.get("n_medium_confidence_events_ref")),
                 n_low_confidence_events_ref=_parse_float(row.get("n_low_confidence_events_ref")),
                 n_unique_event_groups_ref=_parse_float(row.get("n_unique_event_groups_ref")),
                 n_studies_ref=_parse_float(row.get("n_studies_ref")),
@@ -512,6 +559,89 @@ def read_gene_burden_tsv(path: str | Path) -> dict[str, GeneBurdenEntry]:
                 fraction_low_confidence_events_ref=_parse_float(row.get("fraction_low_confidence_events_ref")),
                 median_unique_groups_per_study=_parse_float(row.get("median_unique_groups_per_study")),
             )
+    return out
+
+
+def read_event_ubiquity_by_dataset_tsv(path: str | Path) -> dict[str, list[UbiquityByDatasetEntry]]:
+    out: dict[str, list[UbiquityByDatasetEntry]] = {}
+    with _open_text(path) as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames:
+            raise ValueError(f"Dataset ubiquity TSV has no header: {path}")
+        if "canonical_event_key" not in reader.fieldnames or "source_dataset" not in reader.fieldnames:
+            raise ValueError("Dataset ubiquity TSV must include canonical_event_key and source_dataset")
+        for row in reader:
+            canonical = _clean(row.get("canonical_event_key"))
+            source_dataset = _clean(row.get("source_dataset"))
+            if not canonical or not source_dataset:
+                continue
+            out.setdefault(canonical, []).append(
+                UbiquityByDatasetEntry(
+                    canonical_event_key=canonical,
+                    source_dataset=source_dataset,
+                    canonicalization_status=_clean(row.get("canonicalization_status")) or ("coordinate_canonical" if canonical.startswith("chr") else "raw_id_fallback"),
+                    canonicalization_confidence=_clean(row.get("canonicalization_confidence")).lower() or ("high" if canonical.startswith("chr") else "low"),
+                    event_key_namespace=_clean(row.get("event_key_namespace")) or ("global_coordinate" if canonical.startswith("chr") else "raw_id_fallback"),
+                    gene_id=_clean(row.get("gene_id")),
+                    gene_symbol=_clean(row.get("gene_symbol")),
+                    event_type=_normalize_event_type(_clean(row.get("event_type"))),
+                    df_ref=_parse_float(row.get("df_ref")),
+                    n_samples_ref=_parse_float(row.get("n_samples_ref")),
+                )
+            )
+    return out
+
+
+def read_gene_burden_by_dataset_tsv(path: str | Path) -> dict[str, list[GeneBurdenByDatasetEntry]]:
+    out: dict[str, list[GeneBurdenByDatasetEntry]] = {}
+    with _open_text(path) as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames:
+            raise ValueError(f"Dataset burden TSV has no header: {path}")
+        if "gene_symbol" not in reader.fieldnames or "source_dataset" not in reader.fieldnames:
+            raise ValueError("Dataset burden TSV must include gene_symbol and source_dataset")
+        for row in reader:
+            gene_symbol = _clean(row.get("gene_symbol"))
+            source_dataset = _clean(row.get("source_dataset"))
+            if not gene_symbol or not source_dataset:
+                continue
+            out.setdefault(gene_symbol, []).append(
+                GeneBurdenByDatasetEntry(
+                    gene_symbol=gene_symbol,
+                    source_dataset=source_dataset,
+                    n_canonical_events_ref=float(_parse_float(row.get("n_canonical_events_ref")) or 0.0),
+                    n_high_confidence_events_ref=_parse_float(row.get("n_high_confidence_events_ref")),
+                    n_medium_confidence_events_ref=_parse_float(row.get("n_medium_confidence_events_ref")),
+                    n_low_confidence_events_ref=_parse_float(row.get("n_low_confidence_events_ref")),
+                    n_unique_event_groups_ref=_parse_float(row.get("n_unique_event_groups_ref")),
+                )
+            )
+    return out
+
+
+def read_gene_locus_tsv(path: str | Path) -> dict[str, GeneLocusEntry]:
+    out: dict[str, GeneLocusEntry] = {}
+    with _open_text(path) as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        if not reader.fieldnames:
+            raise ValueError(f"Gene locus TSV has no header: {path}")
+        for row in reader:
+            gene_symbol = _clean(row.get("gene_symbol"))
+            gene_id = _clean(row.get("gene_id")) or gene_symbol
+            chrom = _clean(row.get("chrom"))
+            if not gene_symbol or not chrom:
+                continue
+            entry = GeneLocusEntry(
+                gene_id=gene_id,
+                gene_symbol=gene_symbol,
+                chrom=chrom,
+                start=_parse_float(row.get("start")),
+                end=_parse_float(row.get("end")),
+                chromosome_arm=_clean(row.get("chromosome_arm")),
+            )
+            out[gene_symbol] = entry
+            if gene_id:
+                out.setdefault(gene_id, entry)
     return out
 
 
@@ -595,21 +725,38 @@ def _default_canonical_event_key(row: SpliceRow, columns: dict[str, str | None])
     coord_key = _coordinate_event_key(row, columns)
     if coord_key:
         return coord_key
+    tool_family = str(columns.get("tool_family", "generic"))
+    event_id = _string_value(row, columns, "event_id")
+    gene_symbol = _string_value(row, columns, "gene_symbol") or _string_value(row, columns, "gene_id")
+    event_type = _normalize_event_type(_string_value(row, columns, "event_type"))
+    if tool_family == "tcga_spliceseq" and event_id and gene_symbol and event_type and event_type != "unknown":
+        return f"tcga_spliceseq_asid::{gene_symbol}::{event_type}::{event_id}"
     event_id = _string_value(row, columns, "event_id") or _string_value(row, columns, "event_group")
     return event_id or None
 
 
-def _default_canonicalization_status(row: SpliceRow, columns: dict[str, str | None]) -> tuple[str, str]:
+def _default_canonicalization_status(row: SpliceRow, columns: dict[str, str | None]) -> tuple[str, str, str]:
     coord_key = _coordinate_event_key(row, columns)
     if coord_key:
-        return "coordinate_canonical", "high"
+        return "coordinate_canonical", "high", "global_coordinate"
+    tool_family = str(columns.get("tool_family", "generic"))
+    event_id = _string_value(row, columns, "event_id")
+    gene_symbol = _string_value(row, columns, "gene_symbol") or _string_value(row, columns, "gene_id")
+    event_type = _normalize_event_type(_string_value(row, columns, "event_type"))
+    if tool_family == "tcga_spliceseq" and event_id and gene_symbol and event_type and event_type != "unknown":
+        return "source_family_stable_id", "medium", "tcga_spliceseq_asid"
     if _string_value(row, columns, "event_id") or _string_value(row, columns, "event_group"):
-        return "raw_id_fallback", "low"
-    return "unresolved", "low"
+        return "raw_id_fallback", "low", "raw_id_fallback"
+    return "unresolved", "low", "raw_id_fallback"
 
 
 def _prior_confidence_weight(canonicalization_confidence: str) -> float:
-    return 1.0 if str(canonicalization_confidence).lower() == "high" else 0.25
+    confidence = str(canonicalization_confidence).lower()
+    if confidence == "high":
+        return 1.0
+    if confidence == "medium":
+        return 0.6
+    return 0.25
 
 
 def _shrink_prior_toward_neutral(value: float, canonicalization_confidence: str) -> float:
@@ -619,6 +766,160 @@ def _shrink_prior_toward_neutral(value: float, canonicalization_confidence: str)
 
 def _event_group_key(record: SpliceEventRecord) -> str:
     return record.event_group or record.canonical_event_key
+
+
+def _namespace_matches(runtime_namespace: str, prior_namespace: str) -> bool:
+    runtime_value = _clean(runtime_namespace)
+    prior_value = _clean(prior_namespace)
+    if not runtime_value or not prior_value:
+        return runtime_value == prior_value
+    return runtime_value == prior_value
+
+
+def _build_effective_ubiquity_map(
+    *,
+    pooled_map: dict[str, UbiquityEntry] | None,
+    by_dataset_map: dict[str, list[UbiquityByDatasetEntry]] | None,
+    source_dataset: str | None,
+    policy: str,
+) -> tuple[dict[str, UbiquityEntry] | None, dict[str, float], dict[str, object]]:
+    if pooled_map is None:
+        return None, {}, {"policy": policy, "source_dataset": source_dataset, "dataset_level_available": False}
+    effective = dict(pooled_map)
+    recurrence: dict[str, float] = {key: float(entry.n_datasets_ref or 0.0) for key, entry in pooled_map.items()}
+    summary: dict[str, object] = {
+        "policy": policy,
+        "source_dataset": source_dataset,
+        "dataset_level_available": bool(by_dataset_map),
+        "bundle_source_datasets": sorted({entry.source_dataset for entries in (by_dataset_map or {}).values() for entry in entries}),
+        "n_events_excluded": 0,
+        "n_events_neutralized": 0,
+        "warning": "",
+    }
+    target = _clean(source_dataset)
+    if not target or not by_dataset_map or policy in {"ignore", "warn"}:
+        if target and by_dataset_map and target in set(summary["bundle_source_datasets"]) and policy == "warn":
+            summary["warning"] = f"bundle_same_dataset_match_detected source_dataset={target} action=warn"
+        return effective, recurrence, summary
+    bundle_datasets = set(summary["bundle_source_datasets"])
+    if target not in bundle_datasets:
+        return effective, recurrence, summary
+    if policy == "fail":
+        raise ValueError(
+            f"Bundle contains matching source_dataset={target} and --bundle_same_dataset_policy=fail. "
+            "Use a leave-one-dataset-out bundle or change the policy."
+        )
+    n_total_excluding_self = max(1, len(bundle_datasets - {target}))
+    for canonical, pooled_entry in pooled_map.items():
+        entries = list(by_dataset_map.get(canonical, []))
+        if not any(entry.source_dataset == target for entry in entries):
+            continue
+        remaining = [entry for entry in entries if entry.source_dataset != target]
+        if not remaining:
+            effective[canonical] = UbiquityEntry(
+                canonical_event_key=pooled_entry.canonical_event_key,
+                canonicalization_status=pooled_entry.canonicalization_status,
+                canonicalization_confidence=pooled_entry.canonicalization_confidence,
+                event_key_namespace=pooled_entry.event_key_namespace,
+                gene_id=pooled_entry.gene_id,
+                gene_symbol=pooled_entry.gene_symbol,
+                event_type=pooled_entry.event_type,
+                idf_ref=1.0,
+                df_ref=None,
+                n_samples_ref=None,
+                n_datasets_ref=0.0,
+            )
+            recurrence[canonical] = 0.0
+            summary["n_events_neutralized"] = int(summary["n_events_neutralized"]) + 1
+            continue
+        n_event_datasets = len({entry.source_dataset for entry in remaining})
+        df_ref = sum(float(entry.df_ref or 0.0) for entry in remaining)
+        n_samples_ref = sum(float(entry.n_samples_ref or 0.0) for entry in remaining)
+        effective[canonical] = UbiquityEntry(
+            canonical_event_key=pooled_entry.canonical_event_key,
+            canonicalization_status=pooled_entry.canonicalization_status,
+            canonicalization_confidence=pooled_entry.canonicalization_confidence,
+            event_key_namespace=pooled_entry.event_key_namespace,
+            gene_id=pooled_entry.gene_id,
+            gene_symbol=pooled_entry.gene_symbol,
+            event_type=pooled_entry.event_type,
+            idf_ref=math.log1p((float(n_total_excluding_self) + 1.0) / (float(n_event_datasets) + 1.0)),
+            df_ref=df_ref,
+            n_samples_ref=n_samples_ref,
+            n_datasets_ref=float(n_event_datasets),
+        )
+        recurrence[canonical] = float(n_event_datasets)
+        summary["n_events_excluded"] = int(summary["n_events_excluded"]) + 1
+    if bundle_datasets == {target}:
+        summary["warning"] = f"bundle_same_dataset_only source_dataset={target} action=neutralize"
+    return effective, recurrence, summary
+
+
+def _build_effective_gene_burden_map(
+    *,
+    pooled_map: dict[str, GeneBurdenEntry] | None,
+    by_dataset_map: dict[str, list[GeneBurdenByDatasetEntry]] | None,
+    source_dataset: str | None,
+    policy: str,
+) -> tuple[dict[str, GeneBurdenEntry] | None, dict[str, object]]:
+    if pooled_map is None:
+        return None, {"policy": policy, "source_dataset": source_dataset, "dataset_level_available": False}
+    effective = dict(pooled_map)
+    summary: dict[str, object] = {
+        "policy": policy,
+        "source_dataset": source_dataset,
+        "dataset_level_available": bool(by_dataset_map),
+        "n_genes_excluded": 0,
+        "n_genes_neutralized": 0,
+    }
+    target = _clean(source_dataset)
+    if not target or not by_dataset_map or policy in {"ignore", "warn"}:
+        return effective, summary
+    if policy == "fail":
+        bundle_datasets = {entry.source_dataset for entries in by_dataset_map.values() for entry in entries}
+        if target in bundle_datasets:
+            raise ValueError(
+                f"Bundle contains matching source_dataset={target} and --bundle_same_dataset_policy=fail. "
+                "Use a leave-one-dataset-out bundle or change the policy."
+            )
+        return effective, summary
+    for gene_symbol, pooled_entry in pooled_map.items():
+        entries = list(by_dataset_map.get(gene_symbol, []))
+        if not any(entry.source_dataset == target for entry in entries):
+            continue
+        remaining = [entry for entry in entries if entry.source_dataset != target]
+        if not remaining:
+            effective[gene_symbol] = GeneBurdenEntry(
+                gene_symbol=pooled_entry.gene_symbol,
+                n_canonical_events_ref=0.0,
+                n_high_confidence_events_ref=0.0,
+                n_medium_confidence_events_ref=0.0,
+                n_low_confidence_events_ref=0.0,
+                n_unique_event_groups_ref=0.0,
+                n_studies_ref=0.0,
+                n_studies_high_confidence_ref=0.0,
+                fraction_low_confidence_events_ref=0.0,
+                median_unique_groups_per_study=0.0,
+            )
+            summary["n_genes_neutralized"] = int(summary["n_genes_neutralized"]) + 1
+            continue
+        unique_groups = [float(entry.n_unique_event_groups_ref or 0.0) for entry in remaining]
+        total_events = sum(float(entry.n_canonical_events_ref or 0.0) for entry in remaining)
+        low_events = sum(float(entry.n_low_confidence_events_ref or 0.0) for entry in remaining)
+        effective[gene_symbol] = GeneBurdenEntry(
+            gene_symbol=pooled_entry.gene_symbol,
+            n_canonical_events_ref=total_events,
+            n_high_confidence_events_ref=sum(float(entry.n_high_confidence_events_ref or 0.0) for entry in remaining),
+            n_medium_confidence_events_ref=sum(float(entry.n_medium_confidence_events_ref or 0.0) for entry in remaining),
+            n_low_confidence_events_ref=low_events,
+            n_unique_event_groups_ref=sum(unique_groups),
+            n_studies_ref=float(len(remaining)),
+            n_studies_high_confidence_ref=float(sum(1 for entry in remaining if float(entry.n_high_confidence_events_ref or 0.0) > 0.0)),
+            fraction_low_confidence_events_ref=(low_events / float(max(1.0, total_events))),
+            median_unique_groups_per_study=float(median(unique_groups)) if unique_groups else 0.0,
+        )
+        summary["n_genes_excluded"] = int(summary["n_genes_excluded"]) + 1
+    return effective, summary
 
 
 def _delta_psi_effect_weight(row: SpliceRow, columns: dict[str, str | None], cfg: SplicingWorkflowConfig) -> tuple[float, bool]:
@@ -891,11 +1192,86 @@ def _aggregate_events_to_genes(records: list[SpliceEventRecord], method: str, to
     return scores, gene_symbols, by_gene
 
 
-def _gene_primary_locus(by_gene: dict[str, list[SpliceEventRecord]], window_bp: int) -> dict[str, dict[str, object]]:
+def _support_subset(records: list[SpliceEventRecord], method: str, topk_events: int) -> list[SpliceEventRecord]:
+    ranked = sorted(records, key=lambda r: (-abs(float(r.final_score)), str(r.canonical_event_key)))
+    if method == "signed_topk_mean":
+        return ranked[: max(1, int(topk_events))]
+    if method == "max_abs":
+        return ranked[:1]
+    if method in {"sum", "mean"}:
+        return ranked
+    raise ValueError(f"Unsupported gene_aggregation: {method}")
+
+
+def _apply_gene_support_penalty(
+    *,
+    gene_scores: dict[str, float],
+    by_gene: dict[str, list[SpliceEventRecord]],
+    cfg: SplicingWorkflowConfig,
+) -> tuple[dict[str, float], dict[str, float], dict[str, int], dict[str, int], dict[str, float]]:
+    penalized: dict[str, float] = {}
+    penalties: dict[str, float] = {}
+    group_counts: dict[str, int] = {}
+    event_counts: dict[str, int] = {}
+    sign_coherence: dict[str, float] = {}
+    for gene_id, score in gene_scores.items():
+        support = _support_subset(by_gene.get(gene_id, []), cfg.gene_aggregation, cfg.gene_topk_events)
+        n_groups = len({_event_group_key(rec) for rec in support})
+        n_events = len(support)
+        abs_sum = sum(abs(float(rec.final_score)) for rec in support)
+        signed_sum = sum(float(rec.final_score) for rec in support)
+        coherence = abs(signed_sum) / abs_sum if abs_sum > 0.0 else 0.0
+        if cfg.gene_support_penalty_mode == "none":
+            penalty = 1.0
+        elif cfg.gene_support_penalty_mode == "independent_groups":
+            penalty = min(1.0, math.sqrt(float(max(1, n_groups)) / 2.0))
+        elif cfg.gene_support_penalty_mode == "auto":
+            group_factor = 1.0 if n_groups >= 2 else 0.85
+            coherence_factor = 0.75 + 0.25 * coherence
+            penalty = max(0.55, min(1.0, group_factor * coherence_factor))
+        else:
+            raise ValueError(f"Unsupported gene_support_penalty_mode: {cfg.gene_support_penalty_mode}")
+        group_counts[gene_id] = n_groups
+        event_counts[gene_id] = n_events
+        sign_coherence[gene_id] = coherence
+        penalties[gene_id] = float(penalty)
+        penalized[gene_id] = float(score) * float(penalty)
+    return penalized, penalties, group_counts, event_counts, sign_coherence
+
+
+def _gene_primary_locus(
+    by_gene: dict[str, list[SpliceEventRecord]],
+    window_bp: int,
+    gene_symbols: dict[str, str],
+    gene_locus_map: dict[str, GeneLocusEntry] | None,
+) -> dict[str, dict[str, object]]:
     loci: dict[str, dict[str, object]] = {}
     window = max(1, int(window_bp))
     for gene_id, items in by_gene.items():
         if not items:
+            continue
+        locus_entry = None
+        if gene_locus_map:
+            locus_entry = gene_locus_map.get(gene_symbols.get(gene_id, gene_id)) or gene_locus_map.get(gene_id)
+        if locus_entry is not None:
+            midpoint = None
+            if locus_entry.start is not None and locus_entry.end is not None:
+                midpoint = 0.5 * (float(locus_entry.start) + float(locus_entry.end))
+            elif locus_entry.start is not None:
+                midpoint = float(locus_entry.start)
+            elif locus_entry.end is not None:
+                midpoint = float(locus_entry.end)
+            locus_key = ""
+            if locus_entry.chrom and midpoint is not None:
+                locus_key = f"{locus_entry.chrom}:{int(midpoint // float(window))}"
+            elif locus_entry.chrom:
+                locus_key = locus_entry.chrom
+            loci[gene_id] = {
+                "chrom": locus_entry.chrom,
+                "midpoint": midpoint,
+                "locus_key": locus_key,
+                "chromosome_arm": locus_entry.chromosome_arm,
+            }
             continue
         top = max(items, key=lambda r: (abs(float(r.final_score)), float(r.quality_value), -int(r.source_line_no)))
         chrom = str(top.chrom or "").strip()
@@ -919,6 +1295,7 @@ def _gene_primary_locus(by_gene: dict[str, list[SpliceEventRecord]], window_bp: 
             "chrom": chrom,
             "midpoint": midpoint,
             "locus_key": locus_key,
+            "chromosome_arm": "",
         }
     return loci
 
@@ -927,18 +1304,24 @@ def _apply_locus_density_penalty(
     *,
     gene_scores: dict[str, float],
     by_gene: dict[str, list[SpliceEventRecord]],
+    gene_symbols: dict[str, str],
     cfg: SplicingWorkflowConfig,
-) -> tuple[dict[str, float], dict[str, object]]:
-    loci = _gene_primary_locus(by_gene, cfg.locus_density_window_bp)
+) -> tuple[dict[str, float], dict[str, float], dict[str, object]]:
+    gene_locus_map = getattr(cfg, "_gene_locus_map", None)
+    loci = _gene_primary_locus(by_gene, cfg.locus_density_window_bp, gene_symbols, gene_locus_map)
     ranked = sorted(gene_scores, key=lambda gid: (-abs(float(gene_scores[gid])), str(gid)))
     top_ids = ranked[: max(1, int(cfg.locus_density_top_n))]
     chrom_counts: dict[str, int] = {}
+    arm_counts: dict[str, int] = {}
     locus_counts: dict[str, int] = {}
     for gene_id in top_ids:
         chrom = str(loci.get(gene_id, {}).get("chrom", ""))
+        arm = str(loci.get(gene_id, {}).get("chromosome_arm", ""))
         locus_key = str(loci.get(gene_id, {}).get("locus_key", ""))
         if chrom:
             chrom_counts[chrom] = chrom_counts.get(chrom, 0) + 1
+        if arm:
+            arm_counts[arm] = arm_counts.get(arm, 0) + 1
         if locus_key:
             locus_counts[locus_key] = locus_counts.get(locus_key, 0) + 1
     dominant_chrom, dominant_chrom_count = ("", 0)
@@ -947,14 +1330,23 @@ def _apply_locus_density_penalty(
     dominant_locus, dominant_locus_count = ("", 0)
     if locus_counts:
         dominant_locus, dominant_locus_count = max(locus_counts.items(), key=lambda item: (item[1], item[0]))
+    dominant_arm, dominant_arm_count = ("", 0)
+    if arm_counts:
+        dominant_arm, dominant_arm_count = max(arm_counts.items(), key=lambda item: (item[1], item[0]))
     top_n = float(max(1, len(top_ids)))
     dominant_chrom_fraction = float(dominant_chrom_count) / top_n
     dominant_locus_fraction = float(dominant_locus_count) / top_n
+    dominant_arm_fraction = float(dominant_arm_count) / top_n
     likely_artifact = bool(
         len(top_ids) >= 5
-        and (dominant_locus_fraction >= 0.5 or dominant_chrom_fraction >= 0.7)
+        and (
+            dominant_locus_fraction >= 0.5
+            or dominant_arm_fraction >= 0.6
+            or dominant_chrom_fraction >= 0.7
+        )
     )
     penalized = dict(gene_scores)
+    penalties: dict[str, float] = {gene_id: 1.0 for gene_id in gene_scores}
     applied = False
     if cfg.locus_density_penalty_mode == "window_diversity":
         locus_seen: dict[str, int] = {}
@@ -966,18 +1358,76 @@ def _apply_locus_density_penalty(
             locus_seen[locus_key] = count + 1
             if count == 0:
                 continue
-            penalized[gene_id] = float(penalized[gene_id]) / math.sqrt(float(count + 1))
+            penalties[gene_id] = 1.0 / math.sqrt(float(count + 1))
+            penalized[gene_id] = float(penalized[gene_id]) * penalties[gene_id]
             applied = True
-    return penalized, {
+    elif cfg.locus_density_penalty_mode == "chromosome_diversity":
+        chrom_seen: dict[str, int] = {}
+        for gene_id in ranked:
+            chrom = str(loci.get(gene_id, {}).get("chrom", ""))
+            if not chrom:
+                continue
+            count = chrom_seen.get(chrom, 0)
+            chrom_seen[chrom] = count + 1
+            if count == 0:
+                continue
+            penalties[gene_id] = 1.0 / math.sqrt(float(count + 1))
+            penalized[gene_id] = float(penalized[gene_id]) * penalties[gene_id]
+            applied = True
+    elif cfg.locus_density_penalty_mode == "auto" and likely_artifact:
+        window_seen: dict[str, int] = {}
+        arm_seen: dict[str, int] = {}
+        chrom_seen: dict[str, int] = {}
+        window_trigger = dominant_locus_fraction >= 0.5
+        arm_trigger = dominant_arm_fraction >= 0.6 and bool(dominant_arm)
+        chrom_trigger = dominant_chrom_fraction >= 0.7
+        for gene_id in ranked:
+            locus = loci.get(gene_id, {})
+            local_penalties = [1.0]
+            locus_key = str(locus.get("locus_key", ""))
+            chrom = str(locus.get("chrom", ""))
+            arm = str(locus.get("chromosome_arm", ""))
+            if window_trigger and locus_key:
+                count = window_seen.get(locus_key, 0)
+                window_seen[locus_key] = count + 1
+                if count > 0:
+                    local_penalties.append(1.0 / math.sqrt(float(count + 1)))
+            if arm_trigger and arm:
+                count = arm_seen.get(arm, 0)
+                arm_seen[arm] = count + 1
+                if count > 0:
+                    local_penalties.append(1.0 / math.sqrt(float(count + 1)))
+            if chrom_trigger and chrom:
+                count = chrom_seen.get(chrom, 0)
+                chrom_seen[chrom] = count + 1
+                if count > 0:
+                    local_penalties.append(1.0 / (1.0 + 0.3 * float(count)))
+            penalty = min(local_penalties)
+            penalties[gene_id] = penalty
+            if penalty < 1.0:
+                penalized[gene_id] = float(penalized[gene_id]) * penalty
+                applied = True
+    n_penalized = sum(1 for value in penalties.values() if float(value) < 1.0)
+    mode_used = cfg.locus_density_penalty_mode
+    if cfg.locus_density_penalty_mode == "auto" and not likely_artifact:
+        mode_used = "auto_inactive"
+    return penalized, penalties, {
         "mode": cfg.locus_density_penalty_mode,
+        "mode_used": mode_used,
         "window_bp": int(cfg.locus_density_window_bp),
         "top_n": int(cfg.locus_density_top_n),
         "dominant_chrom": dominant_chrom,
         "dominant_chrom_fraction": dominant_chrom_fraction,
+        "dominant_chromosome_arm": dominant_arm,
+        "dominant_chromosome_arm_fraction": dominant_arm_fraction,
         "dominant_locus": dominant_locus,
         "dominant_locus_fraction": dominant_locus_fraction,
+        "top_n_fraction_same_chromosome": dominant_chrom_fraction,
+        "top_n_fraction_same_chromosome_arm": dominant_arm_fraction,
+        "top_n_fraction_same_window": dominant_locus_fraction,
         "likely_artifact": likely_artifact,
         "penalty_applied": applied,
+        "n_genes_penalized_for_locus_density": n_penalized,
     }
 
 
@@ -1059,6 +1509,9 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
         "rank",
         "n_events_total",
         "n_events_used",
+        "n_independent_event_groups_used",
+        "sign_coherence",
+        "gene_support_penalty",
         "top_event_key",
         "top_event_type",
         "max_abs_event_score",
@@ -1069,6 +1522,7 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
         "gene_event_burden_count",
         "gene_event_burden_source",
         "gene_burden_penalty",
+        "locus_density_penalty",
     ]
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames, extrasaction="ignore")
@@ -1146,6 +1600,7 @@ def _warn_summary_flags(flags: Iterable[str]) -> None:
         "low_confidence_dominance": "warning: low-confidence events dominate the retained event set; consider stronger confidence thresholds.",
         "likely_event_multiplicity_bias": "warning: selected genes appear enriched for high event multiplicity rather than isolated strong events.",
         "likely_locus_density_artifact": "warning: top genes are unusually concentrated within one genomic locus or chromosome; this may reflect a local splicing artifact.",
+        "bundle_same_dataset_match": "warning: bundle contains matching source-dataset priors; same-dataset contributions were excluded or neutralized.",
     }
     for flag in flags:
         if flag in messages:
@@ -1159,8 +1614,11 @@ def run_splice_event_diff_workflow(
     rows: list[SpliceRow],
     alias_map: dict[str, AliasEntry] | None,
     ubiquity_map: dict[str, UbiquityEntry] | None,
+    event_ubiquity_by_dataset_map: dict[str, list[UbiquityByDatasetEntry]] | None,
     impact_map: dict[str, ImpactEntry] | None,
     gene_burden_map: dict[str, GeneBurdenEntry] | None,
+    gene_burden_by_dataset_map: dict[str, list[GeneBurdenByDatasetEntry]] | None,
+    gene_locus_map: dict[str, GeneLocusEntry] | None,
     input_files: list[dict[str, str]],
     resources_info: dict[str, object] | None,
 ) -> dict[str, object]:
@@ -1169,6 +1627,20 @@ def run_splice_event_diff_workflow(
     columns = resolve_splicing_columns(fieldnames, cfg)
     resolved_tool_family = str(columns.get("tool_family", cfg.tool_family))
     resolved_score_mode = _resolve_score_mode(columns, rows, cfg.score_mode)
+    setattr(cfg, "_gene_locus_map", gene_locus_map)
+
+    effective_ubiquity_map, effective_event_dataset_counts, same_dataset_event_summary = _build_effective_ubiquity_map(
+        pooled_map=ubiquity_map,
+        by_dataset_map=event_ubiquity_by_dataset_map,
+        source_dataset=cfg.source_dataset,
+        policy=cfg.bundle_same_dataset_policy,
+    )
+    effective_gene_burden_map, same_dataset_gene_summary = _build_effective_gene_burden_map(
+        pooled_map=gene_burden_map,
+        by_dataset_map=gene_burden_by_dataset_map,
+        source_dataset=cfg.source_dataset,
+        policy=cfg.bundle_same_dataset_policy,
+    )
 
     max_read_support = 0.0
     read_col = columns.get("read_support")
@@ -1191,13 +1663,18 @@ def run_splice_event_diff_workflow(
         "n_events_with_low_confidence_prior_match": 0,
         "n_low_confidence_ubiquity_priors_neutralized": 0,
         "n_low_confidence_impact_priors_neutralized": 0,
+        "n_medium_confidence_namespace_mismatches_neutralized": 0,
         "n_low_support_rows": 0,
         "n_novel_rows": 0,
         "n_delta_psi_soft_floor_downweighted": 0,
         "n_delta_psi_soft_floor_full_weight": 0,
         "n_delta_psi_soft_floor_inactive": 0,
+        "n_same_dataset_ubiquity_priors_excluded": int(same_dataset_event_summary.get("n_events_excluded", 0)),
+        "n_same_dataset_ubiquity_priors_neutralized": int(same_dataset_event_summary.get("n_events_neutralized", 0)),
+        "n_same_dataset_gene_burden_excluded": int(same_dataset_gene_summary.get("n_genes_excluded", 0)),
+        "n_same_dataset_gene_burden_neutralized": int(same_dataset_gene_summary.get("n_genes_neutralized", 0)),
         "event_type_counts": {},
-        "canonicalization_confidence_counts": {"high": 0, "low": 0},
+        "canonicalization_confidence_counts": {"high": 0, "medium": 0, "low": 0},
     }
 
     event_records: list[SpliceEventRecord] = []
@@ -1207,21 +1684,32 @@ def run_splice_event_diff_workflow(
             parse_summary["n_rows_dropped_missing_score"] = int(parse_summary["n_rows_dropped_missing_score"]) + 1
             continue
 
+        default_canonical_event_key = _default_canonical_event_key(row, columns)
+        default_canonicalization_status, default_canonicalization_confidence, default_event_key_namespace = _default_canonicalization_status(row, columns)
         alias_entry = None
         for candidate in _canonical_event_candidates(row, columns):
             if alias_map and candidate in alias_map:
-                alias_entry = alias_map[candidate]
+                candidate_entry = alias_map[candidate]
+                if (
+                    candidate_entry.canonicalization_confidence == "medium"
+                    and not _namespace_matches(default_event_key_namespace, candidate_entry.event_key_namespace)
+                ):
+                    parse_summary["n_medium_confidence_namespace_mismatches_neutralized"] = int(
+                        parse_summary["n_medium_confidence_namespace_mismatches_neutralized"]
+                    ) + 1
+                    continue
+                alias_entry = candidate_entry
                 break
         if alias_entry is not None:
             parse_summary["n_events_matched_to_alias_prior"] = int(parse_summary["n_events_matched_to_alias_prior"]) + 1
-        canonical_event_key = alias_entry.canonical_event_key if alias_entry is not None else _default_canonical_event_key(row, columns)
+        canonical_event_key = alias_entry.canonical_event_key if alias_entry is not None else default_canonical_event_key
         if not canonical_event_key:
             parse_summary["n_rows_unresolved_event"] = int(parse_summary["n_rows_unresolved_event"]) + 1
             continue
-        canonicalization_status, canonicalization_confidence = (
-            (alias_entry.canonicalization_status, alias_entry.canonicalization_confidence)
+        canonicalization_status, canonicalization_confidence, event_key_namespace = (
+            (alias_entry.canonicalization_status, alias_entry.canonicalization_confidence, alias_entry.event_key_namespace)
             if alias_entry is not None
-            else _default_canonicalization_status(row, columns)
+            else (default_canonicalization_status, default_canonicalization_confidence, default_event_key_namespace)
         )
         parse_summary["canonicalization_confidence_counts"][canonicalization_confidence] = int(
             parse_summary["canonicalization_confidence_counts"].get(canonicalization_confidence, 0)
@@ -1268,11 +1756,19 @@ def run_splice_event_diff_workflow(
 
         prior_confidence_weight = _prior_confidence_weight(canonicalization_confidence)
         low_conf_prior_matched = False
-        ubiquity_entry = ubiquity_map.get(canonical_event_key) if ubiquity_map else None
+        ubiquity_entry = effective_ubiquity_map.get(canonical_event_key) if effective_ubiquity_map else None
         if ubiquity_entry is None:
             ubiquity_weight = 1.0
         elif ubiquity_entry.canonicalization_confidence == "high":
             ubiquity_weight = float(ubiquity_entry.idf_ref)
+        elif ubiquity_entry.canonicalization_confidence == "medium":
+            if _namespace_matches(event_key_namespace, ubiquity_entry.event_key_namespace):
+                ubiquity_weight = _shrink_prior_toward_neutral(float(ubiquity_entry.idf_ref), "medium")
+            else:
+                ubiquity_weight = 1.0
+                parse_summary["n_medium_confidence_namespace_mismatches_neutralized"] = int(
+                    parse_summary["n_medium_confidence_namespace_mismatches_neutralized"]
+                ) + 1
         else:
             ubiquity_weight = 1.0
             parse_summary["n_low_confidence_ubiquity_priors_neutralized"] = int(
@@ -1283,10 +1779,33 @@ def run_splice_event_diff_workflow(
             if ubiquity_entry.canonicalization_confidence != "high":
                 low_conf_prior_matched = True
         impact_entry = impact_map.get(canonical_event_key) if impact_map else None
-        impact_weight = _impact_weight(impact_entry, cfg, event_type, annotation_status, novel_flag, canonicalization_confidence)
+        effective_impact_entry = impact_entry
+        if impact_entry is not None:
+            effective_impact_entry = ImpactEntry(
+                canonical_event_key=impact_entry.canonical_event_key,
+                canonicalization_status=impact_entry.canonicalization_status,
+                canonicalization_confidence=impact_entry.canonicalization_confidence,
+                event_key_namespace=impact_entry.event_key_namespace,
+                gene_id=impact_entry.gene_id,
+                gene_symbol=impact_entry.gene_symbol,
+                event_type=impact_entry.event_type,
+                impact_weight_raw=impact_entry.impact_weight_raw,
+                impact_evidence=impact_entry.impact_evidence,
+                annotation_status=impact_entry.annotation_status,
+                n_datasets_ref=effective_event_dataset_counts.get(canonical_event_key, impact_entry.n_datasets_ref or 0.0),
+            )
+            if (
+                effective_impact_entry.canonicalization_confidence == "medium"
+                and not _namespace_matches(event_key_namespace, effective_impact_entry.event_key_namespace)
+            ):
+                effective_impact_entry = None
+                parse_summary["n_medium_confidence_namespace_mismatches_neutralized"] = int(
+                    parse_summary["n_medium_confidence_namespace_mismatches_neutralized"]
+                ) + 1
+        impact_weight = _impact_weight(effective_impact_entry, cfg, event_type, annotation_status, novel_flag, canonicalization_confidence)
         if impact_entry is not None:
             parse_summary["n_events_matched_to_impact_prior"] = int(parse_summary["n_events_matched_to_impact_prior"]) + 1
-            if impact_entry.canonicalization_confidence != "high":
+            if impact_entry.canonicalization_confidence == "low":
                 low_conf_prior_matched = True
                 if abs(float(impact_weight) - 1.0) <= 1e-9:
                     parse_summary["n_low_confidence_impact_priors_neutralized"] = int(
@@ -1316,6 +1835,7 @@ def run_splice_event_diff_workflow(
                     event_group=_string_value(row, columns, "event_group"),
                     canonicalization_status=canonicalization_status,
                     canonicalization_confidence=canonicalization_confidence,
+                    event_key_namespace=event_key_namespace,
                     event_type=event_type,
                     gene_id=str(gene_id),
                     gene_symbol=str(gene_symbol),
@@ -1340,16 +1860,22 @@ def run_splice_event_diff_workflow(
     collapsed_events = _collapse_duplicate_events(event_records, cfg.event_dup_policy)
     grouped_events = _collapse_event_groups(collapsed_events)
     gene_scores, gene_symbols, by_gene = _aggregate_events_to_genes(grouped_events, cfg.gene_aggregation, cfg.gene_topk_events)
+    gene_scores, gene_support_penalties, gene_support_group_counts, gene_support_event_counts, gene_sign_coherence = _apply_gene_support_penalty(
+        gene_scores=gene_scores,
+        by_gene=by_gene,
+        cfg=cfg,
+    )
     gene_scores, gene_burden_counts, gene_burden_sources, gene_burden_penalties = _apply_gene_burden_penalty(
         gene_scores=gene_scores,
         gene_symbols=gene_symbols,
         by_gene=by_gene,
         cfg=cfg,
-        gene_burden_map=gene_burden_map,
+        gene_burden_map=effective_gene_burden_map,
     )
-    gene_scores, locus_density_summary = _apply_locus_density_penalty(
+    gene_scores, locus_density_penalties, locus_density_summary = _apply_locus_density_penalty(
         gene_scores=gene_scores,
         by_gene=by_gene,
+        gene_symbols=gene_symbols,
         cfg=cfg,
     )
     magnitude = {gene_id: abs(float(score)) for gene_id, score in gene_scores.items()}
@@ -1379,7 +1905,10 @@ def run_splice_event_diff_workflow(
                 "weight": float(weights.get(gene_id, 0.0)),
                 "rank": idx,
                 "n_events_total": len(support),
-                "n_events_used": len(used),
+                "n_events_used": int(gene_support_event_counts.get(gene_id, len(used))),
+                "n_independent_event_groups_used": int(gene_support_group_counts.get(gene_id, len(used))),
+                "sign_coherence": float(gene_sign_coherence.get(gene_id, 0.0)),
+                "gene_support_penalty": float(gene_support_penalties.get(gene_id, 1.0)),
                 "top_event_key": support[0].canonical_event_key if support else "",
                 "top_event_type": support[0].event_type if support else "",
                 "max_abs_event_score": abs(float(support[0].final_score)) if support else 0.0,
@@ -1392,6 +1921,7 @@ def run_splice_event_diff_workflow(
                 "gene_event_burden_count": int(gene_burden_counts.get(gene_id, 0)),
                 "gene_event_burden_source": gene_burden_sources.get(gene_id, "current_input"),
                 "gene_burden_penalty": float(gene_burden_penalties.get(gene_id, 1.0)),
+                "locus_density_penalty": float(locus_density_penalties.get(gene_id, 1.0)),
             }
         )
 
@@ -1455,6 +1985,9 @@ def run_splice_event_diff_workflow(
 
     skipped_gmt_outputs = _collect_skipped_gmt_outputs(gmt_diagnostics)
     warning_flags = _warning_flags(parse_summary, grouped_events, selected_rows, by_gene, locus_density_summary)
+    if _clean(same_dataset_event_summary.get("warning")):
+        warning_flags.append("bundle_same_dataset_match")
+        print(f"warning: {_clean(same_dataset_event_summary.get('warning'))}", file=sys.stderr)
     _warn_summary_flags(warning_flags)
 
     run_summary_payload = {
@@ -1479,6 +2012,11 @@ def run_splice_event_diff_workflow(
         "n_events_with_low_confidence_prior_match": parse_summary["n_events_with_low_confidence_prior_match"],
         "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
         "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
+        "n_medium_confidence_namespace_mismatches_neutralized": parse_summary["n_medium_confidence_namespace_mismatches_neutralized"],
+        "n_same_dataset_ubiquity_priors_excluded": parse_summary["n_same_dataset_ubiquity_priors_excluded"],
+        "n_same_dataset_ubiquity_priors_neutralized": parse_summary["n_same_dataset_ubiquity_priors_neutralized"],
+        "n_same_dataset_gene_burden_excluded": parse_summary["n_same_dataset_gene_burden_excluded"],
+        "n_same_dataset_gene_burden_neutralized": parse_summary["n_same_dataset_gene_burden_neutralized"],
         "selected_events_high_confidence": selected_high_conf,
         "selected_events_low_confidence": selected_low_conf,
         "selected_events_fraction_high_confidence": (float(selected_high_conf) / float(len(selected_support_events))) if selected_support_events else 0.0,
@@ -1490,12 +2028,17 @@ def run_splice_event_diff_workflow(
         "fraction_single_event_genes": parse_summary["fraction_single_event_genes"],
         "delta_psi_soft_floor_mode": cfg.delta_psi_soft_floor_mode,
         "delta_psi_soft_floor": cfg.delta_psi_soft_floor,
+        "source_dataset": cfg.source_dataset,
+        "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
+        "same_dataset_event_prior_summary": same_dataset_event_summary,
+        "same_dataset_gene_burden_summary": same_dataset_gene_summary,
         "n_delta_psi_soft_floor_downweighted": parse_summary["n_delta_psi_soft_floor_downweighted"],
         "n_delta_psi_soft_floor_full_weight": parse_summary["n_delta_psi_soft_floor_full_weight"],
         "n_delta_psi_soft_floor_inactive": parse_summary["n_delta_psi_soft_floor_inactive"],
         "canonicalization_confidence_counts": parse_summary["canonicalization_confidence_counts"],
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
+        "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
         "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
         "locus_density_window_bp": cfg.locus_density_window_bp,
         "locus_density_top_n": cfg.locus_density_top_n,
@@ -1529,6 +2072,9 @@ def run_splice_event_diff_workflow(
         "gene_topk_events": cfg.gene_topk_events,
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
+        "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
+        "source_dataset": cfg.source_dataset,
+        "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
         "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
         "locus_density_window_bp": cfg.locus_density_window_bp,
         "locus_density_top_n": cfg.locus_density_top_n,
@@ -1581,11 +2127,18 @@ def run_splice_event_diff_workflow(
             "n_events_with_low_confidence_prior_match": parse_summary["n_events_with_low_confidence_prior_match"],
             "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
             "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
+            "n_medium_confidence_namespace_mismatches_neutralized": parse_summary["n_medium_confidence_namespace_mismatches_neutralized"],
+            "n_same_dataset_ubiquity_priors_excluded": parse_summary["n_same_dataset_ubiquity_priors_excluded"],
+            "n_same_dataset_ubiquity_priors_neutralized": parse_summary["n_same_dataset_ubiquity_priors_neutralized"],
+            "n_same_dataset_gene_burden_excluded": parse_summary["n_same_dataset_gene_burden_excluded"],
+            "n_same_dataset_gene_burden_neutralized": parse_summary["n_same_dataset_gene_burden_neutralized"],
             "canonicalization_confidence_counts": parse_summary["canonicalization_confidence_counts"],
             "fraction_retained_intron": parse_summary["fraction_retained_intron"],
             "fraction_novel": parse_summary["fraction_novel"],
             "fraction_low_support": parse_summary["fraction_low_support"],
             "fraction_single_event_genes": parse_summary["fraction_single_event_genes"],
+            "same_dataset_event_prior_summary": same_dataset_event_summary,
+            "same_dataset_gene_burden_summary": same_dataset_gene_summary,
             "n_delta_psi_soft_floor_downweighted": parse_summary["n_delta_psi_soft_floor_downweighted"],
             "n_delta_psi_soft_floor_full_weight": parse_summary["n_delta_psi_soft_floor_full_weight"],
             "n_delta_psi_soft_floor_inactive": parse_summary["n_delta_psi_soft_floor_inactive"],
