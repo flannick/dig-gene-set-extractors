@@ -96,8 +96,15 @@ class SpliceMatrixWorkflowConfig:
     locus_density_penalty_mode: str
     locus_density_window_bp: int
     locus_density_top_n: int
+    locus_density_penalty_mode_explicit: bool
     source_dataset: str | None
     bundle_same_dataset_policy: str
+    bundle_prior_profile: str
+    bundle_prior_profile_explicit: bool
+    artifact_action: str
+    artifact_action_explicit: bool
+    min_nonself_source_datasets_for_event_prior: int
+    max_dataset_fraction_for_event_prior: float
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -458,8 +465,15 @@ def _make_child_cfg(cfg: SpliceMatrixWorkflowConfig, contrast: ContrastSpec, out
         locus_density_penalty_mode=cfg.locus_density_penalty_mode,
         locus_density_window_bp=cfg.locus_density_window_bp,
         locus_density_top_n=cfg.locus_density_top_n,
+        locus_density_penalty_mode_explicit=cfg.locus_density_penalty_mode_explicit,
         source_dataset=cfg.source_dataset,
         bundle_same_dataset_policy=cfg.bundle_same_dataset_policy,
+        bundle_prior_profile=cfg.bundle_prior_profile,
+        bundle_prior_profile_explicit=cfg.bundle_prior_profile_explicit,
+        artifact_action=cfg.artifact_action,
+        artifact_action_explicit=cfg.artifact_action_explicit,
+        min_nonself_source_datasets_for_event_prior=cfg.min_nonself_source_datasets_for_event_prior,
+        max_dataset_fraction_for_event_prior=cfg.max_dataset_fraction_for_event_prior,
         ambiguous_gene_policy=cfg.ambiguous_gene_policy,
         impact_mode=cfg.impact_mode,
         impact_min=cfg.impact_min,
@@ -526,6 +540,12 @@ def run_splice_event_matrix_workflow(
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     multiple = len(contrasts) > 1
     emitted = 0
+    effective_bundle_profiles: set[str] = set()
+    effective_artifact_actions: set[str] = set()
+    effective_locus_modes: set[str] = set()
+    quality_tiers: set[str] = set()
+    n_tcga_public_mode_contrasts = 0
+    n_outputs_withheld_for_artifact = 0
 
     for contrast in contrasts:
         contrast_rows, contrast_summary = _contrast_rows_for_events(event_rows=matrix_rows, contrast=contrast, cfg=cfg, coverage_lookup=coverage_lookup)
@@ -544,6 +564,13 @@ def run_splice_event_matrix_workflow(
                 "n_events_dropped_missing": contrast_summary["n_events_dropped_missing"],
                 "n_events_with_support": contrast_summary["n_events_with_support"],
                 "n_events_with_bh_padj": contrast_summary["n_events_with_bh_padj"],
+                "tcga_public_mode": False,
+                "effective_bundle_prior_profile": "",
+                "effective_artifact_action": "",
+                "effective_locus_density_penalty_mode": "",
+                "quality_tier": "skipped",
+                "artifact_action_applied": "",
+                "output_withheld_reason": "",
                 "status": "skipped",
                 "reason_if_skipped": "No events passed matrix contrast QC; likely too many missing values or too few samples per condition.",
                 "path": "",
@@ -585,10 +612,25 @@ def run_splice_event_matrix_workflow(
             "n_events_dropped_missing": contrast_summary["n_events_dropped_missing"],
             "n_events_with_support": contrast_summary["n_events_with_support"],
             "n_events_with_bh_padj": contrast_summary["n_events_with_bh_padj"],
+            "tcga_public_mode": bool(_result.get("tcga_public_mode", False)),
+            "effective_bundle_prior_profile": str(_result.get("effective_bundle_prior_profile", "")),
+            "effective_artifact_action": str(_result.get("effective_artifact_action", "")),
+            "effective_locus_density_penalty_mode": str(_result.get("effective_locus_density_penalty_mode", "")),
+            "quality_tier": str(_result.get("quality_tier", "")),
+            "artifact_action_applied": str(_result.get("artifact_action_applied", "")),
+            "output_withheld_reason": str(_result.get("output_withheld_reason", "")),
             "status": "emitted",
             "reason_if_skipped": "",
             "path": "." if not multiple else str(child_out_dir.relative_to(out_dir)),
         })
+        if bool(_result.get("tcga_public_mode", False)):
+            n_tcga_public_mode_contrasts += 1
+        effective_bundle_profiles.add(str(_result.get("effective_bundle_prior_profile", "")))
+        effective_artifact_actions.add(str(_result.get("effective_artifact_action", "")))
+        effective_locus_modes.add(str(_result.get("effective_locus_density_penalty_mode", "")))
+        quality_tiers.add(str(_result.get("quality_tier", "")))
+        if str(_result.get("output_withheld_reason", "")):
+            n_outputs_withheld_for_artifact += 1
         if multiple:
             manifest_rows.append({
                 "contrast_id": contrast.contrast_id,
@@ -617,7 +659,35 @@ def run_splice_event_matrix_workflow(
                 writer.writerow(row)
 
     with (out_dir / "contrast_qc.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "contrast_label", "study_contrast", "group_label", "condition_a", "condition_b", "n_samples_a", "n_samples_b", "n_input_events", "n_events_retained", "n_events_dropped_missing", "n_events_with_support", "n_events_with_bh_padj", "status", "reason_if_skipped", "path"])
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=[
+                "contrast_id",
+                "contrast_label",
+                "study_contrast",
+                "group_label",
+                "condition_a",
+                "condition_b",
+                "n_samples_a",
+                "n_samples_b",
+                "n_input_events",
+                "n_events_retained",
+                "n_events_dropped_missing",
+                "n_events_with_support",
+                "n_events_with_bh_padj",
+                "tcga_public_mode",
+                "effective_bundle_prior_profile",
+                "effective_artifact_action",
+                "effective_locus_density_penalty_mode",
+                "quality_tier",
+                "artifact_action_applied",
+                "output_withheld_reason",
+                "status",
+                "reason_if_skipped",
+                "path",
+            ],
+        )
         writer.writeheader()
         for row in qc_rows:
             writer.writerow(row)
@@ -637,6 +707,14 @@ def run_splice_event_matrix_workflow(
         "delta_psi_soft_floor": cfg.delta_psi_soft_floor,
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
+        "bundle_prior_profile": cfg.bundle_prior_profile,
+        "artifact_action": cfg.artifact_action,
+        "effective_bundle_prior_profiles": sorted(value for value in effective_bundle_profiles if value),
+        "effective_artifact_actions": sorted(value for value in effective_artifact_actions if value),
+        "effective_locus_density_penalty_modes": sorted(value for value in effective_locus_modes if value),
+        "quality_tiers": sorted(value for value in quality_tiers if value),
+        "n_tcga_public_mode_contrasts": n_tcga_public_mode_contrasts,
+        "n_outputs_withheld_for_artifact": n_outputs_withheld_for_artifact,
         "source_dataset": cfg.source_dataset,
         "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
         "min_samples_per_condition": cfg.min_samples_per_condition,

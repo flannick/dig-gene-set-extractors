@@ -325,6 +325,17 @@ def run(args) -> dict[str, object]:
         stats = ubiquity_stats[canonical]
         df_ref = int(stats["df_ref"])
         n_datasets_ref = len(stats["datasets"])
+        dataset_rows = [
+            row
+            for (event_key, _dataset), row in ubiquity_by_dataset_stats.items()
+            if event_key == canonical
+        ]
+        total_dataset_df = sum(float(row["df_ref"] or 0.0) for row in dataset_rows)
+        max_dataset_fraction_ref = (
+            max(float(row["df_ref"] or 0.0) / max(1.0, total_dataset_df) for row in dataset_rows)
+            if dataset_rows and total_dataset_df > 0.0
+            else 0.0
+        )
         idf_ref = math.log1p((n_datasets_total + 1.0) / (n_datasets_ref + 1.0))
         idf_values.append(idf_ref)
         ubiquity_rows.append(
@@ -341,7 +352,9 @@ def run(args) -> dict[str, object]:
                 "fraction_ref": float(df_ref) / float(n_samples_ref),
                 "idf_ref": idf_ref,
                 "n_datasets_ref": n_datasets_ref,
+                "n_source_datasets_ref": n_datasets_ref,
                 "fraction_datasets_ref": float(n_datasets_ref) / float(n_datasets_total),
+                "max_dataset_fraction_ref": max_dataset_fraction_ref,
             }
         )
     for (_canonical, _dataset) in sorted(ubiquity_by_dataset_stats):
@@ -364,6 +377,17 @@ def run(args) -> dict[str, object]:
     impact_rows: list[dict[str, object]] = []
     for canonical in sorted(impact_records):
         record = impact_records[canonical]
+        dataset_rows = [
+            row
+            for (event_key, _dataset), row in ubiquity_by_dataset_stats.items()
+            if event_key == canonical
+        ]
+        total_dataset_df = sum(float(row["df_ref"] or 0.0) for row in dataset_rows)
+        max_dataset_fraction_ref = (
+            max(float(row["df_ref"] or 0.0) / max(1.0, total_dataset_df) for row in dataset_rows)
+            if dataset_rows and total_dataset_df > 0.0
+            else 0.0
+        )
         raw, evidence = _impact_defaults(str(record["event_type"]), str(record["annotation_status"]))
         impact_rows.append(
             {
@@ -378,6 +402,8 @@ def run(args) -> dict[str, object]:
                 "impact_evidence": evidence,
                 "annotation_status": record["annotation_status"],
                 "n_datasets_ref": len(record["datasets"]),
+                "n_source_datasets_ref": len(record["datasets"]),
+                "max_dataset_fraction_ref": max_dataset_fraction_ref,
             }
         )
 
@@ -406,6 +432,11 @@ def run(args) -> dict[str, object]:
                 "n_studies_high_confidence_ref": len(record["high_conf_studies"]),
                 "fraction_low_confidence_events_ref": low_fraction,
                 "median_unique_groups_per_study": float(median(study_group_counts)) if study_group_counts else 0.0,
+                "max_dataset_fraction_ref": (
+                    max(float(len(group_set)) / float(max(1, total_groups)) for group_set in record["study_unique_groups"].values())
+                    if total_groups > 0
+                    else 0.0
+                ),
             }
         )
     for (_gene_symbol, _dataset) in sorted(gene_burden_by_dataset):
@@ -471,7 +502,9 @@ def run(args) -> dict[str, object]:
             "fraction_ref",
             "idf_ref",
             "n_datasets_ref",
+            "n_source_datasets_ref",
             "fraction_datasets_ref",
+            "max_dataset_fraction_ref",
         ],
         ubiquity_rows,
     )
@@ -505,6 +538,8 @@ def run(args) -> dict[str, object]:
             "impact_evidence",
             "annotation_status",
             "n_datasets_ref",
+            "n_source_datasets_ref",
+            "max_dataset_fraction_ref",
         ],
         impact_rows,
     )
@@ -521,6 +556,7 @@ def run(args) -> dict[str, object]:
             "n_studies_high_confidence_ref",
             "fraction_low_confidence_events_ref",
             "median_unique_groups_per_study",
+            "max_dataset_fraction_ref",
         ],
         burden_rows,
     )

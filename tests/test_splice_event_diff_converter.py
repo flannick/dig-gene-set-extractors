@@ -52,12 +52,17 @@ class Args:
     min_gene_burden_penalty = 0.35
     gene_support_penalty_mode = "auto"
     locus_density_penalty_mode = "none"
+    locus_density_penalty_mode_explicit = False
     locus_density_window_bp = 20000000
     locus_density_top_n = 20
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
     impact_max = 1.35
+    bundle_prior_profile = "auto"
+    bundle_prior_profile_explicit = False
+    artifact_action = "warn"
+    artifact_action_explicit = False
     resources_manifest = None
     resources_dir = None
     resource_policy = "skip"
@@ -111,6 +116,10 @@ def _score_map(path: Path) -> dict[str, float]:
     return {row["gene_id"]: float(row["score"]) for row in _read_rows(path)}
 
 
+def _summary(out_dir: str | Path) -> dict[str, object]:
+    return json.loads((Path(out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+
+
 def _write_gz_tsv(path: Path, text: str) -> None:
     with gzip.open(path, "wt", encoding="utf-8", newline="") as fh:
         fh.write(text)
@@ -158,6 +167,62 @@ def test_splice_event_diff_runs_without_bundle(tmp_path: Path, capsys):
     assert result["n_genes"] >= 1
     captured = capsys.readouterr()
     assert "Missing" not in captured.err
+
+
+def test_splice_event_diff_tcga_dynamic_defaults_activate_only_when_needed(tmp_path: Path):
+    dynamic_path = tmp_path / "dynamic.tsv"
+    dynamic_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "D1\tDG1\texon_skip\tG_KCNN4\tKCNN4\tchr19\t100\t180\t+\t0.50\t1e-6\t0.99\t30\tannotated_coding",
+                "D2\tDG2\talt_donor\tG_MAPK1\tMAPK1\tchr22\t300\t390\t-\t0.40\t1e-5\t0.98\t25\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args_generic = Args()
+    args_generic.splice_tsv = str(dynamic_path)
+    args_generic.out_dir = str(tmp_path / "generic_dynamic")
+    args_generic.use_reference_bundle = False
+    args_generic.tool_family = "generic"
+    splice_event_diff.run(args_generic)
+    generic_summary = _summary(args_generic.out_dir)
+    assert generic_summary["tcga_public_mode"] is False
+    assert generic_summary["locus_density_penalty_mode_effective"] == "none"
+    assert generic_summary["effective_artifact_action"] == "warn"
+    assert generic_summary["effective_bundle_prior_profile"] == "none"
+
+    args_tcga = Args()
+    args_tcga.splice_tsv = str(dynamic_path)
+    args_tcga.out_dir = str(tmp_path / "tcga_dynamic")
+    args_tcga.use_reference_bundle = False
+    args_tcga.tool_family = "tcga_spliceseq"
+    splice_event_diff.run(args_tcga)
+    tcga_summary = _summary(args_tcga.out_dir)
+    assert tcga_summary["tcga_public_mode"] is True
+    assert tcga_summary["locus_density_penalty_mode_effective"] == "auto"
+    assert tcga_summary["effective_artifact_action"] == "suppress_if_persistent"
+    assert tcga_summary["effective_bundle_prior_profile"] == "none"
+
+    args_override = Args()
+    args_override.splice_tsv = str(dynamic_path)
+    args_override.out_dir = str(tmp_path / "tcga_override")
+    args_override.use_reference_bundle = False
+    args_override.tool_family = "tcga_spliceseq"
+    args_override.locus_density_penalty_mode = "chromosome_diversity"
+    args_override.locus_density_penalty_mode_explicit = True
+    args_override.artifact_action = "prune"
+    args_override.artifact_action_explicit = True
+    args_override.bundle_prior_profile = "full"
+    args_override.bundle_prior_profile_explicit = True
+    splice_event_diff.run(args_override)
+    override_summary = _summary(args_override.out_dir)
+    assert override_summary["locus_density_penalty_mode_effective"] == "chromosome_diversity"
+    assert override_summary["effective_artifact_action"] == "prune"
+    assert override_summary["effective_bundle_prior_profile"] == "full"
 
 
 def test_splice_event_diff_impact_changes_scores(tmp_path: Path):
@@ -230,6 +295,124 @@ def test_splice_event_diff_low_confidence_bundle_priors_are_neutralized(tmp_path
     summary = json.loads((Path(args_bundle.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert summary["n_low_confidence_ubiquity_priors_neutralized"] >= 1
     assert summary["n_low_confidence_impact_priors_neutralized"] >= 1
+
+
+def test_splice_event_diff_auto_prior_profile_degrades_medium_self_only_but_keeps_high_confidence_full(tmp_path: Path):
+    resources_dir = tmp_path / "resources_auto"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    _write_gz_tsv(
+        resources_dir / "splice_event_aliases_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "input_event_key\tcanonical_event_key\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tgene_id\tgene_symbol\tevent_type\tchrom\tstart\tend\tstrand\tsource_dataset",
+                "M1\ttcga_spliceseq_asid::KCNN4::exon_skip::M1\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\tG_KCNN4\tKCNN4\texon_skip\t\t\t\t\tTCGA_BRCA",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_ubiquity_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tn_samples_ref\tdf_ref\tfraction_ref\tidf_ref\tn_datasets_ref\tfraction_datasets_ref\tn_source_datasets_ref\tmax_dataset_fraction_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::M1\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t5\t5\t1.0\t1.0\t1\t1.0\t1\t1.0",
+                "chr7:300-360:+:alt_donor:HG1\tG_MAPK1\tMAPK1\talt_donor\tcoordinate_canonical\thigh\tglobal_coordinate\t12\t4\t0.33\t1.8\t3\t1.0\t3\t0.5",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_ubiquity_by_dataset_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tsource_dataset\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\tn_samples_ref\tdf_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::M1\tTCGA_BRCA\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t5\t5",
+                "chr7:300-360:+:alt_donor:HG1\tTCGA_LUAD\tG_MAPK1\tMAPK1\talt_donor\tcoordinate_canonical\thigh\tglobal_coordinate\t4\t2",
+                "chr7:300-360:+:alt_donor:HG1\tTCGA_HNSC\tG_MAPK1\tMAPK1\talt_donor\tcoordinate_canonical\thigh\tglobal_coordinate\t4\t1",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_event_impact_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "canonical_event_key\tgene_id\tgene_symbol\tevent_type\tcanonicalization_status\tcanonicalization_confidence\tevent_key_namespace\timpact_weight_raw\timpact_evidence\tannotation_status\tn_datasets_ref\tn_source_datasets_ref\tmax_dataset_fraction_ref",
+                "tcga_spliceseq_asid::KCNN4::exon_skip::M1\tG_KCNN4\tKCNN4\texon_skip\tsource_family_stable_id\tmedium\ttcga_spliceseq_asid\t1.2\t0.6\tannotated_coding\t1\t1\t1.0",
+                "chr7:300-360:+:alt_donor:HG1\tG_MAPK1\tMAPK1\talt_donor\tcoordinate_canonical\thigh\tglobal_coordinate\t1.2\t0.6\tannotated_coding\t3\t3\t0.5",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_gene_event_burden_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "gene_symbol\tn_canonical_events_ref\tn_high_confidence_events_ref\tn_medium_confidence_events_ref\tn_low_confidence_events_ref\tn_unique_event_groups_ref\tn_studies_ref\tn_studies_high_confidence_ref\tfraction_low_confidence_events_ref\tmedian_unique_groups_per_study\tmax_dataset_fraction_ref",
+                "KCNN4\t1\t0\t1\t0\t1\t1\t0\t0.0\t1.0\t1.0",
+                "MAPK1\t1\t1\t0\t0\t1\t3\t3\t0.0\t1.0\t0.5",
+            ]
+        )
+        + "\n",
+    )
+    _write_gz_tsv(
+        resources_dir / "splice_gene_event_burden_by_dataset_human_v1.tsv.gz",
+        "\n".join(
+            [
+                "gene_symbol\tsource_dataset\tn_canonical_events_ref\tn_high_confidence_events_ref\tn_medium_confidence_events_ref\tn_low_confidence_events_ref\tn_unique_event_groups_ref",
+                "KCNN4\tTCGA_BRCA\t1\t0\t1\t0\t1",
+                "MAPK1\tTCGA_LUAD\t1\t1\t0\t0\t1",
+                "MAPK1\tTCGA_HNSC\t1\t1\t0\t0\t1",
+            ]
+        )
+        + "\n",
+    )
+
+    medium_path = tmp_path / "medium_tcga.tsv"
+    medium_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "M1\tMG1\texon_skip\tG_KCNN4\tKCNN4\t0.75\t1e-6\t0.99\t30\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args_medium = Args()
+    args_medium.splice_tsv = str(medium_path)
+    args_medium.out_dir = str(tmp_path / "medium_runtime")
+    args_medium.tool_family = "tcga_spliceseq"
+    args_medium.resources_dir = str(resources_dir)
+    args_medium.source_dataset = "TCGA_BRCA"
+    splice_event_diff.run(args_medium)
+    medium_summary = _summary(args_medium.out_dir)
+    assert medium_summary["effective_bundle_prior_profile"] == "none"
+    assert medium_summary["bundle_prior_downgrade_reason"] == "no_meaningful_nonself_bundle_support"
+    assert medium_summary["n_same_dataset_ubiquity_priors_neutralized"] >= 1
+
+    high_path = tmp_path / "high_tcga.tsv"
+    high_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "H1\tHG1\talt_donor\tG_MAPK1\tMAPK1\tchr7\t300\t360\t+\t0.65\t1e-6\t0.99\t30\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args_high = Args()
+    args_high.splice_tsv = str(high_path)
+    args_high.out_dir = str(tmp_path / "high_runtime")
+    args_high.tool_family = "tcga_spliceseq"
+    args_high.resources_dir = str(resources_dir)
+    args_high.source_dataset = "TCGA_BRCA"
+    splice_event_diff.run(args_high)
+    high_summary = _summary(args_high.out_dir)
+    assert high_summary["effective_bundle_prior_profile"] == "full"
+    assert high_summary["bundle_prior_downgrade_reason"] == "sufficient_nonself_support"
+    assert high_summary["n_events_matched_to_ubiquity_prior"] == 1
 
 
 def test_splice_event_diff_gene_burden_penalty_changes_scores(tmp_path: Path):
@@ -398,6 +581,48 @@ def test_splice_event_diff_locus_density_warning_and_penalty(tmp_path: Path):
     assert pen_scores["G2"] != none_scores["G2"]
 
 
+def test_splice_event_diff_tcga_persistent_locus_artifact_is_withheld(tmp_path: Path):
+    locus_path = tmp_path / "tcga_artifact.tsv"
+    locus_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "T1\tTG1\texon_skip\tG1\tGENE1\tchr1\t100000\t100120\t+\t0.70\t1e-8\t0.99\t50\tannotated_coding",
+                "T2\tTG2\texon_skip\tG2\tGENE2\tchr1\t200000\t200120\t+\t0.69\t1e-8\t0.99\t50\tannotated_coding",
+                "T3\tTG3\texon_skip\tG3\tGENE3\tchr1\t300000\t300120\t+\t0.68\t1e-8\t0.99\t50\tannotated_coding",
+                "T4\tTG4\texon_skip\tG4\tGENE4\tchr1\t400000\t400120\t+\t0.67\t1e-8\t0.99\t50\tannotated_coding",
+                "T5\tTG5\texon_skip\tG5\tGENE5\tchr1\t500000\t500120\t+\t0.66\t1e-8\t0.99\t50\tannotated_coding",
+                "T6\tTG6\texon_skip\tG6\tGENE6\tchr1\t600000\t600120\t+\t0.65\t1e-8\t0.99\t50\tannotated_coding",
+                "T7\tTG7\texon_skip\tG7\tGENE7\tchr8\t100000\t100120\t+\t0.40\t1e-8\t0.99\t50\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.splice_tsv = str(locus_path)
+    args.out_dir = str(tmp_path / "tcga_artifact_run")
+    args.use_reference_bundle = False
+    args.tool_family = "tcga_spliceseq"
+    args.top_k = 10
+    args.locus_density_top_n = 5
+    splice_event_diff.run(args)
+
+    summary = _summary(args.out_dir)
+    assert summary["tcga_public_mode"] is True
+    assert summary["locus_density_penalty_mode_effective"] == "auto"
+    assert summary["effective_artifact_action"] == "suppress_if_persistent"
+    assert summary["quality_tier"] == "artifact_prone_withheld"
+    assert summary["artifact_action_applied"] == "withheld"
+    assert summary["output_withheld_reason"] == "persistent_locus_density_artifact"
+    assert "persistent_locus_density_artifact" in summary["artifact_flags"]
+    assert summary["artifact_summary"]["likely_persistent_artifact"] is True
+    assert summary["locus_density_after"]["likely_artifact"] is True
+    assert _read_rows(Path(args.out_dir) / "geneset.tsv") == []
+    assert _read_rows(Path(args.out_dir) / "geneset.full.tsv")
+    assert not (Path(args.out_dir) / "genesets.gmt").exists()
+
+
 def test_splice_event_diff_generic_raw_id_is_not_promoted_to_medium(tmp_path: Path):
     raw_path = tmp_path / "generic_raw.tsv"
     raw_path.write_text(
@@ -542,6 +767,41 @@ def test_splice_event_diff_auto_locus_density_penalty_diversifies_top_genes(tmp_
     penalty_map = {row["gene_symbol"]: float(row["locus_density_penalty"]) for row in rows}
     assert penalty_map["GENE1"] == 1.0
     assert penalty_map["GENE2"] < 1.0
+
+
+def test_splice_event_diff_tcga_nonartifact_signal_survives_dynamic_controls(tmp_path: Path):
+    clean_path = tmp_path / "tcga_clean.tsv"
+    clean_path.write_text(
+        "\n".join(
+            [
+                "event_id\tevent_group\tevent_type\tgene_id\tgene_symbol\tchrom\tstart\tend\tstrand\tdelta_psi\tpvalue\tprobability\tread_support\tannotation_status",
+                "C1\tCG1\texon_skip\tG1\tGENE1\tchr1\t100000\t100120\t+\t0.70\t1e-8\t0.99\t50\tannotated_coding",
+                "C2\tCG2\talt_donor\tG2\tGENE2\tchr2\t200000\t200120\t+\t0.68\t1e-8\t0.99\t50\tannotated_coding",
+                "C3\tCG3\texon_skip\tG3\tGENE3\tchr3\t300000\t300120\t+\t0.66\t1e-8\t0.99\t50\tannotated_coding",
+                "C4\tCG4\talt_acceptor\tG4\tGENE4\tchr4\t400000\t400120\t+\t0.64\t1e-8\t0.99\t50\tannotated_coding",
+                "C5\tCG5\texon_skip\tG5\tGENE5\tchr5\t500000\t500120\t+\t0.62\t1e-8\t0.99\t50\tannotated_coding",
+                "C6\tCG6\talt_donor\tG6\tGENE6\tchr6\t600000\t600120\t+\t0.60\t1e-8\t0.99\t50\tannotated_coding",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.splice_tsv = str(clean_path)
+    args.out_dir = str(tmp_path / "tcga_clean_run")
+    args.use_reference_bundle = False
+    args.tool_family = "tcga_spliceseq"
+    args.top_k = 10
+    args.locus_density_top_n = 5
+    splice_event_diff.run(args)
+    summary = _summary(args.out_dir)
+    assert summary["tcga_public_mode"] is True
+    assert summary["locus_density_penalty_mode_effective"] == "auto"
+    assert summary["effective_artifact_action"] == "suppress_if_persistent"
+    assert summary["quality_tier"] == "standard"
+    assert summary["output_withheld_reason"] == ""
+    assert summary["artifact_summary"]["likely_persistent_artifact"] is False
+    assert _read_rows(Path(args.out_dir) / "geneset.tsv")
 
 
 def test_splice_event_diff_gene_support_penalty_rewards_coherent_multi_group_support(tmp_path: Path):

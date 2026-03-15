@@ -62,18 +62,32 @@ class MatrixArgs:
     gene_topk_events = 3
     gene_burden_penalty_mode = "auto"
     min_gene_burden_penalty = 0.35
+    gene_support_penalty_mode = "auto"
+    locus_density_penalty_mode = "none"
+    locus_density_penalty_mode_explicit = False
+    locus_density_window_bp = 20000000
+    locus_density_top_n = 20
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
     impact_max = 1.35
+    bundle_prior_profile = "auto"
+    bundle_prior_profile_explicit = False
+    artifact_action = "warn"
+    artifact_action_explicit = False
     resources_manifest = None
     resources_dir = None
     resource_policy = "skip"
     use_reference_bundle = False
     event_alias_resource_id = None
     event_ubiquity_resource_id = None
+    event_ubiquity_by_dataset_resource_id = None
     event_impact_resource_id = None
     gene_burden_resource_id = None
+    gene_burden_by_dataset_resource_id = None
+    gene_locus_resource_id = None
+    source_dataset = None
+    bundle_same_dataset_policy = "exclude"
     select = "top_k"
     top_k = 200
     quantile = 0.01
@@ -216,6 +230,10 @@ def test_splice_prepare_public_to_matrix_and_bundle_handoff(tmp_path: Path):
     assert result["n_contrasts_emitted"] == 1
     run_summary = json.loads((Path(matrix_args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
     assert run_summary["source_dataset"] == "TCGA_TOY"
+    assert run_summary["effective_bundle_prior_profiles"] == ["none"]
+    assert run_summary["effective_artifact_actions"] == ["suppress_if_persistent"]
+    assert run_summary["effective_locus_density_penalty_modes"] == ["auto"]
+    assert run_summary["n_tcga_public_mode_contrasts"] == 1
 
 
 def test_splice_prepare_public_low_confidence_propagates_into_bundle(tmp_path: Path):

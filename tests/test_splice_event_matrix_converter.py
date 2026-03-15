@@ -63,12 +63,17 @@ class Args:
     min_gene_burden_penalty = 0.35
     gene_support_penalty_mode = "auto"
     locus_density_penalty_mode = "none"
+    locus_density_penalty_mode_explicit = False
     locus_density_window_bp = 20000000
     locus_density_top_n = 20
     ambiguous_gene_policy = "drop"
     impact_mode = "conservative"
     impact_min = 0.75
     impact_max = 1.35
+    bundle_prior_profile = "auto"
+    bundle_prior_profile_explicit = False
+    artifact_action = "warn"
+    artifact_action_explicit = False
     resources_manifest = None
     resources_dir = None
     resource_policy = "skip"

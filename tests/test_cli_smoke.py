@@ -194,6 +194,8 @@ def test_cli_describe_splice_event_diff():
     assert "impact_mode" in param_names
     assert "event_alias_resource_id" in param_names
     assert "locus_density_penalty_mode" in param_names
+    assert "bundle_prior_profile" in param_names
+    assert "artifact_action" in param_names
     assert "source_dataset" in param_names
     assert "bundle_same_dataset_policy" in param_names
     assert "gene_support_penalty_mode" in param_names
@@ -209,6 +211,8 @@ def test_cli_describe_splice_event_matrix():
     assert "effect_metric" in param_names
     assert "sample_metadata_tsv" not in param_names
     assert "locus_density_penalty_mode" in param_names
+    assert "bundle_prior_profile" in param_names
+    assert "artifact_action" in param_names
     assert "source_dataset" in param_names
     assert "bundle_same_dataset_policy" in param_names
     assert "gene_support_penalty_mode" in param_names

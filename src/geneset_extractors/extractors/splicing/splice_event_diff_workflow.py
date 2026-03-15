@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import gzip
 import json
 import math
@@ -30,9 +30,13 @@ from geneset_extractors.extractors.rnaseq.deg_scoring import sanitize_name_compo
 
 
 GLOBAL_DEFAULT_COLUMNS = {
+    "canonical_event_key": ("canonical_event_key",),
     "event_id": ("event_id", "event", "splice_event_id", "spliceseq_event_id", "as_id", "Event"),
     "event_group": ("event_group", "cluster_id", "cluster", "lsv_id", "event_cluster"),
     "event_type": ("event_type", "event_class", "splice_type", "Type"),
+    "canonicalization_status": ("canonicalization_status",),
+    "canonicalization_confidence": ("canonicalization_confidence",),
+    "event_key_namespace": ("event_key_namespace",),
     "gene_id": ("gene_id", "ensembl_gene_id", "GeneID"),
     "gene_symbol": ("gene_symbol", "gene_name", "gene", "Gene", "symbol"),
     "chrom": ("chrom", "chr", "Chromosome"),
@@ -177,8 +181,15 @@ class SplicingWorkflowConfig:
     locus_density_penalty_mode: str
     locus_density_window_bp: int
     locus_density_top_n: int
+    locus_density_penalty_mode_explicit: bool
     source_dataset: str | None
     bundle_same_dataset_policy: str
+    bundle_prior_profile: str
+    bundle_prior_profile_explicit: bool
+    artifact_action: str
+    artifact_action_explicit: bool
+    min_nonself_source_datasets_for_event_prior: int
+    max_dataset_fraction_for_event_prior: float
     ambiguous_gene_policy: str
     impact_mode: str
     impact_min: float
@@ -231,6 +242,8 @@ class UbiquityEntry:
     df_ref: float | None
     n_samples_ref: float | None
     n_datasets_ref: float | None
+    n_source_datasets_ref: float | None
+    max_dataset_fraction_ref: float | None
 
 
 @dataclass
@@ -246,6 +259,8 @@ class ImpactEntry:
     impact_evidence: float
     annotation_status: str
     n_datasets_ref: float | None
+    n_source_datasets_ref: float | None
+    max_dataset_fraction_ref: float | None
 
 
 @dataclass
@@ -260,6 +275,7 @@ class GeneBurdenEntry:
     n_studies_high_confidence_ref: float | None
     fraction_low_confidence_events_ref: float | None
     median_unique_groups_per_study: float | None
+    max_dataset_fraction_ref: float | None
 
 
 @dataclass
@@ -423,6 +439,10 @@ def resolve_splicing_columns(fieldnames: list[str], cfg: SplicingWorkflowConfig)
         "event_id": _resolve_column(fieldnames, cfg.event_id_column, "event_id", tool_family, required=False),
         "event_group": _resolve_column(fieldnames, cfg.event_group_column, "event_group", tool_family, required=False),
         "event_type": _resolve_column(fieldnames, cfg.event_type_column, "event_type", tool_family, required=False),
+        "canonical_event_key": _resolve_column(fieldnames, None, "canonical_event_key", tool_family, required=False),
+        "canonicalization_status": _resolve_column(fieldnames, None, "canonicalization_status", tool_family, required=False),
+        "canonicalization_confidence": _resolve_column(fieldnames, None, "canonicalization_confidence", tool_family, required=False),
+        "event_key_namespace": _resolve_column(fieldnames, None, "event_key_namespace", tool_family, required=False),
         "gene_id": _resolve_column(fieldnames, cfg.gene_id_column, "gene_id", tool_family, required=False),
         "gene_symbol": _resolve_column(fieldnames, cfg.gene_symbol_column, "gene_symbol", tool_family, required=False),
         "chrom": _resolve_column(fieldnames, cfg.chrom_column, "chrom", tool_family, required=False),
@@ -503,6 +523,8 @@ def read_event_ubiquity_tsv(path: str | Path) -> dict[str, UbiquityEntry]:
                 df_ref=df_ref,
                 n_samples_ref=n_ref,
                 n_datasets_ref=_parse_float(row.get("n_datasets_ref")),
+                n_source_datasets_ref=_parse_float(row.get("n_source_datasets_ref")) or _parse_float(row.get("n_datasets_ref")),
+                max_dataset_fraction_ref=_parse_float(row.get("max_dataset_fraction_ref")),
             )
     return out
 
@@ -531,6 +553,8 @@ def read_event_impact_tsv(path: str | Path) -> dict[str, ImpactEntry]:
                 impact_evidence=max(0.0, min(1.0, float(_parse_float(row.get("impact_evidence")) or 0.0))),
                 annotation_status=_clean(row.get("annotation_status")),
                 n_datasets_ref=_parse_float(row.get("n_datasets_ref")),
+                n_source_datasets_ref=_parse_float(row.get("n_source_datasets_ref")) or _parse_float(row.get("n_datasets_ref")),
+                max_dataset_fraction_ref=_parse_float(row.get("max_dataset_fraction_ref")),
             )
     return out
 
@@ -558,6 +582,7 @@ def read_gene_burden_tsv(path: str | Path) -> dict[str, GeneBurdenEntry]:
                 n_studies_high_confidence_ref=_parse_float(row.get("n_studies_high_confidence_ref")),
                 fraction_low_confidence_events_ref=_parse_float(row.get("fraction_low_confidence_events_ref")),
                 median_unique_groups_per_study=_parse_float(row.get("median_unique_groups_per_study")),
+                max_dataset_fraction_ref=_parse_float(row.get("max_dataset_fraction_ref")),
             )
     return out
 
@@ -722,6 +747,9 @@ def _canonical_event_candidates(row: SpliceRow, columns: dict[str, str | None]) 
 
 
 def _default_canonical_event_key(row: SpliceRow, columns: dict[str, str | None]) -> str | None:
+    explicit = _string_value(row, columns, "canonical_event_key")
+    if explicit:
+        return explicit
     coord_key = _coordinate_event_key(row, columns)
     if coord_key:
         return coord_key
@@ -736,6 +764,14 @@ def _default_canonical_event_key(row: SpliceRow, columns: dict[str, str | None])
 
 
 def _default_canonicalization_status(row: SpliceRow, columns: dict[str, str | None]) -> tuple[str, str, str]:
+    explicit_status = _string_value(row, columns, "canonicalization_status")
+    explicit_confidence = _string_value(row, columns, "canonicalization_confidence").lower()
+    explicit_namespace = _string_value(row, columns, "event_key_namespace")
+    if explicit_status or explicit_confidence or explicit_namespace:
+        status = explicit_status or ("coordinate_canonical" if explicit_confidence == "high" else "raw_id_fallback")
+        confidence = explicit_confidence or ("high" if status == "coordinate_canonical" else "low")
+        namespace = explicit_namespace or ("global_coordinate" if confidence == "high" else "raw_id_fallback")
+        return status, confidence, namespace
     coord_key = _coordinate_event_key(row, columns)
     if coord_key:
         return "coordinate_canonical", "high", "global_coordinate"
@@ -828,6 +864,8 @@ def _build_effective_ubiquity_map(
                 df_ref=None,
                 n_samples_ref=None,
                 n_datasets_ref=0.0,
+                n_source_datasets_ref=0.0,
+                max_dataset_fraction_ref=0.0,
             )
             recurrence[canonical] = 0.0
             summary["n_events_neutralized"] = int(summary["n_events_neutralized"]) + 1
@@ -847,6 +885,12 @@ def _build_effective_ubiquity_map(
             df_ref=df_ref,
             n_samples_ref=n_samples_ref,
             n_datasets_ref=float(n_event_datasets),
+            n_source_datasets_ref=float(n_event_datasets),
+            max_dataset_fraction_ref=(
+                max((float(entry.df_ref or 0.0) / max(1.0, df_ref)) for entry in remaining)
+                if df_ref > 0.0
+                else 0.0
+            ),
         )
         recurrence[canonical] = float(n_event_datasets)
         summary["n_events_excluded"] = int(summary["n_events_excluded"]) + 1
@@ -900,6 +944,7 @@ def _build_effective_gene_burden_map(
                 n_studies_high_confidence_ref=0.0,
                 fraction_low_confidence_events_ref=0.0,
                 median_unique_groups_per_study=0.0,
+                max_dataset_fraction_ref=0.0,
             )
             summary["n_genes_neutralized"] = int(summary["n_genes_neutralized"]) + 1
             continue
@@ -917,9 +962,178 @@ def _build_effective_gene_burden_map(
             n_studies_high_confidence_ref=float(sum(1 for entry in remaining if float(entry.n_high_confidence_events_ref or 0.0) > 0.0)),
             fraction_low_confidence_events_ref=(low_events / float(max(1.0, total_events))),
             median_unique_groups_per_study=float(median(unique_groups)) if unique_groups else 0.0,
+            max_dataset_fraction_ref=(
+                max((float(entry.n_unique_event_groups_ref or 0.0) / max(1.0, sum(unique_groups))) for entry in remaining)
+                if unique_groups
+                else 0.0
+            ),
         )
         summary["n_genes_excluded"] = int(summary["n_genes_excluded"]) + 1
     return effective, summary
+
+
+def _detect_tcga_public_mode(rows: list[SpliceRow], columns: dict[str, str | None], resolved_tool_family: str) -> bool:
+    if resolved_tool_family == "tcga_spliceseq":
+        return True
+    ns_col = columns.get("event_key_namespace")
+    conf_col = columns.get("canonicalization_confidence")
+    status_col = columns.get("canonicalization_status")
+    for row in rows:
+        if _clean(row.values.get("tool_family")).lower() == "tcga_spliceseq":
+            return True
+        if ns_col and _clean(row.values.get(ns_col)) == "tcga_spliceseq_asid":
+            return True
+        if status_col and _clean(row.values.get(status_col)) == "source_family_stable_id":
+            return True
+        if conf_col and _clean(row.values.get(conf_col)).lower() == "medium":
+            if _clean(row.values.get("as_id")) or _clean(row.values.get("event_id")):
+                return True
+    return False
+
+
+def _event_dataset_support_stats(
+    canonical_event_key: str,
+    by_dataset_map: dict[str, list[UbiquityByDatasetEntry]] | None,
+    source_dataset: str | None,
+) -> tuple[int, float]:
+    if not by_dataset_map:
+        return 0, 0.0
+    entries = list(by_dataset_map.get(canonical_event_key, []))
+    if source_dataset:
+        entries = [entry for entry in entries if entry.source_dataset != source_dataset]
+    if not entries:
+        return 0, 0.0
+    dataset_names = {entry.source_dataset for entry in entries if entry.source_dataset}
+    total_df = sum(float(entry.df_ref or 0.0) for entry in entries)
+    if total_df <= 0.0:
+        max_fraction = 0.0
+    else:
+        max_fraction = max(float(entry.df_ref or 0.0) / total_df for entry in entries)
+    return len(dataset_names), max_fraction
+
+
+def _gather_runtime_bundle_support(
+    *,
+    rows: list[SpliceRow],
+    columns: dict[str, str | None],
+    alias_map: dict[str, AliasEntry] | None,
+    effective_event_dataset_counts: dict[str, float],
+    event_ubiquity_by_dataset_map: dict[str, list[UbiquityByDatasetEntry]] | None,
+    effective_gene_burden_map: dict[str, GeneBurdenEntry] | None,
+    source_dataset: str | None,
+    min_nonself_source_datasets_for_event_prior: int,
+    max_dataset_fraction_for_event_prior: float,
+) -> dict[str, object]:
+    confidence_counts = {"high": 0, "medium": 0, "low": 0}
+    namespace_counts: dict[str, int] = {}
+    n_resolvable = 0
+    n_events_with_nonself_support = 0
+    n_events_with_strong_nonself_support = 0
+    genes_with_burden_support: set[str] = set()
+    genes_with_nontrivial_burden_support: set[str] = set()
+    seen_events: set[str] = set()
+    for row in rows:
+        canonical = _default_canonical_event_key(row, columns)
+        status, confidence, namespace = _default_canonicalization_status(row, columns)
+        for candidate in _canonical_event_candidates(row, columns):
+            if alias_map and candidate in alias_map:
+                alias_entry = alias_map[candidate]
+                canonical = alias_entry.canonical_event_key
+                status = alias_entry.canonicalization_status
+                confidence = alias_entry.canonicalization_confidence
+                namespace = alias_entry.event_key_namespace
+                break
+        if not canonical:
+            continue
+        n_resolvable += 1
+        confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
+        namespace_counts[namespace] = namespace_counts.get(namespace, 0) + 1
+        if canonical not in seen_events:
+            if float(effective_event_dataset_counts.get(canonical, 0.0) or 0.0) > 0.0:
+                n_events_with_nonself_support += 1
+            if confidence == "medium":
+                n_nonself, max_fraction = _event_dataset_support_stats(canonical, event_ubiquity_by_dataset_map, source_dataset)
+                if n_nonself >= int(min_nonself_source_datasets_for_event_prior) and (
+                    max_fraction <= float(max_dataset_fraction_for_event_prior) or max_fraction <= 0.0
+                ):
+                    n_events_with_strong_nonself_support += 1
+            seen_events.add(canonical)
+        gene_symbol = _string_value(row, columns, "gene_symbol") or _string_value(row, columns, "gene_id")
+        if gene_symbol and effective_gene_burden_map and gene_symbol in effective_gene_burden_map:
+            genes_with_burden_support.add(gene_symbol)
+            ref = effective_gene_burden_map[gene_symbol]
+            if float(ref.n_studies_ref or 0.0) > 0.0 or float(ref.n_unique_event_groups_ref or 0.0) > 0.0:
+                genes_with_nontrivial_burden_support.add(gene_symbol)
+    medium_low_fraction = (
+        float(confidence_counts.get("medium", 0) + confidence_counts.get("low", 0)) / float(max(1, n_resolvable))
+    )
+    return {
+        "n_resolvable_events": n_resolvable,
+        "confidence_counts": confidence_counts,
+        "namespace_counts": namespace_counts,
+        "n_events_with_nonself_support": n_events_with_nonself_support,
+        "n_events_with_strong_nonself_support": n_events_with_strong_nonself_support,
+        "n_genes_with_burden_support": len(genes_with_burden_support),
+        "n_genes_with_nontrivial_burden_support": len(genes_with_nontrivial_burden_support),
+        "medium_low_fraction": medium_low_fraction,
+    }
+
+
+def _resolve_effective_bundle_prior_profile(
+    *,
+    cfg: SplicingWorkflowConfig,
+    tcga_public_mode: bool,
+    support: dict[str, object],
+    has_bundle_resources: bool,
+) -> tuple[str, str]:
+    requested = str(cfg.bundle_prior_profile)
+    if requested in {"full", "nuisance_only", "none"}:
+        return requested, "explicit"
+    if not has_bundle_resources:
+        return "none", "bundle_resources_unavailable"
+    if int(support.get("n_events_with_nonself_support", 0) or 0) <= 0 and int(support.get("n_genes_with_nontrivial_burden_support", 0) or 0) <= 0:
+        return "none", "no_meaningful_nonself_bundle_support"
+    if not tcga_public_mode:
+        return "full", "non_tcga_or_coordinate_backed_run"
+    if float(support.get("medium_low_fraction", 0.0) or 0.0) >= 0.5:
+        if int(support.get("n_events_with_strong_nonself_support", 0) or 0) <= 0:
+            return "nuisance_only", "tcga_medium_low_events_dominate_without_strong_external_support"
+    return "full", "sufficient_nonself_support"
+
+
+def _resolve_effective_locus_density_penalty_mode(cfg: SplicingWorkflowConfig, tcga_public_mode: bool) -> str:
+    if cfg.locus_density_penalty_mode_explicit:
+        return str(cfg.locus_density_penalty_mode)
+    if tcga_public_mode:
+        return "auto"
+    return str(cfg.locus_density_penalty_mode)
+
+
+def _resolve_effective_artifact_action(cfg: SplicingWorkflowConfig, tcga_public_mode: bool) -> tuple[str, str]:
+    if cfg.artifact_action_explicit:
+        return str(cfg.artifact_action), "explicit"
+    if tcga_public_mode:
+        return "suppress_if_persistent", "tcga_dynamic_default"
+    return str(cfg.artifact_action), "default"
+
+
+def _medium_event_prior_allowed(
+    *,
+    canonical_event_key: str,
+    event_key_namespace: str,
+    by_dataset_map: dict[str, list[UbiquityByDatasetEntry]] | None,
+    source_dataset: str | None,
+    min_nonself_source_datasets: int,
+    max_dataset_fraction: float,
+) -> bool:
+    if event_key_namespace != "tcga_spliceseq_asid":
+        return True
+    n_nonself, dominant_fraction = _event_dataset_support_stats(canonical_event_key, by_dataset_map, source_dataset)
+    if n_nonself < int(min_nonself_source_datasets):
+        return False
+    if dominant_fraction > float(max_dataset_fraction):
+        return False
+    return True
 
 
 def _delta_psi_effect_weight(row: SpliceRow, columns: dict[str, str | None], cfg: SplicingWorkflowConfig) -> tuple[float, bool]:
@@ -1300,17 +1514,14 @@ def _gene_primary_locus(
     return loci
 
 
-def _apply_locus_density_penalty(
+def _locus_density_snapshot(
     *,
     gene_scores: dict[str, float],
-    by_gene: dict[str, list[SpliceEventRecord]],
-    gene_symbols: dict[str, str],
-    cfg: SplicingWorkflowConfig,
-) -> tuple[dict[str, float], dict[str, float], dict[str, object]]:
-    gene_locus_map = getattr(cfg, "_gene_locus_map", None)
-    loci = _gene_primary_locus(by_gene, cfg.locus_density_window_bp, gene_symbols, gene_locus_map)
+    loci: dict[str, dict[str, object]],
+    top_n: int,
+) -> dict[str, object]:
     ranked = sorted(gene_scores, key=lambda gid: (-abs(float(gene_scores[gid])), str(gid)))
-    top_ids = ranked[: max(1, int(cfg.locus_density_top_n))]
+    top_ids = ranked[: max(1, int(top_n))]
     chrom_counts: dict[str, int] = {}
     arm_counts: dict[str, int] = {}
     locus_counts: dict[str, int] = {}
@@ -1327,16 +1538,20 @@ def _apply_locus_density_penalty(
     dominant_chrom, dominant_chrom_count = ("", 0)
     if chrom_counts:
         dominant_chrom, dominant_chrom_count = max(chrom_counts.items(), key=lambda item: (item[1], item[0]))
-    dominant_locus, dominant_locus_count = ("", 0)
-    if locus_counts:
-        dominant_locus, dominant_locus_count = max(locus_counts.items(), key=lambda item: (item[1], item[0]))
     dominant_arm, dominant_arm_count = ("", 0)
     if arm_counts:
         dominant_arm, dominant_arm_count = max(arm_counts.items(), key=lambda item: (item[1], item[0]))
-    top_n = float(max(1, len(top_ids)))
-    dominant_chrom_fraction = float(dominant_chrom_count) / top_n
-    dominant_locus_fraction = float(dominant_locus_count) / top_n
-    dominant_arm_fraction = float(dominant_arm_count) / top_n
+    dominant_locus, dominant_locus_count = ("", 0)
+    if locus_counts:
+        dominant_locus, dominant_locus_count = max(locus_counts.items(), key=lambda item: (item[1], item[0]))
+    denom = float(max(1, len(top_ids)))
+    dominant_chrom_fraction = float(dominant_chrom_count) / denom
+    dominant_arm_fraction = float(dominant_arm_count) / denom
+    dominant_locus_fraction = float(dominant_locus_count) / denom
+    herfindahl = 0.0
+    if top_ids:
+        chrom_fractions = [float(count) / denom for count in chrom_counts.values()]
+        herfindahl = sum(frac * frac for frac in chrom_fractions)
     likely_artifact = bool(
         len(top_ids) >= 5
         and (
@@ -1345,6 +1560,30 @@ def _apply_locus_density_penalty(
             or dominant_chrom_fraction >= 0.7
         )
     )
+    return {
+        "top_n": int(max(1, int(top_n))),
+        "dominant_chrom": dominant_chrom,
+        "dominant_chromosome_arm": dominant_arm,
+        "dominant_locus": dominant_locus,
+        "top_n_fraction_same_chromosome": dominant_chrom_fraction,
+        "top_n_fraction_same_chromosome_arm": dominant_arm_fraction,
+        "top_n_fraction_same_window": dominant_locus_fraction,
+        "chromosome_herfindahl": herfindahl,
+        "likely_artifact": likely_artifact,
+    }
+
+
+def _apply_locus_density_penalty(
+    *,
+    gene_scores: dict[str, float],
+    by_gene: dict[str, list[SpliceEventRecord]],
+    gene_symbols: dict[str, str],
+    cfg: SplicingWorkflowConfig,
+) -> tuple[dict[str, float], dict[str, float], dict[str, object]]:
+    gene_locus_map = getattr(cfg, "_gene_locus_map", None)
+    loci = _gene_primary_locus(by_gene, cfg.locus_density_window_bp, gene_symbols, gene_locus_map)
+    before = _locus_density_snapshot(gene_scores=gene_scores, loci=loci, top_n=cfg.locus_density_top_n)
+    ranked = sorted(gene_scores, key=lambda gid: (-abs(float(gene_scores[gid])), str(gid)))
     penalized = dict(gene_scores)
     penalties: dict[str, float] = {gene_id: 1.0 for gene_id in gene_scores}
     applied = False
@@ -1374,13 +1613,13 @@ def _apply_locus_density_penalty(
             penalties[gene_id] = 1.0 / math.sqrt(float(count + 1))
             penalized[gene_id] = float(penalized[gene_id]) * penalties[gene_id]
             applied = True
-    elif cfg.locus_density_penalty_mode == "auto" and likely_artifact:
+    elif cfg.locus_density_penalty_mode == "auto" and bool(before.get("likely_artifact")):
         window_seen: dict[str, int] = {}
         arm_seen: dict[str, int] = {}
         chrom_seen: dict[str, int] = {}
-        window_trigger = dominant_locus_fraction >= 0.5
-        arm_trigger = dominant_arm_fraction >= 0.6 and bool(dominant_arm)
-        chrom_trigger = dominant_chrom_fraction >= 0.7
+        window_trigger = float(before.get("top_n_fraction_same_window", 0.0) or 0.0) >= 0.5
+        arm_trigger = float(before.get("top_n_fraction_same_chromosome_arm", 0.0) or 0.0) >= 0.6 and bool(before.get("dominant_chromosome_arm"))
+        chrom_trigger = float(before.get("top_n_fraction_same_chromosome", 0.0) or 0.0) >= 0.7
         for gene_id in ranked:
             locus = loci.get(gene_id, {})
             local_penalties = [1.0]
@@ -1409,25 +1648,31 @@ def _apply_locus_density_penalty(
                 applied = True
     n_penalized = sum(1 for value in penalties.values() if float(value) < 1.0)
     mode_used = cfg.locus_density_penalty_mode
-    if cfg.locus_density_penalty_mode == "auto" and not likely_artifact:
+    if cfg.locus_density_penalty_mode == "auto" and not bool(before.get("likely_artifact")):
         mode_used = "auto_inactive"
+    after = _locus_density_snapshot(gene_scores=penalized, loci=loci, top_n=cfg.locus_density_top_n)
     return penalized, penalties, {
         "mode": cfg.locus_density_penalty_mode,
         "mode_used": mode_used,
         "window_bp": int(cfg.locus_density_window_bp),
         "top_n": int(cfg.locus_density_top_n),
-        "dominant_chrom": dominant_chrom,
-        "dominant_chrom_fraction": dominant_chrom_fraction,
-        "dominant_chromosome_arm": dominant_arm,
-        "dominant_chromosome_arm_fraction": dominant_arm_fraction,
-        "dominant_locus": dominant_locus,
-        "dominant_locus_fraction": dominant_locus_fraction,
-        "top_n_fraction_same_chromosome": dominant_chrom_fraction,
-        "top_n_fraction_same_chromosome_arm": dominant_arm_fraction,
-        "top_n_fraction_same_window": dominant_locus_fraction,
-        "likely_artifact": likely_artifact,
+        "before": before,
+        "after": after,
+        "dominant_chrom": str(after.get("dominant_chrom", "")),
+        "dominant_chrom_fraction": float(after.get("top_n_fraction_same_chromosome", 0.0) or 0.0),
+        "dominant_chromosome_arm": str(after.get("dominant_chromosome_arm", "")),
+        "dominant_chromosome_arm_fraction": float(after.get("top_n_fraction_same_chromosome_arm", 0.0) or 0.0),
+        "dominant_locus": str(after.get("dominant_locus", "")),
+        "dominant_locus_fraction": float(after.get("top_n_fraction_same_window", 0.0) or 0.0),
+        "top_n_fraction_same_chromosome": float(after.get("top_n_fraction_same_chromosome", 0.0) or 0.0),
+        "top_n_fraction_same_chromosome_arm": float(after.get("top_n_fraction_same_chromosome_arm", 0.0) or 0.0),
+        "top_n_fraction_same_window": float(after.get("top_n_fraction_same_window", 0.0) or 0.0),
+        "likely_artifact": bool(after.get("likely_artifact")),
+        "likely_artifact_before": bool(before.get("likely_artifact")),
         "penalty_applied": applied,
         "n_genes_penalized_for_locus_density": n_penalized,
+        "chromosome_herfindahl_before": float(before.get("chromosome_herfindahl", 0.0) or 0.0),
+        "chromosome_herfindahl_after": float(after.get("chromosome_herfindahl", 0.0) or 0.0),
     }
 
 
@@ -1593,6 +1838,40 @@ def _warning_flags(
     return warnings
 
 
+def _artifact_summary(
+    *,
+    full_rows: list[dict[str, object]],
+    locus_density_summary: dict[str, object] | None,
+    top_n: int,
+) -> dict[str, object]:
+    ranked = full_rows[: max(1, int(top_n))]
+    mean_groups = 0.0
+    fraction_single_group = 0.0
+    if ranked:
+        groups = [int(row.get("n_independent_event_groups_used", 0) or 0) for row in ranked]
+        mean_groups = sum(groups) / float(len(groups))
+        fraction_single_group = sum(1 for value in groups if value <= 1) / float(len(groups))
+    after = dict((locus_density_summary or {}).get("after", locus_density_summary or {}))
+    before = dict((locus_density_summary or {}).get("before", {}))
+    persistent = bool(
+        after
+        and after.get("likely_artifact")
+        and (
+            float(after.get("top_n_fraction_same_window", 0.0) or 0.0) >= 0.4
+            or float(after.get("top_n_fraction_same_chromosome_arm", 0.0) or 0.0) >= 0.5
+            or float(after.get("top_n_fraction_same_chromosome", 0.0) or 0.0) >= 0.6
+            or float(after.get("chromosome_herfindahl", 0.0) or 0.0) >= 0.45
+        )
+    )
+    return {
+        "before": before,
+        "after": after,
+        "mean_top_n_independent_event_groups": mean_groups,
+        "fraction_top_n_single_group": fraction_single_group,
+        "likely_persistent_artifact": persistent,
+    }
+
+
 def _warn_summary_flags(flags: Iterable[str]) -> None:
     messages = {
         "retained_intron_dominance": "warning: retained introns dominate the retained event set; interpret selected genes cautiously.",
@@ -1601,6 +1880,7 @@ def _warn_summary_flags(flags: Iterable[str]) -> None:
         "likely_event_multiplicity_bias": "warning: selected genes appear enriched for high event multiplicity rather than isolated strong events.",
         "likely_locus_density_artifact": "warning: top genes are unusually concentrated within one genomic locus or chromosome; this may reflect a local splicing artifact.",
         "bundle_same_dataset_match": "warning: bundle contains matching source-dataset priors; same-dataset contributions were excluded or neutralized.",
+        "persistent_locus_density_artifact": "warning: post-penalty output remains dominated by one locus or chromosome; the main output may be withheld.",
     }
     for flag in flags:
         if flag in messages:
@@ -1641,6 +1921,39 @@ def run_splice_event_diff_workflow(
         source_dataset=cfg.source_dataset,
         policy=cfg.bundle_same_dataset_policy,
     )
+    tcga_public_mode = _detect_tcga_public_mode(rows, columns, resolved_tool_family)
+    bundle_support_after_same_dataset_exclusion = _gather_runtime_bundle_support(
+        rows=rows,
+        columns=columns,
+        alias_map=alias_map,
+        effective_event_dataset_counts=effective_event_dataset_counts,
+        event_ubiquity_by_dataset_map=event_ubiquity_by_dataset_map,
+        effective_gene_burden_map=effective_gene_burden_map,
+        source_dataset=cfg.source_dataset,
+        min_nonself_source_datasets_for_event_prior=cfg.min_nonself_source_datasets_for_event_prior,
+        max_dataset_fraction_for_event_prior=cfg.max_dataset_fraction_for_event_prior,
+    )
+    has_bundle_resources = any(
+        value is not None
+        for value in (
+            alias_map,
+            ubiquity_map,
+            event_ubiquity_by_dataset_map,
+            impact_map,
+            gene_burden_map,
+            gene_burden_by_dataset_map,
+        )
+    )
+    effective_bundle_prior_profile, bundle_prior_downgrade_reason = _resolve_effective_bundle_prior_profile(
+        cfg=cfg,
+        tcga_public_mode=tcga_public_mode,
+        support=bundle_support_after_same_dataset_exclusion,
+        has_bundle_resources=has_bundle_resources,
+    )
+    effective_locus_density_penalty_mode = _resolve_effective_locus_density_penalty_mode(cfg, tcga_public_mode)
+    effective_artifact_action, artifact_action_resolution = _resolve_effective_artifact_action(cfg, tcga_public_mode)
+    effective_cfg = replace(cfg, locus_density_penalty_mode=effective_locus_density_penalty_mode)
+    setattr(effective_cfg, "_gene_locus_map", gene_locus_map)
 
     max_read_support = 0.0
     read_col = columns.get("read_support")
@@ -1664,6 +1977,8 @@ def run_splice_event_diff_workflow(
         "n_low_confidence_ubiquity_priors_neutralized": 0,
         "n_low_confidence_impact_priors_neutralized": 0,
         "n_medium_confidence_namespace_mismatches_neutralized": 0,
+        "n_event_priors_neutralized_by_profile": 0,
+        "n_medium_confidence_event_priors_neutralized_for_weak_external_support": 0,
         "n_low_support_rows": 0,
         "n_novel_rows": 0,
         "n_delta_psi_soft_floor_downweighted": 0,
@@ -1756,8 +2071,30 @@ def run_splice_event_diff_workflow(
 
         prior_confidence_weight = _prior_confidence_weight(canonicalization_confidence)
         low_conf_prior_matched = False
+        event_prior_profile = effective_bundle_prior_profile
+        if (
+            effective_bundle_prior_profile == "full"
+            and str(cfg.bundle_prior_profile) == "auto"
+            and canonicalization_confidence == "medium"
+            and not _medium_event_prior_allowed(
+                canonical_event_key=canonical_event_key,
+                event_key_namespace=event_key_namespace,
+                by_dataset_map=event_ubiquity_by_dataset_map,
+                source_dataset=cfg.source_dataset,
+                min_nonself_source_datasets=cfg.min_nonself_source_datasets_for_event_prior,
+                max_dataset_fraction=cfg.max_dataset_fraction_for_event_prior,
+            )
+        ):
+            event_prior_profile = "nuisance_only"
+            parse_summary["n_medium_confidence_event_priors_neutralized_for_weak_external_support"] = int(
+                parse_summary["n_medium_confidence_event_priors_neutralized_for_weak_external_support"]
+            ) + 1
         ubiquity_entry = effective_ubiquity_map.get(canonical_event_key) if effective_ubiquity_map else None
-        if ubiquity_entry is None:
+        if event_prior_profile != "full":
+            ubiquity_weight = 1.0
+            if ubiquity_entry is not None:
+                parse_summary["n_event_priors_neutralized_by_profile"] = int(parse_summary["n_event_priors_neutralized_by_profile"]) + 1
+        elif ubiquity_entry is None:
             ubiquity_weight = 1.0
         elif ubiquity_entry.canonicalization_confidence == "high":
             ubiquity_weight = float(ubiquity_entry.idf_ref)
@@ -1793,6 +2130,8 @@ def run_splice_event_diff_workflow(
                 impact_evidence=impact_entry.impact_evidence,
                 annotation_status=impact_entry.annotation_status,
                 n_datasets_ref=effective_event_dataset_counts.get(canonical_event_key, impact_entry.n_datasets_ref or 0.0),
+                n_source_datasets_ref=effective_event_dataset_counts.get(canonical_event_key, impact_entry.n_source_datasets_ref or impact_entry.n_datasets_ref or 0.0),
+                max_dataset_fraction_ref=impact_entry.max_dataset_fraction_ref,
             )
             if (
                 effective_impact_entry.canonicalization_confidence == "medium"
@@ -1802,7 +2141,12 @@ def run_splice_event_diff_workflow(
                 parse_summary["n_medium_confidence_namespace_mismatches_neutralized"] = int(
                     parse_summary["n_medium_confidence_namespace_mismatches_neutralized"]
                 ) + 1
-        impact_weight = _impact_weight(effective_impact_entry, cfg, event_type, annotation_status, novel_flag, canonicalization_confidence)
+        if event_prior_profile != "full":
+            impact_weight = 1.0
+            if effective_impact_entry is not None:
+                parse_summary["n_event_priors_neutralized_by_profile"] = int(parse_summary["n_event_priors_neutralized_by_profile"]) + 1
+        else:
+            impact_weight = _impact_weight(effective_impact_entry, cfg, event_type, annotation_status, novel_flag, canonicalization_confidence)
         if impact_entry is not None:
             parse_summary["n_events_matched_to_impact_prior"] = int(parse_summary["n_events_matched_to_impact_prior"]) + 1
             if impact_entry.canonicalization_confidence == "low":
@@ -1869,14 +2213,14 @@ def run_splice_event_diff_workflow(
         gene_scores=gene_scores,
         gene_symbols=gene_symbols,
         by_gene=by_gene,
-        cfg=cfg,
-        gene_burden_map=effective_gene_burden_map,
+        cfg=effective_cfg,
+        gene_burden_map=effective_gene_burden_map if effective_bundle_prior_profile == "full" else None,
     )
     gene_scores, locus_density_penalties, locus_density_summary = _apply_locus_density_penalty(
         gene_scores=gene_scores,
         by_gene=by_gene,
         gene_symbols=gene_symbols,
-        cfg=cfg,
+        cfg=effective_cfg,
     )
     magnitude = {gene_id: abs(float(score)) for gene_id, score in gene_scores.items()}
     selected_gene_ids = _select_gene_ids(magnitude, cfg)
@@ -1933,12 +2277,42 @@ def run_splice_event_diff_workflow(
         row["weight"] = float(weights.get(str(row["gene_id"]), 0.0))
         rank += 1
 
+    artifact_summary = _artifact_summary(
+        full_rows=full_rows,
+        locus_density_summary=locus_density_summary,
+        top_n=effective_cfg.locus_density_top_n,
+    )
+    output_withheld_reason = ""
+    quality_tier = "standard"
+    artifact_action_applied = "none"
+    artifact_flags: list[str] = []
+    if bool(artifact_summary.get("likely_persistent_artifact")):
+        artifact_flags.append("persistent_locus_density_artifact")
+        if effective_artifact_action == "fail":
+            raise ValueError(
+                "Persistent locus-density artifact detected after suppression and --artifact_action=fail was requested."
+            )
+        if effective_artifact_action == "suppress_if_persistent":
+            output_withheld_reason = "persistent_locus_density_artifact"
+            quality_tier = "artifact_prone_withheld"
+            artifact_action_applied = "withheld"
+            selected_rows = []
+            for row in full_rows:
+                row["weight"] = 0.0
+        elif effective_artifact_action == "prune":
+            quality_tier = "artifact_prone_pruned"
+            artifact_action_applied = "prune"
+        else:
+            quality_tier = "artifact_prone_warned"
+            artifact_action_applied = "warn"
+
     parse_summary["fraction_single_event_genes"] = (
         sum(1 for row in selected_rows if int(row.get("n_events_total", 0) or 0) <= 1) / float(len(selected_rows)) if selected_rows else 0.0
     )
+    actual_selected_gene_ids = [str(row["gene_id"]) for row in selected_rows]
     selected_support_events = [
         rec
-        for gene_id in selected_gene_ids
+        for gene_id in actual_selected_gene_ids
         for rec in by_gene.get(gene_id, [])
     ]
     selected_high_conf = sum(1 for rec in selected_support_events if rec.canonicalization_confidence == "high")
@@ -1958,7 +2332,7 @@ def run_splice_event_diff_workflow(
     gmt_diagnostics: list[dict[str, object]] = []
     gmt_sets: list[tuple[str, list[str]]] = []
     gmt_plans: list[dict[str, object]] = []
-    if cfg.emit_gmt:
+    if cfg.emit_gmt and not output_withheld_reason:
         base_name = sanitize_name_component(
             f"{cfg.converter_name}__signature={cfg.signature_name}__tool_family={resolved_tool_family}__score_mode={resolved_score_mode}"
         )
@@ -1982,12 +2356,25 @@ def run_splice_event_diff_workflow(
             write_gmt(gmt_sets, gmt_path, gmt_format=cfg.gmt_format)
             output_files.append({"path": str(gmt_path), "role": "gmt"})
         _warn_gmt_diagnostics(gmt_diagnostics)
+    elif cfg.emit_gmt and output_withheld_reason:
+        print(
+            f"warning: skipped GMT emission because main splicing output was withheld; reason={output_withheld_reason}",
+            file=sys.stderr,
+        )
 
     skipped_gmt_outputs = _collect_skipped_gmt_outputs(gmt_diagnostics)
     warning_flags = _warning_flags(parse_summary, grouped_events, selected_rows, by_gene, locus_density_summary)
     if _clean(same_dataset_event_summary.get("warning")):
         warning_flags.append("bundle_same_dataset_match")
         print(f"warning: {_clean(same_dataset_event_summary.get('warning'))}", file=sys.stderr)
+    if effective_bundle_prior_profile != str(cfg.bundle_prior_profile):
+        print(
+            "warning: bundle prior profile was downgraded at runtime; "
+            f"requested={cfg.bundle_prior_profile} effective={effective_bundle_prior_profile} "
+            f"reason={bundle_prior_downgrade_reason}",
+            file=sys.stderr,
+        )
+    warning_flags.extend(flag for flag in artifact_flags if flag not in warning_flags)
     _warn_summary_flags(warning_flags)
 
     run_summary_payload = {
@@ -2013,6 +2400,8 @@ def run_splice_event_diff_workflow(
         "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
         "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
         "n_medium_confidence_namespace_mismatches_neutralized": parse_summary["n_medium_confidence_namespace_mismatches_neutralized"],
+        "n_event_priors_neutralized_by_profile": parse_summary["n_event_priors_neutralized_by_profile"],
+        "n_medium_confidence_event_priors_neutralized_for_weak_external_support": parse_summary["n_medium_confidence_event_priors_neutralized_for_weak_external_support"],
         "n_same_dataset_ubiquity_priors_excluded": parse_summary["n_same_dataset_ubiquity_priors_excluded"],
         "n_same_dataset_ubiquity_priors_neutralized": parse_summary["n_same_dataset_ubiquity_priors_neutralized"],
         "n_same_dataset_gene_burden_excluded": parse_summary["n_same_dataset_gene_burden_excluded"],
@@ -2028,8 +2417,18 @@ def run_splice_event_diff_workflow(
         "fraction_single_event_genes": parse_summary["fraction_single_event_genes"],
         "delta_psi_soft_floor_mode": cfg.delta_psi_soft_floor_mode,
         "delta_psi_soft_floor": cfg.delta_psi_soft_floor,
+        "tcga_public_mode": tcga_public_mode,
         "source_dataset": cfg.source_dataset,
         "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
+        "bundle_prior_profile": cfg.bundle_prior_profile,
+        "effective_bundle_prior_profile": effective_bundle_prior_profile,
+        "bundle_prior_downgrade_reason": bundle_prior_downgrade_reason,
+        "bundle_support_after_same_dataset_exclusion": bundle_support_after_same_dataset_exclusion,
+        "artifact_action": cfg.artifact_action,
+        "effective_artifact_action": effective_artifact_action,
+        "artifact_action_resolution": artifact_action_resolution,
+        "locus_density_penalty_mode_requested": cfg.locus_density_penalty_mode,
+        "locus_density_penalty_mode_effective": effective_locus_density_penalty_mode,
         "same_dataset_event_prior_summary": same_dataset_event_summary,
         "same_dataset_gene_burden_summary": same_dataset_gene_summary,
         "n_delta_psi_soft_floor_downweighted": parse_summary["n_delta_psi_soft_floor_downweighted"],
@@ -2040,9 +2439,17 @@ def run_splice_event_diff_workflow(
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
         "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
         "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
+        "locus_density_effective": effective_locus_density_penalty_mode,
         "locus_density_window_bp": cfg.locus_density_window_bp,
         "locus_density_top_n": cfg.locus_density_top_n,
         "locus_density": locus_density_summary,
+        "locus_density_before": (locus_density_summary or {}).get("before", {}),
+        "locus_density_after": (locus_density_summary or {}).get("after", {}),
+        "artifact_summary": artifact_summary,
+        "quality_tier": quality_tier,
+        "artifact_flags": artifact_flags,
+        "artifact_action_applied": artifact_action_applied,
+        "output_withheld_reason": output_withheld_reason,
         "event_type_counts": parse_summary["event_type_counts"],
         "warnings": warning_flags,
         "resources": resources_info,
@@ -2073,9 +2480,15 @@ def run_splice_event_diff_workflow(
         "gene_burden_penalty_mode": cfg.gene_burden_penalty_mode,
         "min_gene_burden_penalty": cfg.min_gene_burden_penalty,
         "gene_support_penalty_mode": cfg.gene_support_penalty_mode,
+        "bundle_prior_profile": cfg.bundle_prior_profile,
+        "effective_bundle_prior_profile": effective_bundle_prior_profile,
+        "artifact_action": cfg.artifact_action,
+        "effective_artifact_action": effective_artifact_action,
+        "tcga_public_mode": tcga_public_mode,
         "source_dataset": cfg.source_dataset,
         "bundle_same_dataset_policy": cfg.bundle_same_dataset_policy,
         "locus_density_penalty_mode": cfg.locus_density_penalty_mode,
+        "effective_locus_density_penalty_mode": effective_locus_density_penalty_mode,
         "locus_density_window_bp": cfg.locus_density_window_bp,
         "locus_density_top_n": cfg.locus_density_top_n,
         "ambiguous_gene_policy": cfg.ambiguous_gene_policy,
@@ -2128,6 +2541,8 @@ def run_splice_event_diff_workflow(
             "n_low_confidence_ubiquity_priors_neutralized": parse_summary["n_low_confidence_ubiquity_priors_neutralized"],
             "n_low_confidence_impact_priors_neutralized": parse_summary["n_low_confidence_impact_priors_neutralized"],
             "n_medium_confidence_namespace_mismatches_neutralized": parse_summary["n_medium_confidence_namespace_mismatches_neutralized"],
+            "n_event_priors_neutralized_by_profile": parse_summary["n_event_priors_neutralized_by_profile"],
+            "n_medium_confidence_event_priors_neutralized_for_weak_external_support": parse_summary["n_medium_confidence_event_priors_neutralized_for_weak_external_support"],
             "n_same_dataset_ubiquity_priors_excluded": parse_summary["n_same_dataset_ubiquity_priors_excluded"],
             "n_same_dataset_ubiquity_priors_neutralized": parse_summary["n_same_dataset_ubiquity_priors_neutralized"],
             "n_same_dataset_gene_burden_excluded": parse_summary["n_same_dataset_gene_burden_excluded"],
@@ -2139,11 +2554,21 @@ def run_splice_event_diff_workflow(
             "fraction_single_event_genes": parse_summary["fraction_single_event_genes"],
             "same_dataset_event_prior_summary": same_dataset_event_summary,
             "same_dataset_gene_burden_summary": same_dataset_gene_summary,
+            "bundle_support_after_same_dataset_exclusion": bundle_support_after_same_dataset_exclusion,
+            "bundle_prior_downgrade_reason": bundle_prior_downgrade_reason,
+            "effective_bundle_prior_profile": effective_bundle_prior_profile,
+            "quality_tier": quality_tier,
+            "artifact_flags": artifact_flags,
+            "artifact_action_applied": artifact_action_applied,
+            "output_withheld_reason": output_withheld_reason,
             "n_delta_psi_soft_floor_downweighted": parse_summary["n_delta_psi_soft_floor_downweighted"],
             "n_delta_psi_soft_floor_full_weight": parse_summary["n_delta_psi_soft_floor_full_weight"],
             "n_delta_psi_soft_floor_inactive": parse_summary["n_delta_psi_soft_floor_inactive"],
             "event_type_counts": parse_summary["event_type_counts"],
             "locus_density": locus_density_summary,
+            "locus_density_before": (locus_density_summary or {}).get("before", {}),
+            "locus_density_after": (locus_density_summary or {}).get("after", {}),
+            "artifact_summary": artifact_summary,
             "warnings": warning_flags,
             "n_genes_pre_selection": len(gene_scores),
             "n_genes": len(selected_rows),
@@ -2186,4 +2611,12 @@ def run_splice_event_diff_workflow(
         "out_dir": str(out_dir),
         "resolved_score_mode": resolved_score_mode,
         "resolved_tool_family": resolved_tool_family,
+        "tcga_public_mode": tcga_public_mode,
+        "effective_bundle_prior_profile": effective_bundle_prior_profile,
+        "effective_artifact_action": effective_artifact_action,
+        "effective_locus_density_penalty_mode": effective_locus_density_penalty_mode,
+        "quality_tier": quality_tier,
+        "artifact_flags": artifact_flags,
+        "artifact_action_applied": artifact_action_applied,
+        "output_withheld_reason": output_withheld_reason,
     }

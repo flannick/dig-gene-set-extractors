@@ -25,6 +25,12 @@ def _parse_bool(value: str) -> bool:
     raise argparse.ArgumentTypeError("expected true or false")
 
 
+class _StoreWithExplicitFlag(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):  # type: ignore[override]
+        setattr(namespace, self.dest, values)
+        setattr(namespace, f"{self.dest}_explicit", True)
+
+
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--link_method",
@@ -640,13 +646,30 @@ def _add_splice_event_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gene_burden_penalty_mode", choices=["none", "current_input", "reference_bundle", "auto"], default="auto")
     parser.add_argument("--min_gene_burden_penalty", type=float, default=0.35)
     parser.add_argument("--gene_support_penalty_mode", choices=["none", "independent_groups", "auto"], default="auto")
-    parser.add_argument("--locus_density_penalty_mode", choices=["none", "window_diversity", "chromosome_diversity", "auto"], default="none")
+    parser.add_argument(
+        "--locus_density_penalty_mode",
+        choices=["none", "window_diversity", "chromosome_diversity", "auto"],
+        default="none",
+        action=_StoreWithExplicitFlag,
+    )
     parser.add_argument("--locus_density_window_bp", type=int, default=20000000)
     parser.add_argument("--locus_density_top_n", type=int, default=20)
     parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
     parser.add_argument("--impact_mode", choices=["none", "conservative", "custom_bundle"], default="conservative")
     parser.add_argument("--impact_min", type=float, default=0.75)
     parser.add_argument("--impact_max", type=float, default=1.35)
+    parser.add_argument(
+        "--bundle_prior_profile",
+        choices=["auto", "full", "nuisance_only", "none"],
+        default="auto",
+        action=_StoreWithExplicitFlag,
+    )
+    parser.add_argument(
+        "--artifact_action",
+        choices=["warn", "prune", "suppress_if_persistent", "fail"],
+        default="warn",
+        action=_StoreWithExplicitFlag,
+    )
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
     parser.add_argument("--resources_manifest")
@@ -755,12 +778,29 @@ def _add_splice_event_matrix_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gene_burden_penalty_mode", choices=["none", "current_input", "reference_bundle", "auto"], default="auto")
     parser.add_argument("--min_gene_burden_penalty", type=float, default=0.35)
     parser.add_argument("--gene_support_penalty_mode", choices=["none", "independent_groups", "auto"], default="auto")
-    parser.add_argument("--locus_density_penalty_mode", choices=["none", "window_diversity", "chromosome_diversity", "auto"], default="none")
+    parser.add_argument(
+        "--locus_density_penalty_mode",
+        choices=["none", "window_diversity", "chromosome_diversity", "auto"],
+        default="none",
+        action=_StoreWithExplicitFlag,
+    )
     parser.add_argument("--locus_density_window_bp", type=int, default=20000000)
     parser.add_argument("--locus_density_top_n", type=int, default=20)
     parser.add_argument("--ambiguous_gene_policy", choices=["drop", "split_equal", "first"], default="drop")
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
+    parser.add_argument(
+        "--bundle_prior_profile",
+        choices=["auto", "full", "nuisance_only", "none"],
+        default="auto",
+        action=_StoreWithExplicitFlag,
+    )
+    parser.add_argument(
+        "--artifact_action",
+        choices=["warn", "prune", "suppress_if_persistent", "fail"],
+        default="warn",
+        action=_StoreWithExplicitFlag,
+    )
     parser.add_argument("--resources_manifest")
     parser.add_argument("--resources_dir")
     parser.add_argument("--resource_policy", choices=["skip", "fail"], default="skip")

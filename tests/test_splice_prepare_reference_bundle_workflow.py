@@ -80,6 +80,11 @@ class DiffArgs:
     min_gene_burden_penalty = 0.35
     gene_support_penalty_mode = "auto"
     locus_density_penalty_mode = "none"
+    locus_density_penalty_mode_explicit = False
+    bundle_prior_profile = "auto"
+    bundle_prior_profile_explicit = False
+    artifact_action = "warn"
+    artifact_action_explicit = False
     locus_density_window_bp = 20000000
     locus_density_top_n = 20
     source_dataset = None
@@ -139,6 +144,13 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert rows[0]["canonical_event_key"]
     assert {row["canonicalization_confidence"] for row in rows} == {"high", "low"}
     assert "fraction_datasets_ref" in rows[0]
+    assert "n_source_datasets_ref" in rows[0]
+    assert "max_dataset_fraction_ref" in rows[0]
+
+    with gzip.open(bundle_dir / "splice_event_impact_human_v1.tsv.gz", "rt", encoding="utf-8") as fh:
+        impact_rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert "n_source_datasets_ref" in impact_rows[0]
+    assert "max_dataset_fraction_ref" in impact_rows[0]
 
     with gzip.open(bundle_dir / "splice_gene_event_burden_human_v1.tsv.gz", "rt", encoding="utf-8") as fh:
         burden_rows = list(csv.DictReader(fh, delimiter="\t"))
@@ -146,6 +158,7 @@ def test_splice_prepare_reference_bundle_and_runtime_auto_resolution(tmp_path: P
     assert "n_studies_ref" in burden_rows[0]
     assert "median_unique_groups_per_study" in burden_rows[0]
     assert "n_medium_confidence_events_ref" in burden_rows[0]
+    assert "max_dataset_fraction_ref" in burden_rows[0]
 
     with gzip.open(bundle_dir / "splice_event_ubiquity_by_dataset_human_v1.tsv.gz", "rt", encoding="utf-8") as fh:
         ubiq_by_dataset_rows = list(csv.DictReader(fh, delimiter="\t"))

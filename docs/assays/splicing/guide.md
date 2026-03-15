@@ -73,6 +73,8 @@ Useful explicit flags:
 - `--gene_burden_penalty_mode none|current_input|reference_bundle|auto`
 - `--gene_support_penalty_mode none|independent_groups|auto`
 - `--locus_density_penalty_mode none|window_diversity|chromosome_diversity|auto`
+- `--bundle_prior_profile auto|full|nuisance_only|none`
+- `--artifact_action warn|prune|suppress_if_persistent|fail`
 - `--source_dataset <dataset_id>`
 - `--bundle_same_dataset_policy exclude|warn|fail|ignore`
 - `--ambiguous_gene_policy drop|split_equal|first`
@@ -163,6 +165,12 @@ TCGA-specific identity nuance:
 
 These `medium` keys are reusable across TCGA SpliceSeq-like studies, but they are not treated as globally harmonized across arbitrary splicing tool families.
 
+Runtime implication:
+
+- TCGA SpliceSeq-like public bundles are treated conservatively when coordinates are missing
+- the bundle can still help with aliasing, same-dataset exclusion, recurrence diagnostics, and burden summaries
+- but coordinate-poor `medium` identities do not automatically receive strong biological priors
+
 ### 5. Validate outputs
 
 ```bash
@@ -220,6 +228,8 @@ Default direct-converter behavior:
 - `gene_burden_penalty_mode=auto`
 - `gene_support_penalty_mode=auto`
 - `locus_density_penalty_mode=none`
+- `bundle_prior_profile=auto`
+- `artifact_action=warn`
 - `delta_psi_soft_floor=0.05`
 - `delta_psi_soft_floor_mode=auto`
 - `ambiguous_gene_policy=drop`
@@ -237,6 +247,14 @@ Default matrix behavior:
 - `missing_value_policy=min_present`
 - `min_samples_per_condition=3`
 - `min_present_per_condition=3`
+
+Dynamic default for TCGA SpliceSeq-like public mode:
+
+- effective `locus_density_penalty_mode=auto`
+- effective `artifact_action=suppress_if_persistent`
+- effective `bundle_prior_profile=auto`
+
+These dynamic defaults apply only when the run looks TCGA SpliceSeq-like. Explicit CLI flags still win, and generic non-TCGA inputs keep the global defaults above.
 
 ## Warnings and missing-bundle behavior
 
@@ -256,6 +274,8 @@ The run summaries also surface interpretable QC such as:
 - low-support fraction
 - single-event-gene fraction
 - locus-density concentration diagnostics
+- effective bundle-prior profile and downgrade reason
+- artifact action resolution and whether the main output was withheld
 - per-gene support coherence diagnostics
 
 ## Same-dataset bundle exclusion
@@ -272,6 +292,8 @@ Under `exclude`, the scorer removes matching source-dataset contributions from:
 
 If exclusion leaves no non-self reference support, the corresponding prior falls back to neutral behavior and the run summary records that fallback explicitly.
 
+For same-cohort self-bundles, this usually means the effective prior profile downgrades to `nuisance_only` or `none`. That is intentional: a self-bundle is mainly a nuisance-control resource, not external biological evidence.
+
 How the target dataset is identified:
 
 - `splice_event_diff`: explicit `--source_dataset` is preferred; a constant `source_dataset` or `source_study_id` column can also be inferred
@@ -283,6 +305,21 @@ If you intentionally want to inspect self-referential priors during debugging:
 - or `--bundle_same_dataset_policy ignore`
 
 Use `warn` for inspection and `ignore` only when you are sure self-cohort priors are acceptable.
+
+## Bundle prior profiles
+
+The runtime distinguishes four bundle-prior profiles:
+
+- `full`: use event ubiquity, impact, and gene-burden priors for scoring
+- `nuisance_only`: keep aliasing, same-dataset exclusion, and diagnostics, but neutralize score-shaping bundle priors
+- `none`: ignore bundle priors for scoring
+- `auto`: choose conservatively based on event confidence tier and available non-self support
+
+Operationally:
+
+- high-confidence coordinate-backed events can stay in `full`
+- medium-confidence `tcga_spliceseq_asid` events default toward `nuisance_only`
+- if same-dataset exclusion leaves no meaningful non-self support, `auto` degrades further to `none`
 
 ## Locus-density suppression
 
@@ -300,7 +337,18 @@ The splicing family now supports stronger locality-aware post-score suppression:
 - keeps the top local representative unchanged
 - softly downweights later genes from the same overrepresented locus
 
-The global default remains `none` to avoid silently changing older generic runs. For TCGA SpliceSeq-like public cohorts, `auto` is the recommended setting.
+The global default remains `none` to avoid silently changing older generic runs. For TCGA SpliceSeq-like public cohorts, `auto` becomes the effective default unless you explicitly override it.
+
+## Artifact actions
+
+After locus suppression, the runtime recomputes concentration diagnostics and applies `artifact_action`:
+
+- `warn`: emit the reranked set and warn
+- `prune`: emit the reranked set after soft suppression
+- `suppress_if_persistent`: withhold the main output if the result still looks locus-dominated
+- `fail`: raise an error instead of emitting a misleading output
+
+For TCGA SpliceSeq-like public runs, `suppress_if_persistent` becomes the effective default. This is meant to fail closed on clearly artifactual cohort outputs, not to hide ordinary weak biology.
 
 ## Gene-support stability penalty
 
@@ -311,6 +359,9 @@ The scorer now computes conservative gene-level support diagnostics after event-
 - `sign_coherence`
 
 With `--gene_support_penalty_mode auto`, genes backed by multiple coherent event groups stay near full strength, while genes supported by weak or internally mixed-sign evidence are only modestly downweighted. This is meant to improve ranking stability, not to erase single-event genes entirely.
+
+Additional summaries exposed in the run outputs include:
+
 - delta-PSI soft-floor downweight counts
 - selected-event low-confidence prior matches
 - low-confidence ubiquity/impact neutralization counts
@@ -332,12 +383,14 @@ The main warning heuristics are:
 The public workflow and bundle now distinguish:
 
 - `canonicalization_status=coordinate_canonical`, `canonicalization_confidence=high`
+- `canonicalization_status=source_family_stable_id`, `canonicalization_confidence=medium`
 - `canonicalization_status=raw_id_fallback`, `canonicalization_confidence=low`
 
-Low-confidence keys are cohort-local conveniences, not globally harmonized splice identities.
+Medium-confidence TCGA stable IDs are reusable only within the TCGA SpliceSeq-like source family. Low-confidence keys are cohort-local conveniences, not globally harmonized splice identities.
 
 Current runtime rule:
 
+- medium-confidence TCGA priors default to nuisance-oriented use unless there is strong non-self multi-dataset support
 - low-confidence ubiquity priors are neutralized to exactly `1.0`
 - low-confidence bundle impact priors are neutralized unless they recur across at least two source datasets
 - the event can still map to a gene and contribute direct observed evidence
@@ -359,10 +412,11 @@ When a usable `delta_psi` exists, very small absolute PSI shifts are softly down
 
 ### Locus-density diagnostics
 
-After gene scoring, the runtime checks whether the top genes are unusually concentrated within one chromosome or genomic window. If that concentration is too high, the run summary records `likely_locus_density_artifact`.
+After gene scoring, the runtime checks whether the top genes are unusually concentrated within one chromosome, chromosome arm, or genomic window. The run summaries record both `locus_density_before` and `locus_density_after`, plus an `artifact_summary`.
 
-Optional soft suppression:
+If the result still looks locus-dominated after soft suppression and `artifact_action=suppress_if_persistent`, the main `geneset.tsv` may be withheld. In that case:
 
-- `--locus_density_penalty_mode window_diversity`
-
-This keeps the highest-scoring local representative unchanged and softly downweights later genes from the same genomic window. It is off by default.
+- `quality_tier=artifact_prone_withheld`
+- `artifact_flags` includes `persistent_locus_density_artifact`
+- `output_withheld_reason` explains the suppression
+- `geneset.full.tsv` is still emitted for debugging

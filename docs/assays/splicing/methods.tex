@@ -236,7 +236,7 @@ Recommended defaults are narrow, for example $\eta_{\min}=0.75$ and $\eta_{\max}
 Impact use is stricter for non-high-confidence identities:
 \begin{itemize}[leftmargin=2em]
 \item high-confidence events can use the bundle impact prior directly, after bounded shrinkage,
-\item medium-confidence events can use impact priors only within their matching namespace,
+\item medium-confidence events can use impact priors only within their matching namespace and only when there is clear non-self multi-dataset recurrence support,
 \item low-confidence raw fallbacks are neutral unless the bundle reports recurrence across at least two non-self datasets.
 \end{itemize}
 
@@ -275,8 +275,24 @@ with a moderate shrinkage factor such as $\lambda_{\mathrm{med}} \approx 0.6$.
 So the runtime behavior is:
 \begin{itemize}[leftmargin=2em]
 \item \texttt{high}: strongest prior use,
-\item \texttt{medium}: bounded prior use only within the matching source-family namespace,
+\item \texttt{medium}: bounded prior use only within the matching source-family namespace and only when there is strong non-self support,
 \item \texttt{low}: event-to-gene mapping can still benefit from aliasing, but ubiquity is neutralized.
+\end{itemize}
+
+\subsection{Prior profiles}
+The runtime distinguishes four bundle-prior profiles:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{full}: use event ubiquity, impact, and gene-burden priors normally,
+\item \texttt{nuisance\_only}: keep aliasing, same-dataset exclusion, and diagnostics, but neutralize score-shaping bundle priors,
+\item \texttt{none}: ignore bundle priors for scoring,
+\item \texttt{auto}: choose conservatively from event confidence tier and remaining non-self support.
+\end{itemize}
+
+The operational rule is:
+\begin{itemize}[leftmargin=2em]
+\item high-confidence coordinate-backed events can remain in \texttt{full},
+\item medium-confidence \texttt{tcga\_spliceseq\_asid} events typically degrade to \texttt{nuisance\_only},
+\item if same-dataset exclusion leaves no meaningful non-self support, \texttt{auto} degrades further to \texttt{none}.
 \end{itemize}
 
 \subsection{Step 6: final event score}
@@ -432,6 +448,8 @@ s_g^{(\mathrm{final})} = \widehat{s}_g \cdot \ell_g.
 
 This keeps the strongest local gene unchanged while reducing the chance that an entire program is dominated by one locus. The implementation records diagnostics such as \texttt{top\_n\_fraction\_same\_chromosome}, \texttt{top\_n\_fraction\_same\_chromosome\_arm}, \texttt{top\_n\_fraction\_same\_window}, and \texttt{likely\_locus\_density\_artifact}.
 
+After soft suppression, the runtime recomputes these diagnostics and applies \texttt{artifact\_action}. In \texttt{warn} mode it only records the artifact flag. In \texttt{prune} mode it emits the softly suppressed program. In \texttt{suppress\_if\_persistent} mode, if the post-suppression output is still dominated by one locus or chromosome, the main \texttt{geneset.tsv} is withheld and metadata report \texttt{quality\_tier=artifact\_prone\_withheld}. In \texttt{fail} mode the run raises instead of emitting a misleading cohort program.
+
 \section{From gene scores to a compact gene program}
 After all aggregation and optional locus suppression, define the magnitude
 \[
@@ -581,6 +599,8 @@ Required columns:
 \item \texttt{idf\_ref}
 \item \texttt{n\_datasets\_ref}
 \item \texttt{fraction\_datasets\_ref}
+\item \texttt{n\_source\_datasets\_ref}
+\item \texttt{max\_dataset\_fraction\_ref}
 \end{itemize}
 
 \subsection{Impact schema}
@@ -597,6 +617,8 @@ Required columns:
 \item \texttt{impact\_evidence}
 \item \texttt{annotation\_status}
 \item \texttt{n\_datasets\_ref}
+\item \texttt{n\_source\_datasets\_ref}
+\item \texttt{max\_dataset\_fraction\_ref}
 \end{itemize}
 
 \subsection{Gene-burden schema}
@@ -612,6 +634,7 @@ Required columns:
 \item \texttt{n\_studies\_high\_confidence\_ref}
 \item \texttt{fraction\_low\_confidence\_events\_ref}
 \item \texttt{median\_unique\_groups\_per\_study}
+\item \texttt{max\_dataset\_fraction\_ref}
 \end{itemize}
 
 \subsection{Dataset-stratified nuisance summaries}
@@ -622,6 +645,8 @@ The bundle also carries compact dataset-level summaries such as:
 \end{itemize}
 
 These files are not intended for direct biological interpretation. Their role is defensive: at scoring time they let the runtime remove same-dataset contributions so a naively pooled bundle can behave like a leave-one-dataset-out prior when provenance is available.
+
+In other words, the compact bundle is now partly a nuisance model. This matters most for TCGA SpliceSeq-like public cohorts, where coordinate-poor medium-confidence identities are useful for harmonization and recurrence diagnostics but should not automatically behave like high-confidence biological priors.
 
 \subsection{Confidence tiers and namespaces}
 The bundle makes identity confidence and namespace explicit:
@@ -649,6 +674,7 @@ Recommended summary fields include:
 \item fraction of events matched to alias, ubiquity, and impact priors,
 \item canonicalization confidence counts for retained events and selected support events,
 \item same-dataset exclusion / neutralization counts for event ubiquity and gene burden,
+\item effective bundle-prior profile and downgrade reason after same-dataset exclusion,
 \item fraction of ambiguous multi-gene events dropped,
 \item fraction of selected genes driven by a single event,
 \item sign-coherence and independent-group support summaries for selected genes,
@@ -657,6 +683,7 @@ Recommended summary fields include:
 \item delta-PSI soft-floor downweight counts,
 \item counts of low-confidence priors neutralized,
 \item counts of medium-confidence namespace mismatches neutralized,
+\item artifact action resolution, quality tier, and output-withheld reason when applicable,
 \item genomic concentration among top genes.
 \end{itemize}
 
@@ -685,6 +712,8 @@ A reasonable default configuration is:
 \item \texttt{gene\_burden\_penalty\_mode=auto}
 \item \texttt{gene\_support\_penalty\_mode=auto}
 \item \texttt{locus\_density\_penalty\_mode=none}
+\item \texttt{bundle\_prior\_profile=auto}
+\item \texttt{artifact\_action=warn}
 \item \texttt{delta\_psi\_soft\_floor=0.05}, \texttt{delta\_psi\_soft\_floor\_mode=auto}
 \item \texttt{ambiguous\_gene\_policy=drop}
 \item \texttt{use\_reference\_bundle=true}
@@ -703,7 +732,14 @@ For matrix inputs:
 \item \texttt{min\_samples\_per\_condition=3}
 \end{itemize}
 
-For public TCGA-like cohort runs, \texttt{locus\_density\_penalty\_mode=auto} is often a better operational choice than the conservative global default \texttt{none}, because it can suppress chromosome- or window-dominated artifact programs while preserving the strongest local representative.
+For public TCGA-like cohort runs, the runtime now changes behavior dynamically unless the user explicitly overrides it:
+\begin{itemize}[leftmargin=2em]
+\item effective \texttt{locus\_density\_penalty\_mode=auto},
+\item effective \texttt{artifact\_action=suppress\_if\_persistent},
+\item effective \texttt{bundle\_prior\_profile=auto}.
+\end{itemize}
+
+This is a dynamic default, not a global one. Generic non-TCGA runs keep the conservative global defaults above.
 
 \section{What should not be in v1}
 The v1 extractor deliberately avoids overreach:

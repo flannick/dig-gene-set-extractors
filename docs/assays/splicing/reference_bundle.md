@@ -78,6 +78,8 @@ Required columns:
 - `idf_ref`
 - `n_datasets_ref`
 - `fraction_datasets_ref`
+- `n_source_datasets_ref`
+- `max_dataset_fraction_ref`
 
 ### `splice_event_ubiquity_by_dataset_human_v1.tsv.gz`
 
@@ -109,6 +111,8 @@ Required columns:
 - `impact_evidence`
 - `annotation_status`
 - `n_datasets_ref`
+- `n_source_datasets_ref`
+- `max_dataset_fraction_ref`
 
 ### `splice_gene_event_burden_human_v1.tsv.gz`
 
@@ -124,6 +128,7 @@ Required columns:
 - `n_studies_high_confidence_ref`
 - `fraction_low_confidence_events_ref`
 - `median_unique_groups_per_study`
+- `max_dataset_fraction_ref`
 
 ### `splice_gene_event_burden_by_dataset_human_v1.tsv.gz`
 
@@ -238,6 +243,7 @@ Runtime implications:
 
 - alias resolution still allows exact-string matches on low-confidence raw ids
 - medium-confidence priors are only used within the matching namespace
+- medium-confidence TCGA SpliceSeq keys default toward nuisance-oriented use rather than strong biological scoring
 - broader cross-study collapsing is intentionally avoided for low-confidence keys
 - low-confidence ubiquity priors are neutralized to exactly `1.0`
 - low-confidence impact priors are only allowed to modulate scores when the bundle reports recurrence across at least two source datasets
@@ -251,15 +257,34 @@ The bundle now treats study identity as part of the nuisance model rather than o
 Current v1 summaries include:
 
 - `n_datasets_ref` and `fraction_datasets_ref` for event ubiquity
+- `n_source_datasets_ref` and `max_dataset_fraction_ref` for event ubiquity and impact priors
 - `splice_event_ubiquity_by_dataset_human_v1.tsv.gz` for runtime same-dataset exclusion
 - per-gene `n_unique_event_groups_ref`
 - per-gene `n_studies_ref`
 - per-gene `n_studies_high_confidence_ref`
 - per-gene `fraction_low_confidence_events_ref`
 - per-gene `median_unique_groups_per_study`
+- per-gene `max_dataset_fraction_ref`
 - `splice_gene_event_burden_by_dataset_human_v1.tsv.gz` for runtime same-dataset exclusion
 
 This keeps one very large source study from defining the prior on its own.
+
+## Prior profiles at runtime
+
+The scoring runtime now distinguishes:
+
+- `full`: use bundle priors normally
+- `nuisance_only`: keep aliasing, same-dataset exclusion, and diagnostics, but neutralize event ubiquity, event impact, and multiplicative gene-burden scoring
+- `none`: do not use bundle priors for scoring
+- `auto`: choose conservatively from the available non-self evidence
+
+For TCGA SpliceSeq-like public cohorts, `auto` is intentionally conservative:
+
+- high-confidence coordinate-backed events can stay in `full`
+- medium-confidence `tcga_spliceseq_asid` events usually degrade to `nuisance_only`
+- if same-dataset exclusion leaves no meaningful non-self support, the effective profile degrades further to `none`
+
+This is why a self-bundle built from the same staged public cohort is best interpreted as a nuisance-control bundle, not a source of external biological evidence.
 
 ## Same-dataset exclusion at runtime
 
@@ -275,6 +300,12 @@ Under `exclude`, matching source-dataset contributions are removed from:
 
 If no non-self reference information remains after exclusion, the relevant prior becomes neutral and the run summary records that fallback explicitly.
 
+When that happens under `bundle_prior_profile=auto`, the runtime also records:
+
+- `effective_bundle_prior_profile`
+- `bundle_support_after_same_dataset_exclusion`
+- `bundle_prior_downgrade_reason`
+
 Other policies:
 
 - `warn`: keep the pooled prior but emit an explicit warning
@@ -282,6 +313,16 @@ Other policies:
 - `ignore`: use the pooled prior without warning
 
 This is meant to protect against scoring `BRCA` with a bundle built from that same staged `BRCA` cohort by accident.
+
+## TCGA public-mode runtime behavior
+
+For TCGA SpliceSeq-like public runs, the bundle and scoring defaults are intentionally more defensive than for generic coordinate-backed splicing inputs:
+
+- locus suppression becomes active by default through effective `locus_density_penalty_mode=auto`
+- artifact handling becomes effective `artifact_action=suppress_if_persistent`
+- the bundle may be used mainly for nuisance control rather than biological scoring
+
+If the post-suppression output is still dominated by one locus or chromosome, the main `geneset.tsv` may be withheld with explicit metadata instead of being emitted as if it were trustworthy biology.
 
 ## Missing-bundle behavior
 

@@ -238,7 +238,7 @@ def run(args) -> dict[str, object]:
 
     gene_locus_path = None
     gene_locus_resource_id = getattr(args, "gene_locus_resource_id", None) or _default_resource_id(args.organism, "gene_locus")
-    if getattr(args, "locus_density_penalty_mode", "none") in {"chromosome_diversity", "auto"} and gene_locus_resource_id and ctx is not None and (
+    if gene_locus_resource_id and ctx is not None and (
         getattr(args, "gene_locus_resource_id", None) or _resource_file_exists(ctx, gene_locus_resource_id)
     ):
         gene_locus_path = resolve_resource_path(
@@ -329,8 +329,15 @@ def run(args) -> dict[str, object]:
         locus_density_penalty_mode=getattr(args, "locus_density_penalty_mode", "none"),
         locus_density_window_bp=int(getattr(args, "locus_density_window_bp", 20000000)),
         locus_density_top_n=int(getattr(args, "locus_density_top_n", 20)),
+        locus_density_penalty_mode_explicit=bool(getattr(args, "locus_density_penalty_mode_explicit", False)),
         source_dataset=_clean(getattr(args, "source_dataset", "")) or _infer_source_dataset(rows),
         bundle_same_dataset_policy=str(getattr(args, "bundle_same_dataset_policy", "exclude")),
+        bundle_prior_profile=str(getattr(args, "bundle_prior_profile", "auto")),
+        bundle_prior_profile_explicit=bool(getattr(args, "bundle_prior_profile_explicit", False)),
+        artifact_action=str(getattr(args, "artifact_action", "warn")),
+        artifact_action_explicit=bool(getattr(args, "artifact_action_explicit", False)),
+        min_nonself_source_datasets_for_event_prior=3,
+        max_dataset_fraction_for_event_prior=0.75,
         ambiguous_gene_policy=args.ambiguous_gene_policy,
         impact_mode=args.impact_mode,
         impact_min=float(args.impact_min),

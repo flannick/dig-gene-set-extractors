@@ -352,6 +352,30 @@
       "help": "Maximum bounded impact multiplier"
     },
     {
+      "name": "bundle_prior_profile",
+      "type": "string",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "full",
+        "nuisance_only",
+        "none"
+      ],
+      "help": "How strongly bundle priors can influence scoring; auto is conservative for coordinate-poor TCGA SpliceSeq-like inputs"
+    },
+    {
+      "name": "artifact_action",
+      "type": "string",
+      "default": "warn",
+      "enum": [
+        "warn",
+        "prune",
+        "suppress_if_persistent",
+        "fail"
+      ],
+      "help": "How to handle persistent locus-dominated outputs after locus-density suppression"
+    },
+    {
       "name": "resources_manifest",
       "type": "string",
       "default": null,
