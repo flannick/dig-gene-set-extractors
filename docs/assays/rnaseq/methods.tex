@@ -22,7 +22,7 @@ The \texttt{dig-gene-set-extractors} repository provides converters that map div
 (i) \emph{gene programs} (scores or weights over genes) and
 (ii) compact \emph{gene sets} (typically 100--500 genes) suitable for enrichment and mechanism-level interpretation.
 
-This note specifies the RNA-seq extractors currently implemented as \texttt{rna\_deg} (single contrast), \texttt{rna\_deg\_multi} (batched contrasts from one long table), and \texttt{rna\_sc\_programs} (external scRNA factor-loading ingestion). In contrast to ATAC-seq, RNA-seq is already gene-centric: the primary measured objects are genes (or transcripts), so the central modeling step is not locus-to-gene projection, but rather how to:
+This note specifies the RNA-seq extractors currently implemented as \texttt{rna\_deg} (single contrast), \texttt{rna\_deg\_multi} (batched contrasts from one long table), and \texttt{rna\_sc\_programs} (external scRNA factor-loading ingestion). Upstream RNA preparation and inference now live under workflow/preprocessing commands (for example \texttt{workflows rna\_de\_prepare} and \texttt{workflows scrna\_cnmf\_prepare}), while the extractor layer remains responsible for converting already-scored results into gene programs and GMT sets. In contrast to ATAC-seq, RNA-seq is already gene-centric: the primary measured objects are genes (or transcripts), so the central modeling step is not locus-to-gene projection, but rather how to:
 (1) define a stable signed gene-level DE score,
 (2) transform scores into weights appropriate for downstream use, and
 (3) convert scores/weights into one or more gene sets with clear semantics.
@@ -59,6 +59,7 @@ Key objects and their corresponding CLI flags are:
 \item Input DE table: \texttt{--deg\_tsv}, with column mapping flags.
 \item Signed score definition $s_g$: \texttt{--score\_mode} and column flags (stat/logFC/p).
 \item Duplicate gene handling: \texttt{--duplicate\_gene\_policy}.
+\item Optional pre-aggregation row filters: \texttt{--padj\_max}, \texttt{--pvalue\_max}, \texttt{--min\_abs\_logfc}.
 \item Filtering: \texttt{--exclude\_gene\_regex}, optional \texttt{--gtf} for gene symbol/biotype.
 \item Selection of a compact set $S$: \texttt{--select} plus parameters (e.g.\ \texttt{--top\_k}).
 \item Weights $w_g$: \texttt{--normalize} (recommended: \texttt{within\_set\_l1}).
@@ -122,6 +123,15 @@ s_g = \ell_g \cdot \min\{-\log_{10}(q_g + \epsilon), C\},
 with a small $\epsilon > 0$ and cap $C$ (e.g., $C=50$) to avoid infinite/overly dominant values when $q_g \approx 0$.
 Rationale: incorporates direction and effect size while upweighting strong evidence, but prevents significance from completely dominating.
 
+\subsection{S1.2b: \texttt{score\_mode=signed\_neglog10padj}}
+When adjusted p-values are the primary confidence scale but direction should still come from the fitted effect, the extractor supports:
+\begin{equation}
+s_g = \operatorname{sign}(u_g) \cdot \min\{-\log_{10}(q_g + \epsilon), C\},
+\label{eq:signed_neglog10padj}
+\end{equation}
+where $u_g$ is taken from the signed statistic $t_g$ if available, otherwise from $\ell_g$.
+This mode is useful for workflows that want FDR-driven magnitude while keeping up/down direction explicit.
+
 \subsection{S1.3: \texttt{score\_mode=custom\_column}}
 If the user provides a precomputed signed score column, define:
 \[
@@ -139,6 +149,15 @@ If a DE table contains multiple rows for the same \texttt{gene\_id}, the convert
 \item \texttt{last}: last observed row wins.
 \end{itemize}
 Duplicate rows are reported in runtime warnings and metadata.
+
+\subsection{S1.5: pre-aggregation row filters}
+Before duplicate collapse and gene aggregation, the extractor can optionally apply row-level thresholds:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{--padj\_max}: keep only rows with adjusted p-value $\leq q_{\max}$.
+\item \texttt{--pvalue\_max}: keep only rows with raw p-value $\leq p_{\max}$.
+\item \texttt{--min\_abs\_logfc}: keep only rows with $|\ell_g| \geq \tau$.
+\end{itemize}
+These filters operate on the raw DE table and are shared by both \texttt{rna\_deg} and \texttt{rna\_deg\_multi}.
 
 \section{Filtering and gene identity}
 \subsection{Gene identifiers and symbols}
@@ -224,6 +243,39 @@ A sensible default configuration for a single DE contrast is:
 \end{itemize}
 
 For batched tables (\texttt{rna\_deg\_multi}), apply the same defaults per comparison, writing one output directory per comparison plus a root manifest.
+
+\section{Workflow-layer DE preparation}
+The workflow command \texttt{geneset-extractors workflows rna\_de\_prepare} exists upstream of the extractors.
+Its role is to convert count matrices plus metadata into a standardized long DE table with columns such as:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{comparison\_id}
+\item \texttt{gene\_id}
+\item \texttt{gene\_symbol}
+\item \texttt{logFC}
+\item \texttt{stat}
+\item \texttt{pvalue}
+\item \texttt{padj}
+\end{itemize}
+This boundary is intentional: raw DE fitting is treated as preprocessing/inference, while \texttt{rna\_deg} and \texttt{rna\_deg\_multi} remain assay-result converters.
+
+\subsection*{Bulk mode}
+For bulk RNA-seq, the workflow consumes a dense TSV count matrix plus sample metadata, optionally joined with subject-level metadata.
+It supports simple CLI-generated contrasts (two-group, group-vs-rest, reference-level within stratum) or an explicit comparisons table.
+
+\subsection*{scRNA pseudobulk mode}
+For scRNA-seq, the workflow defaults to donor-level pseudobulk rather than naive per-cell DE.
+If cell type is provided, pseudobulks can be formed within cell type and then compared across conditions.
+This yields DE tables that the extractor layer can consume in the same way as bulk-derived contrasts.
+
+\subsection*{Lightweight backend limitations}
+The built-in \texttt{lightweight} backend is intended for simple, dependency-light first passes.
+It uses low-expression filtering, library-size normalization, log-scale modeling, and BH correction within each emitted contrast, but it remains approximate:
+\begin{itemize}[leftmargin=2em]
+\item no true random-effects inference
+\item intended for fixed-effect designs
+\item not a replacement for limma-voom or dream on complex repeated-measures studies
+\end{itemize}
+Therefore repeated-measures requests do not silently fall back to the lightweight backend; the user must explicitly allow that approximation.
 
 \section{Practical heuristics and pitfalls}
 \begin{itemize}[leftmargin=2em]

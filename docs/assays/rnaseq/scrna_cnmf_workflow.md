@@ -2,6 +2,8 @@
 
 This page documents the first-class in-repo preprocessing path for large scRNA atlases before cNMF.
 
+This remains a workflow/preprocessing command, not an extractor. The extractor-side `rna_sc_programs` converter still expects precomputed loadings.
+
 Command:
 
 ```bash

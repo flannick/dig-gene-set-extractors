@@ -178,9 +178,12 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--score_column")
     parser.add_argument(
         "--score_mode",
-        choices=["auto", "stat", "logfc_times_neglog10p", "custom_column"],
+        choices=["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"],
         default="auto",
     )
+    parser.add_argument("--padj_max", type=float, help="Optional adjusted p-value filter applied before gene aggregation.")
+    parser.add_argument("--pvalue_max", type=float, help="Optional p-value filter applied before gene aggregation.")
+    parser.add_argument("--min_abs_logfc", type=float, help="Optional abs(logFC) filter applied before gene aggregation.")
     parser.add_argument(
         "--duplicate_gene_policy",
         choices=["sum", "max_abs", "mean", "last"],
@@ -546,6 +549,85 @@ def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min_stability_abs", type=float, default=0.0)
     parser.add_argument("--require_local_max", type=_parse_bool, default=False)
     parser.add_argument("--fixed_k", type=int)
+
+
+def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--modality", choices=["bulk", "scrna"], required=True)
+    parser.add_argument("--counts_tsv", required=True, help="Dense count matrix TSV.")
+    parser.add_argument("--matrix_orientation", choices=["sample_by_gene", "gene_by_sample"], default="sample_by_gene")
+    parser.add_argument("--feature_id_column", required=True, help="Feature/gene identifier column for gene_by_sample inputs.")
+    parser.add_argument("--matrix_delim", default="\t")
+    parser.add_argument("--metadata_delim", default="\t")
+    parser.add_argument("--sample_id_column", help="Sample ID column for bulk count matrices and sample metadata.")
+    parser.add_argument("--sample_metadata_tsv", help="Bulk sample metadata TSV.")
+    parser.add_argument("--subject_metadata_tsv", help="Optional subject/donor metadata TSV for bulk mode.")
+    parser.add_argument("--subject_join_sample_column", help="Column in sample metadata used to join subject metadata.")
+    parser.add_argument("--subject_join_metadata_column", help="Column in subject metadata used to join onto samples.")
+    parser.add_argument("--subject_column", help="Subject/random-effect column after metadata joins in bulk mode.")
+    parser.add_argument("--cell_id_column", help="Cell ID column for scRNA count matrices and cell metadata.")
+    parser.add_argument("--cell_metadata_tsv", help="scRNA cell metadata TSV.")
+    parser.add_argument("--donor_column", help="Donor column for scRNA pseudobulk and repeated-measures designs.")
+    parser.add_argument("--cell_type_column", help="Optional cell-type column for scRNA pseudobulk grouping.")
+    parser.add_argument(
+        "--pseudobulk_within_cell_type",
+        type=_parse_bool,
+        default=True,
+        help="If true, scRNA pseudobulks split by donor and cell_type when cell_type_column is provided.",
+    )
+    parser.add_argument("--min_cells_per_pseudobulk", type=int, default=10)
+    parser.add_argument("--min_donors_per_group", type=int, default=2)
+    parser.add_argument("--group_column", help="Primary condition/group column used to define contrasts.")
+    parser.add_argument(
+        "--comparison_mode",
+        choices=["condition_a_vs_b", "group_vs_rest", "reference_level"],
+        help="Simple CLI-driven contrast generation mode.",
+    )
+    parser.add_argument("--condition_a", help="Group A / focal level for CLI-generated comparisons.")
+    parser.add_argument("--condition_b", help="Group B / reference level for condition_a_vs_b.")
+    parser.add_argument("--reference_level", help="Reference level for reference_level comparisons.")
+    parser.add_argument("--comparisons_tsv", help="Explicit comparisons TSV for advanced contrast definitions.")
+    parser.add_argument("--stratify_by", help="Optional comma-separated stratification columns.")
+    parser.add_argument("--covariates", help="Optional comma-separated fixed-effect covariates.")
+    parser.add_argument("--batch_columns", help="Optional comma-separated batch columns.")
+    parser.add_argument("--repeated_measures", type=_parse_bool, default=False)
+    parser.add_argument("--allow_approximate_repeated_measures", type=_parse_bool, default=False)
+    parser.add_argument(
+        "--backend",
+        choices=["auto", "lightweight", "r_limma_voom", "r_dream"],
+        default="auto",
+        help="DE backend. auto prefers implemented/available R backends, else lightweight.",
+    )
+    parser.add_argument(
+        "--allow_non_count_input",
+        type=_parse_bool,
+        default=False,
+        help="Allow approximate analysis on non-integer normalized input and record that the run is approximate.",
+    )
+    parser.add_argument("--write_pseudobulk_artifacts", type=_parse_bool, default=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--run_extractor", type=_parse_bool, default=False)
+    parser.add_argument("--extractor_out_dir")
+    parser.add_argument("--extractor_signature_name", default="contrast")
+    parser.add_argument(
+        "--extractor_score_mode",
+        choices=["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"],
+        default="auto",
+    )
+    parser.add_argument("--extractor_select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
+    parser.add_argument("--extractor_top_k", type=int, default=200)
+    parser.add_argument("--extractor_quantile", type=float, default=0.01)
+    parser.add_argument("--extractor_min_score", type=float, default=0.0)
+    parser.add_argument("--extractor_normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
+    parser.add_argument("--extractor_padj_max", type=float)
+    parser.add_argument("--extractor_pvalue_max", type=float)
+    parser.add_argument("--extractor_min_abs_logfc", type=float)
+    parser.add_argument("--extractor_emit_gmt", type=_parse_bool, default=True)
+    parser.add_argument("--extractor_gmt_split_signed", type=_parse_bool, default=True)
+    parser.add_argument("--extractor_gmt_topk_list", default="200")
+    parser.add_argument("--extractor_gmt_min_genes", type=int, default=100)
+    parser.add_argument("--extractor_gmt_max_genes", type=int, default=500)
 
 
 def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
@@ -1294,6 +1376,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scrna_cnmf_prepare_flags(p_scrna_cnmf_prepare)
     p_cnmf_select_k = wf_sub.add_parser("cnmf_select_k")
     _add_cnmf_select_k_flags(p_cnmf_select_k)
+    p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
+    _add_rna_de_prepare_flags(p_rna_de_prepare)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -1924,6 +2008,17 @@ def main(argv: list[str] | None = None) -> int:
                 from geneset_extractors.workflows.cnmf_select_k import run as run_cnmf_select_k
 
                 _ = run_cnmf_select_k(args)
+                return 0
+            if args.workflow_command == "rna_de_prepare":
+                from geneset_extractors.workflows.rna_de_prepare import run as run_rna_de_prepare
+
+                result = run_rna_de_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
                 return 0
             if args.workflow_command == "prism_prepare":
                 from geneset_extractors.workflows.prism_prepare import run as run_prism_prepare

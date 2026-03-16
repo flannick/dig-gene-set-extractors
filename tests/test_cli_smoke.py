@@ -56,7 +56,10 @@ def test_cli_describe_rna_deg():
     assert p.returncode == 0
     payload = json.loads(p.stdout)
     assert payload["name"] == "rna_deg"
-    assert any(param["name"] == "score_mode" for param in payload["parameters"])
+    param_names = {param["name"] for param in payload["parameters"]}
+    assert "score_mode" in param_names
+    assert "padj_max" in param_names
+    assert "min_abs_logfc" in param_names
 
 
 def test_cli_describe_rna_deg_multi():

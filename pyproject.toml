@@ -24,6 +24,12 @@ scrna_tools = [
   "pandas>=1.5",
   "scikit-learn>=1.2",
 ]
+de_tools = [
+  "numpy>=1.23",
+  "pandas>=1.5",
+  "scipy>=1.10",
+  "statsmodels>=0.14",
+]
 
 [project.scripts]
 geneset-extractors = "geneset_extractors.cli:main"

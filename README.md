@@ -78,6 +78,7 @@ RNA-focused converters:
 
 RNA workflow commands:
 
+- `workflows rna_de_prepare` (bulk/scRNA pseudobulk DE staging into standardized long DE tables; can optionally call `rna_deg_multi`)
 - `workflows scrna_cnmf_prepare` (downsample/split/filter + generate per-subset cNMF scripts)
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
 - `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)

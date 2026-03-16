@@ -29,6 +29,7 @@ from geneset_extractors.extractors.rnaseq.deg_scoring import (
     apply_exclude_filters,
     compile_exclude_gene_regexes,
     maybe_promote_gene_id_to_symbol,
+    parse_float_soft,
     resolve_deg_columns,
     sanitize_name_component,
     score_deg_rows,
@@ -52,6 +53,9 @@ class DEGWorkflowConfig:
     pvalue_column: str | None
     score_column: str | None
     score_mode: str
+    padj_max: float | None
+    pvalue_max: float | None
+    min_abs_logfc: float | None
     neglog10p_cap: float
     neglog10p_eps: float
     duplicate_gene_policy: str
@@ -257,8 +261,49 @@ def run_deg_workflow(
                 f"Provided: {cfg.score_column!r}; available: {', '.join(fieldnames)}"
             )
 
+    filtered_input_rows = rows
+    n_rows_filtered_by_thresholds = 0
+    if cfg.padj_max is not None:
+        padj_column = resolved_columns["padj_column"]
+        if not padj_column:
+            raise ValueError("--padj_max requires a resolvable adjusted p-value column")
+        before = len(filtered_input_rows)
+        filtered_input_rows = [
+            row
+            for row in filtered_input_rows
+            if (parse_float_soft(row.values.get(str(padj_column))) is not None)
+            and float(parse_float_soft(row.values.get(str(padj_column))) or 0.0) <= float(cfg.padj_max)
+        ]
+        n_rows_filtered_by_thresholds += before - len(filtered_input_rows)
+    if cfg.pvalue_max is not None:
+        pvalue_column = resolved_columns["pvalue_column"]
+        if not pvalue_column:
+            raise ValueError("--pvalue_max requires a resolvable p-value column")
+        before = len(filtered_input_rows)
+        filtered_input_rows = [
+            row
+            for row in filtered_input_rows
+            if (parse_float_soft(row.values.get(str(pvalue_column))) is not None)
+            and float(parse_float_soft(row.values.get(str(pvalue_column))) or 0.0) <= float(cfg.pvalue_max)
+        ]
+        n_rows_filtered_by_thresholds += before - len(filtered_input_rows)
+    if cfg.min_abs_logfc is not None:
+        logfc_column = resolved_columns["logfc_column"]
+        if not logfc_column:
+            raise ValueError("--min_abs_logfc requires a resolvable logFC column")
+        before = len(filtered_input_rows)
+        filtered_input_rows = [
+            row
+            for row in filtered_input_rows
+            if (parse_float_soft(row.values.get(str(logfc_column))) is not None)
+            and abs(float(parse_float_soft(row.values.get(str(logfc_column))) or 0.0)) >= float(cfg.min_abs_logfc)
+        ]
+        n_rows_filtered_by_thresholds += before - len(filtered_input_rows)
+    if not filtered_input_rows:
+        raise ValueError("No DE rows remain after applying padj/pvalue/logFC row filters.")
+
     resolved_score_mode, records, skipped_rows, duplicate_info = score_deg_rows(
-        rows,
+        filtered_input_rows,
         gene_id_column=str(resolved_columns["gene_id_column"]),
         gene_symbol_column=resolved_columns["gene_symbol_column"],
         stat_column=resolved_columns["stat_column"],
@@ -461,6 +506,7 @@ def run_deg_workflow(
         "n_genes_after_filter": len(records),
         "n_genes_selected": len(selected_rows),
         "n_rows_skipped_unparseable": skipped_rows,
+        "n_rows_filtered_by_thresholds": n_rows_filtered_by_thresholds,
         "n_genes_filtered_by_symbol_regex": n_filtered,
         "duplicate_gene_policy": cfg.duplicate_gene_policy,
         "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
@@ -493,6 +539,9 @@ def run_deg_workflow(
         },
         "score_mode": resolved_score_mode,
         "score_mode_requested": cfg.score_mode,
+        "padj_max": cfg.padj_max,
+        "pvalue_max": cfg.pvalue_max,
+        "min_abs_logfc": cfg.min_abs_logfc,
         "duplicate_gene_policy": cfg.duplicate_gene_policy,
         "neglog10p_cap": cfg.neglog10p_cap,
         "neglog10p_eps": cfg.neglog10p_eps,
@@ -554,6 +603,7 @@ def run_deg_workflow(
             "n_features_assigned": int(n_input_features),
             "fraction_features_assigned": 1.0 if n_input_features else 0.0,
             "n_rows_skipped_unparseable": int(skipped_rows),
+            "n_rows_filtered_by_thresholds": int(n_rows_filtered_by_thresholds),
             "n_genes_filtered_by_symbol_regex": int(n_filtered),
             "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
             "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
@@ -605,6 +655,7 @@ def run_deg_workflow(
         "n_input_features": n_input_features,
         "n_genes_selected": len(selected_rows),
         "n_rows_skipped_unparseable": skipped_rows,
+        "n_rows_filtered_by_thresholds": n_rows_filtered_by_thresholds,
         "n_genes_filtered_by_symbol_regex": n_filtered,
         "biotype_warning_emitted": bool(biotype_warning_emitted if cfg.emit_gmt else False),
         "gmt_sets": gmt_sets,

@@ -22,6 +22,9 @@ class Args:
     pvalue_column = None
     score_column = None
     score_mode = "auto"
+    padj_max = None
+    pvalue_max = None
+    min_abs_logfc = None
     duplicate_gene_policy = "max_abs"
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
@@ -344,3 +347,41 @@ def test_rna_deg_warns_when_split_signed_and_no_negative_scores(
     rna_deg.run(args)
     captured = capsys.readouterr()
     assert "No negative scores detected" in captured.err
+
+
+def test_rna_deg_supports_signed_neglog10padj_and_avg_log2fc_autodetect(tmp_path: Path):
+    tsv = tmp_path / "seurat_like.tsv"
+    tsv.write_text(
+        "gene_id\tavg_log2FC\tFDR\nA\t2.0\t1e-6\nB\t-1.5\t1e-4\nC\t0.2\t0.9\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "signed_padj")
+    args.emit_gmt = False
+    args.score_mode = "signed_neglog10padj"
+    rna_deg.run(args)
+    with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows[0]["gene_id"] == "A"
+    assert float(rows[0]["score"]) > 0
+    assert any(float(row["score"]) < 0 for row in rows)
+
+
+def test_rna_deg_row_filters_apply_before_gene_aggregation(tmp_path: Path):
+    tsv = tmp_path / "filtered.tsv"
+    tsv.write_text(
+        "gene_id\tlogFC\tpadj\tpvalue\nA\t2.0\t0.001\t0.001\nB\t1.0\t0.2\t0.2\nC\t0.1\t0.001\t0.001\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "filtered_rows")
+    args.emit_gmt = False
+    args.score_mode = "logfc_times_neglog10p"
+    args.padj_max = 0.05
+    args.min_abs_logfc = 0.5
+    rna_deg.run(args)
+    with (Path(args.out_dir) / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert [row["gene_id"] for row in rows] == ["A"]

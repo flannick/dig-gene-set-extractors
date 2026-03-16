@@ -23,6 +23,9 @@ class Args:
     pvalue_column = None
     score_column = None
     score_mode = "auto"
+    padj_max = None
+    pvalue_max = None
+    min_abs_logfc = None
     duplicate_gene_policy = "max_abs"
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300
@@ -134,3 +137,30 @@ def test_rna_deg_multi_biotype_missing_warning_emitted_once(
     rna_deg_multi.run(args)
     captured = capsys.readouterr()
     assert captured.err.count("gene_biotype values are missing") == 1
+
+
+def test_rna_deg_multi_filters_rows_before_grouped_conversion(tmp_path: Path):
+    tsv = tmp_path / "multi_filter.tsv"
+    tsv.write_text(
+        "comparison_id\tgene_id\tlogFC\tpadj\tpvalue\n"
+        "c1\tA\t2.0\t0.001\t0.001\n"
+        "c1\tB\t0.2\t0.001\t0.001\n"
+        "c2\tC\t-3.0\t0.01\t0.01\n"
+        "c2\tD\t1.0\t0.5\t0.5\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "multi_filter_out")
+    args.emit_gmt = False
+    args.score_mode = "logfc_times_neglog10p"
+    args.padj_max = 0.05
+    args.min_abs_logfc = 0.5
+    result = rna_deg_multi.run(args)
+    assert result["n_groups"] == 2
+    with (Path(args.out_dir) / "comparison=c1" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+        rows1 = list(csv.DictReader(fh, delimiter="\t"))
+    with (Path(args.out_dir) / "comparison=c2" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+        rows2 = list(csv.DictReader(fh, delimiter="\t"))
+    assert [row["gene_id"] for row in rows1] == ["A"]
+    assert [row["gene_id"] for row in rows2] == ["C"]

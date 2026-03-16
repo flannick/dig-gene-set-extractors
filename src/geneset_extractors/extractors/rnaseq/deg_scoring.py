@@ -11,7 +11,7 @@ from geneset_extractors.io.gtf import read_genes_from_gtf
 
 DEFAULT_GENE_SYMBOL_COLUMNS = ("gene_symbol", "gene_name")
 DEFAULT_STAT_COLUMNS = ("stat",)
-DEFAULT_LOGFC_COLUMNS = ("log2fc", "log2FoldChange", "logFC")
+DEFAULT_LOGFC_COLUMNS = ("log2fc", "log2FoldChange", "logFC", "avg_log2FC")
 DEFAULT_PADJ_COLUMNS = ("padj", "FDR", "adj.P.Val")
 DEFAULT_PVALUE_COLUMNS = ("pvalue", "PValue", "P.Value")
 
@@ -293,6 +293,22 @@ def _resolve_score_mode(
             )
         return "logfc_times_neglog10p", p_col
 
+    if requested_mode == "signed_neglog10padj":
+        p_col = padj_column if padj_column and _column_has_parseable_numeric(rows, padj_column) else None
+        if not p_col:
+            raise ValueError(
+                "score_mode=signed_neglog10padj requires --padj_column "
+                "(or a default adjusted p-value column such as padj/FDR/adj.P.Val)."
+            )
+        if stat_column and _column_has_parseable_numeric(rows, stat_column):
+            return "signed_neglog10padj", p_col
+        if logfc_column and _column_has_parseable_numeric(rows, logfc_column):
+            return "signed_neglog10padj", p_col
+        raise ValueError(
+            "score_mode=signed_neglog10padj requires a parseable sign source from either "
+            "--stat_column or --logfc_column."
+        )
+
     if requested_mode != "auto":
         raise ValueError(f"Unsupported score_mode: {requested_mode}")
 
@@ -327,6 +343,10 @@ def _parse_float_soft(raw: object) -> float | None:
     return val
 
 
+def parse_float_soft(raw: object) -> float | None:
+    return _parse_float_soft(raw)
+
+
 def _row_score(
     row: DEGRow,
     mode: str,
@@ -345,6 +365,22 @@ def _row_score(
         if not stat_column:
             return None
         return _parse_float_soft(row.values.get(stat_column))
+    if mode == "signed_neglog10padj":
+        if not pvalue_column:
+            return None
+        p_val = _parse_float_soft(row.values.get(pvalue_column))
+        if p_val is None:
+            return None
+        sign_source = None
+        if stat_column:
+            sign_source = _parse_float_soft(row.values.get(stat_column))
+        if sign_source is None and logfc_column:
+            sign_source = _parse_float_soft(row.values.get(logfc_column))
+        if sign_source is None or sign_source == 0.0:
+            return None
+        p = min(1.0, max(float(neglog10p_eps), float(p_val)))
+        score_mag = min(-math.log10(p + float(neglog10p_eps)), float(neglog10p_cap))
+        return math.copysign(score_mag, sign_source)
     if mode != "logfc_times_neglog10p":
         return None
     if not logfc_column or not pvalue_column:

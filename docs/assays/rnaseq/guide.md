@@ -1,6 +1,6 @@
 # RNA-seq to Gene Sets (Practical Guide)
 
-`geneset-extractors` RNA converters consume either differential expression (DE) tables or external scRNA program loadings and emit:
+`geneset-extractors` RNA extractors consume either differential expression (DE) tables or external scRNA program loadings and emit:
 
 - `geneset.tsv` (selected signed gene program with nonnegative weights)
 - `geneset.meta.json` (summary metadata + provenance pointer)
@@ -10,13 +10,22 @@
 
 Theory and equations: `docs/assays/rnaseq/methods.tex`.
 
+Upstream RNA preparation and inference now live under `workflows` / internal `preprocessing`, not in the extractor layer. In practice:
+
+- `workflows rna_de_prepare`: counts + metadata -> standardized long DE table
+- `workflows scrna_cnmf_prepare`: scRNA matrix + metadata -> cNMF-ready subsets/scripts
+- `workflows cnmf_select_k`: cNMF k-selection helper
+- `convert rna_deg`, `convert rna_deg_multi`, `convert rna_sc_programs`: already-scored assay result -> gene set
+
 ## Resources
 
 RNA converters are dependency-light and do not require reference bundles.
 
 - Required: none beyond input DE/program tables.
 - Optional: `--gtf` to annotate `gene_symbol`/`gene_biotype` when those columns are absent.
-- Optional workflows: `workflows scrna_cnmf_prepare` generates cNMF-ready subset matrices and shell scripts; it does not download external resources.
+- Optional workflows:
+  - `workflows rna_de_prepare` generates standardized DE tables from bulk RNA-seq or scRNA-seq plus metadata.
+  - `workflows scrna_cnmf_prepare` generates cNMF-ready subset matrices and shell scripts.
 
 If you run without `--gtf`, GMT output may drop rows when `--gmt_require_symbol true` and symbols are missing.
 
@@ -25,6 +34,9 @@ If you run without `--gtf`, GMT output may drop rows when `--gmt_require_symbol 
 ```bash
 python -m pip install -U pip
 python -m pip install -e ".[dev]"
+# Optional RNA helpers:
+# python -m pip install -e ".[de_tools]"
+# python -m pip install -e ".[scrna_tools]"
 geneset-extractors list
 ```
 
@@ -34,6 +46,14 @@ geneset-extractors list
 - `rna_deg_multi`: many contrasts in one long table, grouped by `--comparison_column`.
 - `rna_sc_programs`: grouped scRNA gene-program extraction from external factorization loadings (generic/cNMF/scHPF outputs).
 - `sc_rna_marker`: legacy single-cell count-summary converter (non-DE workflow).
+
+Upstream RNA workflows:
+
+- `rna_de_prepare`: bulk/scRNA pseudobulk DE staging workflow that writes `deg_long.tsv`
+- `scrna_cnmf_prepare`: cNMF-oriented scRNA matrix preparation
+- `cnmf_select_k`: k-selection helper
+
+Dedicated DE workflow guide: `docs/assays/rnaseq/de_workflow.md`.
 
 ## Quickstart: single contrast (`rna_deg`)
 
@@ -50,6 +70,7 @@ geneset-extractors validate results/rna_deg_example
 Defaults for `rna_deg`:
 
 - `--score_mode auto` (prefer `stat`; fallback to `logfc_times_neglog10p`)
+- optional explicit `--score_mode signed_neglog10padj` when you want FDR-driven ranking with direction taken from `stat` or `logFC`
 - `--duplicate_gene_policy max_abs`
 - `--signature_name contrast` resolves to `deg_tsv` filename stem
 - `--select top_k --top_k 200`
@@ -57,6 +78,10 @@ Defaults for `rna_deg`:
 - `--emit_gmt true --gmt_split_signed true`
 - `--gmt_source full` (GMT derived from full ranked table, not only selected rows)
 - `--gmt_topk_list 200 --gmt_min_genes 100 --gmt_max_genes 500`
+- optional pre-aggregation row filters:
+  - `--padj_max`
+  - `--pvalue_max`
+  - `--min_abs_logfc`
 
 ## Quickstart: multi-contrast table (`rna_deg_multi`)
 
@@ -81,6 +106,45 @@ Grouped output layout:
 - optional root `genesets.gmt` (combined)
 
 The grouped `manifest.tsv` keeps `path` and now also includes `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
+
+## Quickstart: prepare DE first, then extract
+
+Use the workflow when you are starting from counts plus metadata rather than from a precomputed DE table:
+
+```bash
+geneset-extractors workflows rna_de_prepare \
+  --modality bulk \
+  --counts_tsv path/to/counts.tsv \
+  --sample_metadata_tsv path/to/sample_metadata.tsv \
+  --sample_id_column sample_id \
+  --feature_id_column gene_id \
+  --group_column condition \
+  --comparison_mode condition_a_vs_b \
+  --condition_a treated \
+  --condition_b control \
+  --backend auto \
+  --out_dir results/rna_de_prepare \
+  --organism human \
+  --genome_build hg38
+```
+
+This writes `deg_long.tsv`, which can be passed directly into `rna_deg_multi`.
+
+If you want the workflow to call the extractor internally:
+
+```bash
+geneset-extractors workflows rna_de_prepare \
+  ... \
+  --run_extractor true \
+  --extractor_padj_max 0.05 \
+  --extractor_min_abs_logfc 0.5
+```
+
+Common workflow examples:
+
+- bulk two-group DE: `docs/assays/rnaseq/de_workflow.md`
+- scRNA donor-level pseudobulk by cell type: `docs/assays/rnaseq/de_workflow.md`
+- GTEx-like age-bin contrasts within tissue: `docs/assays/rnaseq/de_workflow.md`
 
 ## Quickstart: scRNA program loadings (`rna_sc_programs`)
 

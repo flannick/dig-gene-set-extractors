@@ -32,6 +32,7 @@ Use `--provenance_overlay_json <overlay.json>` with any converter when you want 
 
 - ATAC-seq: `docs/assays/atac/guide.md`
 - RNA-seq: `docs/assays/rnaseq/guide.md`
+- RNA DE workflow: `docs/assays/rnaseq/de_workflow.md`
 - scRNA cNMF prep workflow: `docs/assays/rnaseq/scrna_cnmf_workflow.md`
 - DNA methylation: `docs/assays/methylation/guide.md`
 - Alternative splicing: `docs/assays/splicing/guide.md`
@@ -77,6 +78,7 @@ Assay-specific resource instructions:
 - Proteomics PTM public-data workflow: `geneset-extractors workflows ptm_prepare_public`
 - Methylation probe manifests/resources: `docs/assays/methylation/resources.md`
 - RNA and CNV are local-input-first (no required external bundle in current defaults).
+- RNA supports `workflows rna_de_prepare` for bulk/scRNA pseudobulk DE staging, then `rna_deg` / `rna_deg_multi` for extraction.
 - Proteomics PTM supports `workflows ptm_prepare_public` for CDAP/PDC standardization plus both `ptm_site_diff` and `ptm_site_matrix`; the converters can use the optional alias/ubiquity bundle.
 - Alternative splicing supports `workflows splice_prepare_public`, `workflows splice_prepare_reference_bundle`, plus both `splice_event_diff` and `splice_event_matrix`; the converters can use the optional alias/ubiquity/impact/gene-burden bundle.
 - Indirect calorimetry supports `workflows calr_prepare_public`, `workflows calr_prepare_reference_bundle`, plus `calr_ontology_mapper` and `calr_profile_query`.
