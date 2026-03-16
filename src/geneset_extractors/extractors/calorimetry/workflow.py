@@ -12,7 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from geneset_extractors.core.gmt import build_gmt_sets_from_rows, resolve_gmt_out_path, write_gmt
-from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record, make_metadata, write_metadata
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.core.selection import global_l1_weights, ranked_gene_ids, select_quantile, select_threshold, select_top_k, within_set_l1_weights
 from geneset_extractors.extractors.calorimetry.bundle import bundle_resources_info
@@ -655,9 +655,14 @@ def run_calr_ontology_workflow(
                 )
                 combined_gmt.extend(result["gmt_sets"])
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "contrast_label", "program", "mode", "path", "n_genes"])
+        rows = [enrich_manifest_row(out_dir, out_dir / str(row["path"]), dict(row)) for row in manifest_rows]
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=["contrast_id", "contrast_label", "program", "mode", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id", "n_genes"],
+        )
         writer.writeheader()
-        for row in manifest_rows:
+        for row in rows:
             writer.writerow({**row, "path": str(row["path"])})
     if combined_gmt and cfg.emit_gmt:
         write_gmt(combined_gmt, out_dir / "genesets.gmt", gmt_format=cfg.gmt_format)
@@ -890,9 +895,27 @@ def run_calr_profile_workflow(
             )
             combined_gmt.extend(result["gmt_sets"])
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "contrast_label", "program", "mode", "path", "n_genes", "retrieval_confidence"])
+        rows = [enrich_manifest_row(out_dir, out_dir / str(row["path"]), dict(row)) for row in manifest_rows]
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=[
+                "contrast_id",
+                "contrast_label",
+                "program",
+                "mode",
+                "geneset_id",
+                "label",
+                "path",
+                "meta_path",
+                "provenance_path",
+                "focus_node_id",
+                "n_genes",
+                "retrieval_confidence",
+            ],
+        )
         writer.writeheader()
-        for row in manifest_rows:
+        for row in rows:
             writer.writerow({**row, "path": str(row["path"])})
     if combined_gmt and cfg.emit_gmt:
         write_gmt(combined_gmt, out_dir / "genesets.gmt", gmt_format=cfg.gmt_format)

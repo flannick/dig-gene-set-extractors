@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.io.gtf import read_genes_from_gtf
 from geneset_extractors.extractors.methylation.resource_utils import (
     build_resources_info,
@@ -18,6 +19,7 @@ from geneset_extractors.extractors.methylation.workflow import (
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("methylation_dmr_regions", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +74,7 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(enhancer_bed, "enhancer_bed"))
     if ctx is not None:
         for record in ctx.used:
-            files.append(input_file_record(str(record["path"]), f"resource:{record['id']}"))
+            files.append(input_file_record(str(record["path"]), f"resource:{record['id']}", resource_record=record))
 
     cfg = MethylationWorkflowConfig(
         converter_name="methylation_dmr_regions",

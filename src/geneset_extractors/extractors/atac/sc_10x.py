@@ -44,7 +44,8 @@ from geneset_extractors.core.atac_programs import (
     score_definition_key,
 )
 from geneset_extractors.core.reference_calibration import peak_overlap_mask, peak_ref_idf_by_overlap
-from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.qc import (
     collect_emitted_method_combinations,
     load_marker_genes,
@@ -666,6 +667,7 @@ def _contrast_peaks(group_vals: list[float], rest_vals: list[float], metric: str
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("atac_sc_10x", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1733,9 +1735,17 @@ def run(args) -> dict[str, object]:
                 }
             (out_dir / "manifest.meta.json").write_text(json.dumps(root_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-            writer = csv.writer(fh, delimiter="\t")
-            writer.writerow(["group", "path", "gmt_path"])
-            writer.writerows(manifest_rows)
+            rows = [
+                enrich_manifest_row(out_dir, out_dir / group_rel, {"group": group_name, "gmt_path": gmt_rel})
+                for group_name, group_rel, gmt_rel in manifest_rows
+            ]
+            writer = csv.DictWriter(
+                fh,
+                delimiter="\t",
+                fieldnames=["group", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id", "gmt_path"],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
 
     if groups_tsv:
         return {

@@ -16,7 +16,7 @@ from geneset_extractors.core.gmt import (
     resolve_gmt_out_path,
     write_gmt,
 )
-from geneset_extractors.core.metadata import make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, make_metadata, write_metadata
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.core.selection import (
     global_l1_weights,
@@ -516,7 +516,7 @@ def run_sc_programs_workflow(
     )
 
     combined_gmt_sets: list[tuple[str, list[str]]] = []
-    manifest_rows: list[tuple[str, str]] = []
+    manifest_rows: list[dict[str, object]] = []
     safe_ids_seen: set[str] = set()
 
     total_negative_raw = 0
@@ -656,7 +656,6 @@ def run_sc_programs_workflow(
 
         program_dir = out_dir / f"program={dedup_safe}"
         program_dir.mkdir(parents=True, exist_ok=True)
-        manifest_rows.append((base_program_id, str(program_dir.relative_to(out_dir))))
 
         _write_rows(program_dir / "geneset.tsv", selected_rows)
         if cfg.emit_full:
@@ -838,14 +837,19 @@ def run_sc_programs_workflow(
             },
         )
         write_metadata(program_dir / "geneset.meta.json", meta)
+        manifest_rows.append(enrich_manifest_row(out_dir, program_dir, {"program_id": base_program_id}))
 
     if not manifest_rows:
         raise ValueError("No valid programs were parsed after filtering.")
 
     manifest_path = out_dir / "manifest.tsv"
     with manifest_path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh, delimiter="\t")
-        writer.writerow(["program_id", "path"])
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=["program_id", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id"],
+        )
+        writer.writeheader()
         writer.writerows(manifest_rows)
 
     if cfg.emit_gmt and combined_gmt_sets:

@@ -3,7 +3,8 @@
 `geneset-extractors` RNA converters consume either differential expression (DE) tables or external scRNA program loadings and emit:
 
 - `geneset.tsv` (selected signed gene program with nonnegative weights)
-- `geneset.meta.json` (provenance + parameters)
+- `geneset.meta.json` (summary metadata + provenance pointer)
+- `geneset.provenance.json` (collapsed provenance graph for the emitted gene set)
 - optional `geneset.full.tsv`
 - optional `genesets.gmt` (directional UP/DOWN sets)
 
@@ -75,8 +76,11 @@ Grouped output layout:
 - `manifest.tsv`
 - `comparison=<NAME>/geneset.tsv`
 - `comparison=<NAME>/geneset.meta.json`
+- `comparison=<NAME>/geneset.provenance.json`
 - optional per-comparison `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined)
+
+The grouped `manifest.tsv` keeps `path` and now also includes `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
 
 ## Quickstart: scRNA program loadings (`rna_sc_programs`)
 
@@ -169,8 +173,26 @@ geneset-extractors convert rna_sc_programs \
 - `manifest.tsv`
 - `program=<ID>/geneset.tsv`
 - `program=<ID>/geneset.meta.json`
+- `program=<ID>/geneset.provenance.json`
 - optional per-program `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined across programs)
+
+## Optional provenance overlay
+
+If your DE table or program loadings live behind public object storage or a portal landing page, attach that information without changing the extractor inputs:
+
+```bash
+geneset-extractors convert rna_deg \
+  --deg_tsv path/to/deg.tsv \
+  --out_dir results/rna_deg_example \
+  --organism human \
+  --genome_build hg38 \
+  --provenance_overlay_json provenance_overlay.json
+```
+
+Typical overlay entries map an input path or `role:<input_role>` to `canonical_uri`, `download_url`, `landing_page_url`, or `persistent_id`, and can also set operation-level `script_url`, `notebook_url`, `container_image`, or `workspace_template_url`.
+
+Local-only provenance is still valid. Public URLs are only emitted when the converter or overlay explicitly knows them.
 
 ## Best practices for large scRNA maps (recommended upstream factorization workflow)
 

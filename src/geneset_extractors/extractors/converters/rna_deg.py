@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.rnaseq.deg_scoring import read_deg_tsv, sanitize_name_component
 from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("rna_deg", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

@@ -4,7 +4,8 @@ import csv
 from pathlib import Path
 import re
 
-from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.models import GeneWeights
 from geneset_extractors.core.normalization import normalize
 
@@ -47,6 +48,7 @@ def _summarize(values: list[float], method: str, n_cells: int) -> float:
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("sc_rna_marker", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,7 +69,7 @@ def run(args) -> dict[str, object]:
     if args.groups_tsv:
         files.append(input_file_record(args.groups_tsv, "groups_tsv"))
 
-    manifest_rows: list[tuple[str, str]] = []
+    manifest_rows: list[dict[str, object]] = []
     for group, group_barcodes in group_to_barcodes.items():
         gene_to_values: dict[str, list[float]] = {}
         for gene, bc, val in rows:
@@ -116,12 +118,16 @@ def run(args) -> dict[str, object]:
             },
         )
         write_metadata(group_dir / "geneset.meta.json", meta)
-        manifest_rows.append((group, str(group_dir.relative_to(out_dir))))
+        manifest_rows.append(enrich_manifest_row(out_dir, group_dir, {"group": group}))
 
     if args.groups_tsv:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-            writer = csv.writer(fh, delimiter="\t")
-            writer.writerow(["group", "path"])
+            writer = csv.DictWriter(
+                fh,
+                delimiter="\t",
+                fieldnames=["group", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id"],
+            )
+            writer.writeheader()
             writer.writerows(manifest_rows)
 
     return {"n_peaks": len(rows), "n_genes": len({g for g, _, _ in rows}), "out_dir": str(out_dir), "n_groups": len(group_to_barcodes)}

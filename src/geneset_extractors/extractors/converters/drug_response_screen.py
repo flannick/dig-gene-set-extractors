@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.drug_response.io import (
     ResponseRecord,
     read_case_control_tsv,
@@ -167,6 +168,7 @@ def _resolve_mode(args) -> str:
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("drug_response_screen", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

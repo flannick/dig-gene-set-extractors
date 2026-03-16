@@ -33,6 +33,17 @@ def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
         jsonschema.validate(payload, schema)
 
 
+def validate_provenance_schema(provenance_path: Path, schema_path: Path) -> None:
+    payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    try:
+        import jsonschema  # type: ignore
+    except ModuleNotFoundError:
+        _validate_required_fallback(payload, schema)
+    else:
+        jsonschema.validate(payload, schema)
+
+
 def validate_geneset_tsv(geneset_path: Path) -> None:
     with geneset_path.open("r", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -117,6 +128,7 @@ def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     geneset_full = out / "geneset.full.tsv"
     gmt = out / "genesets.gmt"
     meta = out / "geneset.meta.json"
+    provenance = out / "geneset.provenance.json"
     if not geneset.exists() or not meta.exists():
         raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
     validate_geneset_tsv(geneset)
@@ -125,6 +137,12 @@ def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     if gmt.exists():
         validate_gmt(gmt)
     validate_metadata_schema(meta, schema_path)
+    provenance_schema = schema_path.with_name("geneset_provenance.schema.json")
+    meta_payload = json.loads(meta.read_text(encoding="utf-8"))
+    if provenance.exists():
+        validate_provenance_schema(provenance, provenance_schema)
+    elif isinstance(meta_payload.get("provenance"), dict):
+        raise FileNotFoundError("metadata references geneset.provenance.json but file is missing")
 
 
 def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> dict[str, object]:

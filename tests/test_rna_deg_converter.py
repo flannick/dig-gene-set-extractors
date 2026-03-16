@@ -71,8 +71,49 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert any("__neg__" in line for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
     assert meta["converter"]["parameters"]["signature_name"] == "toy"
     assert meta["converter"]["parameters"]["score_mode"] == "stat"
+    assert meta["provenance"]["path"] == "geneset.provenance.json"
+    assert provenance["file_type"] == "provenance"
+    assert provenance["focus_node_id"] == meta["provenance"]["focus_node_id"]
+    assert any(node["kind"] == "geneset" for node in provenance["nodes"])
+
+
+def test_rna_deg_provenance_overlay_injects_public_links(tmp_path: Path):
+    overlay_path = tmp_path / "overlay.json"
+    overlay_path.write_text(
+        json.dumps(
+            {
+                "inputs": {
+                    "role:deg_tsv": {
+                        "canonical_uri": "gs://dig/example/toy_deg.tsv",
+                        "download_url": "https://example.org/toy_deg.tsv",
+                        "landing_page_url": "https://example.org/study",
+                        "access_level": "public"
+                    }
+                },
+                "operation": {
+                    "script_url": "https://example.org/notebooks/rna_deg.py",
+                    "container_image": "ghcr.io/example/dig:latest"
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_deg_overlay")
+    args.emit_gmt = False
+    args.provenance_overlay_json = str(overlay_path)
+    rna_deg.run(args)
+
+    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    deg_nodes = [node for node in provenance["nodes"] if node.get("role") == "deg_tsv"]
+    assert deg_nodes
+    assert deg_nodes[0]["access"]["canonical_uri"] == "gs://dig/example/toy_deg.tsv"
+    assert deg_nodes[0]["access"]["download_url"] == "https://example.org/toy_deg.tsv"
+    assert provenance["operations"][0]["code"]["script_url"] == "https://example.org/notebooks/rna_deg.py"
+    assert provenance["operations"][0]["replay"]["container_image"] == "ghcr.io/example/dig:latest"
 
 
 def test_rna_deg_selection_uses_abs_score(tmp_path: Path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.rnaseq.deg_scoring import sanitize_name_component
 from geneset_extractors.extractors.rnaseq.sc_program_workflow import (
     SCRNAProgramsWorkflowConfig,
@@ -46,6 +47,7 @@ def _resolve_requested_format(args, source_kind: str, source_path: str) -> str:
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("rna_sc_programs", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

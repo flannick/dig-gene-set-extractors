@@ -5,7 +5,8 @@ from pathlib import Path
 import re
 
 from geneset_extractors.core.gmt import write_gmt
-from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.rnaseq.deg_scoring import DEGRow, read_deg_tsv, sanitize_name_component
 from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
@@ -16,6 +17,7 @@ def _safe_name(value: str) -> str:
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("rna_deg_multi", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +46,7 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(args.gtf, "gtf"))
 
     used_paths: set[str] = set()
-    manifest_rows: list[tuple[str, str]] = []
+    manifest_rows: list[dict[str, object]] = []
     combined_gmt_sets: list[tuple[str, list[str]]] = []
     biotype_warning_seen = False
 
@@ -111,13 +113,17 @@ def run(args) -> dict[str, object]:
         )
         if bool(result.get("biotype_warning_emitted", False)):
             biotype_warning_seen = True
-        manifest_rows.append((comparison, str(group_dir.relative_to(out_dir))))
+        manifest_rows.append(enrich_manifest_row(out_dir, group_dir, {"comparison": comparison}))
         if args.emit_gmt:
             combined_gmt_sets.extend(result.get("gmt_sets", []))
 
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh, delimiter="\t")
-        writer.writerow(["comparison", "path"])
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=["comparison", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id"],
+        )
+        writer.writeheader()
         writer.writerows(manifest_rows)
 
     if args.emit_gmt and combined_gmt_sets:

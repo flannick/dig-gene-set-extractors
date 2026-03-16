@@ -111,9 +111,15 @@ def test_ptm_site_diff_converter_end_to_end(tmp_path: Path):
     assert any("__neg__" in line for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
     resources_info = meta["converter"]["parameters"]["resources"]
     assert len(resources_info["used"]) == 2
     assert meta["summary"]["n_sites_matched_to_ubiquity_prior"] >= 1
+    alias_nodes = [node for node in provenance["nodes"] if node.get("role") == "site_alias_table"]
+    assert alias_nodes
+    assert alias_nodes[0]["identifiers"].get("stable_id")
+    assert alias_nodes[0]["metadata"].get("provider")
+    assert alias_nodes[0]["access"]["local_path"]
 
 
 

@@ -227,6 +227,7 @@ Every extractor should write:
 
 1. `geneset.tsv`
 2. `geneset.meta.json`
+3. `geneset.provenance.json`
 
 Optional artifacts (extractor-specific):
 
@@ -234,6 +235,18 @@ Optional artifacts (extractor-specific):
 - `genesets.gmt`
 - `run_summary.json` / `run_summary.txt`
 - grouped outputs with `manifest.tsv`
+
+`geneset.meta.json` now includes shared DIG v0.1 fields:
+
+- `standard_name`, `standard_version`, `file_type`
+- `gene_set` summary metadata for indexing
+- `provenance.path` and `provenance.focus_node_id`
+
+`geneset.provenance.json` contains a compact provenance graph with one collapsed extraction operation per emitted gene set, explicit input file nodes, and replay/code pointers when known.
+
+Grouped `manifest.tsv` files keep the existing `path` column and now add indexing columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id` when available.
+
+All gene-set converters also accept `--provenance_overlay_json` to attach public URLs, persistent IDs, or external script/notebook/container metadata without changing assay-specific business logic.
 
 At minimum, output metadata should record:
 

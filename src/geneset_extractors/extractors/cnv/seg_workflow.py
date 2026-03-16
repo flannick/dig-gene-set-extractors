@@ -22,7 +22,7 @@ from geneset_extractors.core.gmt import (
     resolve_gmt_out_path,
     write_gmt,
 )
-from geneset_extractors.core.metadata import make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, make_metadata, write_metadata
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.core.selection import (
     global_l1_weights,
@@ -1265,13 +1265,19 @@ def run_cnv_workflow(
 
     manifest_path = out_dir / "manifest.tsv"
     with manifest_path.open("w", encoding="utf-8", newline="") as fh:
+        rows = [enrich_manifest_row(out_dir, out_dir / str(row["path"]), dict(row)) for row in manifest_rows]
         writer = csv.DictWriter(
             fh,
             delimiter="\t",
             fieldnames=[
                 "sample_id",
                 "program",
+                "geneset_id",
+                "label",
                 "path",
+                "meta_path",
+                "provenance_path",
+                "focus_node_id",
                 "scored_ok",
                 "gmt_emitted",
                 "emit_reason",
@@ -1282,7 +1288,7 @@ def run_cnv_workflow(
             ],
         )
         writer.writeheader()
-        for row in manifest_rows:
+        for row in rows:
             writer.writerow(row)
 
     program_manifest_path = out_dir / "cnv_program_manifest.tsv"

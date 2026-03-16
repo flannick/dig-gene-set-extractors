@@ -2,27 +2,58 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": [
+    "standard_name",
+    "standard_version",
+    "file_type",
     "schema_version",
     "created_at",
     "geneset_id",
+    "gene_set",
     "converter",
     "input",
     "gene_annotation",
     "weights",
-    "summary"
+    "summary",
+    "output",
+    "provenance"
   ],
   "properties": {
+    "standard_name": {"const": "dig.geneset"},
+    "standard_version": {"type": "string"},
+    "file_type": {"const": "metadata"},
     "schema_version": {"type": "string"},
     "created_at": {"type": "string"},
     "geneset_id": {"type": "string"},
+    "gene_set": {
+      "type": "object",
+      "required": ["id", "name", "assay", "data_type", "organism", "genome_build", "n_genes", "primary_artifact"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "assay": {"type": "string"},
+        "data_type": {"type": "string"},
+        "organism": {"type": "string"},
+        "genome_build": {"type": "string"},
+        "n_genes": {"type": "integer"},
+        "primary_artifact": {
+          "type": "object",
+          "required": ["path", "role"],
+          "properties": {
+            "path": {"type": "string"},
+            "role": {"type": "string"}
+          }
+        }
+      }
+    },
     "converter": {
       "type": "object",
-      "required": ["name", "version", "parameters", "code"],
+      "required": ["name", "version", "parameters", "code", "execution"],
       "properties": {
         "name": {"type": "string"},
         "version": {"type": "string"},
         "parameters": {"type": "object"},
-        "code": {"type": "object"}
+        "code": {"type": "object"},
+        "execution": {"type": "object"}
       }
     },
     "input": {
@@ -40,8 +71,19 @@
             "required": ["path", "role", "sha256"],
             "properties": {
               "path": {"type": "string"},
+              "local_path": {"type": "string"},
               "role": {"type": "string"},
-              "sha256": {"type": "string"}
+              "sha256": {"type": "string"},
+              "size_bytes": {"type": "integer"},
+              "canonical_uri": {"type": ["string", "null"]},
+              "download_url": {"type": ["string", "null"]},
+              "landing_page_url": {"type": ["string", "null"]},
+              "persistent_id": {"type": ["string", "null"]},
+              "provider": {"type": ["string", "null"]},
+              "version": {"type": ["string", "null"]},
+              "license": {"type": ["string", "null"]},
+              "access_level": {"type": ["string", "null"]},
+              "extensions": {"type": "object"}
             }
           }
         }
@@ -94,6 +136,7 @@
     },
     "output": {
       "type": "object",
+      "required": ["files"],
       "properties": {
         "files": {
           "type": "array",
@@ -106,6 +149,14 @@
             }
           }
         }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["path", "focus_node_id"],
+      "properties": {
+        "path": {"type": "string"},
+        "focus_node_id": {"type": "string"}
       }
     },
     "gmt": {

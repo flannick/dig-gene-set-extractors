@@ -9,7 +9,7 @@ import sys
 from statistics import median
 
 from geneset_extractors.core.gmt import build_gmt_sets_from_rows, parse_int_list_csv, parse_mass_list_csv, parse_str_list_csv, resolve_gmt_out_path, write_gmt
-from geneset_extractors.core.metadata import make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, make_metadata, write_metadata
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.core.selection import global_l1_weights, ranked_gene_ids, select_quantile, select_threshold, select_top_k, within_set_l1_weights
 from geneset_extractors.extractors.morphology.mapping import accumulate_gene_scores, bounded_reference_gene_mapping, build_reference_gene_maps, l1_normalize_scores
@@ -3344,6 +3344,7 @@ def run_morphology_workflow(
     if not manifest_rows:
         raise ValueError("No morphology programs were emitted. Check feature overlap, mappings, and input tables.")
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
+        rows = [enrich_manifest_row(out_dir, out_dir / str(row["path"]), dict(row)) for row in manifest_rows]
         writer = csv.DictWriter(
             fh,
             delimiter="\t",
@@ -3363,11 +3364,16 @@ def run_morphology_workflow(
                 "high_hub_mass_fraction",
                 "top_target_support_mass",
                 "n_genes_selected",
+                "geneset_id",
+                "label",
                 "path",
+                "meta_path",
+                "provenance_path",
+                "focus_node_id",
             ],
         )
         writer.writeheader()
-        for row in manifest_rows:
+        for row in rows:
             writer.writerow(row)
     if cfg.emit_gmt and combined_gmt_sets:
         write_gmt(combined_gmt_sets, out_dir / "genesets.gmt", gmt_format=cfg.gmt_format)

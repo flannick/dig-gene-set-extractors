@@ -151,6 +151,13 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--provenance_overlay_json",
+        help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
+    )
+
+
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
     parser.add_argument("--score_transform", choices=["signed", "abs", "positive", "negative"], default=default)
     parser.add_argument("--normalize", choices=["l1", "none"], default="l1")
@@ -1393,6 +1400,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_program_flags(p_bulk)
     _add_resource_flags(p_bulk)
     _add_gmt_flags(p_bulk)
+    _add_provenance_flags(p_bulk)
 
     p_bulk_matrix = conv.add_parser("atac_bulk_matrix")
     p_bulk_matrix.add_argument("--peak_matrix_tsv", required=True)
@@ -1416,6 +1424,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_program_flags(p_bulk_matrix)
     _add_resource_flags(p_bulk_matrix)
     _add_gmt_flags(p_bulk_matrix)
+    _add_provenance_flags(p_bulk_matrix)
 
     p_sc = conv.add_parser("atac_sc_10x")
     p_sc.add_argument("--matrix_dir", required=True)
@@ -1453,6 +1462,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_program_flags(p_sc)
     _add_resource_flags(p_sc)
     _add_gmt_flags(p_sc)
+    _add_provenance_flags(p_sc)
 
     p_rna = conv.add_parser("rna_deg")
     p_rna.add_argument("--deg_tsv", required=True)
@@ -1460,6 +1470,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna.add_argument("--genome_build", required=True)
     _add_rna_deg_flags(p_rna)
+    _add_provenance_flags(p_rna)
 
     p_rna_multi = conv.add_parser("rna_deg_multi")
     p_rna_multi.add_argument("--deg_tsv", required=True)
@@ -1468,12 +1479,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_multi.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna_multi.add_argument("--genome_build", required=True)
     _add_rna_deg_flags(p_rna_multi)
+    _add_provenance_flags(p_rna_multi)
 
     p_rna_sc_programs = conv.add_parser("rna_sc_programs")
     p_rna_sc_programs.add_argument("--out_dir", required=True)
     p_rna_sc_programs.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna_sc_programs.add_argument("--genome_build", required=True)
     _add_rna_sc_program_flags(p_rna_sc_programs)
+    _add_provenance_flags(p_rna_sc_programs)
 
     p_cnv = conv.add_parser("cnv_gene_extractor")
     p_cnv.add_argument("--segments_tsv", required=True)
@@ -1583,6 +1596,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_cnv.add_argument("--cohort_min_fraction", type=float, default=0.05)
     p_cnv.add_argument("--cohort_min_samples", type=int, default=5)
     _add_gmt_flags(p_cnv)
+    _add_provenance_flags(p_cnv)
     p_cnv.set_defaults(
         emit_gmt=True,
         gmt_split_signed=False,
@@ -1597,21 +1611,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_drug.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_drug.add_argument("--genome_build", required=True)
     _add_drug_response_flags(p_drug)
+    _add_provenance_flags(p_drug)
 
     p_calr_onto = conv.add_parser("calr_ontology_mapper")
     p_calr_onto.add_argument("--out_dir", required=True)
     p_calr_onto.add_argument("--organism", choices=["mouse", "human"], required=True)
     p_calr_onto.add_argument("--genome_build", required=True)
     _add_calr_ontology_mapper_flags(p_calr_onto)
+    _add_provenance_flags(p_calr_onto)
 
     p_calr_profile = conv.add_parser("calr_profile_query")
     p_calr_profile.add_argument("--out_dir", required=True)
     p_calr_profile.add_argument("--organism", choices=["mouse", "human"], required=True)
     p_calr_profile.add_argument("--genome_build", required=True)
     _add_calr_profile_query_flags(p_calr_profile)
+    _add_provenance_flags(p_calr_profile)
 
     p_morph = conv.add_parser("morphology_profile_query")
     _add_morphology_profile_query_flags(p_morph)
+    _add_provenance_flags(p_morph)
 
     p_chip = conv.add_parser("chipseq_peak")
     p_chip.add_argument("--peaks", required=True)
@@ -1625,6 +1643,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_chip.add_argument("--gtf_source")
     _add_linking_flags(p_chip)
     p_chip.set_defaults(link_method="promoter_overlap")
+    _add_provenance_flags(p_chip)
 
     p_meth_cpg = conv.add_parser("methylation_cpg_diff")
     p_meth_cpg.add_argument("--cpg_tsv", required=True)
@@ -1651,6 +1670,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_meth_cpg.add_argument("--manifest_pos_is_0based", type=_parse_bool, default=False)
     p_meth_cpg.add_argument("--probe_blacklist_tsv")
     _add_methylation_common_flags(p_meth_cpg)
+    _add_provenance_flags(p_meth_cpg)
 
     p_meth_dmr_regions = conv.add_parser("methylation_dmr_regions")
     p_meth_dmr_regions.add_argument("--dmr_tsv", required=True)
@@ -1664,6 +1684,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_meth_dmr_regions.add_argument("--padj_column")
     p_meth_dmr_regions.add_argument("--pvalue_column")
     _add_methylation_common_flags(p_meth_dmr_regions)
+    _add_provenance_flags(p_meth_dmr_regions)
 
     p_meth = conv.add_parser("methylation_dmr")
     p_meth.add_argument("--dmr_tsv", required=True)
@@ -1673,6 +1694,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_meth.add_argument("--gene_id_column", default="gene_id")
     p_meth.add_argument("--score_column", default="delta_methylation")
     _add_transform_flags(p_meth, default="abs")
+    _add_provenance_flags(p_meth)
 
     p_prot = conv.add_parser("proteomics_diff")
     p_prot.add_argument("--proteomics_tsv", required=True)
@@ -1682,6 +1704,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_prot.add_argument("--gene_id_column", default="gene_id")
     p_prot.add_argument("--score_column", default="log2fc")
     _add_transform_flags(p_prot, default="abs")
+    _add_provenance_flags(p_prot)
 
     p_ptm = conv.add_parser("ptm_site_diff")
     p_ptm.add_argument("--ptm_tsv", required=True)
@@ -1689,6 +1712,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ptm.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_ptm.add_argument("--genome_build", required=True)
     _add_ptm_site_diff_flags(p_ptm)
+    _add_provenance_flags(p_ptm)
 
     p_ptm_matrix = conv.add_parser("ptm_site_matrix")
     p_ptm_matrix.add_argument("--ptm_matrix_tsv", required=True)
@@ -1696,6 +1720,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ptm_matrix.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_ptm_matrix.add_argument("--genome_build", required=True)
     _add_ptm_site_matrix_flags(p_ptm_matrix)
+    _add_provenance_flags(p_ptm_matrix)
 
     p_splice = conv.add_parser("splice_event_diff")
     p_splice.add_argument("--splice_tsv", required=True)
@@ -1703,6 +1728,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_splice.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_splice.add_argument("--genome_build", required=True)
     _add_splice_event_diff_flags(p_splice)
+    _add_provenance_flags(p_splice)
 
     p_splice_matrix = conv.add_parser("splice_event_matrix")
     p_splice_matrix.add_argument("--psi_matrix_tsv", required=True)
@@ -1710,6 +1736,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_splice_matrix.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_splice_matrix.add_argument("--genome_build", required=True)
     _add_splice_event_matrix_flags(p_splice_matrix)
+    _add_provenance_flags(p_splice_matrix)
 
     p_scrna = conv.add_parser("sc_rna_marker")
     p_scrna.add_argument("--counts_tsv", required=True)
@@ -1724,6 +1751,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_scrna.add_argument("--group_column", default="group")
     p_scrna.add_argument("--peak_summary", choices=["sum_counts", "mean_counts", "frac_cells_nonzero"], default="sum_counts")
     p_scrna.add_argument("--normalize", choices=["l1", "none"], default="l1")
+    _add_provenance_flags(p_scrna)
 
     return parser
 

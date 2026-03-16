@@ -15,7 +15,7 @@ from geneset_extractors.core.gmt import (
     resolve_gmt_out_path,
     write_gmt,
 )
-from geneset_extractors.core.metadata import make_metadata, write_metadata
+from geneset_extractors.core.metadata import enrich_manifest_row, make_metadata, write_metadata
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.core.selection import (
     global_l1_weights,
@@ -1000,20 +1000,23 @@ def run_drug_response_workflow(
                     row["sets_emitted"] = int(row.get("sets_emitted", 0) or 0) + int(len(gmt_sets))
 
         manifest_rows.append(
-            {
-                "program_id": program_id,
-                "group": group_name,
-                "contrast_method": cfg.contrast_method,
-                "signed": str(signed).lower(),
-                "n_samples": int(program.get("n_samples", 0) or 0),
-                "n_group": int(group_qc.get("n_group", 0) or 0),
-                "n_rest": int(group_qc.get("n_rest", 0) or 0),
-                "n_case": int(group_qc.get("n_case", 0) or 0),
-                "n_control": int(group_qc.get("n_control", 0) or 0),
-                "criterion": float(program.get("criterion", 0.0) or 0.0),
-                "sets_emitted": int(len(gmt_sets)),
-                "path": str(program_dir.relative_to(out_dir)),
-            }
+            enrich_manifest_row(
+                out_dir,
+                program_dir,
+                {
+                    "program_id": program_id,
+                    "group": group_name,
+                    "contrast_method": cfg.contrast_method,
+                    "signed": str(signed).lower(),
+                    "n_samples": int(program.get("n_samples", 0) or 0),
+                    "n_group": int(group_qc.get("n_group", 0) or 0),
+                    "n_rest": int(group_qc.get("n_rest", 0) or 0),
+                    "n_case": int(group_qc.get("n_case", 0) or 0),
+                    "n_control": int(group_qc.get("n_control", 0) or 0),
+                    "criterion": float(program.get("criterion", 0.0) or 0.0),
+                    "sets_emitted": int(len(gmt_sets)),
+                },
+            )
         )
 
     manifest_path = out_dir / "manifest.tsv"
@@ -1039,7 +1042,12 @@ def run_drug_response_workflow(
                 "n_control",
                 "criterion",
                 "sets_emitted",
+                "geneset_id",
+                "label",
                 "path",
+                "meta_path",
+                "provenance_path",
+                "focus_node_id",
             ],
         )
         writer.writeheader()

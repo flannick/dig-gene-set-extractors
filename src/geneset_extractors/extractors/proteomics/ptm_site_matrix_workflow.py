@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from geneset_extractors.core.gmt import write_gmt
-from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.extractors.proteomics.ptm_site_diff_workflow import (
     PTMRow,
@@ -726,17 +726,20 @@ def run_ptm_site_matrix_workflow(
             qc_rows.append(qc_row)
             if multiple:
                 manifest_rows.append(
-                    {
-                        "contrast_id": contrast.contrast_id,
-                        "study_contrast": contrast.study_contrast,
-                        "group_label": contrast.group_label or "",
-                        "condition_a": contrast.condition_a or "",
-                        "condition_b": contrast.condition_b or "",
-                        "protein_adjustment": variant.protein_adjustment,
-                        "gene_topk_sites": variant.gene_topk_sites,
-                        "variant_id": variant.variant_id,
-                        "path": str(child_out_dir.relative_to(out_dir)),
-                    }
+                    enrich_manifest_row(
+                        out_dir,
+                        child_out_dir,
+                        {
+                            "contrast_id": contrast.contrast_id,
+                            "study_contrast": contrast.study_contrast,
+                            "group_label": contrast.group_label or "",
+                            "condition_a": contrast.condition_a or "",
+                            "condition_b": contrast.condition_b or "",
+                            "protein_adjustment": variant.protein_adjustment,
+                            "gene_topk_sites": variant.gene_topk_sites,
+                            "variant_id": variant.variant_id,
+                        },
+                    )
                 )
             child_gmt_path = child_out_dir / "genesets.gmt"
             if cfg.emit_gmt and child_gmt_path.exists():
@@ -763,7 +766,12 @@ def run_ptm_site_matrix_workflow(
                     "protein_adjustment",
                     "gene_topk_sites",
                     "variant_id",
+                    "geneset_id",
+                    "label",
                     "path",
+                    "meta_path",
+                    "provenance_path",
+                    "focus_node_id",
                 ],
             )
             writer.writeheader()

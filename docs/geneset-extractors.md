@@ -14,6 +14,20 @@ CLI entrypoint aliases are provided for convenience.
 
 Both CLI names dispatch to the same implementation.
 
+## Output metadata and provenance
+
+Every emitted gene-set directory now writes:
+
+- `geneset.tsv`
+- `geneset.meta.json`
+- `geneset.provenance.json`
+
+`geneset.meta.json` is the compact summary/index file. `geneset.provenance.json` is the graph-oriented record with file nodes, a focus gene-set node, and one collapsed `extract_gene_set` operation.
+
+Grouped outputs still use `manifest.tsv`, but manifests now retain `path` and add portal-friendly columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
+
+Use `--provenance_overlay_json <overlay.json>` with any converter when you want to enrich local-only provenance with known public URLs, persistent IDs, script URLs, notebook URLs, or replay/container metadata.
+
 ## Practical guides
 
 - ATAC-seq: `docs/assays/atac/guide.md`

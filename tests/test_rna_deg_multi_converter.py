@@ -1,3 +1,5 @@
+import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -65,6 +67,13 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows
+    assert {"geneset_id", "label", "meta_path", "provenance_path", "focus_node_id"}.issubset(rows[0].keys())
+    first_meta = json.loads((out_dir / rows[0]["meta_path"]).read_text(encoding="utf-8"))
+    assert rows[0]["focus_node_id"] == first_meta["provenance"]["focus_node_id"]
+    assert (out_dir / rows[0]["provenance_path"]).exists()
 
 
 def test_rna_deg_multi_sanitizes_unsafe_comparison_label_in_gmt(tmp_path: Path):

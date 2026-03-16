@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.proteomics.ptm_site_diff_workflow import (
     PTMWorkflowConfig,
     read_site_alias_tsv,
@@ -38,6 +39,7 @@ def _default_ubiquity_resource_id(organism: str, ptm_type: str) -> str | None:
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("ptm_site_diff", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -88,11 +90,18 @@ def run(args) -> dict[str, object]:
     alias_map = read_site_alias_tsv(alias_path) if alias_path is not None else None
     ubiquity_map = read_site_ubiquity_tsv(ubiquity_path) if ubiquity_path is not None else None
 
+    used_by_id = {str(record.get("id")): record for record in (ctx.used if ctx is not None else [])}
     files = [input_file_record(args.ptm_tsv, "ptm_tsv")]
     if alias_path is not None:
-        files.append(input_file_record(alias_path, "site_alias_table"))
+        files.append(input_file_record(alias_path, "site_alias_table", resource_record=used_by_id.get(str(alias_resource_id))))
     if ubiquity_path is not None:
-        files.append(input_file_record(ubiquity_path, "site_ubiquity_table"))
+        files.append(
+            input_file_record(
+                ubiquity_path,
+                "site_ubiquity_table",
+                resource_record=used_by_id.get(str(ubiquity_resource_id)),
+            )
+        )
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.ptm_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.ptm_tsv).stem

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.splicing.resource_utils import (
     ResourceContext,
     build_resources_info,
@@ -74,6 +75,7 @@ def _resource_file_exists(ctx: ResourceContext, resource_id: str | None) -> bool
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("splice_event_matrix", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

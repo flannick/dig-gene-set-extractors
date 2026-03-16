@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "standard_name",
+    "standard_version",
+    "file_type",
+    "focus_node_id",
+    "nodes",
+    "operations"
+  ],
+  "properties": {
+    "standard_name": {"const": "dig.geneset"},
+    "standard_version": {"type": "string"},
+    "file_type": {"const": "provenance"},
+    "focus_node_id": {"type": "string"},
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "label"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "label": {"type": "string"},
+          "role": {"type": "string"},
+          "format": {"type": "string"},
+          "access": {"type": "object"},
+          "identifiers": {"type": "object"},
+          "hashes": {"type": "object"},
+          "size_bytes": {"type": ["integer", "null"]},
+          "metadata": {"type": "object"},
+          "extensions": {"type": "object"}
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "operation_type",
+          "method",
+          "inputs",
+          "outputs",
+          "code",
+          "parameters",
+          "replay"
+        ],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "operation_type": {"const": "extract_gene_set"},
+          "method": {"type": "string"},
+          "inputs": {"type": "array", "items": {"type": "string"}},
+          "outputs": {"type": "array", "items": {"type": "string"}},
+          "code": {"type": "object"},
+          "parameters": {"type": "object"},
+          "replay": {"type": "object"}
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "kind"],
+        "properties": {
+          "source": {"type": "string"},
+          "target": {"type": "string"},
+          "kind": {"type": "string"}
+        }
+      }
+    }
+  }
+}

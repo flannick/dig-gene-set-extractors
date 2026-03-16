@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from geneset_extractors.core.gmt import write_gmt
+from geneset_extractors.core.metadata import enrich_manifest_row
 from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.extractors.rnaseq.deg_scoring import sanitize_name_component
 from geneset_extractors.extractors.splicing.splice_event_diff_workflow import (
@@ -653,9 +654,26 @@ def run_splice_event_matrix_workflow(
 
     if multiple:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
-            writer = csv.DictWriter(fh, delimiter="\t", fieldnames=["contrast_id", "study_contrast", "group_label", "condition_a", "condition_b", "path"])
+            rows = [enrich_manifest_row(out_dir, out_dir / str(row["path"]), row) for row in manifest_rows]
+            writer = csv.DictWriter(
+                fh,
+                delimiter="\t",
+                fieldnames=[
+                    "contrast_id",
+                    "study_contrast",
+                    "group_label",
+                    "condition_a",
+                    "condition_b",
+                    "geneset_id",
+                    "label",
+                    "path",
+                    "meta_path",
+                    "provenance_path",
+                    "focus_node_id",
+                ],
+            )
             writer.writeheader()
-            for row in manifest_rows:
+            for row in rows:
                 writer.writerow(row)
 
     with (out_dir / "contrast_qc.tsv").open("w", encoding="utf-8", newline="") as fh:
