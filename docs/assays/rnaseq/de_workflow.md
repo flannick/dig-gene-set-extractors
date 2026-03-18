@@ -112,6 +112,7 @@ Use `r_limma_voom` or `r_dream` when design complexity matters and the R stack i
   - balances each two-group comparison to `min(n_group_a, n_group_b)` after eligibility filtering
   - deterministic by seed; default seed is `1`
   - keeps the fit simple but still allows explicit fixed-effect covariates, for example `SEX,SMTSD`
+  - defaults `gene_filter_scope` to `stratum`, so expression filtering is computed once across all eligible samples in the stratum instead of separately per contrast
   - warns if you use the preset without explicit covariates because broad tissues are more likely to drift toward generic signatures
   - writes selected sample IDs and pre/post balance counts to:
     - `comparison_selected_samples.tsv`
@@ -170,7 +171,7 @@ geneset-extractors workflows rna_de_prepare \
   --genome_build hg38
 ```
 
-The audit outputs will record both the eligible pool and the balanced pool per contrast, along with the resolved covariates and the balancing seed.
+The audit outputs will record both the eligible pool and the balanced pool per contrast, along with the resolved covariates, the balancing seed, and the resolved `gene_filter_scope`.
 
 A concrete validation example for the GTEx adipose aging contrast is recorded in:
 

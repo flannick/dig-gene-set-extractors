@@ -35,6 +35,7 @@ def write_script(
     output_tsv: str | Path,
     covariates_csv: str,
     batch_columns_csv: str,
+    gene_filter_scope: str,
 ) -> Path:
     path = Path(script_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +76,18 @@ for (i in seq_len(nrow(comps))) {{
   if (sum(sub_meta$.__group == ga) < 2 || sum(sub_meta$.__group == gb) < 2) next
   sub_counts <- count_mat[, sub_meta$sample_id, drop=FALSE]
   y <- DGEList(counts=sub_counts)
-  keep_genes <- filterByExpr(y, group=sub_meta$.__group)
+  if ("{gene_filter_scope}" == "stratum") {{
+    strata_cols <- setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b"))
+    scope_meta <- meta
+    for (col_name in strata_cols) {{
+      scope_meta <- scope_meta[as.character(scope_meta[[col_name]]) == as.character(comp[[col_name]][1]), , drop=FALSE]
+    }}
+    scope_meta <- scope_meta[nzchar(as.character(scope_meta[[gcol]])), , drop=FALSE]
+    scope_counts <- count_mat[, scope_meta$sample_id, drop=FALSE]
+    keep_genes <- filterByExpr(DGEList(counts=scope_counts))
+  }} else {{
+    keep_genes <- filterByExpr(y, group=sub_meta$.__group)
+  }}
   y <- y[keep_genes, , keep.lib.sizes=FALSE]
   y <- calcNormFactors(y)
   formula_terms <- c(".__group", extra_cols[extra_cols %in% colnames(sub_meta)])

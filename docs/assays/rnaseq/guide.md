@@ -20,7 +20,7 @@ Upstream RNA preparation and inference now live under `workflows` / internal `pr
 There are now two separate Harmonizome-related controls in the RNA stack:
 
 - workflow-side `workflows rna_de_prepare --de_mode harmonizome`
-  - changes how DE is fit and how samples are balanced before fitting
+  - changes how DE is fit, how samples are balanced before fitting, and how expression filtering is scoped before fitting
 - extractor-side `convert rna_deg[_multi] --postprocess_mode harmonizome`
   - changes how an existing DE table is filtered/ranked into signatures
 

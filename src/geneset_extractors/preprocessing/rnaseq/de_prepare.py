@@ -43,6 +43,7 @@ class ComparisonSampleSelection:
     spec: ComparisonSpec
     group_b_label: str
     selected_rows: list[dict[str, str]]
+    filter_scope_rows: list[dict[str, str]]
     audit_row: dict[str, Any]
     selected_sample_rows: list[dict[str, Any]]
 
@@ -176,6 +177,7 @@ def _select_balanced_rows(
     spec: ComparisonSpec,
     balance_groups: bool,
     balance_seed: int,
+    gene_filter_scope: str,
 ) -> ComparisonSampleSelection:
     group_b_label = spec.group_b if spec.group_b else "rest"
     grouped_rows: dict[str, list[dict[str, str]]] = {
@@ -224,12 +226,15 @@ def _select_balanced_rows(
         for key, value in sorted(spec.strata.items()):
             sample_row[key] = value
         selected_sample_rows.append(sample_row)
+    filter_scope_rows = list(rows) if gene_filter_scope == "stratum" else list(selected_rows)
     audit_row: dict[str, Any] = {
         "comparison_id": spec.comparison_id,
         "comparison_kind": spec.comparison_kind,
         "group_column": spec.group_column,
         "group_a": spec.group_a,
         "group_b": group_b_label,
+        "gene_filter_scope": gene_filter_scope,
+        "n_filter_scope_samples": len(filter_scope_rows),
         "balance_requested": bool(balance_groups),
         "balance_applied": bool(balance_applied),
         "balance_seed": int(balance_seed),
@@ -247,6 +252,7 @@ def _select_balanced_rows(
         spec=spec,
         group_b_label=group_b_label,
         selected_rows=selected_rows,
+        filter_scope_rows=filter_scope_rows,
         audit_row=audit_row,
         selected_sample_rows=selected_sample_rows,
     )
@@ -260,17 +266,22 @@ def _resolve_de_mode_settings(
     balance_groups_explicit: bool,
     balance_seed: int,
     balance_seed_explicit: bool,
+    gene_filter_scope: str,
+    gene_filter_scope_explicit: bool,
     covariate_cols: list[str],
     batch_cols: list[str],
     repeated_measures: bool,
-) -> tuple[str, bool, int]:
+) -> tuple[str, bool, int, str]:
     resolved_mode = _clean(de_mode) or "modern"
     if resolved_mode not in {"modern", "harmonizome"}:
         raise ValueError(f"Unsupported de_mode: {resolved_mode}")
     resolved_balance = bool(balance_groups)
     resolved_seed = int(balance_seed)
+    resolved_gene_filter_scope = _clean(gene_filter_scope) or "contrast"
+    if resolved_gene_filter_scope not in {"contrast", "stratum"}:
+        raise ValueError(f"Unsupported gene_filter_scope: {resolved_gene_filter_scope}")
     if resolved_mode != "harmonizome":
-        return resolved_mode, resolved_balance, resolved_seed
+        return resolved_mode, resolved_balance, resolved_seed, resolved_gene_filter_scope
     if modality != "bulk":
         raise ValueError("de_mode=harmonizome currently supports bulk RNA-seq only")
     if batch_cols or repeated_measures:
@@ -281,7 +292,9 @@ def _resolve_de_mode_settings(
         resolved_balance = True
     if not balance_seed_explicit:
         resolved_seed = 1
-    return resolved_mode, resolved_balance, resolved_seed
+    if not gene_filter_scope_explicit:
+        resolved_gene_filter_scope = "stratum"
+    return resolved_mode, resolved_balance, resolved_seed, resolved_gene_filter_scope
 
 
 
@@ -355,6 +368,7 @@ def _run_r_backend(
     covariates: list[str],
     batch_columns: list[str],
     random_effect_column: str | None,
+    gene_filter_scope: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     work_dir = out_dir / "backend_work"
     counts_path, metadata_path, comparisons_path, selected_samples_path = _write_backend_inputs(
@@ -378,6 +392,7 @@ def _run_r_backend(
             output_tsv=output_path,
             covariates_csv=",".join(covariates),
             batch_columns_csv=",".join(batch_columns),
+            gene_filter_scope=gene_filter_scope,
         )
         rscript = detail
     elif backend_name == "r_dream":
@@ -396,6 +411,7 @@ def _run_r_backend(
             covariates_csv=",".join(covariates),
             batch_columns_csv=",".join(batch_columns),
             random_effect_column=random_effect_column,
+            gene_filter_scope=gene_filter_scope,
         )
         rscript = detail
     else:
@@ -469,8 +485,10 @@ def run_de_prepare(
     de_mode: str,
     balance_groups: bool,
     balance_seed: int,
+    gene_filter_scope: str,
     balance_groups_explicit: bool,
     balance_seed_explicit: bool,
+    gene_filter_scope_explicit: bool,
     repeated_measures: bool,
     allow_approximate_repeated_measures: bool,
     backend: str,
@@ -501,13 +519,15 @@ def run_de_prepare(
     stratify_cols = parse_csv_columns(stratify_by)
     covariate_cols = parse_csv_columns(covariates)
     batch_cols = parse_csv_columns(batch_columns)
-    resolved_de_mode, resolved_balance_groups, resolved_balance_seed = _resolve_de_mode_settings(
+    resolved_de_mode, resolved_balance_groups, resolved_balance_seed, resolved_gene_filter_scope = _resolve_de_mode_settings(
         de_mode=de_mode,
         modality=modality,
         balance_groups=balance_groups,
         balance_groups_explicit=balance_groups_explicit,
         balance_seed=balance_seed,
         balance_seed_explicit=balance_seed_explicit,
+        gene_filter_scope=gene_filter_scope,
+        gene_filter_scope_explicit=gene_filter_scope_explicit,
         covariate_cols=covariate_cols,
         batch_cols=batch_cols,
         repeated_measures=repeated_measures,
@@ -679,10 +699,12 @@ def run_de_prepare(
             spec=spec,
             balance_groups=resolved_balance_groups,
             balance_seed=resolved_balance_seed,
+            gene_filter_scope=resolved_gene_filter_scope,
         )
         selected_sample_rows_all.extend(selection.selected_sample_rows)
         audit_row = dict(selection.audit_row)
         audit_row["de_mode"] = resolved_de_mode
+        audit_row["gene_filter_scope"] = resolved_gene_filter_scope
         audit_row["covariates_used"] = covariates_used
         audit_row["batch_columns_used"] = batch_columns_used
         audit_row["harmonizome_covariate_mode"] = harmonizome_covariate_mode
@@ -721,6 +743,7 @@ def run_de_prepare(
             covariates=covariate_cols,
             batch_columns=batch_cols,
             random_effect_column=random_effect_column,
+            gene_filter_scope=resolved_gene_filter_scope,
         )
     else:
         backend_summary = {"backend": "lightweight", "n_rows": 0}
@@ -804,6 +827,8 @@ def run_de_prepare(
             "group_a",
             "group_b",
             "de_mode",
+            "gene_filter_scope",
+            "n_filter_scope_samples",
             "covariates_used",
             "batch_columns_used",
             "harmonizome_covariate_mode",
@@ -907,6 +932,7 @@ def run_de_prepare(
         "genome_build": genome_build,
         "counts_tsv": str(counts_tsv),
         "de_mode": resolved_de_mode,
+        "gene_filter_scope": resolved_gene_filter_scope,
         "covariates_used": covariate_cols,
         "batch_columns_used": batch_cols,
         "harmonizome_covariate_mode": harmonizome_covariate_mode,

@@ -52,8 +52,10 @@ class BulkArgs(SimpleNamespace):
     de_mode = "modern"
     balance_groups = False
     balance_seed = 0
+    gene_filter_scope = "contrast"
     balance_groups_explicit = False
     balance_seed_explicit = False
+    gene_filter_scope_explicit = False
     repeated_measures = False
     allow_approximate_repeated_measures = False
     backend = "lightweight"
@@ -275,6 +277,7 @@ def test_r_backend_scripts_drop_gene_symbol_metadata_column(tmp_path: Path):
         output_tsv=tmp_path / "deg.tsv",
         covariates_csv="",
         batch_columns_csv="",
+        gene_filter_scope="contrast",
     )
     dream_script = r_dream.write_script(
         script_path=tmp_path / "run_dream.R",
@@ -286,6 +289,7 @@ def test_r_backend_scripts_drop_gene_symbol_metadata_column(tmp_path: Path):
         covariates_csv="",
         batch_columns_csv="",
         random_effect_column="subject_id",
+        gene_filter_scope="contrast",
     )
     for script_path in (limma_script, dream_script):
         text = script_path.read_text(encoding="utf-8")
@@ -317,6 +321,26 @@ def test_rna_de_prepare_bulk_writes_deg_long_and_summary(tmp_path: Path):
     assert summary["workflow"] == "rna_de_prepare"
     assert summary["metadata_join"]["n_joined"] == 6
 
+
+
+def test_rna_de_prepare_harmonizome_mode_defaults_gene_filter_scope_to_stratum(tmp_path: Path):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_harmonizome_filter_scope"),
+        de_mode="harmonizome",
+        backend="lightweight",
+    )
+    run_rna_de_prepare(args)
+    audit_rows = list(
+        csv.DictReader((Path(args.out_dir) / "comparison_audit.tsv").open("r", encoding="utf-8"), delimiter="	")
+    )
+    audit = audit_rows[0]
+    assert audit["gene_filter_scope"] == "stratum"
+    assert audit["n_filter_scope_samples"] == "6"
+    summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
+    assert summary["gene_filter_scope"] == "stratum"
 
 
 def test_rna_de_prepare_harmonizome_mode_balances_bulk_contrast_and_writes_audit(tmp_path: Path):
@@ -355,6 +379,21 @@ def test_rna_de_prepare_harmonizome_mode_balances_bulk_contrast_and_writes_audit
     assert summary["de_mode"] == "harmonizome"
     assert summary["balance_groups"] is True
     assert summary["balance_seed"] == 1
+
+
+def test_rna_de_prepare_modern_mode_respects_explicit_gene_filter_scope(tmp_path: Path):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_modern_filter_scope"),
+        backend="lightweight",
+        gene_filter_scope="stratum",
+        gene_filter_scope_explicit=True,
+    )
+    run_rna_de_prepare(args)
+    summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
+    assert summary["gene_filter_scope"] == "stratum"
 
 
 def test_rna_de_prepare_modern_mode_keeps_all_samples_on_unbalanced_bulk(tmp_path: Path):

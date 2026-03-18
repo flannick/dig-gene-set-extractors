@@ -620,6 +620,17 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
         action=_StoreWithExplicitFlag,
         help="Base seed for deterministic per-comparison balancing. harmonizome mode defaults this to 1 unless explicitly overridden.",
     )
+    parser.add_argument(
+        "--gene_filter_scope",
+        choices=["contrast", "stratum"],
+        default="contrast",
+        action=_StoreWithExplicitFlag,
+        help=(
+            "Scope used for expression filtering before DE. contrast filters on the selected comparison samples only. "
+            "stratum filters on all eligible samples in the comparison stratum and reuses that feature set across contrasts. "
+            "harmonizome mode defaults this to stratum unless explicitly overridden."
+        ),
+    )
     parser.add_argument("--repeated_measures", type=_parse_bool, default=False)
     parser.add_argument("--allow_approximate_repeated_measures", type=_parse_bool, default=False)
     parser.add_argument(
