@@ -111,13 +111,22 @@ Use `r_limma_voom` or `r_dream` when design complexity matters and the R stack i
   - explicit bulk-RNA preset for GTEx/Harmonizome-style aging contrasts
   - balances each two-group comparison to `min(n_group_a, n_group_b)` after eligibility filtering
   - deterministic by seed; default seed is `1`
+  - keeps the fit simple but still allows explicit fixed-effect covariates, for example `SEX,SMTSD`
+  - warns if you use the preset without explicit covariates because broad tissues are more likely to drift toward generic signatures
   - writes selected sample IDs and pre/post balance counts to:
     - `comparison_selected_samples.tsv`
     - `comparison_audit.tsv`
   - currently limited to simple two-group bulk designs
-  - rejects covariates, batch columns, and repeated-measures flags so the fit stays auditable
+  - rejects batch columns and repeated-measures flags so the fit stays auditable
 
 Balancing is not the universal default. If you want the original general-purpose behavior, stay in `modern` mode or leave `--de_mode` unset.
+
+Use `harmonizome` when the goal is conservative signature generation in broad, heterogeneous tissues where an imbalanced fit tends to surface mitochondrial, housekeeping, or generic bulk-expression signals. Do not use it as a universal default:
+
+- it discards samples deliberately
+- it is bulk-only in the current implementation
+- it is not the right preset for repeated-measures or batch-heavy designs
+- the general `modern` mode remains preferable when you want maximum power and standard DE inference
 
 ## Bulk example: two-group DE
 
@@ -153,13 +162,15 @@ geneset-extractors workflows rna_de_prepare \
   --comparisons_tsv path/to/gtex_age_comparisons.tsv \
   --stratify_by tissue \
   --de_mode harmonizome \
+  --covariates SEX,SMTSD \
+  --balance_seed 1 \
   --backend auto \
   --out_dir results/rna_de_harmonizome \
   --organism human \
   --genome_build hg38
 ```
 
-The audit outputs will record both the eligible pool and the balanced pool per contrast.
+The audit outputs will record both the eligible pool and the balanced pool per contrast, along with the resolved covariates and the balancing seed.
 
 A concrete validation example for the GTEx adipose aging contrast is recorded in:
 
@@ -203,7 +214,7 @@ geneset-extractors workflows rna_de_prepare \
   --comparison_mode reference_level \
   --reference_level 20-29 \
   --stratify_by tissue \
-  --covariates sex \
+  --covariates SEX,SMTSD \
   --backend auto \
   --out_dir results/rna_de_age_bins \
   --organism human \
@@ -212,7 +223,7 @@ geneset-extractors workflows rna_de_prepare \
 
 This emits many contrast rows in one long table while preserving a generic interface. There is no GTEx-specific hardcoded preset in the extractor layer.
 
-If you want GTEx-like contrasts but still want the general-purpose fit, keep `--de_mode modern` and use all eligible samples. If you want closer notebook parity, switch to `--de_mode harmonizome`.
+If you want GTEx-like contrasts but still want the general-purpose fit, keep `--de_mode modern` and use all eligible samples, optionally with explicit covariates such as `SEX,SMTSD`. If you want a narrower, more notebook-like and more conservative signature-oriented fit, switch to `--de_mode harmonizome`.
 
 ## Run the extractor after prepare
 
@@ -273,6 +284,7 @@ Bulk:
 - keep low-expression filtering on
 - prefer `auto` backend resolution
 - use `--de_mode harmonizome` only when you explicitly want balanced notebook-style bulk contrasts
+- if you use `harmonizome`, prefer explicit covariates for broad tissues rather than relying on the warning-only no-covariate path
 
 scRNA:
 

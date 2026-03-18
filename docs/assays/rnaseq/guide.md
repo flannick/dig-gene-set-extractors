@@ -208,13 +208,22 @@ geneset-extractors workflows rna_de_prepare \
   --comparisons_tsv path/to/gtex_age_comparisons.tsv \
   --stratify_by tissue \
   --de_mode harmonizome \
+  --covariates SEX,SMTSD \
+  --balance_seed 1 \
   --backend auto \
   --out_dir results/rna_de_harmonizome \
   --organism human \
   --genome_build hg38
 ```
 
-This keeps the DE fit notebook-like by balancing each contrast to equal group sizes, records the selected sample IDs in `comparison_selected_samples.tsv`, and writes pre/post balance counts to `comparison_audit.tsv`.
+This keeps the DE fit notebook-like by balancing each contrast to equal group sizes, allows explicit fixed-effect covariates for broad tissues, records the selected sample IDs in `comparison_selected_samples.tsv`, and writes pre/post balance counts plus resolved covariates to `comparison_audit.tsv`.
+
+Use this preset when you want conservative, directional gene-set construction in heterogeneous tissues. Do not treat it as a universal RNA DE default:
+
+- it discards samples deliberately
+- it is bulk-only
+- it rejects batch and repeated-measures designs
+- if you omit explicit covariates, the workflow warns and records that choice in `prepare_summary.json`
 
 If you want the workflow to call the extractor internally:
 

@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -63,6 +64,23 @@ def _unique_preserving(values: list[str]) -> list[str]:
         out.append(value)
         seen.add(value)
     return out
+
+
+def _metadata_columns_present(rows: list[dict[str, str]], columns: list[str]) -> tuple[list[str], list[str]]:
+    if not columns:
+        return [], []
+    present: set[str] = set()
+    populated: set[str] = set()
+    for row in rows:
+        for key, value in row.items():
+            if key:
+                key_str = str(key)
+                present.add(key_str)
+                if _clean(value):
+                    populated.add(key_str)
+    missing = [col for col in columns if col not in present]
+    blank_only = [col for col in columns if col in present and col not in populated]
+    return missing, blank_only
 
 
 def _stable_seed(*parts: object) -> int:
@@ -255,9 +273,9 @@ def _resolve_de_mode_settings(
         return resolved_mode, resolved_balance, resolved_seed
     if modality != "bulk":
         raise ValueError("de_mode=harmonizome currently supports bulk RNA-seq only")
-    if covariate_cols or batch_cols or repeated_measures:
+    if batch_cols or repeated_measures:
         raise ValueError(
-            "de_mode=harmonizome uses a simple two-group design and does not support covariates, batch columns, or repeated-measures flags"
+            "de_mode=harmonizome is a conservative bulk preset and does not support batch columns or repeated-measures flags"
         )
     if not balance_groups_explicit:
         resolved_balance = True
@@ -478,6 +496,7 @@ def run_de_prepare(
 ) -> dict[str, Any]:
     output_dir = Path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    workflow_warnings: list[str] = []
 
     stratify_cols = parse_csv_columns(stratify_by)
     covariate_cols = parse_csv_columns(covariates)
@@ -574,6 +593,35 @@ def run_de_prepare(
     else:
         raise ValueError(f"Unsupported modality: {modality}")
 
+    missing_covariates, blank_covariates = _metadata_columns_present(metadata_rows, covariate_cols)
+    missing_batch_columns, blank_batch_columns = _metadata_columns_present(metadata_rows, batch_cols)
+    if missing_covariates:
+        raise ValueError("Requested covariates were not found in the prepared metadata: " + ", ".join(missing_covariates))
+    if missing_batch_columns:
+        raise ValueError(
+            "Requested batch columns were not found in the prepared metadata: " + ", ".join(missing_batch_columns)
+        )
+    if blank_covariates:
+        workflow_warnings.append(
+            "Some requested covariates were present but blank for all aligned samples: " + ", ".join(blank_covariates)
+        )
+    if blank_batch_columns:
+        workflow_warnings.append(
+            "Some requested batch columns were present but blank for all aligned samples: "
+            + ", ".join(blank_batch_columns)
+        )
+    if resolved_de_mode == "harmonizome" and not covariate_cols:
+        workflow_warnings.append(
+            "de_mode=harmonizome was run without explicit covariates. For broad-tissue GTEx/Harmonizome-style analyses, "
+            "prefer explicit fixed-effect covariates such as SEX,SMTSD when those columns exist."
+        )
+    for warning in workflow_warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+    covariates_used = ",".join(covariate_cols)
+    batch_columns_used = ",".join(batch_cols)
+    harmonizome_covariate_mode = "explicit" if covariate_cols else "none"
+
     if comparisons_tsv:
         specs = read_comparisons_tsv(comparisons_tsv, default_group_column=group_column, stratify_by=stratify_cols)
     else:
@@ -635,6 +683,10 @@ def run_de_prepare(
         selected_sample_rows_all.extend(selection.selected_sample_rows)
         audit_row = dict(selection.audit_row)
         audit_row["de_mode"] = resolved_de_mode
+        audit_row["covariates_used"] = covariates_used
+        audit_row["batch_columns_used"] = batch_columns_used
+        audit_row["harmonizome_covariate_mode"] = harmonizome_covariate_mode
+        audit_row["workflow_warning_count"] = len(workflow_warnings)
         audit_row["unit_column"] = unit_column or "sample_id"
         n_group_a_units = _n_unique_units(selection.selected_rows, unit_column, spec.group_column, spec.group_a)
         if spec.group_b is None or spec.comparison_kind == "group_vs_rest":
@@ -752,6 +804,10 @@ def run_de_prepare(
             "group_a",
             "group_b",
             "de_mode",
+            "covariates_used",
+            "batch_columns_used",
+            "harmonizome_covariate_mode",
+            "workflow_warning_count",
             "balance_requested",
             "balance_applied",
             "balance_seed",
@@ -851,6 +907,9 @@ def run_de_prepare(
         "genome_build": genome_build,
         "counts_tsv": str(counts_tsv),
         "de_mode": resolved_de_mode,
+        "covariates_used": covariate_cols,
+        "batch_columns_used": batch_cols,
+        "harmonizome_covariate_mode": harmonizome_covariate_mode,
         "balance_groups": bool(resolved_balance_groups),
         "balance_seed": int(resolved_balance_seed),
         "resolved_backend": resolved_backend,
@@ -867,6 +926,7 @@ def run_de_prepare(
         "comparison_manifest_path": str(comparison_manifest_path),
         "comparison_audit_path": str(comparison_audit_path),
         "comparison_selected_samples_path": str(selected_samples_path),
+        "warnings": workflow_warnings,
         "deg_long_path": str(deg_long_path),
         "backend_summary": backend_summary,
         "extractor": extractor_result,

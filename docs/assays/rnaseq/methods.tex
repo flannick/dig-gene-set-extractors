@@ -271,7 +271,7 @@ The preprocessing layer now exposes explicit DE-fitting modes rather than overlo
 \[
 \tilde{A} \subseteq A,\qquad \tilde{B} \subseteq B,\qquad |\tilde{A}| = |\tilde{B}| = \min(|A|, |B|).
 \]
-The downsampling is deterministic given a base seed and comparison identifier, and the selected sample IDs are written to audit artifacts. This mode intentionally rejects covariates, batch terms, and repeated-measures flags so the fit remains a simple auditable two-group analysis.
+The downsampling is deterministic given a base seed and comparison identifier, and the selected sample IDs are written to audit artifacts. The preset still allows explicit fixed-effect covariates, which is useful in broad tissues such as GTEx aging where balancing alone is often not sufficient to suppress generic mitochondrial or housekeeping signatures. In practice we recommend explicit covariates such as \texttt{SEX} and \texttt{SMTSD} when those columns are available. Batch terms and repeated-measures flags remain disallowed so the fit stays auditable and narrow in scope.
 
 \subsection*{scRNA pseudobulk mode}
 For scRNA-seq, the workflow defaults to donor-level pseudobulk rather than naive per-cell DE.

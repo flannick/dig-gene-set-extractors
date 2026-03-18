@@ -602,7 +602,8 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
         default="modern",
         help=(
             "DE workflow preset. modern keeps the general-purpose use-all-samples behavior. "
-            "harmonizome enables deterministic per-contrast group balancing and simple two-group fitting for GTEx/Harmonizome-style bulk runs."
+            "harmonizome enables deterministic per-contrast group balancing plus explicit fixed-effect covariates "
+            "for conservative GTEx/Harmonizome-style bulk runs."
         ),
     )
     parser.add_argument(
