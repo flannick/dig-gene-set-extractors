@@ -136,6 +136,46 @@ RNA DEG converters support two post-processing presets:
 - default protein-coding biotype allowlist remains enabled
 - row filters such as `--padj_max`, `--pvalue_max`, and `--min_abs_logfc` remain user-controlled
 
+### Ranking modes
+
+RNA DEG converters now expose several explicit ranking intents through `--score_mode`:
+
+- `signed_neglog10padj`
+  - Direction comes from `stat` or `logFC`; rank magnitude comes from `-log10(padj)`.
+  - Best default for library-style directional signatures and broad observational cohorts.
+  - In the GTEx aging benchmark, this matched the published Harmonizome signatures best.
+
+- `signed_neglog10pvalue`
+  - Same signed significance ranking, but uses raw `pvalue` instead of `padj`.
+  - Useful when users want pre-adjustment ordering within an explicit `padj`-filtered subset.
+  - In the GTEx benchmark, it behaved almost identically to `signed_neglog10padj` at the top of the ranking.
+
+- `stat`
+  - Uses the signed model statistic directly.
+  - Appropriate when the DE backend statistic is already the main object of interest.
+  - In the GTEx benchmark, this tracked `signed_neglog10padj` closely when the upstream DE workflow was Harmonizome-like.
+
+- `logfc_times_neglog10p`
+  - Hybrid effect-size/significance ranking.
+  - Tends to prioritize larger effects while still rewarding consistency.
+  - Useful as an exploratory alternative, but it was clearly less concordant than `signed_neglog10padj` in the GTEx benchmark.
+
+- `logfc`
+  - Pure signed effect-size ranking.
+  - Use when the user explicitly wants large-effect genes after applying their own row filters such as `--padj_max` or `--min_abs_logfc`.
+  - Not recommended as the default for broad-tissue signature libraries: it drifted toward sparse high-effect outliers in the GTEx benchmark.
+
+- `custom_column`
+  - Uses a caller-supplied score column verbatim.
+  - Use for external methods that already produced a final signed ranking.
+
+Practical recommendation:
+
+- Default library-style signatures: `--score_mode signed_neglog10padj`
+- Raw-p ordering with the same intent: `--score_mode signed_neglog10pvalue`
+- Exploratory hybrid: `--score_mode logfc_times_neglog10p`
+- Effect-size-first signatures: `--score_mode logfc` with explicit row filters
+
 ### Example commands
 
 Default Harmonizome-style run:
@@ -159,6 +199,25 @@ geneset-extractors convert rna_deg_multi \
   --organism human \
   --genome_build hg38 \
   --postprocess_mode legacy
+```
+
+Ranking examples:
+
+```bash
+# Stable, significance-driven library-style ranking
+geneset-extractors convert rna_deg \
+  --deg_tsv path/to/deg.tsv \
+  --out_dir results/rna_deg_signed_fdr \
+  --score_mode signed_neglog10padj \
+  --padj_max 0.05
+
+# Effect-size-first ranking after explicit FDR filtering
+geneset-extractors convert rna_deg \
+  --deg_tsv path/to/deg.tsv \
+  --out_dir results/rna_deg_logfc \
+  --score_mode logfc \
+  --padj_max 0.05 \
+  --min_abs_logfc 0.25
 ```
 
 Grouped output layout:

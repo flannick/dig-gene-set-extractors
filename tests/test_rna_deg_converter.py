@@ -367,6 +367,42 @@ def test_rna_deg_supports_signed_neglog10padj_and_avg_log2fc_autodetect(tmp_path
     assert float(rows[0]["score"]) > 0
     assert any(float(row["score"]) < 0 for row in rows)
 
+def test_rna_deg_supports_signed_neglog10pvalue(tmp_path: Path):
+    tsv = tmp_path / "signed_pvalue.tsv"
+    tsv.write_text(
+        "gene_id\tlogFC\tpvalue\nA\t1.5\t1e-8\nB\t-2.0\t1e-6\nC\t0.5\t0.2\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "signed_pvalue")
+    args.emit_gmt = False
+    args.score_mode = "signed_neglog10pvalue"
+    rna_deg.run(args)
+    with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows[0]["gene_id"] == "A"
+    assert float(rows[0]["score"]) > 0
+    assert any(float(row["score"]) < 0 for row in rows)
+
+
+def test_rna_deg_supports_logfc_score_mode(tmp_path: Path):
+    tsv = tmp_path / "logfc_mode.tsv"
+    tsv.write_text(
+        "gene_id\tlogFC\tpadj\nA\t1.0\t1e-6\nB\t-2.5\t1e-6\nC\t0.2\t1e-6\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "logfc_mode")
+    args.emit_gmt = False
+    args.score_mode = "logfc"
+    rna_deg.run(args)
+    with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert rows[0]["gene_id"] == "B"
+    assert float(rows[0]["score"]) == pytest.approx(-2.5)
+
 
 def test_rna_deg_row_filters_apply_before_gene_aggregation(tmp_path: Path):
     tsv = tmp_path / "filtered.tsv"

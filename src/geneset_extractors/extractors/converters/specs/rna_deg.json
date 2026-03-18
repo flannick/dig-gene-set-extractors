@@ -24,7 +24,7 @@
     {"name": "padj_column", "type": "string", "default": null, "help": "Adjusted p-value column (auto-detects padj|FDR|adj.P.Val when unset)"},
     {"name": "pvalue_column", "type": "string", "default": null, "help": "P-value fallback column (auto-detects pvalue|PValue|P.Value when unset)"},
     {"name": "score_column", "type": "string", "default": null, "help": "Custom score column for score_mode=custom_column"},
-    {"name": "score_mode", "type": "string", "default": "auto", "enum": ["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"], "help": "Signed score definition"},
+    {"name": "score_mode", "type": "string", "default": "auto", "enum": ["auto", "stat", "logfc", "logfc_times_neglog10p", "signed_neglog10padj", "signed_neglog10pvalue", "custom_column"], "help": "Signed score definition. signed_neglog10padj is the recommended default for stable library-style signatures; logfc is an effect-size-first alternative; logfc_times_neglog10p is a hybrid compromise."},
     {"name": "padj_max", "type": "number", "default": null, "help": "Optional adjusted p-value filter applied before gene aggregation"},
     {"name": "pvalue_max", "type": "number", "default": null, "help": "Optional p-value filter applied before gene aggregation"},
     {"name": "min_abs_logfc", "type": "number", "default": null, "help": "Optional abs(logFC) filter applied before gene aggregation"},

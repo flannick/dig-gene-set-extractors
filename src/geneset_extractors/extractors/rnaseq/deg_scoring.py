@@ -280,6 +280,13 @@ def _resolve_score_mode(
             raise ValueError("score_mode=stat requires --stat_column (or a table column named 'stat')")
         return "stat", None
 
+    if requested_mode == "logfc":
+        if not logfc_column:
+            raise ValueError(
+                "score_mode=logfc requires --logfc_column (or a default logFC column)"
+            )
+        return "logfc", None
+
     if requested_mode == "logfc_times_neglog10p":
         if not logfc_column:
             raise ValueError(
@@ -292,6 +299,22 @@ def _resolve_score_mode(
                 "(or default columns padj/FDR/adj.P.Val or pvalue/PValue/P.Value)."
             )
         return "logfc_times_neglog10p", p_col
+
+    if requested_mode == "signed_neglog10pvalue":
+        p_col = pvalue_column if pvalue_column and _column_has_parseable_numeric(rows, pvalue_column) else None
+        if not p_col:
+            raise ValueError(
+                "score_mode=signed_neglog10pvalue requires --pvalue_column "
+                "(or a default p-value column such as pvalue/PValue/P.Value)."
+            )
+        if stat_column and _column_has_parseable_numeric(rows, stat_column):
+            return "signed_neglog10pvalue", p_col
+        if logfc_column and _column_has_parseable_numeric(rows, logfc_column):
+            return "signed_neglog10pvalue", p_col
+        raise ValueError(
+            "score_mode=signed_neglog10pvalue requires a parseable sign source from either "
+            "--stat_column or --logfc_column."
+        )
 
     if requested_mode == "signed_neglog10padj":
         p_col = padj_column if padj_column and _column_has_parseable_numeric(rows, padj_column) else None
@@ -365,7 +388,11 @@ def _row_score(
         if not stat_column:
             return None
         return _parse_float_soft(row.values.get(stat_column))
-    if mode == "signed_neglog10padj":
+    if mode == "logfc":
+        if not logfc_column:
+            return None
+        return _parse_float_soft(row.values.get(logfc_column))
+    if mode in {"signed_neglog10padj", "signed_neglog10pvalue"}:
         if not pvalue_column:
             return None
         p_val = _parse_float_soft(row.values.get(pvalue_column))

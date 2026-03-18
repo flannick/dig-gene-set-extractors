@@ -178,7 +178,7 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--score_column")
     parser.add_argument(
         "--score_mode",
-        choices=["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"],
+        choices=["auto", "stat", "logfc", "logfc_times_neglog10p", "signed_neglog10padj", "signed_neglog10pvalue", "custom_column"],
         default="auto",
     )
     parser.add_argument(
@@ -669,7 +669,7 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--extractor_signature_name", default="contrast")
     parser.add_argument(
         "--extractor_score_mode",
-        choices=["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"],
+        choices=["auto", "stat", "logfc", "logfc_times_neglog10p", "signed_neglog10padj", "signed_neglog10pvalue", "custom_column"],
         default="auto",
     )
     parser.add_argument("--extractor_select", choices=["none", "top_k", "quantile", "threshold"], default="top_k")
