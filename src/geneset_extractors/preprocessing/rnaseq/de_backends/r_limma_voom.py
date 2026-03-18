@@ -31,6 +31,7 @@ def write_script(
     counts_tsv: str | Path,
     metadata_tsv: str | Path,
     comparisons_tsv: str | Path,
+    selected_samples_tsv: str | Path,
     output_tsv: str | Path,
     covariates_csv: str,
     batch_columns_csv: str,
@@ -45,34 +46,32 @@ def write_script(
 counts <- read.delim("{Path(counts_tsv)}", check.names=FALSE)
 meta <- read.delim("{Path(metadata_tsv)}", check.names=FALSE)
 comps <- read.delim("{Path(comparisons_tsv)}", check.names=FALSE)
+selected <- read.delim("{Path(selected_samples_tsv)}", check.names=FALSE)
 feature_ids <- counts[[1]]
-count_mat <- as.matrix(counts[, -1, drop=FALSE])
+gene_symbols <- if ("gene_symbol" %in% colnames(counts)) as.character(counts[["gene_symbol"]]) else as.character(feature_ids)
+count_cols <- setdiff(colnames(counts), c(colnames(counts)[1], "gene_symbol"))
+count_mat <- as.matrix(counts[, count_cols, drop=FALSE])
+storage.mode(count_mat) <- "numeric"
 rownames(count_mat) <- feature_ids
 meta$sample_id <- as.character(meta$sample_id)
+selected$sample_id <- as.character(selected$sample_id)
+selected$comparison_id <- as.character(selected$comparison_id)
+selected$group_label <- as.character(selected$group_label)
 count_mat <- count_mat[, meta$sample_id, drop=FALSE]
 all_rows <- list()
 extra_cols <- unique(c(strsplit("{covariates_csv}", ",", fixed=TRUE)[[1]], strsplit("{batch_columns_csv}", ",", fixed=TRUE)[[1]]))
 extra_cols <- extra_cols[nzchar(extra_cols)]
 for (i in seq_len(nrow(comps))) {{
   comp <- comps[i, , drop=FALSE]
-  keep <- rep(TRUE, nrow(meta))
-  for (col in setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b"))) {{
-    val <- as.character(comp[[col]][1])
-    if (!nzchar(val)) next
-    keep <- keep & as.character(meta[[col]]) == val
-  }}
-  sub_meta <- meta[keep, , drop=FALSE]
   gcol <- as.character(comp$group_column[1])
   ga <- as.character(comp$group_a[1])
   gb <- as.character(comp$group_b[1])
-  if (!nzchar(gb) || as.character(comp$comparison_kind[1]) == "group_vs_rest") {{
-    sub_meta <- sub_meta[sub_meta[[gcol]] %in% c(ga, setdiff(unique(as.character(sub_meta[[gcol]])), ga)), , drop=FALSE]
-    sub_meta$.__group <- ifelse(as.character(sub_meta[[gcol]]) == ga, ga, "rest")
-    gb <- "rest"
-  }} else {{
-    sub_meta <- sub_meta[sub_meta[[gcol]] %in% c(ga, gb), , drop=FALSE]
-    sub_meta$.__group <- as.character(sub_meta[[gcol]])
-  }}
+  sel <- selected[selected$comparison_id == as.character(comp$comparison_id[1]), , drop=FALSE]
+  if (!nrow(sel)) next
+  sub_meta <- merge(sel, meta, by="sample_id", all.x=TRUE, sort=FALSE)
+  sub_meta <- sub_meta[match(sel$sample_id, sub_meta$sample_id), , drop=FALSE]
+  sub_meta$.__group <- factor(as.character(sub_meta$group_label), levels=c(gb, ga))
+  sub_meta <- sub_meta[!is.na(sub_meta$.__group), , drop=FALSE]
   if (sum(sub_meta$.__group == ga) < 2 || sum(sub_meta$.__group == gb) < 2) next
   sub_counts <- count_mat[, sub_meta$sample_id, drop=FALSE]
   y <- DGEList(counts=sub_counts)
@@ -88,7 +87,7 @@ for (i in seq_len(nrow(comps))) {{
   tt <- topTable(fit, coef=coef_name, number=Inf, sort.by="none")
   tt$comparison_id <- as.character(comp$comparison_id[1])
   tt$gene_id <- rownames(tt)
-  tt$gene_symbol <- rownames(tt)
+  tt$gene_symbol <- gene_symbols[match(rownames(tt), feature_ids)]
   tt$group_a <- ga
   tt$group_b <- gb
   tt$stratum <- paste(paste(setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b")), as.character(comp[1, setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b"))]), sep="="), collapse="|")

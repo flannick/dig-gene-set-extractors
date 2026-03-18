@@ -562,6 +562,7 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--counts_tsv", required=True, help="Dense count matrix TSV.")
     parser.add_argument("--matrix_orientation", choices=["sample_by_gene", "gene_by_sample"], default="sample_by_gene")
     parser.add_argument("--feature_id_column", required=True, help="Feature/gene identifier column for gene_by_sample inputs.")
+    parser.add_argument("--matrix_gene_symbol_column", help="Optional gene symbol column for gene_by_sample matrices.")
     parser.add_argument("--matrix_delim", default="\t")
     parser.add_argument("--metadata_delim", default="\t")
     parser.add_argument("--sample_id_column", help="Sample ID column for bulk count matrices and sample metadata.")
@@ -595,6 +596,29 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stratify_by", help="Optional comma-separated stratification columns.")
     parser.add_argument("--covariates", help="Optional comma-separated fixed-effect covariates.")
     parser.add_argument("--batch_columns", help="Optional comma-separated batch columns.")
+    parser.add_argument(
+        "--de_mode",
+        choices=["modern", "harmonizome"],
+        default="modern",
+        help=(
+            "DE workflow preset. modern keeps the general-purpose use-all-samples behavior. "
+            "harmonizome enables deterministic per-contrast group balancing and simple two-group fitting for GTEx/Harmonizome-style bulk runs."
+        ),
+    )
+    parser.add_argument(
+        "--balance_groups",
+        type=_parse_bool,
+        default=False,
+        action=_StoreWithExplicitFlag,
+        help="If true, downsample each emitted contrast to equal group sizes using min(n_group_a, n_group_b).",
+    )
+    parser.add_argument(
+        "--balance_seed",
+        type=int,
+        default=0,
+        action=_StoreWithExplicitFlag,
+        help="Base seed for deterministic per-comparison balancing. harmonizome mode defaults this to 1 unless explicitly overridden.",
+    )
     parser.add_argument("--repeated_measures", type=_parse_bool, default=False)
     parser.add_argument("--allow_approximate_repeated_measures", type=_parse_bool, default=False)
     parser.add_argument(

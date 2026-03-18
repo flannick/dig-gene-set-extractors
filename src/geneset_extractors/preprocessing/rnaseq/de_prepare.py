@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -35,6 +37,15 @@ STANDARD_DE_FIELDS = [
 ]
 
 
+@dataclass(frozen=True)
+class ComparisonSampleSelection:
+    spec: ComparisonSpec
+    group_b_label: str
+    selected_rows: list[dict[str, str]]
+    audit_row: dict[str, Any]
+    selected_sample_rows: list[dict[str, Any]]
+
+
 
 def _clean(value: object) -> str:
     if value is None:
@@ -52,6 +63,11 @@ def _unique_preserving(values: list[str]) -> list[str]:
         out.append(value)
         seen.add(value)
     return out
+
+
+def _stable_seed(*parts: object) -> int:
+    digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
 
 
 
@@ -123,6 +139,133 @@ def _materialize_comparison_samples(metadata_rows: list[dict[str, str]], spec: C
     return rows
 
 
+def _comparison_group_label(row: dict[str, str], spec: ComparisonSpec) -> str | None:
+    group_value = _clean(row.get(spec.group_column))
+    if not group_value:
+        return None
+    if group_value == spec.group_a:
+        return spec.group_a
+    if spec.comparison_kind == "group_vs_rest" or spec.group_b is None:
+        return "rest"
+    if group_value == spec.group_b:
+        return spec.group_b
+    return None
+
+
+def _select_balanced_rows(
+    rows: list[dict[str, str]],
+    *,
+    spec: ComparisonSpec,
+    balance_groups: bool,
+    balance_seed: int,
+) -> ComparisonSampleSelection:
+    group_b_label = spec.group_b if spec.group_b else "rest"
+    grouped_rows: dict[str, list[dict[str, str]]] = {
+        spec.group_a: [],
+        group_b_label: [],
+    }
+    for row in rows:
+        label = _comparison_group_label(row, spec)
+        if label in grouped_rows:
+            grouped_rows[label].append(row)
+    pre_a = len(grouped_rows[spec.group_a])
+    pre_b = len(grouped_rows[group_b_label])
+    target_size = min(pre_a, pre_b) if balance_groups else 0
+    balance_applied = False
+    selected_groups: dict[str, list[dict[str, str]]] = {}
+    effective_seeds: dict[str, int] = {}
+    for label, group_rows in grouped_rows.items():
+        ordered_rows = sorted(group_rows, key=lambda row: _clean(row.get("sample_id")))
+        if not balance_groups or len(ordered_rows) <= target_size:
+            selected_groups[label] = list(ordered_rows)
+            continue
+        balance_applied = True
+        seed_value = _stable_seed(balance_seed, spec.comparison_id, label)
+        effective_seeds[label] = seed_value
+        rng = np.random.default_rng(seed_value)
+        picked_idx = sorted(int(idx) for idx in rng.choice(len(ordered_rows), size=target_size, replace=False))
+        selected_groups[label] = [ordered_rows[idx] for idx in picked_idx]
+    selected_rows = sorted(
+        selected_groups[spec.group_a] + selected_groups[group_b_label],
+        key=lambda row: (_comparison_group_label(row, spec) or "", _clean(row.get("sample_id"))),
+    )
+    selected_sample_rows: list[dict[str, Any]] = []
+    for rank, row in enumerate(selected_rows, start=1):
+        label = _comparison_group_label(row, spec) or ""
+        sample_row: dict[str, Any] = {
+            "comparison_id": spec.comparison_id,
+            "sample_id": _clean(row.get("sample_id")),
+            "group_label": label,
+            "group_value": _clean(row.get(spec.group_column)),
+            "selected_rank": rank,
+            "balance_requested": bool(balance_groups),
+            "balance_applied": bool(balance_applied),
+            "balance_seed": int(balance_seed),
+            "balance_seed_effective": effective_seeds.get(label, ""),
+        }
+        for key, value in sorted(spec.strata.items()):
+            sample_row[key] = value
+        selected_sample_rows.append(sample_row)
+    audit_row: dict[str, Any] = {
+        "comparison_id": spec.comparison_id,
+        "comparison_kind": spec.comparison_kind,
+        "group_column": spec.group_column,
+        "group_a": spec.group_a,
+        "group_b": group_b_label,
+        "balance_requested": bool(balance_groups),
+        "balance_applied": bool(balance_applied),
+        "balance_seed": int(balance_seed),
+        "balance_seed_group_a": effective_seeds.get(spec.group_a, ""),
+        "balance_seed_group_b": effective_seeds.get(group_b_label, ""),
+        "n_group_a_pre_balance": pre_a,
+        "n_group_b_pre_balance": pre_b,
+        "n_group_a_post_balance": len(selected_groups[spec.group_a]),
+        "n_group_b_post_balance": len(selected_groups[group_b_label]),
+        "n_samples_selected": len(selected_rows),
+    }
+    for key, value in sorted(spec.strata.items()):
+        audit_row[key] = value
+    return ComparisonSampleSelection(
+        spec=spec,
+        group_b_label=group_b_label,
+        selected_rows=selected_rows,
+        audit_row=audit_row,
+        selected_sample_rows=selected_sample_rows,
+    )
+
+
+def _resolve_de_mode_settings(
+    *,
+    de_mode: str,
+    modality: str,
+    balance_groups: bool,
+    balance_groups_explicit: bool,
+    balance_seed: int,
+    balance_seed_explicit: bool,
+    covariate_cols: list[str],
+    batch_cols: list[str],
+    repeated_measures: bool,
+) -> tuple[str, bool, int]:
+    resolved_mode = _clean(de_mode) or "modern"
+    if resolved_mode not in {"modern", "harmonizome"}:
+        raise ValueError(f"Unsupported de_mode: {resolved_mode}")
+    resolved_balance = bool(balance_groups)
+    resolved_seed = int(balance_seed)
+    if resolved_mode != "harmonizome":
+        return resolved_mode, resolved_balance, resolved_seed
+    if modality != "bulk":
+        raise ValueError("de_mode=harmonizome currently supports bulk RNA-seq only")
+    if covariate_cols or batch_cols or repeated_measures:
+        raise ValueError(
+            "de_mode=harmonizome uses a simple two-group design and does not support covariates, batch columns, or repeated-measures flags"
+        )
+    if not balance_groups_explicit:
+        resolved_balance = True
+    if not balance_seed_explicit:
+        resolved_seed = 1
+    return resolved_mode, resolved_balance, resolved_seed
+
+
 
 def _n_unique_units(rows: list[dict[str, str]], unit_column: str | None, group_column: str, level: str | None) -> int:
     if level is None:
@@ -137,8 +280,19 @@ def _n_unique_units(rows: list[dict[str, str]], unit_column: str | None, group_c
 
 
 
-def _write_backend_inputs(work_dir: Path, matrix: MatrixData, metadata_rows: list[dict[str, str]], specs: list[ComparisonSpec]) -> tuple[Path, Path, Path]:
+def _write_backend_inputs(
+    work_dir: Path,
+    matrix: MatrixData,
+    metadata_rows: list[dict[str, str]],
+    specs: list[ComparisonSpec],
+    selected_sample_rows: list[dict[str, Any]],
+) -> tuple[Path, Path, Path, Path]:
     work_dir.mkdir(parents=True, exist_ok=True)
+    selected_sample_ids = _unique_preserving([_clean(row.get("sample_id")) for row in selected_sample_rows])
+    if selected_sample_ids:
+        selected_sample_id_set = set(selected_sample_ids)
+        matrix = subset_matrix(matrix, [sample_id for sample_id in matrix.sample_ids if sample_id in selected_sample_id_set])
+        metadata_rows = [row for row in metadata_rows if _clean(row.get("sample_id")) in selected_sample_id_set]
     counts_path = work_dir / "counts_gene_by_sample.tsv"
     counts_rows: list[dict[str, Any]] = []
     for feature_id, gene_symbol, values in zip(matrix.feature_ids, matrix.gene_symbols, matrix.counts.T, strict=False):
@@ -152,7 +306,23 @@ def _write_backend_inputs(work_dir: Path, matrix: MatrixData, metadata_rows: lis
     write_tsv(metadata_path, metadata_rows, fieldnames=metadata_fieldnames)
     comparisons_path = work_dir / "comparisons.tsv"
     write_tsv(comparisons_path, comparison_manifest_rows(specs))
-    return counts_path, metadata_path, comparisons_path
+    selected_path = work_dir / "comparison_selected_samples.tsv"
+    selected_fieldnames = _unique_preserving(
+        [
+            "comparison_id",
+            "sample_id",
+            "group_label",
+            "group_value",
+            "selected_rank",
+            "balance_requested",
+            "balance_applied",
+            "balance_seed",
+            "balance_seed_effective",
+        ]
+        + [str(key) for row in selected_sample_rows for key in row.keys()]
+    )
+    write_tsv(selected_path, selected_sample_rows, fieldnames=selected_fieldnames)
+    return counts_path, metadata_path, comparisons_path, selected_path
 
 
 
@@ -163,12 +333,19 @@ def _run_r_backend(
     matrix: MatrixData,
     metadata_rows: list[dict[str, str]],
     specs: list[ComparisonSpec],
+    selected_sample_rows: list[dict[str, Any]],
     covariates: list[str],
     batch_columns: list[str],
     random_effect_column: str | None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     work_dir = out_dir / "backend_work"
-    counts_path, metadata_path, comparisons_path = _write_backend_inputs(work_dir, matrix, metadata_rows, specs)
+    counts_path, metadata_path, comparisons_path, selected_samples_path = _write_backend_inputs(
+        work_dir,
+        matrix,
+        metadata_rows,
+        specs,
+        selected_sample_rows,
+    )
     output_path = work_dir / "deg_long.tsv"
     if backend_name == "r_limma_voom":
         available, detail = r_limma_voom.backend_available()
@@ -179,6 +356,7 @@ def _run_r_backend(
             counts_tsv=counts_path,
             metadata_tsv=metadata_path,
             comparisons_tsv=comparisons_path,
+            selected_samples_tsv=selected_samples_path,
             output_tsv=output_path,
             covariates_csv=",".join(covariates),
             batch_columns_csv=",".join(batch_columns),
@@ -195,6 +373,7 @@ def _run_r_backend(
             counts_tsv=counts_path,
             metadata_tsv=metadata_path,
             comparisons_tsv=comparisons_path,
+            selected_samples_tsv=selected_samples_path,
             output_tsv=output_path,
             covariates_csv=",".join(covariates),
             batch_columns_csv=",".join(batch_columns),
@@ -210,16 +389,13 @@ def _run_r_backend(
         )
     table = read_tsv_rows(output_path)
     rows = [{field: row.get(field, "") for field in STANDARD_DE_FIELDS} for row in table.rows]
-    manifest_rows = comparison_manifest_rows(specs)
-    qc_rows = [{"comparison_id": spec.comparison_id, "backend": backend_name} for spec in specs]
-    return rows, manifest_rows, {
+    return rows, {
         "backend": backend_name,
         "backend_script": str(script_path),
         "backend_stdout": result.stdout,
         "backend_stderr": result.stderr,
         "backend_inputs_dir": str(work_dir),
         "n_rows": len(rows),
-        "qc_rows": qc_rows,
     }
 
 
@@ -247,6 +423,7 @@ def run_de_prepare(
     genome_build: str,
     matrix_orientation: str,
     feature_id_column: str,
+    matrix_gene_symbol_column: str | None,
     matrix_delim: str,
     metadata_delim: str,
     sample_id_column: str | None,
@@ -271,6 +448,11 @@ def run_de_prepare(
     stratify_by: str | None,
     covariates: str | None,
     batch_columns: str | None,
+    de_mode: str,
+    balance_groups: bool,
+    balance_seed: int,
+    balance_groups_explicit: bool,
+    balance_seed_explicit: bool,
     repeated_measures: bool,
     allow_approximate_repeated_measures: bool,
     backend: str,
@@ -300,6 +482,17 @@ def run_de_prepare(
     stratify_cols = parse_csv_columns(stratify_by)
     covariate_cols = parse_csv_columns(covariates)
     batch_cols = parse_csv_columns(batch_columns)
+    resolved_de_mode, resolved_balance_groups, resolved_balance_seed = _resolve_de_mode_settings(
+        de_mode=de_mode,
+        modality=modality,
+        balance_groups=balance_groups,
+        balance_groups_explicit=balance_groups_explicit,
+        balance_seed=balance_seed,
+        balance_seed_explicit=balance_seed_explicit,
+        covariate_cols=covariate_cols,
+        batch_cols=batch_cols,
+        repeated_measures=repeated_measures,
+    )
 
     if modality == "bulk":
         if not sample_metadata_tsv or not sample_id_column:
@@ -309,7 +502,7 @@ def run_de_prepare(
             orientation=matrix_orientation,
             sample_id_column=sample_id_column,
             feature_id_column=feature_id_column,
-            gene_symbol_column=None,
+            gene_symbol_column=matrix_gene_symbol_column,
             delimiter=matrix_delim,
         )
         count_input_summary = _validate_count_matrix(matrix.counts, allow_non_count_input=allow_non_count_input)
@@ -340,7 +533,7 @@ def run_de_prepare(
             orientation=matrix_orientation,
             sample_id_column=cell_id_column,
             feature_id_column=feature_id_column,
-            gene_symbol_column=None,
+            gene_symbol_column=matrix_gene_symbol_column,
             delimiter=matrix_delim,
         )
         count_input_summary = _validate_count_matrix(matrix.counts, allow_non_count_input=allow_non_count_input)
@@ -381,12 +574,11 @@ def run_de_prepare(
     else:
         raise ValueError(f"Unsupported modality: {modality}")
 
-    if not group_column:
-        raise ValueError("--group_column is required for comparison generation")
-
     if comparisons_tsv:
         specs = read_comparisons_tsv(comparisons_tsv, default_group_column=group_column, stratify_by=stratify_cols)
     else:
+        if not group_column:
+            raise ValueError("--group_column is required for comparison generation")
         if not comparison_mode:
             raise ValueError("Provide either --comparisons_tsv or --comparison_mode")
         specs = build_cli_comparisons(
@@ -398,8 +590,21 @@ def run_de_prepare(
             reference_level=reference_level,
             stratify_by=stratify_cols,
         )
+    if resolved_de_mode == "harmonizome":
+        bad_specs = [
+            spec.comparison_id
+            for spec in specs
+            if spec.comparison_kind == "group_vs_rest" or not spec.group_b
+        ]
+        if bad_specs:
+            raise ValueError(
+                "de_mode=harmonizome requires explicit two-group contrasts with group_a and group_b. "
+                f"Unsupported comparisons: {', '.join(bad_specs[:5])}"
+            )
 
     resolved_backend = _resolve_backend(backend, repeated_measures=repeated_measures)
+    if resolved_de_mode == "harmonizome" and resolved_backend == "r_dream":
+        raise ValueError("de_mode=harmonizome requires a simple two-group backend and does not support backend=r_dream")
     approximate_repeated_measures = False
     random_effect_column = donor_column if modality == "scrna" else subject_column
     if repeated_measures and resolved_backend == "lightweight":
@@ -410,38 +615,66 @@ def run_de_prepare(
             )
         approximate_repeated_measures = True
 
+    prepared_sample_id_set = set(prepared_matrix.sample_ids)
+    comparison_selections: list[ComparisonSampleSelection] = []
+    comparison_audit_rows: list[dict[str, Any]] = []
+    selected_sample_rows_all: list[dict[str, Any]] = []
+    for spec in specs:
+        materialized_rows = _materialize_comparison_samples(metadata_rows, spec)
+        materialized_rows = [
+            row
+            for row in materialized_rows
+            if _clean(row.get("sample_id")) in prepared_sample_id_set
+        ]
+        selection = _select_balanced_rows(
+            materialized_rows,
+            spec=spec,
+            balance_groups=resolved_balance_groups,
+            balance_seed=resolved_balance_seed,
+        )
+        selected_sample_rows_all.extend(selection.selected_sample_rows)
+        audit_row = dict(selection.audit_row)
+        audit_row["de_mode"] = resolved_de_mode
+        audit_row["unit_column"] = unit_column or "sample_id"
+        n_group_a_units = _n_unique_units(selection.selected_rows, unit_column, spec.group_column, spec.group_a)
+        if spec.group_b is None or spec.comparison_kind == "group_vs_rest":
+            group_b_rows = [row for row in selection.selected_rows if _comparison_group_label(row, spec) == selection.group_b_label]
+            n_group_b_units = _n_unique_units(group_b_rows, unit_column, spec.group_column, None)
+        else:
+            n_group_b_units = _n_unique_units(selection.selected_rows, unit_column, spec.group_column, selection.group_b_label)
+        audit_row["n_group_a_units_post"] = n_group_a_units
+        audit_row["n_group_b_units_post"] = n_group_b_units
+        if n_group_a_units < int(min_donors_per_group) or n_group_b_units < int(min_donors_per_group):
+            audit_row["selected_for_fit"] = False
+            audit_row["skip_reason"] = "insufficient_units_after_selection"
+            comparison_audit_rows.append(audit_row)
+            continue
+        audit_row["selected_for_fit"] = True
+        audit_row["skip_reason"] = ""
+        comparison_audit_rows.append(audit_row)
+        comparison_selections.append(selection)
+
     all_rows: list[dict[str, Any]] = []
-    comparison_rows: list[dict[str, Any]] = []
     backend_summary: dict[str, Any]
+    emitted_specs = [selection.spec for selection in comparison_selections]
+    backend_selected_rows = [row for selection in comparison_selections for row in selection.selected_sample_rows]
     if resolved_backend in {"r_limma_voom", "r_dream"}:
-        all_rows, manifest_rows, backend_summary = _run_r_backend(
+        all_rows, backend_summary = _run_r_backend(
             backend_name=resolved_backend,
             out_dir=output_dir,
             matrix=prepared_matrix,
             metadata_rows=metadata_rows,
-            specs=specs,
+            specs=emitted_specs,
+            selected_sample_rows=backend_selected_rows,
             covariates=covariate_cols,
             batch_columns=batch_cols,
             random_effect_column=random_effect_column,
         )
-        comparison_rows = manifest_rows
     else:
         backend_summary = {"backend": "lightweight", "n_rows": 0}
-        for spec in specs:
-            materialized_rows = _materialize_comparison_samples(metadata_rows, spec)
-            group_b_label = spec.group_b if spec.group_b else "rest"
-            n_group_a_units = _n_unique_units(materialized_rows, unit_column, spec.group_column, spec.group_a)
-            n_group_b_units = _n_unique_units(
-                [row for row in materialized_rows if _clean(row.get(spec.group_column)) != spec.group_a]
-                if spec.group_b is None or spec.comparison_kind == "group_vs_rest"
-                else materialized_rows,
-                unit_column if unit_column else None,
-                spec.group_column,
-                group_b_label if spec.group_b is not None else None,
-            )
-            if n_group_a_units < int(min_donors_per_group) or n_group_b_units < int(min_donors_per_group):
-                continue
-            sample_ids = [str(row.get("sample_id", "")).strip() for row in materialized_rows if str(row.get("sample_id", "")).strip() in set(prepared_matrix.sample_ids)]
+        for selection in comparison_selections:
+            spec = selection.spec
+            sample_ids = [_clean(row.get("sample_id")) for row in selection.selected_rows if _clean(row.get("sample_id")) in prepared_sample_id_set]
             if not sample_ids:
                 continue
             matrix_sub = subset_matrix(prepared_matrix, sample_ids)
@@ -450,37 +683,113 @@ def run_de_prepare(
                 feature_ids=matrix_sub.feature_ids,
                 gene_symbols=matrix_sub.gene_symbols,
                 sample_ids=matrix_sub.sample_ids,
-                metadata_rows=materialized_rows,
+                metadata_rows=selection.selected_rows,
                 spec=spec,
                 covariates=covariate_cols,
                 batch_columns=batch_cols,
                 low_expression_filter=True,
             )
             all_rows.extend(result.rows)
-            comparison_row = {
-                "comparison_id": spec.comparison_id,
-                "comparison_kind": spec.comparison_kind,
-                "group_column": spec.group_column,
-                "group_a": spec.group_a,
-                "group_b": spec.group_b or "rest",
-                "backend": result.summary["backend"],
-                "n_group_a": result.summary["n_group_a"],
-                "n_group_b": result.summary["n_group_b"],
-                "n_features_input": result.summary["n_features_input"],
-                "n_features_retained": result.summary["n_features_retained"],
-            }
-            for key, value in sorted(spec.strata.items()):
-                comparison_row[key] = value
-            comparison_rows.append(comparison_row)
         backend_summary["n_rows"] = len(all_rows)
 
     if not all_rows:
         raise ValueError("The DE workflow did not emit any contrast rows")
 
+    metrics_by_comparison: dict[str, dict[str, Any]] = {}
+    for row in all_rows:
+        comparison_id = _clean(row.get("comparison_id"))
+        if not comparison_id:
+            continue
+        entry = metrics_by_comparison.setdefault(
+            comparison_id,
+            {
+                "n_tested_genes": 0,
+                "n_significant_genes_padj_0_05": 0,
+                "n_positive_significant_genes_padj_0_05": 0,
+                "n_negative_significant_genes_padj_0_05": 0,
+            },
+        )
+        entry["n_tested_genes"] += 1
+        try:
+            padj_value = float(row.get("padj", ""))
+        except (TypeError, ValueError):
+            padj_value = float("nan")
+        try:
+            logfc_value = float(row.get("logFC", ""))
+        except (TypeError, ValueError):
+            logfc_value = float("nan")
+        if np.isfinite(padj_value) and padj_value <= 0.05:
+            entry["n_significant_genes_padj_0_05"] += 1
+            if np.isfinite(logfc_value) and logfc_value > 0:
+                entry["n_positive_significant_genes_padj_0_05"] += 1
+            elif np.isfinite(logfc_value) and logfc_value < 0:
+                entry["n_negative_significant_genes_padj_0_05"] += 1
+    for audit_row in comparison_audit_rows:
+        if not audit_row.get("selected_for_fit"):
+            continue
+        audit_row["backend"] = resolved_backend
+        audit_row.update(metrics_by_comparison.get(_clean(audit_row.get("comparison_id")), {}))
+
     deg_long_path = output_dir / "deg_long.tsv"
     write_tsv(deg_long_path, all_rows, fieldnames=STANDARD_DE_FIELDS)
+    comparison_rows: list[dict[str, Any]] = []
+    for audit_row in comparison_audit_rows:
+        if not audit_row.get("selected_for_fit"):
+            continue
+        comparison_id = _clean(audit_row.get("comparison_id"))
+        merged = dict(audit_row)
+        merged["backend"] = resolved_backend
+        merged.update(metrics_by_comparison.get(comparison_id, {}))
+        comparison_rows.append(merged)
     comparison_manifest_path = output_dir / "comparison_manifest.tsv"
     write_tsv(comparison_manifest_path, comparison_rows)
+    comparison_audit_path = output_dir / "comparison_audit.tsv"
+    audit_fieldnames = _unique_preserving(
+        [
+            "comparison_id",
+            "comparison_kind",
+            "group_column",
+            "group_a",
+            "group_b",
+            "de_mode",
+            "balance_requested",
+            "balance_applied",
+            "balance_seed",
+            "balance_seed_group_a",
+            "balance_seed_group_b",
+            "n_group_a_pre_balance",
+            "n_group_b_pre_balance",
+            "n_group_a_post_balance",
+            "n_group_b_post_balance",
+            "n_group_a_units_post",
+            "n_group_b_units_post",
+            "selected_for_fit",
+            "skip_reason",
+            "n_tested_genes",
+            "n_significant_genes_padj_0_05",
+            "n_positive_significant_genes_padj_0_05",
+            "n_negative_significant_genes_padj_0_05",
+            "backend",
+        ]
+        + [str(key) for row in comparison_audit_rows for key in row.keys()]
+    )
+    write_tsv(comparison_audit_path, comparison_audit_rows, fieldnames=audit_fieldnames)
+    selected_samples_path = output_dir / "comparison_selected_samples.tsv"
+    selected_sample_fieldnames = _unique_preserving(
+        [
+            "comparison_id",
+            "sample_id",
+            "group_label",
+            "group_value",
+            "selected_rank",
+            "balance_requested",
+            "balance_applied",
+            "balance_seed",
+            "balance_seed_effective",
+        ]
+        + [str(key) for row in selected_sample_rows_all for key in row.keys()]
+    )
+    write_tsv(selected_samples_path, selected_sample_rows_all, fieldnames=selected_sample_fieldnames)
 
     extractor_result: dict[str, Any] | None = None
     if run_extractor:
@@ -500,6 +809,7 @@ def run_de_prepare(
             pvalue_column="pvalue",
             score_column=None,
             score_mode=extractor_score_mode,
+            postprocess_mode="harmonizome",
             duplicate_gene_policy="max_abs",
             neglog10p_cap=50.0,
             neglog10p_eps=1e-300,
@@ -540,6 +850,9 @@ def run_de_prepare(
         "organism": organism,
         "genome_build": genome_build,
         "counts_tsv": str(counts_tsv),
+        "de_mode": resolved_de_mode,
+        "balance_groups": bool(resolved_balance_groups),
+        "balance_seed": int(resolved_balance_seed),
         "resolved_backend": resolved_backend,
         "backend_requested": backend,
         "approximate_repeated_measures": bool(approximate_repeated_measures),
@@ -552,6 +865,8 @@ def run_de_prepare(
         "n_comparisons_emitted": len(comparison_rows),
         "n_deg_rows": len(all_rows),
         "comparison_manifest_path": str(comparison_manifest_path),
+        "comparison_audit_path": str(comparison_audit_path),
+        "comparison_selected_samples_path": str(selected_samples_path),
         "deg_long_path": str(deg_long_path),
         "backend_summary": backend_summary,
         "extractor": extractor_result,
@@ -562,6 +877,8 @@ def run_de_prepare(
         "out_dir": str(output_dir),
         "deg_long_tsv": str(deg_long_path),
         "comparison_manifest_tsv": str(comparison_manifest_path),
+        "comparison_audit_tsv": str(comparison_audit_path),
+        "comparison_selected_samples_tsv": str(selected_samples_path),
         "n_comparisons": len(comparison_rows),
         "n_deg_rows": len(all_rows),
         "resolved_backend": resolved_backend,

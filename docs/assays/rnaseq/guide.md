@@ -17,6 +17,15 @@ Upstream RNA preparation and inference now live under `workflows` / internal `pr
 - `workflows cnmf_select_k`: cNMF k-selection helper
 - `convert rna_deg`, `convert rna_deg_multi`, `convert rna_sc_programs`: already-scored assay result -> gene set
 
+There are now two separate Harmonizome-related controls in the RNA stack:
+
+- workflow-side `workflows rna_de_prepare --de_mode harmonizome`
+  - changes how DE is fit and how samples are balanced before fitting
+- extractor-side `convert rna_deg[_multi] --postprocess_mode harmonizome`
+  - changes how an existing DE table is filtered/ranked into signatures
+
+They solve different problems and can be used independently.
+
 ## Resources
 
 RNA converters are dependency-light and do not require reference bundles.
@@ -185,6 +194,27 @@ geneset-extractors workflows rna_de_prepare \
 ```
 
 This writes `deg_long.tsv`, which can be passed directly into `rna_deg_multi`.
+
+If you want a closer match to the published GTEx/Harmonizome aging notebook, use the explicit workflow preset instead of changing extractor settings alone:
+
+```bash
+geneset-extractors workflows rna_de_prepare \
+  --modality bulk \
+  --counts_tsv path/to/tissue_counts.tsv \
+  --sample_metadata_tsv path/to/sample_metadata.tsv \
+  --sample_id_column sample_id \
+  --feature_id_column gene_id \
+  --group_column age_bin \
+  --comparisons_tsv path/to/gtex_age_comparisons.tsv \
+  --stratify_by tissue \
+  --de_mode harmonizome \
+  --backend auto \
+  --out_dir results/rna_de_harmonizome \
+  --organism human \
+  --genome_build hg38
+```
+
+This keeps the DE fit notebook-like by balancing each contrast to equal group sizes, records the selected sample IDs in `comparison_selected_samples.tsv`, and writes pre/post balance counts to `comparison_audit.tsv`.
 
 If you want the workflow to call the extractor internally:
 

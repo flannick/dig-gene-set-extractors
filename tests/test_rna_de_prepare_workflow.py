@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from geneset_extractors.cli import main
+from geneset_extractors.preprocessing.rnaseq.de_backends import r_dream, r_limma_voom
 from geneset_extractors.preprocessing.rnaseq.de_design import build_cli_comparisons
 from geneset_extractors.preprocessing.rnaseq.de_pseudobulk import build_pseudobulk
 from geneset_extractors.preprocessing.rnaseq.de_io import MatrixData
@@ -23,6 +24,7 @@ class BulkArgs(SimpleNamespace):
     genome_build = "hg38"
     matrix_orientation = "sample_by_gene"
     feature_id_column = "gene_id"
+    matrix_gene_symbol_column = None
     matrix_delim = "\t"
     metadata_delim = "\t"
     sample_id_column = "sample_id"
@@ -47,6 +49,11 @@ class BulkArgs(SimpleNamespace):
     stratify_by = None
     covariates = None
     batch_columns = None
+    de_mode = "modern"
+    balance_groups = False
+    balance_seed = 0
+    balance_groups_explicit = False
+    balance_seed_explicit = False
     repeated_measures = False
     allow_approximate_repeated_measures = False
     backend = "lightweight"
@@ -134,6 +141,35 @@ def _make_bulk_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     )
     return counts_path, meta_path, subject_path
 
+
+def _make_bulk_inputs_unbalanced(tmp_path: Path) -> tuple[Path, Path]:
+    counts_path = tmp_path / "bulk_counts_unbalanced.tsv"
+    meta_path = tmp_path / "bulk_meta_unbalanced.tsv"
+    _write_tsv(
+        counts_path,
+        [
+            {"sample_id": "S1", "G_UP": 120, "G_DOWN": 10, "G_FLAT": 50},
+            {"sample_id": "S2", "G_UP": 118, "G_DOWN": 12, "G_FLAT": 48},
+            {"sample_id": "S3", "G_UP": 125, "G_DOWN": 11, "G_FLAT": 49},
+            {"sample_id": "S4", "G_UP": 122, "G_DOWN": 9, "G_FLAT": 51},
+            {"sample_id": "S5", "G_UP": 12, "G_DOWN": 110, "G_FLAT": 50},
+            {"sample_id": "S6", "G_UP": 10, "G_DOWN": 105, "G_FLAT": 47},
+        ],
+        ["sample_id", "G_UP", "G_DOWN", "G_FLAT"],
+    )
+    _write_tsv(
+        meta_path,
+        [
+            {"sample_id": "S1", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S2", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S3", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S4", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S5", "condition": "control", "tissue": "lung"},
+            {"sample_id": "S6", "condition": "control", "tissue": "lung"},
+        ],
+        ["sample_id", "condition", "tissue"],
+    )
+    return counts_path, meta_path
 
 
 def _make_scrna_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -229,6 +265,35 @@ def test_build_pseudobulk_aggregates_cells_by_donor_and_cell_type():
     assert result.matrix.counts.tolist() == [[4.0, 6.0], [40.0, 60.0]]
 
 
+def test_r_backend_scripts_drop_gene_symbol_metadata_column(tmp_path: Path):
+    limma_script = r_limma_voom.write_script(
+        script_path=tmp_path / "run_limma_voom.R",
+        counts_tsv=tmp_path / "counts.tsv",
+        metadata_tsv=tmp_path / "meta.tsv",
+        comparisons_tsv=tmp_path / "comparisons.tsv",
+        selected_samples_tsv=tmp_path / "selected.tsv",
+        output_tsv=tmp_path / "deg.tsv",
+        covariates_csv="",
+        batch_columns_csv="",
+    )
+    dream_script = r_dream.write_script(
+        script_path=tmp_path / "run_dream.R",
+        counts_tsv=tmp_path / "counts.tsv",
+        metadata_tsv=tmp_path / "meta.tsv",
+        comparisons_tsv=tmp_path / "comparisons.tsv",
+        selected_samples_tsv=tmp_path / "selected.tsv",
+        output_tsv=tmp_path / "deg.tsv",
+        covariates_csv="",
+        batch_columns_csv="",
+        random_effect_column="subject_id",
+    )
+    for script_path in (limma_script, dream_script):
+        text = script_path.read_text(encoding="utf-8")
+        assert 'gene_symbols <- if ("gene_symbol" %in% colnames(counts))' in text
+        assert 'count_cols <- setdiff(colnames(counts), c(colnames(counts)[1], "gene_symbol"))' in text
+        assert 'storage.mode(count_mat) <- "numeric"' in text
+
+
 
 def test_rna_de_prepare_bulk_writes_deg_long_and_summary(tmp_path: Path):
     counts_path, meta_path, subject_path = _make_bulk_inputs(tmp_path)
@@ -252,6 +317,113 @@ def test_rna_de_prepare_bulk_writes_deg_long_and_summary(tmp_path: Path):
     assert summary["workflow"] == "rna_de_prepare"
     assert summary["metadata_join"]["n_joined"] == 6
 
+
+
+def test_rna_de_prepare_harmonizome_mode_balances_bulk_contrast_and_writes_audit(tmp_path: Path):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_harmonizome"),
+        de_mode="harmonizome",
+        backend="lightweight",
+    )
+    result = run_rna_de_prepare(args)
+    assert result["n_comparisons"] == 1
+    audit_rows = list(
+        csv.DictReader((Path(args.out_dir) / "comparison_audit.tsv").open("r", encoding="utf-8"), delimiter="\t")
+    )
+    assert len(audit_rows) == 1
+    audit = audit_rows[0]
+    assert audit["de_mode"] == "harmonizome"
+    assert audit["balance_requested"] == "True"
+    assert audit["n_group_a_pre_balance"] == "4"
+    assert audit["n_group_b_pre_balance"] == "2"
+    assert audit["n_group_a_post_balance"] == "2"
+    assert audit["n_group_b_post_balance"] == "2"
+    selected_rows = [
+        row
+        for row in csv.DictReader((Path(args.out_dir) / "comparison_selected_samples.tsv").open("r", encoding="utf-8"), delimiter="\t")
+        if row["comparison_id"] == "condition=treated_vs_control"
+    ]
+    assert len(selected_rows) == 4
+    treated_ids = sorted(row["sample_id"] for row in selected_rows if row["group_label"] == "treated")
+    control_ids = sorted(row["sample_id"] for row in selected_rows if row["group_label"] == "control")
+    assert len(treated_ids) == 2
+    assert control_ids == ["S5", "S6"]
+    summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
+    assert summary["de_mode"] == "harmonizome"
+    assert summary["balance_groups"] is True
+    assert summary["balance_seed"] == 1
+
+
+def test_rna_de_prepare_modern_mode_keeps_all_samples_on_unbalanced_bulk(tmp_path: Path):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_modern"),
+        backend="lightweight",
+    )
+    run_rna_de_prepare(args)
+    audit_rows = list(
+        csv.DictReader((Path(args.out_dir) / "comparison_audit.tsv").open("r", encoding="utf-8"), delimiter="\t")
+    )
+    audit = audit_rows[0]
+    assert audit["de_mode"] == "modern"
+    assert audit["balance_requested"] == "False"
+    assert audit["balance_applied"] == "False"
+    assert audit["n_group_a_pre_balance"] == "4"
+    assert audit["n_group_b_pre_balance"] == "2"
+    assert audit["n_group_a_post_balance"] == "4"
+    assert audit["n_group_b_post_balance"] == "2"
+
+
+def test_rna_de_prepare_harmonizome_mode_rejects_covariates(tmp_path: Path):
+    counts_path, meta_path, _subject_path = _make_bulk_inputs(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_harmonizome_covariates"),
+        de_mode="harmonizome",
+        covariates="tissue",
+    )
+    with pytest.raises(ValueError, match="simple two-group design"):
+        run_rna_de_prepare(args)
+
+
+def test_rna_de_prepare_uses_group_column_from_comparisons_tsv(tmp_path: Path):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    comparisons_path = tmp_path / "comparisons.tsv"
+    _write_tsv(
+        comparisons_path,
+        [
+            {
+                "comparison_id": "condition=treated_vs_control",
+                "group_column": "condition",
+                "group_a": "treated",
+                "group_b": "control",
+                "tissue": "lung",
+            }
+        ],
+        ["comparison_id", "group_column", "group_a", "group_b", "tissue"],
+    )
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_from_comparisons"),
+        group_column=None,
+        comparison_mode=None,
+        comparisons_tsv=str(comparisons_path),
+        stratify_by="tissue",
+        backend="lightweight",
+    )
+    result = run_rna_de_prepare(args)
+    assert result["n_comparisons"] == 1
+    audit_rows = list(
+        csv.DictReader((Path(args.out_dir) / "comparison_audit.tsv").open("r", encoding="utf-8"), delimiter="\t")
+    )
+    assert audit_rows[0]["comparison_id"] == "condition=treated_vs_control"
 
 
 def test_rna_de_prepare_scrna_writes_pseudobulk_and_deg_long(tmp_path: Path):

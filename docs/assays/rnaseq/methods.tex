@@ -262,6 +262,17 @@ This boundary is intentional: raw DE fitting is treated as preprocessing/inferen
 For bulk RNA-seq, the workflow consumes a dense TSV count matrix plus sample metadata, optionally joined with subject-level metadata.
 It supports simple CLI-generated contrasts (two-group, group-vs-rest, reference-level within stratum) or an explicit comparisons table.
 
+\subsection*{DE preparation modes}
+The preprocessing layer now exposes explicit DE-fitting modes rather than overloading extractor post-processing presets.
+
+\texttt{de\_mode=modern} is the general-purpose default: all eligible samples for each contrast are retained, and covariates, batch terms, or repeated-measures designs may be used subject to backend support.
+
+\texttt{de\_mode=harmonizome} is a narrow bulk-RNA preset intended to more closely reproduce the published GTEx/Harmonizome aging notebook. For each two-group comparison, let $A$ and $B$ denote the eligible sample sets after stratification and group filtering. The balanced analysis set is
+\[
+\tilde{A} \subseteq A,\qquad \tilde{B} \subseteq B,\qquad |\tilde{A}| = |\tilde{B}| = \min(|A|, |B|).
+\]
+The downsampling is deterministic given a base seed and comparison identifier, and the selected sample IDs are written to audit artifacts. This mode intentionally rejects covariates, batch terms, and repeated-measures flags so the fit remains a simple auditable two-group analysis.
+
 \subsection*{scRNA pseudobulk mode}
 For scRNA-seq, the workflow defaults to donor-level pseudobulk rather than naive per-cell DE.
 If cell type is provided, pseudobulks can be formed within cell type and then compared across conditions.

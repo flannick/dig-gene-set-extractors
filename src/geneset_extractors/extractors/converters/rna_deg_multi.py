@@ -86,7 +86,7 @@ def run(args) -> dict[str, object]:
             padj_max=getattr(args, "padj_max", None),
             pvalue_max=getattr(args, "pvalue_max", None),
             min_abs_logfc=getattr(args, "min_abs_logfc", None),
-            postprocess_mode=args.postprocess_mode,
+            postprocess_mode=getattr(args, "postprocess_mode", "legacy"),
             neglog10p_cap=args.neglog10p_cap,
             neglog10p_eps=args.neglog10p_eps,
             duplicate_gene_policy=args.duplicate_gene_policy,
@@ -124,7 +124,7 @@ def run(args) -> dict[str, object]:
                 input_files=files,
             )
         except ValueError as exc:
-            if not _should_skip_empty_filtered_comparison(args.postprocess_mode, exc):
+            if not _should_skip_empty_filtered_comparison(getattr(args, "postprocess_mode", "legacy"), exc):
                 raise
             if group_dir.exists():
                 try:

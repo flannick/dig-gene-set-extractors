@@ -11,6 +11,8 @@ The workflow writes:
 
 - `deg_long.tsv`
 - `comparison_manifest.tsv`
+- `comparison_audit.tsv`
+- `comparison_selected_samples.tsv`
 - `prepare_summary.json`
 - optional `pseudobulk_matrix.tsv`
 - optional `pseudobulk_metadata.tsv`
@@ -24,6 +26,13 @@ The intended split is:
 - `convert`: start from already scored DE tables or precomputed program loadings, emit gene programs and GMT outputs
 
 This keeps the extractor layer assay-result focused and keeps heavier upstream inference optional.
+
+One important boundary now exists in two places:
+
+- workflow-side `--de_mode` controls how DE is fit and which samples enter each contrast
+- extractor-side `--postprocess_mode` on `rna_deg` / `rna_deg_multi` controls how an already-fit DE table is turned into signatures
+
+They are intentionally separate. `--de_mode harmonizome` is not the same knob as `--postprocess_mode harmonizome`.
 
 ## Supported v1 inputs
 
@@ -92,6 +101,24 @@ Limitations:
 
 Use `r_limma_voom` or `r_dream` when design complexity matters and the R stack is available.
 
+## DE modes
+
+- `--de_mode modern` (default)
+  - general-purpose behavior
+  - uses all eligible samples for each contrast
+  - allows covariates, batch columns, and repeated-measures designs subject to backend support
+- `--de_mode harmonizome`
+  - explicit bulk-RNA preset for GTEx/Harmonizome-style aging contrasts
+  - balances each two-group comparison to `min(n_group_a, n_group_b)` after eligibility filtering
+  - deterministic by seed; default seed is `1`
+  - writes selected sample IDs and pre/post balance counts to:
+    - `comparison_selected_samples.tsv`
+    - `comparison_audit.tsv`
+  - currently limited to simple two-group bulk designs
+  - rejects covariates, batch columns, and repeated-measures flags so the fit stays auditable
+
+Balancing is not the universal default. If you want the original general-purpose behavior, stay in `modern` mode or leave `--de_mode` unset.
+
 ## Bulk example: two-group DE
 
 ```bash
@@ -110,6 +137,33 @@ geneset-extractors workflows rna_de_prepare \
   --organism human \
   --genome_build hg38
 ```
+
+## Harmonizome-style bulk example
+
+This mode exists to more closely match the published GTEx aging notebook behavior: broad-tissue stratified contrasts, balanced age-bin pools, and a simple two-group fit.
+
+```bash
+geneset-extractors workflows rna_de_prepare \
+  --modality bulk \
+  --counts_tsv path/to/tissue_counts.tsv \
+  --sample_metadata_tsv path/to/sample_metadata.tsv \
+  --sample_id_column sample_id \
+  --feature_id_column gene_id \
+  --group_column age_bin \
+  --comparisons_tsv path/to/gtex_age_comparisons.tsv \
+  --stratify_by tissue \
+  --de_mode harmonizome \
+  --backend auto \
+  --out_dir results/rna_de_harmonizome \
+  --organism human \
+  --genome_build hg38
+```
+
+The audit outputs will record both the eligible pool and the balanced pool per contrast.
+
+A concrete validation example for the GTEx adipose aging contrast is recorded in:
+
+- `docs/assays/rnaseq/harmonizome_validation_note.md`
 
 ## scRNA example: donor-level pseudobulk within cell type
 
@@ -157,6 +211,8 @@ geneset-extractors workflows rna_de_prepare \
 ```
 
 This emits many contrast rows in one long table while preserving a generic interface. There is no GTEx-specific hardcoded preset in the extractor layer.
+
+If you want GTEx-like contrasts but still want the general-purpose fit, keep `--de_mode modern` and use all eligible samples. If you want closer notebook parity, switch to `--de_mode harmonizome`.
 
 ## Run the extractor after prepare
 
@@ -216,6 +272,7 @@ Bulk:
 - use explicit reference levels when needed
 - keep low-expression filtering on
 - prefer `auto` backend resolution
+- use `--de_mode harmonizome` only when you explicitly want balanced notebook-style bulk contrasts
 
 scRNA:
 
