@@ -414,6 +414,25 @@ def _n_unique_units(rows: list[dict[str, str]], unit_column: str | None, group_c
     return len({str(row.get(unit_column, "")).strip() for row in subset if str(row.get(unit_column, "")).strip()})
 
 
+def _imbalance_ratio(a: int, b: int) -> float:
+    lo = min(int(a), int(b))
+    hi = max(int(a), int(b))
+    if lo <= 0:
+        return float('inf') if hi > 0 else 1.0
+    return float(hi) / float(lo)
+
+
+def _format_ratio(value: float) -> str:
+    if not np.isfinite(value):
+        return 'inf'
+    return f"{value:.3f}"
+
+
+def _record_workflow_warning(warnings: list[str], message: str) -> None:
+    warnings.append(message)
+    print(f"warning: {message}", file=sys.stderr)
+
+
 
 def _write_backend_inputs(
     work_dir: Path,
@@ -756,22 +775,27 @@ def run_de_prepare(
             "Requested batch columns were not found in the prepared metadata: " + ", ".join(missing_batch_columns)
         )
     if blank_covariates:
-        workflow_warnings.append(
-            "Some requested covariates were present but blank for all aligned samples: " + ", ".join(blank_covariates)
+        _record_workflow_warning(
+            workflow_warnings,
+            "Some requested covariates were present but blank for all aligned samples: " + ", ".join(blank_covariates),
         )
     if blank_batch_columns:
-        workflow_warnings.append(
-            "Some requested batch columns were present but blank for all aligned samples: "
-            + ", ".join(blank_batch_columns)
+        _record_workflow_warning(
+            workflow_warnings,
+            "Some requested batch columns were present but blank for all aligned samples: " + ", ".join(blank_batch_columns),
         )
     if resolved_de_mode == "harmonizome" and not covariate_cols:
-        workflow_warnings.append(
+        _record_workflow_warning(
+            workflow_warnings,
             "de_mode=harmonizome was run without explicit covariates. For broad-tissue GTEx/Harmonizome-style analyses, "
-            "prefer explicit fixed-effect covariates such as SEX,SMTSD when those columns exist."
+            "prefer explicit fixed-effect covariates such as SEX,SMTSD when those columns exist.",
         )
-    for warning in workflow_warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-
+    if modality == "bulk" and resolved_de_mode == "modern" and not covariate_cols and stratify_cols:
+        _record_workflow_warning(
+            workflow_warnings,
+            "bulk modern mode is running without explicit covariates while stratification is enabled. "
+            "When available, consider known nuisance variables such as sex, tissue subsite, batch, RIN, or ischemic/procurement timing.",
+        )
     covariates_used = ",".join(covariate_cols)
     batch_columns_used = ",".join(batch_cols)
     harmonizome_covariate_mode = "explicit" if covariate_cols else "none"
@@ -853,6 +877,20 @@ def run_de_prepare(
             n_group_b_units = _n_unique_units(selection.selected_rows, unit_column, spec.group_column, selection.group_b_label)
         audit_row["n_group_a_units_post"] = n_group_a_units
         audit_row["n_group_b_units_post"] = n_group_b_units
+        audit_row["imbalance_ratio_pre_balance"] = _format_ratio(_imbalance_ratio(int(audit_row.get("n_group_a_pre_balance", 0)), int(audit_row.get("n_group_b_pre_balance", 0))))
+        audit_row["imbalance_ratio_post_balance"] = _format_ratio(_imbalance_ratio(int(audit_row.get("n_group_a_post_balance", 0)), int(audit_row.get("n_group_b_post_balance", 0))))
+        if (
+            modality == "bulk"
+            and resolved_de_mode == "modern"
+            and not resolved_balance_groups
+            and _imbalance_ratio(int(audit_row.get("n_group_a_pre_balance", 0)), int(audit_row.get("n_group_b_pre_balance", 0))) >= 2.0
+        ):
+            _record_workflow_warning(
+                workflow_warnings,
+                f"comparison {spec.comparison_id} is strongly imbalanced before fit "
+                f"({audit_row.get('n_group_a_pre_balance')} vs {audit_row.get('n_group_b_pre_balance')}). "
+                "modern mode may prioritize weak global effects; consider explicit covariates or --de_mode harmonizome for signature-generation workflows.",
+            )
         if n_group_a_units < int(min_donors_per_group) or n_group_b_units < int(min_donors_per_group):
             audit_row["selected_for_fit"] = False
             audit_row["skip_reason"] = "insufficient_units_after_selection"
@@ -978,6 +1016,8 @@ def run_de_prepare(
             "n_group_b_pre_balance",
             "n_group_a_post_balance",
             "n_group_b_post_balance",
+            "imbalance_ratio_pre_balance",
+            "imbalance_ratio_post_balance",
             "n_group_a_units_post",
             "n_group_b_units_post",
             "selected_for_fit",

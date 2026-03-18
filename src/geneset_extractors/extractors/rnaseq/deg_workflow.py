@@ -251,6 +251,70 @@ def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowCo
     return False
 
 
+_TECHNICAL_PREFIXES = ("MT-", "RPL", "RPS", "EEF", "HNRNP", "HNRNPA", "HNRNPK", "HNRNPU")
+
+
+def _technical_gene_qc(rows: list[dict[str, object]], *, top_n: int = 20) -> dict[str, object]:
+    top_rows = list(rows[:top_n])
+    matched: list[str] = []
+    for row in top_rows:
+        token = str(row.get("gene_symbol") or row.get("gene_id") or "").strip()
+        if any(token.startswith(prefix) for prefix in _TECHNICAL_PREFIXES):
+            matched.append(token)
+    fraction = float(len(matched)) / float(len(top_rows)) if top_rows else 0.0
+    return {
+        "n_rows_considered": len(top_rows),
+        "n_technical_like": len(matched),
+        "fraction_technical_like": fraction,
+        "matched_genes": matched,
+    }
+
+
+def _warn_logfc_mode_without_filters(cfg: DEGWorkflowConfig, resolved_score_mode: str) -> str | None:
+    if resolved_score_mode != "logfc":
+        return None
+    if cfg.padj_max is None and cfg.pvalue_max is None and cfg.min_abs_logfc is None:
+        msg = (
+            "score_mode=logfc is being used without padj/pvalue/logFC row filters. "
+            "This effect-size-first mode is best paired with explicit filters such as --padj_max and/or --min_abs_logfc."
+        )
+        print(f"warning: {msg}", file=sys.stderr)
+        return msg
+    return None
+
+
+def _warn_significance_flood(filtered_input_rows: list[DEGRow], padj_column: str | None) -> tuple[str | None, int]:
+    if not padj_column:
+        return None, 0
+    n_sig = 0
+    for row in filtered_input_rows:
+        value = parse_float_soft(row.values.get(str(padj_column)))
+        if value is not None and float(value) <= 0.05:
+            n_sig += 1
+    if n_sig >= 5000:
+        msg = (
+            f"many genes pass padj<=0.05 before ranking (n={n_sig}). Top-K truncation may be brittle; "
+            "validate pathway/marker coherence and consider additional effect-size filters if signatures look generic."
+        )
+        print(f"warning: {msg}", file=sys.stderr)
+        return msg, n_sig
+    return None, n_sig
+
+
+def _warn_technical_gene_dominance(selected_rows: list[dict[str, object]]) -> tuple[str | None, dict[str, object]]:
+    qc = _technical_gene_qc(selected_rows, top_n=20)
+    if float(qc.get("fraction_technical_like", 0.0)) >= 0.3 and int(qc.get("n_rows_considered", 0)) >= 10:
+        genes = ", ".join(list(qc.get("matched_genes", []))[:8])
+        msg = (
+            "selected program is enriched for technical/global gene families in the top ranks "
+            f"({int(qc.get('n_technical_like', 0))}/{int(qc.get('n_rows_considered', 0))}; examples: {genes}). "
+            "This often indicates a generic or overpowered signature; validate marker/pathway coherence and consider more conservative DE or additional filters."
+        )
+        print(f"warning: {msg}", file=sys.stderr)
+        return msg, qc
+    return None, qc
+
+
 def run_deg_workflow(
     *,
     cfg: DEGWorkflowConfig,
@@ -323,6 +387,8 @@ def run_deg_workflow(
     if not filtered_input_rows:
         raise ValueError("No DE rows remain after applying padj/pvalue/logFC row filters.")
 
+    flood_warning, n_rows_padj_le_0_05 = _warn_significance_flood(filtered_input_rows, resolved_columns["padj_column"])
+
     resolved_score_mode, records, skipped_rows, duplicate_info = score_deg_rows(
         filtered_input_rows,
         gene_id_column=str(resolved_columns["gene_id_column"]),
@@ -389,6 +455,8 @@ def run_deg_workflow(
     )
     weights = _selected_weights(magnitude_by_gene, selected_gene_ids, cfg.normalize)
 
+    logfc_filter_warning = _warn_logfc_mode_without_filters(cfg, resolved_score_mode)
+
     selected_rows: list[dict[str, object]] = []
     for rank, gid in enumerate(selected_gene_ids, start=1):
         rec = records[gid]
@@ -429,6 +497,8 @@ def run_deg_workflow(
         if biotype:
             row["gene_biotype"] = biotype
         full_rows.append(row)
+
+    technical_warning, technical_qc = _warn_technical_gene_dominance(selected_rows)
 
     _write_rows(out_dir / "geneset.tsv", selected_rows)
     if cfg.emit_full:
@@ -541,6 +611,9 @@ def run_deg_workflow(
         },
         "requested_gmt_outputs": [{"name": p.get("name", "")} for p in gmt_plans],
         "skipped_gmt_outputs": _collect_skipped_gmt_outputs(gmt_diagnostics),
+        "warnings": [w for w in [flood_warning, logfc_filter_warning, technical_warning] if w],
+        "significance_qc": {"n_rows_padj_le_0_05": int(n_rows_padj_le_0_05)},
+        "technical_gene_qc": technical_qc,
     }
     run_summary_json_path, run_summary_txt_path = write_run_summary_files(out_dir, run_summary_payload)
     output_files.append({"path": str(run_summary_json_path), "role": "run_summary_json"})
@@ -626,6 +699,9 @@ def run_deg_workflow(
             "n_rows_skipped_unparseable": int(skipped_rows),
             "n_rows_filtered_by_thresholds": int(n_rows_filtered_by_thresholds),
             "n_genes_filtered_by_symbol_regex": int(n_filtered),
+            "warnings": [w for w in [flood_warning, logfc_filter_warning, technical_warning] if w],
+            "significance_qc": {"n_rows_padj_le_0_05": int(n_rows_padj_le_0_05)},
+            "technical_gene_qc": technical_qc,
             "n_gene_ids_with_duplicates": int(duplicate_info.get("n_gene_ids_with_duplicates", 0)),
             "n_duplicate_rows": int(duplicate_info.get("n_duplicate_rows", 0)),
             "symbol_promotion": {

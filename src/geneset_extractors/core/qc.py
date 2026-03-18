@@ -237,6 +237,12 @@ def render_run_summary_text(payload: dict[str, object]) -> str:
     ):
         if key in payload:
             lines.append(f"{key}: {payload[key]}")
+    warnings = payload.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        lines.append("warnings:")
+        for warning in warnings:
+            lines.append(f"  - {warning}")
+
     skipped_programs = payload.get("skipped_programs")
     if isinstance(skipped_programs, list) and skipped_programs:
         lines.append(f"skipped_programs: {len(skipped_programs)}")

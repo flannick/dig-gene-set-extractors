@@ -231,6 +231,32 @@ Grouped output layout:
 
 The grouped `manifest.tsv` keeps `path` and now also includes `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
 
+## Choosing DE mode, covariates, and ranking
+
+Use this as the practical decision table for new bulk RNA-seq datasets.
+
+| Goal / dataset shape | Recommended DE mode | Covariates | Recommended ranking | Notes |
+| --- | --- | --- | --- | --- |
+| General DE inference in a controlled study | `modern` | Explicit known nuisance variables when present | `signed_neglog10padj` or `stat` | Uses all samples; best when the DE model is the primary object of interest. |
+| Compact directional signature generation from heterogeneous observational cohorts | `harmonizome` | Explicit fixed effects such as `SEX`, tissue subsite, batch, RIN, ischemic/procurement timing when present | `signed_neglog10padj` | Conservative mode for broad tissues and imbalanced groups. |
+| Exploratory larger-effect signatures after significance filtering | `modern` or `harmonizome`, depending on cohort | Explicit known nuisance variables | `logfc` with `--padj_max` and/or `--min_abs_logfc` | Effect-size-first mode is not a good default for library-style signatures. |
+| Hybrid ranking that still rewards significance | Either | Explicit known nuisance variables | `logfc_times_neglog10p` | Useful exploratory compromise, but benchmarked worse than `signed_neglog10padj` for GTEx aging. |
+
+How to choose covariates:
+
+- Do not expect the tool to infer scientific covariates automatically.
+- Use study-aware nuisance variables that are known or plausibly confounding for the assay and cohort.
+- Common bulk RNA-seq examples: `SEX`, tissue subsite, batch, RIN/quality, ischemic or procurement timing, and other acquisition variables.
+
+How to tell if settings are not working:
+
+- top-ranked genes are dominated by technical/global families such as `MT-`, `RPL`, `RPS`, `EEF`, or `HNRNP`
+- thousands of genes pass `padj <= 0.05` and the final top-250 set looks generic
+- group sizes are strongly imbalanced in `modern` mode
+- `logfc` mode is used without explicit row filters
+
+The code now emits warnings for those objectively detectable cases, but the user still needs to validate marker/pathway coherence.
+
 ## Quickstart: prepare DE first, then extract
 
 Use the workflow when you are starting from counts plus metadata rather than from a precomputed DE table:

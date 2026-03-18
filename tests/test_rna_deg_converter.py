@@ -404,6 +404,44 @@ def test_rna_deg_supports_logfc_score_mode(tmp_path: Path):
     assert float(rows[0]["score"]) == pytest.approx(-2.5)
 
 
+def test_rna_deg_warns_for_logfc_mode_without_filters(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    tsv = tmp_path / "logfc_warn.tsv"
+    tsv.write_text(
+        "gene_id\tlogFC\tpadj\nA\t1.0\t1e-6\nB\t-2.5\t1e-6\nC\t0.2\t1e-6\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "logfc_warn")
+    args.emit_gmt = False
+    args.score_mode = "logfc"
+    rna_deg.run(args)
+    captured = capsys.readouterr()
+    assert "score_mode=logfc is being used without" in captured.err
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert any("score_mode=logfc" in warning for warning in summary["warnings"])
+
+
+def test_rna_deg_warns_when_selected_program_looks_technical(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    tsv = tmp_path / "technical.tsv"
+    tsv.write_text(
+        "gene_id\tstat\nMT-ND1\t10\nRPLP0\t9\nRPS3\t8\nEEF1A1\t7\nHNRNPU\t6\nGENE1\t5\nGENE2\t4\nGENE3\t3\nGENE4\t2\nGENE5\t1\n",
+        encoding="utf-8",
+    )
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "technical_warn")
+    args.emit_gmt = False
+    args.disable_default_excludes = True
+    args.top_k = 10
+    rna_deg.run(args)
+    captured = capsys.readouterr()
+    assert "selected program is enriched for technical/global gene families" in captured.err
+    summary = json.loads((Path(args.out_dir) / "run_summary.json").read_text(encoding="utf-8"))
+    assert float(summary["technical_gene_qc"]["fraction_technical_like"]) >= 0.3
+    assert any("technical/global gene families" in warning for warning in summary["warnings"])
+
+
 def test_rna_deg_row_filters_apply_before_gene_aggregation(tmp_path: Path):
     tsv = tmp_path / "filtered.tsv"
     tsv.write_text(

@@ -19,7 +19,7 @@ This root README is intentionally framework-level:
 Detailed `geneset_extractors` CLI and method behavior is split by assay:
 
 - `docs/assays/atac/guide.md` (ATAC practical guide)
-- `docs/assays/rnaseq/guide.md` (RNA practical guide)
+- `docs/assays/rnaseq/guide.md` (RNA practical guide; includes a decision table for DE mode, covariates, ranking, and warning interpretation)
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
 - `docs/assays/proteomics/guide.md` (proteomics PTM practical guide)
 - `docs/assays/proteomics/reference_bundle.md` (proteomics PTM bundle guide)

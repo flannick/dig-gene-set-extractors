@@ -531,6 +531,38 @@ def test_rna_de_prepare_harmonizome_mode_warns_when_covariates_missing(tmp_path:
     assert summary["harmonizome_covariate_mode"] == "none"
 
 
+def test_rna_de_prepare_modern_mode_warns_on_strong_imbalance(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_modern_warn_imbalance"),
+        backend="lightweight",
+    )
+    run_rna_de_prepare(args)
+    captured = capsys.readouterr()
+    assert "strongly imbalanced before fit" in captured.err
+    summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
+    assert any("strongly imbalanced before fit" in warning for warning in summary["warnings"])
+    audit_rows = list(csv.DictReader((Path(args.out_dir) / "comparison_audit.tsv").open("r", encoding="utf-8"), delimiter="	"))
+    assert audit_rows[0]["imbalance_ratio_pre_balance"] == "2.000"
+    assert audit_rows[0]["imbalance_ratio_post_balance"] == "2.000"
+
+
+def test_rna_de_prepare_modern_bulk_stratified_warns_without_covariates(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_modern_stratified_no_covariates"),
+        backend="lightweight",
+        stratify_by="tissue",
+    )
+    run_rna_de_prepare(args)
+    captured = capsys.readouterr()
+    assert "without explicit covariates while stratification is enabled" in captured.err
+
+
 def test_rna_de_prepare_fails_when_requested_covariate_is_missing(tmp_path: Path):
     counts_path, meta_path = _make_bulk_inputs_unbalanced(tmp_path)
     args = BulkArgs(
