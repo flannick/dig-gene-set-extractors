@@ -317,9 +317,10 @@ def _write_backend_inputs(
     metadata_rows: list[dict[str, str]],
     specs: list[ComparisonSpec],
     selected_sample_rows: list[dict[str, Any]],
+    backend_sample_ids: list[str] | None = None,
 ) -> tuple[Path, Path, Path, Path]:
     work_dir.mkdir(parents=True, exist_ok=True)
-    selected_sample_ids = _unique_preserving([_clean(row.get("sample_id")) for row in selected_sample_rows])
+    selected_sample_ids = backend_sample_ids or _unique_preserving([_clean(row.get("sample_id")) for row in selected_sample_rows])
     if selected_sample_ids:
         selected_sample_id_set = set(selected_sample_ids)
         matrix = subset_matrix(matrix, [sample_id for sample_id in matrix.sample_ids if sample_id in selected_sample_id_set])
@@ -377,6 +378,11 @@ def _run_r_backend(
         metadata_rows,
         specs,
         selected_sample_rows,
+        backend_sample_ids=(
+            _unique_preserving([_clean(row.get("sample_id")) for row in metadata_rows])
+            if gene_filter_scope == "stratum"
+            else None
+        ),
     )
     output_path = work_dir / "deg_long.tsv"
     if backend_name == "r_limma_voom":
