@@ -361,6 +361,7 @@ def test_rna_de_prepare_harmonizome_mode_balances_bulk_contrast_and_writes_audit
     audit = audit_rows[0]
     assert audit["de_mode"] == "harmonizome"
     assert audit["balance_requested"] == "True"
+    assert audit["balance_sampler"] == "harmonizome_random_state"
     assert audit["n_group_a_pre_balance"] == "4"
     assert audit["n_group_b_pre_balance"] == "2"
     assert audit["n_group_a_post_balance"] == "2"
@@ -371,13 +372,14 @@ def test_rna_de_prepare_harmonizome_mode_balances_bulk_contrast_and_writes_audit
         if row["comparison_id"] == "condition=treated_vs_control"
     ]
     assert len(selected_rows) == 4
-    treated_ids = sorted(row["sample_id"] for row in selected_rows if row["group_label"] == "treated")
-    control_ids = sorted(row["sample_id"] for row in selected_rows if row["group_label"] == "control")
-    assert len(treated_ids) == 2
+    treated_ids = [row["sample_id"] for row in selected_rows if row["group_label"] == "treated"]
+    control_ids = [row["sample_id"] for row in selected_rows if row["group_label"] == "control"]
+    assert treated_ids == ["S4", "S3"]
     assert control_ids == ["S5", "S6"]
     summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
     assert summary["de_mode"] == "harmonizome"
     assert summary["balance_groups"] is True
+    assert summary["balance_sampler"] == "harmonizome_random_state"
     assert summary["balance_seed"] == 1
 
 
@@ -412,6 +414,7 @@ def test_rna_de_prepare_modern_mode_keeps_all_samples_on_unbalanced_bulk(tmp_pat
     assert audit["de_mode"] == "modern"
     assert audit["balance_requested"] == "False"
     assert audit["balance_applied"] == "False"
+    assert audit["balance_sampler"] == "none"
     assert audit["n_group_a_pre_balance"] == "4"
     assert audit["n_group_b_pre_balance"] == "2"
     assert audit["n_group_a_post_balance"] == "4"

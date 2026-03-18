@@ -178,6 +178,7 @@ def _select_balanced_rows(
     balance_groups: bool,
     balance_seed: int,
     gene_filter_scope: str,
+    de_mode: str,
 ) -> ComparisonSampleSelection:
     group_b_label = spec.group_b if spec.group_b else "rest"
     grouped_rows: dict[str, list[dict[str, str]]] = {
@@ -194,21 +195,35 @@ def _select_balanced_rows(
     balance_applied = False
     selected_groups: dict[str, list[dict[str, str]]] = {}
     effective_seeds: dict[str, int] = {}
+    balance_sampler = "none"
     for label, group_rows in grouped_rows.items():
+        original_rows = list(group_rows)
         ordered_rows = sorted(group_rows, key=lambda row: _clean(row.get("sample_id")))
         if not balance_groups or len(ordered_rows) <= target_size:
             selected_groups[label] = list(ordered_rows)
             continue
         balance_applied = True
-        seed_value = _stable_seed(balance_seed, spec.comparison_id, label)
-        effective_seeds[label] = seed_value
-        rng = np.random.default_rng(seed_value)
-        picked_idx = sorted(int(idx) for idx in rng.choice(len(ordered_rows), size=target_size, replace=False))
-        selected_groups[label] = [ordered_rows[idx] for idx in picked_idx]
-    selected_rows = sorted(
-        selected_groups[spec.group_a] + selected_groups[group_b_label],
-        key=lambda row: (_comparison_group_label(row, spec) or "", _clean(row.get("sample_id"))),
-    )
+        if de_mode == "harmonizome":
+            balance_sampler = "harmonizome_random_state"
+            seed_value = int(balance_seed)
+            effective_seeds[label] = seed_value
+            rng = np.random.RandomState(seed_value)
+            picked_idx = list(rng.choice(len(original_rows), size=target_size, replace=False))
+            selected_groups[label] = [original_rows[idx] for idx in picked_idx]
+        else:
+            balance_sampler = "hashed_default_rng"
+            seed_value = _stable_seed(balance_seed, spec.comparison_id, label)
+            effective_seeds[label] = seed_value
+            rng = np.random.default_rng(seed_value)
+            picked_idx = sorted(int(idx) for idx in rng.choice(len(ordered_rows), size=target_size, replace=False))
+            selected_groups[label] = [ordered_rows[idx] for idx in picked_idx]
+    if de_mode == "harmonizome":
+        selected_rows = selected_groups[spec.group_a] + selected_groups[group_b_label]
+    else:
+        selected_rows = sorted(
+            selected_groups[spec.group_a] + selected_groups[group_b_label],
+            key=lambda row: (_comparison_group_label(row, spec) or "", _clean(row.get("sample_id"))),
+        )
     selected_sample_rows: list[dict[str, Any]] = []
     for rank, row in enumerate(selected_rows, start=1):
         label = _comparison_group_label(row, spec) or ""
@@ -237,6 +252,7 @@ def _select_balanced_rows(
         "n_filter_scope_samples": len(filter_scope_rows),
         "balance_requested": bool(balance_groups),
         "balance_applied": bool(balance_applied),
+        "balance_sampler": balance_sampler,
         "balance_seed": int(balance_seed),
         "balance_seed_group_a": effective_seeds.get(spec.group_a, ""),
         "balance_seed_group_b": effective_seeds.get(group_b_label, ""),
@@ -706,6 +722,7 @@ def run_de_prepare(
             balance_groups=resolved_balance_groups,
             balance_seed=resolved_balance_seed,
             gene_filter_scope=resolved_gene_filter_scope,
+            de_mode=resolved_de_mode,
         )
         selected_sample_rows_all.extend(selection.selected_sample_rows)
         audit_row = dict(selection.audit_row)
@@ -840,6 +857,7 @@ def run_de_prepare(
             "harmonizome_covariate_mode",
             "workflow_warning_count",
             "balance_requested",
+            "balance_sampler",
             "balance_applied",
             "balance_seed",
             "balance_seed_group_a",
@@ -943,6 +961,7 @@ def run_de_prepare(
         "batch_columns_used": batch_cols,
         "harmonizome_covariate_mode": harmonizome_covariate_mode,
         "balance_groups": bool(resolved_balance_groups),
+        "balance_sampler": ("harmonizome_random_state" if resolved_de_mode == "harmonizome" and resolved_balance_groups else ("hashed_default_rng" if resolved_balance_groups else "none")),
         "balance_seed": int(resolved_balance_seed),
         "resolved_backend": resolved_backend,
         "backend_requested": backend,
