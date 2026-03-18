@@ -29,6 +29,7 @@
     {"name": "padj_max", "type": "number", "default": null, "help": "Optional adjusted p-value filter applied before gene aggregation"},
     {"name": "pvalue_max", "type": "number", "default": null, "help": "Optional p-value filter applied before gene aggregation"},
     {"name": "min_abs_logfc", "type": "number", "default": null, "help": "Optional abs(logFC) filter applied before gene aggregation"},
+    {"name": "postprocess_mode", "type": "string", "default": "harmonizome", "enum": ["harmonizome", "legacy"], "help": "RNA DEG post-processing preset. harmonizome is the default; legacy preserves prior behavior."},
     {"name": "duplicate_gene_policy", "type": "string", "default": "max_abs", "enum": ["sum", "max_abs", "mean", "last"], "help": "How duplicate gene_id rows are aggregated"},
     {"name": "neglog10p_cap", "type": "number", "default": 50.0, "help": "Cap for -log10(p) in logfc_times_neglog10p"},
     {"name": "neglog10p_eps", "type": "number", "default": 1e-300, "help": "Numerical floor for p-values"},

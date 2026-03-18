@@ -5,3 +5,5 @@
 Use the current practical RNA guide:
 
 - `docs/assays/rnaseq/guide.md`
+
+The guide documents RNA DEG post-processing modes, including `harmonizome` (default) and `legacy`.

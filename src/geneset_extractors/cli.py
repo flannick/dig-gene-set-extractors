@@ -181,6 +181,12 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         choices=["auto", "stat", "logfc_times_neglog10p", "signed_neglog10padj", "custom_column"],
         default="auto",
     )
+    parser.add_argument(
+        "--postprocess_mode",
+        choices=["harmonizome", "legacy"],
+        default="harmonizome",
+        help="RNA DEG post-processing preset. harmonizome is the default; legacy preserves prior behavior.",
+    )
     parser.add_argument("--padj_max", type=float, help="Optional adjusted p-value filter applied before gene aggregation.")
     parser.add_argument("--pvalue_max", type=float, help="Optional p-value filter applied before gene aggregation.")
     parser.add_argument("--min_abs_logfc", type=float, help="Optional abs(logFC) filter applied before gene aggregation.")

@@ -56,6 +56,7 @@ class DEGWorkflowConfig:
     padj_max: float | None
     pvalue_max: float | None
     min_abs_logfc: float | None
+    postprocess_mode: str
     neglog10p_cap: float
     neglog10p_eps: float
     duplicate_gene_policy: str
@@ -210,6 +211,25 @@ def _warn_split_signed_no_negatives(rows: list[dict[str, object]], cfg: DEGWorkf
     )
 
 
+def _resolved_postprocess_cfg(cfg: DEGWorkflowConfig) -> DEGWorkflowConfig:
+    if cfg.postprocess_mode == "legacy":
+        return cfg
+    if cfg.postprocess_mode != "harmonizome":
+        raise ValueError(f"Unsupported postprocess_mode: {cfg.postprocess_mode}")
+    cfg.score_mode = "signed_neglog10padj"
+    cfg.padj_max = 0.05 if cfg.padj_max is None else cfg.padj_max
+    cfg.disable_default_excludes = True
+    cfg.select = "threshold"
+    cfg.min_score = 1.30103
+    cfg.gmt_source = "selected"
+    cfg.gmt_topk_list = "250"
+    cfg.gmt_min_genes = 5
+    cfg.gmt_max_genes = 250
+    cfg.emit_small_gene_sets = True
+    cfg.gmt_biotype_allowlist = ""
+    return cfg
+
+
 def _warn_biotype_availability(rows: list[dict[str, object]], cfg: DEGWorkflowConfig, allowlist: list[str]) -> bool:
     if not allowlist:
         return False
@@ -238,6 +258,7 @@ def run_deg_workflow(
     rows: list[DEGRow],
     input_files: list[dict[str, str]],
 ) -> dict[str, object]:
+    cfg = _resolved_postprocess_cfg(cfg)
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     if cfg.gmt_source not in {"full", "selected"}:

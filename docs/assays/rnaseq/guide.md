@@ -96,6 +96,62 @@ geneset-extractors convert rna_deg_multi \
 geneset-extractors validate results/rna_deg_multi_example
 ```
 
+## Post-processing modes
+
+RNA DEG converters support two post-processing presets:
+
+- `harmonizome` (default): tuned to reproduce the published Harmonizome RNA aging signature behavior more closely.
+- `legacy`: preserves the prior RNA DEG extractor behavior.
+
+### Main differences
+
+`harmonizome` mode applies these RNA-specific settings:
+
+- `--score_mode signed_neglog10padj`
+- defaults `--padj_max` to `0.05` unless explicitly provided
+- disables default symbol excludes such as `MT-`, `RPL`, and `RPS`
+- selects genes by significance threshold rather than absolute top-k
+- sets `--min_score 1.30103`, corresponding to `padj <= 0.05`
+- builds GMT from `selected` rows, not the full ranked table
+- emits top-250 signed GMT sets
+- allows small emitted sets down to 5 genes
+- clears the default protein-coding biotype allowlist
+
+`legacy` mode preserves the previous defaults:
+
+- `--score_mode auto` (prefer `stat`; fallback to `logfc_times_neglog10p`)
+- `--select top_k --top_k 200`
+- `--gmt_source full`
+- `--gmt_topk_list 200 --gmt_min_genes 100 --gmt_max_genes 500`
+- default technical-gene excludes remain enabled
+- default protein-coding biotype allowlist remains enabled
+- row filters such as `--padj_max`, `--pvalue_max`, and `--min_abs_logfc` remain user-controlled
+
+### Example commands
+
+Default Harmonizome-style run:
+
+```bash
+geneset-extractors convert rna_deg_multi \
+  --deg_tsv path/to/deg_long.tsv \
+  --comparison_column comparison_id \
+  --out_dir results/rna_deg_multi_harmonizome \
+  --organism human \
+  --genome_build hg38
+```
+
+Legacy run:
+
+```bash
+geneset-extractors convert rna_deg_multi \
+  --deg_tsv path/to/deg_long.tsv \
+  --comparison_column comparison_id \
+  --out_dir results/rna_deg_multi_legacy \
+  --organism human \
+  --genome_build hg38 \
+  --postprocess_mode legacy
+```
+
 Grouped output layout:
 
 - `manifest.tsv`
