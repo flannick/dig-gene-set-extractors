@@ -98,6 +98,94 @@ def _is_integer_like_matrix(counts: np.ndarray) -> bool:
 
 
 
+
+
+def _subset_features(matrix: MatrixData, keep_indices: list[int], *, gene_symbols: list[str] | None = None) -> MatrixData:
+    counts = matrix.counts[:, np.asarray(keep_indices, dtype=int)]
+    return MatrixData(
+        sample_ids=list(matrix.sample_ids),
+        feature_ids=[matrix.feature_ids[i] for i in keep_indices],
+        counts=counts,
+        gene_symbols=list(gene_symbols) if gene_symbols is not None else [matrix.gene_symbols[i] for i in keep_indices],
+        matrix_orientation=matrix.matrix_orientation,
+        sample_id_column=matrix.sample_id_column,
+        feature_id_column=matrix.feature_id_column,
+        source_path=matrix.source_path,
+    )
+
+
+def _normalize_feature_id(feature_id: str, *, strip_version: bool) -> str:
+    value = _clean(feature_id)
+    if strip_version and "." in value:
+        return value.split(".", 1)[0]
+    return value
+
+
+def _normalize_mapping_source(raw_value: str, *, strip_version: bool) -> str:
+    value = _clean(raw_value)
+    if "Ensembl:" in value:
+        value = value.split("Ensembl:", 1)[1].split("|", 1)[0].strip()
+    return _normalize_feature_id(value, strip_version=strip_version)
+
+
+def _apply_feature_mapping(
+    matrix: MatrixData,
+    *,
+    mapping_tsv: str | None,
+    mapping_from_column: str | None,
+    mapping_to_column: str | None,
+    strip_version: bool,
+    drop_unmapped_features: bool,
+) -> tuple[MatrixData, dict[str, Any]]:
+    summary = {
+        "mapping_applied": False,
+        "mapping_tsv": mapping_tsv or "",
+        "mapping_from_column": mapping_from_column or "",
+        "mapping_to_column": mapping_to_column or "",
+        "strip_version": bool(strip_version),
+        "drop_unmapped_features": bool(drop_unmapped_features),
+        "n_features_input": len(matrix.feature_ids),
+        "n_features_output": len(matrix.feature_ids),
+        "n_features_mapped": 0,
+        "n_features_unmapped": 0,
+    }
+    if not mapping_tsv:
+        return matrix, summary
+    if not mapping_from_column or not mapping_to_column:
+        raise ValueError("feature_mapping_tsv requires both --feature_mapping_from_column and --feature_mapping_to_column")
+    mapping_rows = read_tsv_rows(mapping_tsv).rows
+    mapping: dict[str, str] = {}
+    for row in mapping_rows:
+        src = _normalize_mapping_source(_clean(row.get(mapping_from_column)), strip_version=strip_version)
+        dst = _clean(row.get(mapping_to_column))
+        if src and dst and src not in mapping:
+            mapping[src] = dst
+    keep_indices: list[int] = []
+    out_symbols: list[str] = []
+    mapped = 0
+    unmapped = 0
+    for idx, feature_id in enumerate(matrix.feature_ids):
+        key = _normalize_feature_id(feature_id, strip_version=strip_version)
+        symbol = mapping.get(key)
+        if symbol:
+            keep_indices.append(idx)
+            out_symbols.append(symbol)
+            mapped += 1
+            continue
+        unmapped += 1
+        if not drop_unmapped_features:
+            keep_indices.append(idx)
+            out_symbols.append(matrix.gene_symbols[idx])
+    out_matrix = _subset_features(matrix, keep_indices, gene_symbols=out_symbols)
+    summary.update({
+        "mapping_applied": True,
+        "n_features_output": len(out_matrix.feature_ids),
+        "n_features_mapped": mapped,
+        "n_features_unmapped": unmapped,
+    })
+    return out_matrix, summary
+
+
 def _validate_count_matrix(counts: np.ndarray, *, allow_non_count_input: bool) -> dict[str, Any]:
     if np.any(counts < 0):
         raise ValueError("Count matrix contains negative values, which are not valid for the RNA DE workflow")
@@ -508,6 +596,11 @@ def run_de_prepare(
     balance_groups: bool,
     balance_seed: int,
     gene_filter_scope: str,
+    feature_mapping_tsv: str | None,
+    feature_mapping_from_column: str | None,
+    feature_mapping_to_column: str | None,
+    feature_mapping_strip_version: bool,
+    drop_unmapped_features: bool,
     balance_groups_explicit: bool,
     balance_seed_explicit: bool,
     gene_filter_scope_explicit: bool,
@@ -583,9 +676,16 @@ def run_de_prepare(
                 suffix="_subject",
             )
         matrix_aligned, metadata_rows, align_summary = _align_matrix_and_metadata(matrix, sample_meta)
+        prepared_matrix, feature_preprocessing_summary = _apply_feature_mapping(
+            matrix_aligned,
+            mapping_tsv=feature_mapping_tsv,
+            mapping_from_column=feature_mapping_from_column,
+            mapping_to_column=feature_mapping_to_column,
+            strip_version=feature_mapping_strip_version,
+            drop_unmapped_features=drop_unmapped_features,
+        )
         pseudobulk_summary = None
         unit_column = subject_column
-        prepared_matrix = matrix_aligned
     elif modality == "scrna":
         if not cell_metadata_tsv or not cell_id_column or not donor_column:
             raise ValueError("scrna mode requires --cell_metadata_tsv, --cell_id_column, and --donor_column")
@@ -607,6 +707,18 @@ def run_de_prepare(
             + covariate_cols
             + batch_cols
         )
+        feature_preprocessing_summary = {
+            "mapping_applied": False,
+            "mapping_tsv": "",
+            "mapping_from_column": "",
+            "mapping_to_column": "",
+            "strip_version": False,
+            "drop_unmapped_features": False,
+            "n_features_input": len(cell_matrix.feature_ids),
+            "n_features_output": len(cell_matrix.feature_ids),
+            "n_features_mapped": 0,
+            "n_features_unmapped": 0,
+        }
         pb_result = build_pseudobulk(
             cell_matrix,
             cell_metadata_rows=cell_metadata_rows,
@@ -969,6 +1081,7 @@ def run_de_prepare(
         "repeated_measures": bool(repeated_measures),
         "count_input_summary": count_input_summary,
         "alignment": align_summary,
+        "feature_preprocessing": feature_preprocessing_summary,
         "metadata_join": join_summary,
         "pseudobulk": pseudobulk_summary,
         "n_comparisons_requested": len(specs),

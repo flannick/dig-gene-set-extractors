@@ -631,6 +631,21 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
             "harmonizome mode defaults this to stratum unless explicitly overridden."
         ),
     )
+    parser.add_argument("--feature_mapping_tsv", help="Optional TSV used to remap feature IDs to preferred gene symbols before DE.")
+    parser.add_argument("--feature_mapping_from_column", help="Source feature-ID column in --feature_mapping_tsv.")
+    parser.add_argument("--feature_mapping_to_column", help="Target gene-symbol column in --feature_mapping_tsv.")
+    parser.add_argument(
+        "--feature_mapping_strip_version",
+        type=_parse_bool,
+        default=False,
+        help="If true, strip version suffixes like '.5' from feature IDs before mapping.",
+    )
+    parser.add_argument(
+        "--drop_unmapped_features",
+        type=_parse_bool,
+        default=False,
+        help="If true, drop matrix rows that do not resolve through --feature_mapping_tsv.",
+    )
     parser.add_argument("--repeated_measures", type=_parse_bool, default=False)
     parser.add_argument("--allow_approximate_repeated_measures", type=_parse_bool, default=False)
     parser.add_argument(

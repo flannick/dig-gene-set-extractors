@@ -101,6 +101,24 @@ Limitations:
 
 Use `r_limma_voom` or `r_dream` when design complexity matters and the R stack is available.
 
+## Feature Preprocessing
+
+`rna_de_prepare` now includes an explicit feature-preprocessing stage before DE fitting. This is where you can:
+
+- remap feature IDs through an external table
+- rewrite `gene_symbol` values before DE
+- optionally drop unmapped features before fitting
+
+Relevant flags:
+
+- `--feature_mapping_tsv`
+- `--feature_mapping_from_column`
+- `--feature_mapping_to_column`
+- `--feature_mapping_strip_version`
+- `--drop_unmapped_features`
+
+This keeps feature-universe construction inside the DE workflow rather than exposing it as a separate top-level command.
+
 ## DE modes
 
 - `--de_mode modern` (default)
@@ -171,7 +189,7 @@ geneset-extractors workflows rna_de_prepare \
   --genome_build hg38
 ```
 
-The audit outputs will record both the eligible pool and the balanced pool per contrast, along with the resolved covariates, the balancing seed, the resolved `gene_filter_scope`, and the resolved `balance_sampler`.
+The audit outputs will record both the eligible pool and the balanced pool per contrast, along with the resolved covariates, the balancing seed, the resolved `gene_filter_scope`, the resolved `balance_sampler`, and a `feature_preprocessing` summary in `prepare_summary.json`.
 
 A concrete validation example for the GTEx adipose aging contrast is recorded in:
 

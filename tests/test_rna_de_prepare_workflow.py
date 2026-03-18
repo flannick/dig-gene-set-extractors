@@ -53,6 +53,11 @@ class BulkArgs(SimpleNamespace):
     balance_groups = False
     balance_seed = 0
     gene_filter_scope = "contrast"
+    feature_mapping_tsv = None
+    feature_mapping_from_column = None
+    feature_mapping_to_column = None
+    feature_mapping_strip_version = False
+    drop_unmapped_features = False
     balance_groups_explicit = False
     balance_seed_explicit = False
     gene_filter_scope_explicit = False
@@ -172,6 +177,40 @@ def _make_bulk_inputs_unbalanced(tmp_path: Path) -> tuple[Path, Path]:
         ["sample_id", "condition", "tissue"],
     )
     return counts_path, meta_path
+
+
+def _make_bulk_gene_by_sample_with_mapping_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    counts_path = tmp_path / "bulk_gene_by_sample.tsv"
+    meta_path = tmp_path / "bulk_gene_by_sample_meta.tsv"
+    mapping_path = tmp_path / "feature_map.tsv"
+    _write_tsv(
+        counts_path,
+        [
+            {"gene_id": "ENSG1.1", "gene_symbol": "OLD1", "S1": 50, "S2": 48, "S3": 5, "S4": 4},
+            {"gene_id": "ENSG2.2", "gene_symbol": "OLD2", "S1": 4, "S2": 5, "S3": 55, "S4": 60},
+            {"gene_id": "ENSG3.3", "gene_symbol": "OLD3", "S1": 20, "S2": 20, "S3": 20, "S4": 20},
+        ],
+        ["gene_id", "gene_symbol", "S1", "S2", "S3", "S4"],
+    )
+    _write_tsv(
+        meta_path,
+        [
+            {"sample_id": "S1", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S2", "condition": "treated", "tissue": "lung"},
+            {"sample_id": "S3", "condition": "control", "tissue": "lung"},
+            {"sample_id": "S4", "condition": "control", "tissue": "lung"},
+        ],
+        ["sample_id", "condition", "tissue"],
+    )
+    _write_tsv(
+        mapping_path,
+        [
+            {"ensembl": "ENSG1", "symbol": "NEW1"},
+            {"ensembl": "ENSG2", "symbol": "NEW2"},
+        ],
+        ["ensembl", "symbol"],
+    )
+    return counts_path, meta_path, mapping_path
 
 
 def _make_scrna_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -297,6 +336,36 @@ def test_r_backend_scripts_drop_gene_symbol_metadata_column(tmp_path: Path):
         assert 'count_cols <- setdiff(colnames(counts), c(colnames(counts)[1], "gene_symbol"))' in text
         assert 'storage.mode(count_mat) <- "numeric"' in text
 
+
+
+def test_rna_de_prepare_applies_feature_mapping_before_de(tmp_path: Path):
+    counts_path, meta_path, mapping_path = _make_bulk_gene_by_sample_with_mapping_inputs(tmp_path)
+    args = BulkArgs(
+        counts_tsv=str(counts_path),
+        sample_metadata_tsv=str(meta_path),
+        out_dir=str(tmp_path / "bulk_feature_mapping"),
+        matrix_orientation="gene_by_sample",
+        feature_id_column="gene_id",
+        matrix_gene_symbol_column="gene_symbol",
+        feature_mapping_tsv=str(mapping_path),
+        feature_mapping_from_column="ensembl",
+        feature_mapping_to_column="symbol",
+        feature_mapping_strip_version=True,
+        drop_unmapped_features=True,
+        backend="lightweight",
+    )
+    result = run_rna_de_prepare(args)
+    assert result["n_comparisons"] == 1
+    rows = list(csv.DictReader((Path(args.out_dir) / "deg_long.tsv").open("r", encoding="utf-8"), delimiter="	"))
+    genes = {row["gene_symbol"] for row in rows}
+    assert genes == {"NEW1", "NEW2"}
+    summary = json.loads((Path(args.out_dir) / "prepare_summary.json").read_text(encoding="utf-8"))
+    feature_summary = summary["feature_preprocessing"]
+    assert feature_summary["mapping_applied"] is True
+    assert feature_summary["n_features_input"] == 3
+    assert feature_summary["n_features_output"] == 2
+    assert feature_summary["n_features_mapped"] == 2
+    assert feature_summary["n_features_unmapped"] == 1
 
 
 def test_rna_de_prepare_bulk_writes_deg_long_and_summary(tmp_path: Path):

@@ -12,7 +12,7 @@ Theory and equations: `docs/assays/rnaseq/methods.tex`.
 
 Upstream RNA preparation and inference now live under `workflows` / internal `preprocessing`, not in the extractor layer. In practice:
 
-- `workflows rna_de_prepare`: counts + metadata -> standardized long DE table
+- `workflows rna_de_prepare`: counts + metadata -> feature preprocessing + DE -> standardized long DE table
 - `workflows scrna_cnmf_prepare`: scRNA matrix + metadata -> cNMF-ready subsets/scripts
 - `workflows cnmf_select_k`: cNMF k-selection helper
 - `convert rna_deg`, `convert rna_deg_multi`, `convert rna_sc_programs`: already-scored assay result -> gene set
