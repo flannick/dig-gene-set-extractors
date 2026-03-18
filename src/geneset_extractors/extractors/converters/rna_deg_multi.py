@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 import re
+import sys
 
 from geneset_extractors.core.gmt import write_gmt
 from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record
@@ -14,6 +15,12 @@ from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig,
 def _safe_name(value: str) -> str:
     out = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("_")
     return out or "comparison"
+
+
+def _should_skip_empty_filtered_comparison(postprocess_mode: str, exc: ValueError) -> bool:
+    if str(postprocess_mode) != "harmonizome":
+        return False
+    return str(exc) == "No DE rows remain after applying padj/pvalue/logFC row filters."
 
 
 def run(args) -> dict[str, object]:
@@ -109,17 +116,37 @@ def run(args) -> dict[str, object]:
             emit_small_gene_sets=args.emit_small_gene_sets,
             warn_biotype_missing=not biotype_warning_seen,
         )
-        result = run_deg_workflow(
-            cfg=cfg,
-            fieldnames=fieldnames,
-            rows=grouped[comparison],
-            input_files=files,
-        )
+        try:
+            result = run_deg_workflow(
+                cfg=cfg,
+                fieldnames=fieldnames,
+                rows=grouped[comparison],
+                input_files=files,
+            )
+        except ValueError as exc:
+            if not _should_skip_empty_filtered_comparison(args.postprocess_mode, exc):
+                raise
+            if group_dir.exists():
+                try:
+                    group_dir.rmdir()
+                except OSError:
+                    pass
+            print(
+                "warning: skipping comparison with no rows remaining after Harmonizome significance filtering: "
+                f"{comparison}",
+                file=sys.stderr,
+            )
+            continue
         if bool(result.get("biotype_warning_emitted", False)):
             biotype_warning_seen = True
         manifest_rows.append(enrich_manifest_row(out_dir, group_dir, {"comparison": comparison}))
         if args.emit_gmt:
             combined_gmt_sets.extend(result.get("gmt_sets", []))
+
+    if not manifest_rows:
+        raise ValueError(
+            "No comparison outputs were produced; all comparisons were filtered out by the selected post-processing mode."
+        )
 
     with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(
