@@ -6,6 +6,11 @@ from pathlib import Path
 
 from geneset_extractors.converters import splice_event_diff
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -94,6 +99,7 @@ class Args:
     gmt_split_signed = True
     gmt_format = "dig2col"
     emit_small_gene_sets = True
+    provenance_overlay_json = None
 
 
 def _copy_resources(resources_dir: Path) -> None:
@@ -156,6 +162,9 @@ def test_splice_event_diff_end_to_end_with_bundle(tmp_path: Path):
         "splice_event_impact_human_v1",
         "splice_gene_event_burden_human_v1",
     }
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "event_alias_table")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_splice_event_diff_runs_without_bundle(tmp_path: Path, capsys):

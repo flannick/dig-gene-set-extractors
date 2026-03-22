@@ -4,6 +4,11 @@ from pathlib import Path
 
 from geneset_extractors.converters import calr_ontology_mapper
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -50,6 +55,7 @@ class Args:
     output_gene_species = "human"
     ortholog_policy = "unique_only"
     mouse_human_orthologs_tsv = None
+    provenance_overlay_json = None
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -80,6 +86,9 @@ def test_calr_ontology_mapper_end_to_end(tmp_path: Path):
     assert meta["summary"]["output_gene_species"] == "human"
     assert meta["summary"]["orthology_summary"]["n_mapped_source_genes"] >= 1
     validate_output_dir(out_dir, Path("src/geneset_extractors/schemas/geneset_metadata.schema.json"))
+    provenance = load_provenance(out_dir / "program=thermogenesis__mode=core__contrast=KO")
+    node = file_node_for_role(provenance, "term_templates_tsv")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_calr_ontology_mapper_exploratory_without_session_warns(tmp_path: Path, capsys):

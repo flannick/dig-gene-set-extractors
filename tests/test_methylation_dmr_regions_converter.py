@@ -1,10 +1,16 @@
 import csv
+import gzip
 from pathlib import Path
 
 import pytest
 
 from geneset_extractors.converters import methylation_dmr_regions
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -105,3 +111,24 @@ def test_methylation_dmr_regions_small_set_warning_has_actionable_hint(
     captured = capsys.readouterr()
     assert "--emit_small_gene_sets true" in captured.err
     assert "--gmt_min_genes" in captured.err
+
+
+def test_methylation_dmr_regions_resource_provenance_enriched(tmp_path: Path):
+    resources_dir = tmp_path / "resources"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    enhancer_path = resources_dir / "encode_ccre_hg38.bed.gz"
+    with gzip.open(enhancer_path, "wt", encoding="utf-8") as fh:
+        fh.write((Path("tests/data") / "toy_enhancers.bed").read_text(encoding="utf-8"))
+
+    args = Args()
+    args.out_dir = str(tmp_path / "meth_dmr_regions_resource")
+    args.link_method = "distance_decay"
+    args.program_methods = "distal_activity"
+    args.enhancer_resource_id = "encode_ccre_hg38"
+    args.resources_dir = str(resources_dir)
+    methylation_dmr_regions.run(args)
+
+    validate_output_dir(Path(args.out_dir), Path("src/geneset_extractors/schemas/geneset_metadata.schema.json"))
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "resource:encode_ccre_hg38")
+    assert_node_has_structured_resource_metadata(node)

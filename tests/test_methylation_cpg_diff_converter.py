@@ -7,6 +7,11 @@ import pytest
 
 from geneset_extractors.converters import methylation_cpg_diff
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -147,6 +152,9 @@ def test_methylation_cpg_diff_auto_manifest_resolution_from_resources_dir(tmp_pa
     assert str(parse_summary.get("probe_manifest_path", "")).endswith(
         "methylation_probe_manifest_450k_hg38.tsv.gz"
     )
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "resource:methylation_probe_manifest_450k_hg38")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_methylation_cpg_diff_delta_orientation_controls_score_sign(tmp_path: Path):

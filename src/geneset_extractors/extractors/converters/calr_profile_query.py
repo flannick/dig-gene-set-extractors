@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.calorimetry.bundle import bundle_file_path, bundle_resources_info, load_bundle_context, resolve_bundle_manifest
 from geneset_extractors.extractors.calorimetry.workflow import CalRWorkflowConfig, run_calr_profile_workflow
 
@@ -51,6 +53,7 @@ def _resolve_inputs(args):
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("calr_profile_query", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     dataset_label = str(args.dataset_label or "").strip() or Path(args.calr_data_csv).name
@@ -98,6 +101,65 @@ def run(args) -> dict[str, object]:
         reference_bundle_id=args.reference_bundle_id,
     )
     resolved_inputs, resources_info = _resolve_inputs(args)
+    used_records = list((resources_info or {}).get("used", [])) if isinstance(resources_info, dict) else []
+    used_by_path = {str(record.get("path", "")): record for record in used_records if str(record.get("path", "")).strip()}
+    bundle_record = next(
+        (
+            record
+            for record in used_records
+            if str(record.get("method", "")).strip() in {"reference_bundle", "reference_bundle_local"}
+        ),
+        None,
+    )
+
+    def _resource_record(path: str | None) -> dict[str, object] | None:
+        if not path:
+            return None
+        return used_by_path.get(str(path)) or bundle_record
+
+    input_files = [input_file_record(args.calr_data_csv, "calr_data_csv")]
+    if args.session_csv:
+        input_files.append(input_file_record(args.session_csv, "session_csv"))
+    if args.exclusions_tsv:
+        input_files.append(input_file_record(args.exclusions_tsv, "exclusions_tsv"))
+    input_files.append(
+        input_file_record(
+            resolved_inputs["reference_profiles_tsv"],
+            "reference_profiles_tsv",
+            resource_record=_resource_record(resolved_inputs["reference_profiles_tsv"]),
+        )
+    )
+    input_files.append(
+        input_file_record(
+            resolved_inputs["reference_metadata_tsv"],
+            "reference_metadata_tsv",
+            resource_record=_resource_record(resolved_inputs["reference_metadata_tsv"]),
+        )
+    )
+    if resolved_inputs["feature_schema_tsv"]:
+        input_files.append(
+            input_file_record(
+                resolved_inputs["feature_schema_tsv"],
+                "feature_schema_tsv",
+                resource_record=_resource_record(resolved_inputs["feature_schema_tsv"]),
+            )
+        )
+    if resolved_inputs["feature_stats_tsv"]:
+        input_files.append(
+            input_file_record(
+                resolved_inputs["feature_stats_tsv"],
+                "feature_stats_tsv",
+                resource_record=_resource_record(resolved_inputs["feature_stats_tsv"]),
+            )
+        )
+    if resolved_inputs["mouse_human_orthologs_tsv"]:
+        input_files.append(
+            input_file_record(
+                resolved_inputs["mouse_human_orthologs_tsv"],
+                "mouse_human_orthologs_tsv",
+                resource_record=_resource_record(resolved_inputs["mouse_human_orthologs_tsv"]),
+            )
+        )
     return run_calr_profile_workflow(
         cfg=cfg,
         calr_data_csv=args.calr_data_csv,
@@ -108,5 +170,6 @@ def run(args) -> dict[str, object]:
         feature_schema_tsv=resolved_inputs["feature_schema_tsv"],
         feature_stats_tsv=resolved_inputs["feature_stats_tsv"],
         mouse_human_orthologs_tsv=resolved_inputs["mouse_human_orthologs_tsv"],
+        input_files=input_files,
         resources_info=resources_info,
     )

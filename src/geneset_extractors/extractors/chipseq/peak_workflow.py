@@ -6,6 +6,7 @@ from geneset_extractors.core.metadata import input_file_record, make_metadata, w
 from geneset_extractors.core.models import GeneWeights
 from geneset_extractors.core.normalization import normalize
 from geneset_extractors.core.peak_to_gene import link_distance_decay, link_nearest_tss, link_promoter_overlap
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.scoring import score_genes
 from geneset_extractors.io.bed import read_bed
 from geneset_extractors.io.gtf import read_genes_from_gtf
@@ -44,6 +45,7 @@ def _extract_peak_weights(peaks: list[dict[str, object]], weight_column: int) ->
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("chipseq_peak", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

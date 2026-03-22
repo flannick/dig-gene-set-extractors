@@ -6,6 +6,11 @@ import pytest
 
 from geneset_extractors.converters import atac_bulk
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -128,6 +133,9 @@ def test_bulk_default_connectable_emits_exactly_two_sets(tmp_path: Path):
     assert "__program=enhancer_bias__" not in text
     assert "__calibration_method=atlas_residual__" not in text
     assert "__link_method=promoter_overlap__" not in text
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "resource:ccre_ubiquity_hg38")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_bulk_default_auto_falls_back_to_none_without_resources(tmp_path: Path, capsys):

@@ -40,6 +40,7 @@ from geneset_extractors.core.gmt import (
     write_gmt,
 )
 from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.qc import (
     collect_emitted_method_combinations,
     load_marker_genes,
@@ -575,6 +576,7 @@ def _compute_peak_contrast(
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("atac_bulk_matrix", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1065,6 +1067,7 @@ def run(args) -> dict[str, object]:
         if _arg(args, "resources_dir", None)
         else default_resources_dir()
     )
+    used_by_id = {str(r["id"]): r for r in resources_used}
     files = [
         input_file_record(args.peak_bed, "peak_bed"),
         input_file_record(args.peak_matrix_tsv, "peak_matrix_tsv"),
@@ -1076,7 +1079,7 @@ def run(args) -> dict[str, object]:
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     for r in resources_used:
-        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}"))
+        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}", resource_record=used_by_id.get(str(r["id"]))))
 
     assigned_primary = len({int(link["peak_index"]) for link in links_by_method[primary_link_method]})
     link_assignment: dict[str, dict[str, float]] = {}

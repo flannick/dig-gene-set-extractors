@@ -6,6 +6,11 @@ import pytest
 
 from geneset_extractors.converters import drug_response_screen
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -112,6 +117,7 @@ class Args:
     gmt_split_signed = None
     gmt_format = "dig2col"
     emit_small_gene_sets = True
+    provenance_overlay_json = None
 
 
 def _read_manifest_rows(out_dir: Path) -> list[dict[str, str]]:
@@ -150,6 +156,20 @@ def test_drug_response_generic_group_vs_rest_signed_gmt(tmp_path: Path):
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
+
+
+def test_drug_response_bundle_resources_are_enriched_in_provenance(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "drug_response_bundle")
+    args.drug_targets_tsv = None
+    args.resources_dir = "tests/data/drug_response_bundle"
+    result = drug_response_screen.run(args)
+    assert result["n_groups"] >= 1
+
+    manifest_rows = _read_manifest_rows(Path(args.out_dir))
+    provenance = load_provenance(Path(args.out_dir) / manifest_rows[0]["path"])
+    node = file_node_for_role(provenance, "target_ubiquity_bundle_tsv")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_drug_response_prism_convenience_mode(tmp_path: Path):

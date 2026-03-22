@@ -4,6 +4,11 @@ from pathlib import Path
 
 from geneset_extractors.converters import atac_bulk_matrix
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -60,11 +65,15 @@ class Args:
     gmt_split_signed = False
     qc_marker_genes_tsv = None
     gtf_source = "toy"
+    provenance_overlay_json = None
 
 
 def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "bulk_matrix")
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_bulk_matrix.run(args)
 
     geneset = Path(args.out_dir) / "geneset.tsv"
@@ -79,7 +88,7 @@ def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: P
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     lines = [x for x in gmt_text.splitlines() if x.strip()]
     assert 2 <= len(lines) <= 4
-    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__program=linked_activity__calibration_method=ref_ubiquity_penalty__link_method=nearest_tss__topk=3" in gmt_text
     assert "__direction=OPEN" in gmt_text
     assert "__direction=CLOSE" in gmt_text
     assert "__program=promoter_activity__" not in gmt_text
@@ -94,6 +103,9 @@ def test_bulk_matrix_default_connectable_emits_four_directional_sets(tmp_path: P
     assert contrast["condition_b"] == "control"
     assert contrast["n_samples_a"] == 2
     assert contrast["n_samples_b"] == 2
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "resource:ccre_ubiquity_hg38")
+    assert_node_has_structured_resource_metadata(node)
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)

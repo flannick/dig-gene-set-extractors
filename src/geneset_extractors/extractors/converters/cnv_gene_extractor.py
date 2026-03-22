@@ -6,9 +6,11 @@ import sys
 from geneset_extractors.extractors.cnv.seg_io import parse_segments_tsv, read_purity_tsv
 from geneset_extractors.extractors.cnv.seg_workflow import CNVWorkflowConfig, run_cnv_workflow
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("cnv_gene_extractor", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

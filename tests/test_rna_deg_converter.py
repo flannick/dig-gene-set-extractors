@@ -97,6 +97,24 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     roles = {(node["direction"], node["role"]) for node in lineage["nodes"]}
     assert ("input", "deg_tsv") in roles
     assert ("output", "selected_program") in roles
+    assert meta["provenance"]["focus_node_id"]
+
+
+def test_rna_deg_with_gtf_emits_provenance_and_focus_node(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_deg_gtf")
+    args.gtf = "tests/data/toy.gtf"
+    args.gtf_source = "toy"
+    args.emit_gmt = False
+    rna_deg.run(args)
+
+    schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
+    validate_output_dir(Path(args.out_dir), schema)
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    assert meta["provenance"]["focus_node_id"]
+    assert provenance["focus_node_id"] == meta["provenance"]["focus_node_id"]
+    assert any(node.get("role") == "gtf" for node in provenance["nodes"])
 
 
 def test_rna_deg_provenance_overlay_injects_public_links(tmp_path: Path):

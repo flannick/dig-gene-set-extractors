@@ -5,6 +5,11 @@ from pathlib import Path
 from geneset_extractors.converters import calr_profile_query
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.workflows.calr_prepare_reference_bundle import run as run_calr_prepare_reference_bundle
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -57,6 +62,7 @@ class Args:
     output_gene_species = "human"
     ortholog_policy = "unique_only"
     mouse_human_orthologs_tsv = None
+    provenance_overlay_json = None
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -115,6 +121,9 @@ def test_calr_profile_query_bundle_mode(tmp_path: Path):
     assert any(row["id"] == "toy_calr_bundle_v1" for row in resources["used"])
     assert any(row["id"] == "calorimetry_mouse_human_orthologs_v1" for row in resources["used"])
     assert meta["summary"]["output_gene_species"] == "human"
+    provenance = load_provenance(Path(args.out_dir) / "program=global__mode=core__contrast=KO")
+    node = file_node_for_role(provenance, "reference_profiles_tsv")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_calr_profile_query_low_confidence_warning(tmp_path: Path, capsys):

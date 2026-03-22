@@ -1,4 +1,5 @@
 import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from geneset_extractors.converters import rna_sc_programs
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.extractors.rnaseq.sc_program_workflow import read_program_loadings
+from tests.provenance_helpers import assert_manifest_has_enriched_columns
 
 
 class Args:
@@ -47,6 +49,7 @@ class Args:
     gmt_mass_list = ""
     gmt_split_signed = False
     emit_small_gene_sets = True
+    provenance_overlay_json = None
 
 
 def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
@@ -65,6 +68,7 @@ def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: p
     with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert len(rows) == 2
+    assert_manifest_has_enriched_columns(rows)
     for row in rows:
         p = out_dir / str(row["path"])
         geneset = p / "geneset.tsv"
@@ -83,6 +87,23 @@ def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: p
 
     captured = capsys.readouterr()
     assert "score_transform=positive drops negatives" in captured.err
+
+
+def test_rna_sc_programs_provenance_overlay_propagates(tmp_path: Path):
+    overlay_path = tmp_path / "overlay.json"
+    overlay_path.write_text(
+        '{"inputs":{"role:program_loadings_tsv":{"download_url":"https://example.org/programs.tsv","access_level":"public"}}}',
+        encoding="utf-8",
+    )
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_overlay")
+    args.provenance_overlay_json = str(overlay_path)
+    rna_sc_programs.run(args)
+
+    manifest_rows = list(csv.DictReader((Path(args.out_dir) / "manifest.tsv").open("r", encoding="utf-8"), delimiter="\t"))
+    provenance = json.loads((Path(args.out_dir) / manifest_rows[0]["provenance_path"]).read_text(encoding="utf-8"))
+    node = next(node for node in provenance["nodes"] if node.get("role") == "program_loadings_tsv")
+    assert node["access"]["download_url"] == "https://example.org/programs.tsv"
 
 
 def test_rna_sc_programs_signed_split_gmt(tmp_path: Path):

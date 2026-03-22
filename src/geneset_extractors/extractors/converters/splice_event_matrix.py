@@ -203,6 +203,7 @@ def run(args) -> dict[str, object]:
     gene_burden_by_dataset_map = read_gene_burden_by_dataset_tsv(gene_burden_by_dataset_path) if gene_burden_by_dataset_path is not None else None
     gene_locus_map = read_gene_locus_tsv(gene_locus_path) if gene_locus_path is not None else None
 
+    used_by_id = {str(record["id"]): record for record in (ctx.used if ctx is not None else [])}
     files = [
         input_file_record(args.psi_matrix_tsv, "psi_matrix_tsv"),
         input_file_record(args.sample_metadata_tsv, "sample_metadata_tsv"),
@@ -212,19 +213,31 @@ def run(args) -> dict[str, object]:
     if args.coverage_matrix_tsv:
         files.append(input_file_record(args.coverage_matrix_tsv, "coverage_matrix_tsv"))
     if alias_path is not None:
-        files.append(input_file_record(alias_path, "event_alias_table"))
+        files.append(input_file_record(alias_path, "event_alias_table", resource_record=used_by_id.get(str(alias_resource_id))))
     if ubiquity_path is not None:
-        files.append(input_file_record(ubiquity_path, "event_ubiquity_table"))
+        files.append(input_file_record(ubiquity_path, "event_ubiquity_table", resource_record=used_by_id.get(str(ubiquity_resource_id))))
     if ubiquity_by_dataset_path is not None:
-        files.append(input_file_record(ubiquity_by_dataset_path, "event_ubiquity_by_dataset_table"))
+        files.append(
+            input_file_record(
+                ubiquity_by_dataset_path,
+                "event_ubiquity_by_dataset_table",
+                resource_record=used_by_id.get(str(ubiquity_by_dataset_resource_id)),
+            )
+        )
     if impact_path is not None:
-        files.append(input_file_record(impact_path, "event_impact_table"))
+        files.append(input_file_record(impact_path, "event_impact_table", resource_record=used_by_id.get(str(impact_resource_id))))
     if gene_burden_path is not None:
-        files.append(input_file_record(gene_burden_path, "gene_burden_table"))
+        files.append(input_file_record(gene_burden_path, "gene_burden_table", resource_record=used_by_id.get(str(gene_burden_resource_id))))
     if gene_burden_by_dataset_path is not None:
-        files.append(input_file_record(gene_burden_by_dataset_path, "gene_burden_by_dataset_table"))
+        files.append(
+            input_file_record(
+                gene_burden_by_dataset_path,
+                "gene_burden_by_dataset_table",
+                resource_record=used_by_id.get(str(gene_burden_by_dataset_resource_id)),
+            )
+        )
     if gene_locus_path is not None:
-        files.append(input_file_record(gene_locus_path, "gene_locus_table"))
+        files.append(input_file_record(gene_locus_path, "gene_locus_table", resource_record=used_by_id.get(str(gene_locus_resource_id))))
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.psi_matrix_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.psi_matrix_tsv).stem

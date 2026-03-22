@@ -4,6 +4,12 @@ from pathlib import Path
 
 from geneset_extractors.converters import splice_event_matrix
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_manifest_has_enriched_columns,
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -106,6 +112,7 @@ class Args:
     gmt_format = "dig2col"
     emit_small_gene_sets = True
     cluster_stats_tsv = None
+    provenance_overlay_json = None
 
 
 def _copy_resources(resources_dir: Path) -> None:
@@ -149,6 +156,9 @@ def test_splice_event_matrix_single_contrast_end_to_end(tmp_path: Path):
     rows = _read_rows(out_dir / "geneset.tsv")
     assert rows
     assert rows[0]["gene_symbol"] in {"KCNN4", "MAPK1", "GENEA"}
+    provenance = load_provenance(out_dir)
+    node = file_node_for_role(provenance, "event_alias_table")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_splice_event_matrix_grouped_contrast_mode(tmp_path: Path):
@@ -172,6 +182,7 @@ def test_splice_event_matrix_grouped_contrast_mode(tmp_path: Path):
 
     rows = _read_rows(out_dir / "manifest.tsv")
     assert len(rows) == 2
+    assert_manifest_has_enriched_columns(rows)
     for row in rows:
         child_dir = out_dir / row["path"]
         assert (child_dir / "geneset.tsv").exists()

@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 from geneset_extractors.core.metadata import input_file_record
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.extractors.morphology.bundle import bundle_resources_info, load_bundle_context, resolve_bundle_manifest
 from geneset_extractors.extractors.morphology.io import aggregate_profiles, read_compound_targets_auto, read_feature_schema_tsv, read_feature_stats_tsv, read_metadata_tsv, read_profiles_table, read_target_annotations_tsv
 from geneset_extractors.extractors.morphology.workflow import MorphologyWorkflowConfig, run_morphology_workflow
@@ -63,6 +64,7 @@ def _resolve_reference_inputs(args) -> tuple[dict[str, str | None], dict[str, ob
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("morphology_profile_query", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -117,12 +119,37 @@ def run(args) -> dict[str, object]:
     if reference_inputs.get("target_annotations"):
         target_annotations, target_annotations_summary = read_target_annotations_tsv(reference_inputs["target_annotations"])
 
+    used_records = list((resources_info or {}).get("used", [])) if isinstance(resources_info, dict) else []
+    used_by_path = {str(record.get("path", "")): record for record in used_records if str(record.get("path", "")).strip()}
+    bundle_record = next(
+        (
+            record
+            for record in used_records
+            if str(record.get("method", "")).strip() in {"reference_bundle", "reference_bundle_local"}
+        ),
+        None,
+    )
+
+    def _resource_record_for_reference(path: str | None) -> dict[str, object] | None:
+        if not path:
+            return None
+        record = used_by_path.get(str(path))
+        if record is not None:
+            return record
+        return bundle_record
+
     files = [input_file_record(args.query_profiles_tsv, "query_profiles_tsv")]
     if args.query_metadata_tsv:
         files.append(input_file_record(args.query_metadata_tsv, "query_metadata_tsv"))
     for key, role in (("reference_profiles", "reference_profiles"), ("reference_metadata", "reference_metadata"), ("compound_targets", "compound_targets"), ("target_annotations", "target_annotations"), ("feature_schema", "feature_schema"), ("feature_stats", "feature_stats")):
         if reference_inputs.get(key):
-            files.append(input_file_record(reference_inputs[key], role))
+            files.append(
+                input_file_record(
+                    reference_inputs[key],
+                    role,
+                    resource_record=_resource_record_for_reference(reference_inputs[key]),
+                )
+            )
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.query_profiles_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.query_profiles_tsv).stem

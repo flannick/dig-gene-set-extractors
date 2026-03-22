@@ -526,6 +526,7 @@ def run_calr_ontology_workflow(
     phenotype_gene_edges_tsv: str,
     term_hierarchy_tsv: str | None,
     mouse_human_orthologs_tsv: str | None,
+    input_files: list[dict[str, object]] | None,
     resources_info: dict[str, object] | None,
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
@@ -567,17 +568,18 @@ def run_calr_ontology_workflow(
         resources_info=resources_info,
     )
 
-    input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
-    if session_csv:
-        input_files.append(input_file_record(session_csv, "session_csv"))
-    if exclusions_tsv:
-        input_files.append(input_file_record(exclusions_tsv, "exclusions_tsv"))
-    input_files.append(input_file_record(term_templates_tsv, "term_templates_tsv"))
-    input_files.append(input_file_record(phenotype_gene_edges_tsv, "phenotype_gene_edges_tsv"))
-    if term_hierarchy_tsv:
-        input_files.append(input_file_record(term_hierarchy_tsv, "term_hierarchy_tsv"))
-    if mouse_human_orthologs_tsv:
-        input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
+    if input_files is None:
+        input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
+        if session_csv:
+            input_files.append(input_file_record(session_csv, "session_csv"))
+        if exclusions_tsv:
+            input_files.append(input_file_record(exclusions_tsv, "exclusions_tsv"))
+        input_files.append(input_file_record(term_templates_tsv, "term_templates_tsv"))
+        input_files.append(input_file_record(phenotype_gene_edges_tsv, "phenotype_gene_edges_tsv"))
+        if term_hierarchy_tsv:
+            input_files.append(input_file_record(term_hierarchy_tsv, "term_hierarchy_tsv"))
+        if mouse_human_orthologs_tsv:
+            input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
 
     manifest_rows: list[dict[str, object]] = []
     combined_gmt: list[tuple[str, list[str]]] = []
@@ -700,6 +702,7 @@ def run_calr_profile_workflow(
     feature_schema_tsv: str | None,
     feature_stats_tsv: str | None,
     mouse_human_orthologs_tsv: str | None,
+    input_files: list[dict[str, object]] | None,
     resources_info: dict[str, object] | None,
 ) -> dict[str, object]:
     out_dir = Path(cfg.out_dir)
@@ -738,19 +741,20 @@ def run_calr_profile_workflow(
         mouse_human_orthologs_tsv=mouse_human_orthologs_tsv,
         resources_info=resources_info,
     )
-    input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
-    if session_csv:
-        input_files.append(input_file_record(session_csv, "session_csv"))
-    if exclusions_tsv:
-        input_files.append(input_file_record(exclusions_tsv, "exclusions_tsv"))
-    input_files.append(input_file_record(reference_profiles_tsv, "reference_profiles_tsv"))
-    input_files.append(input_file_record(reference_metadata_tsv, "reference_metadata_tsv"))
-    if feature_schema_tsv:
-        input_files.append(input_file_record(feature_schema_tsv, "feature_schema_tsv"))
-    if feature_stats_tsv:
-        input_files.append(input_file_record(feature_stats_tsv, "feature_stats_tsv"))
-    if mouse_human_orthologs_tsv:
-        input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
+    if input_files is None:
+        input_files = [input_file_record(calr_data_csv, "calr_data_csv")]
+        if session_csv:
+            input_files.append(input_file_record(session_csv, "session_csv"))
+        if exclusions_tsv:
+            input_files.append(input_file_record(exclusions_tsv, "exclusions_tsv"))
+        input_files.append(input_file_record(reference_profiles_tsv, "reference_profiles_tsv"))
+        input_files.append(input_file_record(reference_metadata_tsv, "reference_metadata_tsv"))
+        if feature_schema_tsv:
+            input_files.append(input_file_record(feature_schema_tsv, "feature_schema_tsv"))
+        if feature_stats_tsv:
+            input_files.append(input_file_record(feature_stats_tsv, "feature_stats_tsv"))
+        if mouse_human_orthologs_tsv:
+            input_files.append(input_file_record(mouse_human_orthologs_tsv, "mouse_human_orthologs_tsv"))
 
     manifest_rows: list[dict[str, object]] = []
     combined_gmt: list[tuple[str, list[str]]] = []

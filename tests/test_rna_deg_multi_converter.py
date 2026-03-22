@@ -7,6 +7,7 @@ import pytest
 
 from geneset_extractors.converters import rna_deg_multi
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import assert_manifest_has_enriched_columns
 
 
 class Args:
@@ -73,8 +74,7 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
     validate_output_dir(out_dir, schema)
     with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
-    assert rows
-    assert {"geneset_id", "label", "meta_path", "provenance_path", "focus_node_id"}.issubset(rows[0].keys())
+    assert_manifest_has_enriched_columns(rows)
     first_meta = json.loads((out_dir / rows[0]["meta_path"]).read_text(encoding="utf-8"))
     assert rows[0]["focus_node_id"] == first_meta["provenance"]["focus_node_id"]
     assert (out_dir / rows[0]["provenance_path"]).exists()

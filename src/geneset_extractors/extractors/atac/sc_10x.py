@@ -941,6 +941,7 @@ def run(args) -> dict[str, object]:
         resource_policy,
     )
 
+    used_by_id = {str(r["id"]): r for r in resources_used}
     files = [
         input_file_record(matrix_files["matrix"], "matrix"),
         input_file_record(matrix_files["barcodes"], "barcodes"),
@@ -956,7 +957,7 @@ def run(args) -> dict[str, object]:
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     for r in resources_used:
-        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}"))
+        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}", resource_record=used_by_id.get(str(r["id"]))))
 
     manifest_rows: list[tuple[str, str, str]] = []
     gene_symbol_by_id = {g.gene_id: g.gene_symbol for g in genes}

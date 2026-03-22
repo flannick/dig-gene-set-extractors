@@ -6,6 +6,11 @@ import pytest
 
 from geneset_extractors.converters import morphology_profile_query
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -87,6 +92,7 @@ class Args:
     gmt_split_signed = False
     gmt_format = "classic"
     emit_small_gene_sets = True
+    provenance_overlay_json = None
 
 
 def _manifest_rows(path: Path) -> list[dict[str, str]]:
@@ -148,6 +154,9 @@ def test_morphology_profile_query_bundle_mode(tmp_path: Path):
     used_ids = {row["id"] for row in resources["used"]}
     assert "morphology_jump_target_pilot_u2os_48h_v1" in used_ids
     assert meta["summary"]["parse_summary"]["bundle_manifest"]["_bundle_resolution"] == "local_resources_dir"
+    provenance = load_provenance(out_dir / "program=Q1__polarity=similar")
+    node = file_node_for_role(provenance, "reference_profiles")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_morphology_profile_query_missing_bundle_warns_or_fails(tmp_path: Path):

@@ -138,6 +138,9 @@ def test_cnv_gene_extractor_runs_with_focal_penalty_and_emits_gmt(tmp_path: Path
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
+    first_meta = json.loads((out_dir / rows[0]["meta_path"]).read_text(encoding="utf-8"))
+    assert first_meta["provenance"]["focus_node_id"]
+    assert (out_dir / rows[0]["provenance_path"]).exists()
 
 
 def test_cnv_gene_extractor_purity_correction_increases_scores(tmp_path: Path):

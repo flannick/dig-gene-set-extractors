@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from geneset_extractors.converters import chipseq_peak
@@ -28,3 +29,6 @@ def test_chipseq_peak_converter(tmp_path: Path):
     chipseq_peak.run(args)
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
+    assert (Path(args.out_dir) / "geneset.provenance.json").exists()
+    meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
+    assert meta["provenance"]["focus_node_id"]

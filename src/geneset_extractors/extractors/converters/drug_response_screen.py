@@ -208,9 +208,9 @@ def run(args) -> dict[str, object]:
             )
         return str(resolved) if resolved is not None else None
 
+    target_aliases_resource_id = args.target_aliases_resource_id or _default_alias_resource_id(args.organism)
     target_aliases_path = args.target_aliases_tsv
     if target_aliases_path is None and resource_ctx is not None:
-        target_aliases_resource_id = args.target_aliases_resource_id or _default_alias_resource_id(args.organism)
         target_aliases_path = _bundle_resolve(
             target_aliases_resource_id,
             "target_aliases",
@@ -218,9 +218,9 @@ def run(args) -> dict[str, object]:
             fallback_behavior="continue_without_target_aliases",
         )
 
+    blacklist_resource_id = args.drug_blacklist_resource_id or _default_blacklist_resource_id(args.organism)
     drug_blacklist_path = args.drug_blacklist_tsv
     if drug_blacklist_path is None and resource_ctx is not None:
-        blacklist_resource_id = args.drug_blacklist_resource_id or _default_blacklist_resource_id(args.organism)
         drug_blacklist_path = _bundle_resolve(
             blacklist_resource_id,
             "drug_blacklist",
@@ -228,22 +228,25 @@ def run(args) -> dict[str, object]:
             fallback_behavior="continue_without_blacklist",
         )
 
+    drug_alias_map_resource_id = getattr(args, "drug_alias_map_resource_id", None) or _default_drug_alias_map_resource_id(args.organism)
     drug_alias_map_path = _bundle_resolve(
-        getattr(args, "drug_alias_map_resource_id", None) or _default_drug_alias_map_resource_id(args.organism),
+        drug_alias_map_resource_id,
         "drug_alias_map",
         "Provide a compatible --resources_dir with drug_alias_map_human_v1 or disable bundle-aware normalization.",
         fallback_behavior="continue_with_input_drug_ids",
     )
+    target_edges_resource_id = getattr(args, "target_edges_resource_id", None) or _default_target_edges_resource_id(args.organism)
     target_edges_bundle_path = None
     if not args.drug_targets_tsv:
         target_edges_bundle_path = _bundle_resolve(
-            getattr(args, "target_edges_resource_id", None) or _default_target_edges_resource_id(args.organism),
+            target_edges_resource_id,
             "drug_target_edges",
             "Provide --drug_targets_tsv or a bundle with drug_target_edges_human_v1.",
             fallback_behavior="fall_back_to_prism_treatment_info_or_error",
         )
+    target_ubiquity_resource_id = getattr(args, "target_ubiquity_resource_id", None) or _default_target_ubiquity_resource_id(args.organism)
     target_ubiquity_bundle_path = _bundle_resolve(
-        getattr(args, "target_ubiquity_resource_id", None) or _default_target_ubiquity_resource_id(args.organism),
+        target_ubiquity_resource_id,
         "target_ubiquity",
         "Provide a compatible bundle with target_ubiquity_human_v1.",
         fallback_behavior="compute_subset_derived_target_ubiquity",
@@ -251,10 +254,11 @@ def run(args) -> dict[str, object]:
     use_compound_qc_bundle = bool(args.use_compound_qc_bundle)
     if getattr(args, "use_compound_qc_bundle", None) is None:
         use_compound_qc_bundle = bool(program_preset == "connectable")
+    compound_qc_resource_id = getattr(args, "compound_qc_resource_id", None) or _default_compound_qc_resource_id(args.organism)
     compound_qc_bundle_path = None
     if use_compound_qc_bundle:
         compound_qc_bundle_path = _bundle_resolve(
-            getattr(args, "compound_qc_resource_id", None) or _default_compound_qc_resource_id(args.organism),
+            compound_qc_resource_id,
             "compound_qc",
             "Provide a compatible bundle with compound_qc_human_v1 or disable --use_compound_qc_bundle.",
             fallback_behavior="continue_without_compound_qc_bundle",
@@ -284,6 +288,8 @@ def run(args) -> dict[str, object]:
     compound_qc_summary: dict[str, object] | None = None
     if compound_qc_bundle_path:
         compound_qc_rows, compound_qc_summary = load_compound_qc_tsv(compound_qc_bundle_path)
+
+    used_by_id = {str(record["id"]): record for record in (resource_ctx.used if resource_ctx is not None else [])}
 
     mode = _resolve_mode(args)
     response_records: list[ResponseRecord] = []
@@ -320,7 +326,13 @@ def run(args) -> dict[str, object]:
         )
         target_summary = {"io": target_io_summary, "build": target_build_summary}
         files.append(input_file_record(args.response_tsv, "response_tsv"))
-        files.append(input_file_record(args.drug_targets_tsv or target_edges_bundle_path, "drug_targets_tsv"))
+        files.append(
+            input_file_record(
+                args.drug_targets_tsv or target_edges_bundle_path,
+                "drug_targets_tsv",
+                resource_record=None if args.drug_targets_tsv else used_by_id.get(str(target_edges_resource_id)),
+            )
+        )
         if args.sample_metadata_tsv:
             sample_metadata, sample_metadata_summary = read_sample_metadata_tsv(
                 path=args.sample_metadata_tsv,
@@ -386,7 +398,13 @@ def run(args) -> dict[str, object]:
         files.append(input_file_record(args.prism_treatment_info_csv, "prism_treatment_info_csv"))
         files.append(input_file_record(args.prism_cell_line_info_csv, "prism_cell_line_info_csv"))
         if args.drug_targets_tsv or target_edges_bundle_path:
-            files.append(input_file_record(args.drug_targets_tsv or target_edges_bundle_path, "drug_targets_tsv"))
+            files.append(
+                input_file_record(
+                    args.drug_targets_tsv or target_edges_bundle_path,
+                    "drug_targets_tsv",
+                    resource_record=None if args.drug_targets_tsv else used_by_id.get(str(target_edges_resource_id)),
+                )
+            )
 
     alias_apply_summary: dict[str, object] | None = None
     target_id_apply_summary: dict[str, object] | None = None
@@ -459,7 +477,13 @@ def run(args) -> dict[str, object]:
                 **blacklist_summary,
                 **blacklist_apply_summary,
             }
-        files.append(input_file_record(drug_blacklist_path, "drug_blacklist_tsv"))
+        files.append(
+            input_file_record(
+                drug_blacklist_path,
+                "drug_blacklist_tsv",
+                resource_record=None if args.drug_blacklist_tsv else used_by_id.get(str(blacklist_resource_id)),
+            )
+        )
 
     bundle_drug_weights: dict[str, float] = {}
     compound_qc_effect_summary: dict[str, object] | None = None
@@ -507,22 +531,46 @@ def run(args) -> dict[str, object]:
 
     if aliases_summary is not None:
         target_summary["aliases"] = aliases_summary
-        files.append(input_file_record(target_aliases_path, "target_aliases_tsv"))
+        files.append(
+            input_file_record(
+                target_aliases_path,
+                "target_aliases_tsv",
+                resource_record=None if args.target_aliases_tsv else used_by_id.get(str(target_aliases_resource_id)),
+            )
+        )
     if drug_alias_summary is not None:
         target_summary["drug_alias_map"] = drug_alias_summary
         if alias_apply_summary is not None:
             target_summary["drug_alias_map"]["applied_to_response"] = alias_apply_summary
         if target_id_apply_summary is not None:
             target_summary["drug_alias_map"]["applied_to_targets"] = target_id_apply_summary
-        files.append(input_file_record(drug_alias_map_path, "drug_alias_map_tsv"))
+        files.append(
+            input_file_record(
+                drug_alias_map_path,
+                "drug_alias_map_tsv",
+                resource_record=used_by_id.get(str(drug_alias_map_resource_id)),
+            )
+        )
     if target_ubiquity_bundle_summary is not None:
         target_summary["target_ubiquity_bundle"] = target_ubiquity_bundle_summary
-        files.append(input_file_record(target_ubiquity_bundle_path, "target_ubiquity_bundle_tsv"))
+        files.append(
+            input_file_record(
+                target_ubiquity_bundle_path,
+                "target_ubiquity_bundle_tsv",
+                resource_record=used_by_id.get(str(target_ubiquity_resource_id)),
+            )
+        )
     if compound_qc_summary is not None:
         target_summary["compound_qc_bundle"] = compound_qc_summary
         if compound_qc_effect_summary is not None:
             target_summary["compound_qc_bundle"]["effects"] = compound_qc_effect_summary
-        files.append(input_file_record(compound_qc_bundle_path, "compound_qc_bundle_tsv"))
+        files.append(
+            input_file_record(
+                compound_qc_bundle_path,
+                "compound_qc_bundle_tsv",
+                resource_record=used_by_id.get(str(compound_qc_resource_id)),
+            )
+        )
 
     drug_targets, promisc_summary, promisc_warnings = filter_promiscuous_targets(
         drug_targets=drug_targets,
@@ -569,7 +617,7 @@ def run(args) -> dict[str, object]:
         target_summary["resources"] = resources_info
     if resource_ctx is not None:
         for record in resource_ctx.used:
-            files.append(input_file_record(str(record["path"]), f"resource:{record['id']}"))
+            files.append(input_file_record(str(record["path"]), f"resource:{record['id']}", resource_record=record))
 
     dataset_label = str(args.dataset_label or "").strip()
     if not dataset_label:

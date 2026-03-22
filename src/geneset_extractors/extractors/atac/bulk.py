@@ -40,6 +40,7 @@ from geneset_extractors.core.atac_programs import (
 )
 from geneset_extractors.core.reference_calibration import peak_overlap_mask, peak_ref_idf_by_overlap
 from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.qc import (
     collect_emitted_method_combinations,
     load_marker_genes,
@@ -499,6 +500,7 @@ def _rows_from_scores(
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("atac_bulk", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -976,6 +978,7 @@ def run(args) -> dict[str, object]:
             "adjusted_peak_weight_stats": summarize_numeric(adjusted_values),
         }
 
+    used_by_id = {str(r["id"]): r for r in resources_used}
     files = [input_file_record(args.peaks, "peaks"), input_file_record(args.gtf, "gtf")]
     if args.peak_weights_tsv:
         files.append(input_file_record(args.peak_weights_tsv, "peak_weights_tsv"))
@@ -984,7 +987,7 @@ def run(args) -> dict[str, object]:
     if _EXTERNAL_LINK_METHOD in link_methods:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     for r in resources_used:
-        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}"))
+        files.append(input_file_record(str(r["path"]), f"resource:{r['id']}", resource_record=used_by_id.get(str(r["id"]))))
 
     output_files = [{"path": str(out_dir / "geneset.tsv"), "role": "selected_program"}]
     if emit_full:

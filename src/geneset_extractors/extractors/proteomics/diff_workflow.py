@@ -6,6 +6,7 @@ from pathlib import Path
 from geneset_extractors.core.metadata import input_file_record, make_metadata, write_metadata
 from geneset_extractors.core.models import GeneWeights
 from geneset_extractors.core.normalization import normalize
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.core.scoring import transform_peak_weight
 
 
@@ -23,6 +24,7 @@ def _read_scores(path: str | Path, gene_id_column: str, score_column: str) -> di
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("proteomics_diff", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

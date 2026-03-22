@@ -7,6 +7,12 @@ import pytest
 
 from geneset_extractors.converters import atac_sc_10x
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_manifest_has_enriched_columns,
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -72,20 +78,24 @@ class Args:
     contrast_metric = "log2fc"
     contrast_pseudocount = None
     gtf_source = "toy"
+    provenance_overlay_json = None
 
 
 def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "sc")
     args.groups_tsv = None
+    args.resources_manifest = "tests/data/toy_resources_manifest.json"
+    args.resources_dir = "tests/data"
+    args.calibration_methods = "auto_prefer_ref_ubiquity_else_none"
     atac_sc_10x.run(args)
     with (Path(args.out_dir) / "geneset.tsv").open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert rows
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__program=linked_activity__calibration_method=none__link_method=nearest_tss__topk=3" in gmt_text
-    assert "__program=distal_activity__calibration_method=none__link_method=distance_decay__topk=3" in gmt_text
+    assert "__program=linked_activity__calibration_method=ref_ubiquity_penalty__link_method=nearest_tss__topk=3" in gmt_text
+    assert "__program=distal_activity__calibration_method=ref_ubiquity_penalty__link_method=distance_decay__topk=3" in gmt_text
     assert "__program=promoter_activity__" not in gmt_text
     assert "__program=enhancer_bias__" not in gmt_text
     assert "__link_method=promoter_overlap__" not in gmt_text
@@ -93,6 +103,9 @@ def test_sc_converter_without_groups_default_connectable(tmp_path: Path):
     assert (Path(args.out_dir) / "run_summary.txt").exists()
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
+    provenance = load_provenance(args.out_dir)
+    node = file_node_for_role(provenance, "resource:ccre_ubiquity_hg38")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_sc_converter_with_groups_validates_root_and_groups(tmp_path: Path):
@@ -112,6 +125,9 @@ def test_sc_converter_with_groups_validates_root_and_groups(tmp_path: Path):
     combined_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
     assert "group=g1" in combined_text
     assert "group=g2" in combined_text
+    with manifest.open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert_manifest_has_enriched_columns(rows)
 
 
 def test_sc_condition_within_group_emits_open_close_and_connectable_sets(tmp_path: Path):

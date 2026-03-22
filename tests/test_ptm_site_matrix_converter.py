@@ -1,9 +1,16 @@
+import json
 import csv
 import shutil
 from pathlib import Path
 
 from geneset_extractors.converters import ptm_site_matrix
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import (
+    assert_manifest_has_enriched_columns,
+    assert_node_has_structured_resource_metadata,
+    file_node_for_role,
+    load_provenance,
+)
 
 
 class Args:
@@ -112,6 +119,9 @@ def test_ptm_site_matrix_single_contrast_end_to_end(tmp_path: Path):
     assert rows
     assert rows[0]["gene_symbol"] in {"KCNN4", "AKT1"}
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
+    provenance = load_provenance(out_dir)
+    node = file_node_for_role(provenance, "site_alias_table")
+    assert_node_has_structured_resource_metadata(node)
 
 
 def test_ptm_site_matrix_condition_within_group_grouped_output(tmp_path: Path):
@@ -136,6 +146,7 @@ def test_ptm_site_matrix_condition_within_group_grouped_output(tmp_path: Path):
     with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
     assert len(rows) == 2
+    assert_manifest_has_enriched_columns(rows)
     for row in rows:
         group_dir = out_dir / str(row["path"])
         assert (group_dir / "geneset.tsv").exists()
