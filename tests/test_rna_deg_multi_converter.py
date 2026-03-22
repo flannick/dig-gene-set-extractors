@@ -1,6 +1,7 @@
 import csv
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -77,6 +78,20 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
     first_meta = json.loads((out_dir / rows[0]["meta_path"]).read_text(encoding="utf-8"))
     assert rows[0]["focus_node_id"] == first_meta["provenance"]["focus_node_id"]
     assert (out_dir / rows[0]["provenance_path"]).exists()
+
+    with (out_dir / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        manifest_rows = list(csv.DictReader(fh, delimiter="\t"))
+    meta = json.loads((out_dir / manifest_rows[0]["path"] / "geneset.meta.json").read_text(encoding="utf-8"))
+    lineage = meta["lineage"]
+    assert lineage["processes"][0]["command_kind"] == "reconstructed_from_parameters"
+    assert lineage["processes"][0]["command_argv"][:5] == [
+        sys.executable,
+        "-m",
+        "geneset_extractors.cli",
+        "convert",
+        "rna_deg_multi",
+    ]
+    assert any(edge["edge_type"] == "process_step" for edge in lineage["edges"])
 
 
 def test_rna_deg_multi_sanitizes_unsafe_comparison_label_in_gmt(tmp_path: Path):

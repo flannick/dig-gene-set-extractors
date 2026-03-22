@@ -1,3 +1,4 @@
+import csv
 import json
 import hashlib
 from pathlib import Path
@@ -393,6 +394,32 @@ def test_cli_convert_rna_deg(tmp_path: Path):
         "true",
     )
     assert convert.returncode == 0
+    meta = json.loads((out / "geneset.meta.json").read_text(encoding="utf-8"))
+    process = meta["lineage"]["processes"][0]
+    assert process["command_kind"] == "captured_cli_argv"
+    assert process["command_argv"] == [
+        sys.executable,
+        "-m",
+        "geneset_extractors.cli",
+        "convert",
+        "rna_deg",
+        "--deg_tsv",
+        "tests/data/toy_deg.tsv",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--gmt_min_genes",
+        "1",
+        "--gmt_max_genes",
+        "10",
+        "--gmt_topk_list",
+        "3",
+        "--emit_small_gene_sets",
+        "true",
+    ]
     validate = _run("validate", str(out))
     assert validate.returncode == 0
 
@@ -494,6 +521,18 @@ def test_cli_convert_rna_deg_multi(tmp_path: Path):
         "true",
     )
     assert convert.returncode == 0
+    with (out / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        manifest_rows = list(csv.DictReader(fh, delimiter="\t"))
+    meta = json.loads((out / manifest_rows[0]["path"] / "geneset.meta.json").read_text(encoding="utf-8"))
+    process = meta["lineage"]["processes"][0]
+    assert process["command_kind"] == "captured_cli_argv"
+    assert process["command_argv"][:5] == [
+        sys.executable,
+        "-m",
+        "geneset_extractors.cli",
+        "convert",
+        "rna_deg_multi",
+    ]
     validate = _run("validate", str(out))
     assert validate.returncode == 0
 

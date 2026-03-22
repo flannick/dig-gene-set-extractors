@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from geneset_extractors.core.metadata import invocation_context
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -2173,7 +2174,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "convert":
             converter = get_converter(args.converter)
-            result = converter.run(args)
+            command_argv = [sys.executable, "-m", "geneset_extractors.cli", *raw_argv]
+            with invocation_context(command_argv=command_argv, cwd=Path.cwd()):
+                result = converter.run(args)
             if int(result.get("n_groups", 1)) > 1:
                 print(
                     "converted "

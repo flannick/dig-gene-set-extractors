@@ -185,6 +185,76 @@
         }
       }
     },
+    "lineage": {
+      "type": "object",
+      "required": ["graph_version", "nodes", "edges", "processes"],
+      "properties": {
+        "graph_version": {"type": "string"},
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "node_type", "direction", "role", "path"],
+            "properties": {
+              "id": {"type": "string"},
+              "node_type": {"const": "file"},
+              "direction": {"type": "string"},
+              "role": {"type": "string"},
+              "path": {"type": "string"},
+              "sha256": {"type": "string"},
+              "media_type": {"type": "string"}
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "source", "target", "process_id", "edge_type"],
+            "properties": {
+              "id": {"type": "string"},
+              "source": {"type": "string"},
+              "target": {"type": "string"},
+              "process_id": {"type": "string"},
+              "edge_type": {"type": "string"}
+            }
+          }
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "process_type",
+              "command_kind",
+              "command_argv",
+              "command",
+              "working_directory",
+              "entrypoint",
+              "parameters",
+              "code"
+            ],
+            "properties": {
+              "id": {"type": "string"},
+              "name": {"type": "string"},
+              "process_type": {"type": "string"},
+              "command_kind": {"type": "string"},
+              "command_argv": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "command": {"type": "string"},
+              "working_directory": {"type": "string"},
+              "entrypoint": {"type": "object"},
+              "parameters": {"type": "object"},
+              "code": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
     "summary": {
       "type": "object",
       "required": ["n_input_features", "n_genes", "n_features_assigned", "fraction_features_assigned"],

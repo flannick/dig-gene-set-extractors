@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import mimetypes
 from pathlib import Path
+import shlex
 import subprocess
+import sys
 import threading
 from typing import Any
 
@@ -47,6 +51,7 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
 
 _GIT_COMMIT_CACHE: str | None = None
 _GIT_COMMIT_LOCK = threading.Lock()
+_INVOCATION_CONTEXT = threading.local()
 
 
 def _resolve_git_commit() -> str:
@@ -124,6 +129,167 @@ def _build_provenance_payload(metadata_payload: dict[str, Any], meta_dir: Path, 
         "nodes": input_nodes + [geneset_node] + output_nodes,
         "operations": [operation],
         "edges": build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes),
+    }
+
+
+@contextmanager
+def invocation_context(command_argv: list[str], cwd: str | Path | None = None):
+    previous = getattr(_INVOCATION_CONTEXT, "value", None)
+    _INVOCATION_CONTEXT.value = {
+        "argv": [str(token) for token in command_argv],
+        "cwd": str(cwd) if cwd is not None else str(Path.cwd()),
+        "kind": "captured_cli_argv",
+    }
+    try:
+        yield
+    finally:
+        _INVOCATION_CONTEXT.value = previous
+
+
+def _current_invocation_context() -> dict[str, object] | None:
+    value = getattr(_INVOCATION_CONTEXT, "value", None)
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _slug(value: str) -> str:
+    out = []
+    for char in str(value):
+        if char.isalnum():
+            out.append(char.lower())
+        else:
+            out.append("_")
+    slug = "".join(out).strip("_")
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug or "item"
+
+
+def _command_flag(name: str) -> str:
+    return f"--{name}"
+
+
+def _append_parameter_tokens(tokens: list[str], name: str, value: object) -> None:
+    flag = _command_flag(name)
+    if value is None:
+        return
+    if isinstance(value, bool):
+        tokens.extend([flag, "true" if value else "false"])
+        return
+    if isinstance(value, dict):
+        tokens.extend([flag, json.dumps(value, sort_keys=True)])
+        return
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return
+        for item in value:
+            _append_parameter_tokens(tokens, name, item)
+        return
+    tokens.extend([flag, str(value)])
+
+
+def _reconstruct_command_argv(converter_name: str, parameters: dict[str, object]) -> list[str]:
+    argv = [sys.executable, "-m", "geneset_extractors.cli", "convert", converter_name]
+    for key in sorted(parameters):
+        _append_parameter_tokens(argv, key, parameters[key])
+    return argv
+
+
+def _guess_media_type(path: str) -> str | None:
+    media_type, _ = mimetypes.guess_type(path)
+    return media_type
+
+
+def _build_lineage_file_node(
+    record: dict[str, object],
+    direction: str,
+    index: int,
+) -> dict[str, object]:
+    path = str(record.get("path", ""))
+    role = str(record.get("role", "")) or f"{direction}_{index}"
+    node: dict[str, object] = {
+        "id": f"file:{direction}:{_slug(role)}:{index}",
+        "node_type": "file",
+        "direction": direction,
+        "role": role,
+        "path": path,
+    }
+    sha256 = record.get("sha256")
+    if isinstance(sha256, str) and sha256:
+        node["sha256"] = sha256
+    else:
+        candidate = Path(path)
+        if path and candidate.exists() and candidate.is_file():
+            node["sha256"] = sha256_file(candidate)
+    media_type = _guess_media_type(path)
+    if media_type:
+        node["media_type"] = media_type
+    return node
+
+
+def _build_lineage(
+    converter_name: str,
+    parameters: dict[str, object],
+    files: list[dict[str, str]],
+    output_files: list[dict[str, str]] | None,
+) -> dict[str, object]:
+    input_nodes = [_build_lineage_file_node(record, "input", idx) for idx, record in enumerate(files, start=1)]
+    output_nodes = [
+        _build_lineage_file_node(record, "output", idx)
+        for idx, record in enumerate(output_files or [], start=1)
+    ]
+
+    invocation = _current_invocation_context()
+    if invocation is None:
+        command_argv = _reconstruct_command_argv(converter_name, parameters)
+        command_kind = "reconstructed_from_parameters"
+        working_directory = str(Path.cwd())
+    else:
+        command_argv = [str(token) for token in invocation.get("argv", [])]
+        command_kind = str(invocation.get("kind", "captured_cli_argv"))
+        working_directory = str(invocation.get("cwd", Path.cwd()))
+
+    process_id = "process:converter_invocation"
+    processes = [
+        {
+            "id": process_id,
+            "name": f"convert {converter_name}",
+            "process_type": "converter_invocation",
+            "command_kind": command_kind,
+            "command_argv": command_argv,
+            "command": shlex.join(command_argv),
+            "working_directory": working_directory,
+            "entrypoint": {"kind": "python_module", "module": "geneset_extractors.cli"},
+            "parameters": parameters,
+            "code": {"git_commit": _resolve_git_commit()},
+        }
+    ]
+
+    edges = []
+    if output_nodes:
+        for input_node in input_nodes:
+            for output_node in output_nodes:
+                pair_hash = stable_hash_object(
+                    {
+                        "process_id": process_id,
+                        "source": input_node["id"],
+                        "target": output_node["id"],
+                    }
+                )[:12]
+                edges.append(
+                    {
+                        "id": f"edge:{pair_hash}",
+                        "source": input_node["id"],
+                        "target": output_node["id"],
+                        "process_id": process_id,
+                        "edge_type": "process_step",
+                    }
+                )
+
+    return {
+        "graph_version": "1.0.0",
+        "nodes": input_nodes + output_nodes,
+        "edges": edges,
+        "processes": processes,
     }
 
 
@@ -216,6 +382,12 @@ def make_metadata(
     if gmt is not None:
         payload["gmt"] = gmt
     payload["_provenance_overlay_json"] = provenance_overlay_json
+    payload["lineage"] = _build_lineage(
+        converter_name=converter_name,
+        parameters=parameters,
+        files=files,
+        output_files=output_files_payload,
+    )
     return payload
 
 

@@ -1,6 +1,7 @@
 import csv
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -81,6 +82,21 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert provenance["file_type"] == "provenance"
     assert provenance["focus_node_id"] == meta["provenance"]["focus_node_id"]
     assert any(node["kind"] == "geneset" for node in provenance["nodes"])
+    lineage = meta["lineage"]
+    assert lineage["graph_version"] == "1.0.0"
+    assert lineage["nodes"]
+    assert lineage["edges"]
+    assert lineage["processes"][0]["command_kind"] == "reconstructed_from_parameters"
+    assert lineage["processes"][0]["command_argv"][:5] == [
+        sys.executable,
+        "-m",
+        "geneset_extractors.cli",
+        "convert",
+        "rna_deg",
+    ]
+    roles = {(node["direction"], node["role"]) for node in lineage["nodes"]}
+    assert ("input", "deg_tsv") in roles
+    assert ("output", "selected_program") in roles
 
 
 def test_rna_deg_provenance_overlay_injects_public_links(tmp_path: Path):
