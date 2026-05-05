@@ -92,7 +92,16 @@ for (i in seq_len(nrow(comps))) {{
   }}
   y <- y[keep_genes, , keep.lib.sizes=FALSE]
   y <- calcNormFactors(y)
-  form_terms <- c(".__group", extra_cols[extra_cols %in% colnames(sub_meta)])
+  present_extra_cols <- extra_cols[extra_cols %in% colnames(sub_meta)]
+  variable_extra_cols <- c()
+  for (col_name in present_extra_cols) {{
+    values <- sub_meta[[col_name]]
+    values <- values[!is.na(values) & nzchar(as.character(values))]
+    if (length(unique(as.character(values))) >= 2) {{
+      variable_extra_cols <- c(variable_extra_cols, col_name)
+    }}
+  }}
+  form_terms <- c(".__group", variable_extra_cols)
   form <- as.formula(paste("~", paste(form_terms, collapse=" + "), "+ (1|{random_effect_column})"))
   vobj <- voomWithDreamWeights(y, form, sub_meta)
   fit <- dream(vobj, form, sub_meta)

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
+import shlex
 import sys
 import threading
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from geneset_extractors.hashing import sha256_file, stable_hash_object
 
@@ -57,24 +61,96 @@ def load_overlay(path: str | Path | None) -> dict[str, Any]:
     return payload
 
 
+def _slug(value: str) -> str:
+    out = []
+    for char in str(value):
+        if char.isalnum():
+            out.append(char.lower())
+        else:
+            out.append("_")
+    slug = "".join(out).strip("_")
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug or "item"
+
+
+def _stable_uuid(parts: dict[str, object]) -> str:
+    return str(uuid5(NAMESPACE_URL, stable_hash_object(parts)))
+
+
 def stable_file_node_id(local_path: str, role: str, sha256: str | None) -> str:
-    digest = stable_hash_object({"local_path": local_path, "role": role, "sha256": sha256 or ""})[:24]
-    return f"file:{digest}"
+    file_uuid = _stable_uuid({"local_path": local_path, "role": role, "sha256": sha256 or ""})
+    return f"file:{_slug(role)}:{file_uuid}"
 
 
 def stable_operation_id(converter_name: str, geneset_id: str, input_ids: list[str]) -> str:
-    digest = stable_hash_object(
+    op_uuid = _stable_uuid(
         {
             "converter_name": converter_name,
             "geneset_id": geneset_id,
             "input_ids": sorted(input_ids),
         }
-    )[:24]
-    return f"operation:{digest}"
+    )
+    return f"analysis:{_slug(converter_name)}:{op_uuid}"
 
 
 def geneset_node_id(geneset_id: str) -> str:
     return f"geneset:{geneset_id}"
+
+
+def _file_md5_base64(path: Path) -> str:
+    digest = hashlib.md5()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return base64.b64encode(digest.digest()).decode("ascii")
+
+
+def _normalize_md5(value: object, resolved: Path | None) -> str:
+    if isinstance(value, str) and value.strip():
+        raw = value.strip()
+        try:
+            digest = bytes.fromhex(raw)
+        except ValueError:
+            return raw
+        return base64.b64encode(digest).decode("ascii")
+    if resolved is not None and resolved.exists() and resolved.is_file():
+        return _file_md5_base64(resolved)
+    return base64.b64encode(hashlib.md5(b"").digest()).decode("ascii")
+
+
+def _path_to_uri(local_path: str) -> str | None:
+    if not str(local_path).strip():
+        return None
+    try:
+        return Path(local_path).resolve().as_uri()
+    except Exception:
+        return None
+
+
+def _infer_node_description(label: str, role: str, kind: str, extra: str | None = None) -> str:
+    base = f"{kind} node for {label} (role: {role})"
+    if extra:
+        return f"{base}. {extra}"
+    return base
+
+
+def _classify_input_edge(role: str) -> str:
+    lowered = role.lower()
+    metadata_tokens = (
+        "gtf",
+        "alias",
+        "annotation",
+        "metadata",
+        "reference",
+        "resource",
+        "template",
+        "manifest",
+        "ontology",
+    )
+    if any(token in lowered for token in metadata_tokens):
+        return "metadata input"
+    return "data input"
 
 
 def build_output_file_record(meta_dir: Path, file_record: dict[str, Any]) -> dict[str, Any]:
@@ -90,6 +166,7 @@ def build_output_file_record(meta_dir: Path, file_record: dict[str, Any]) -> dic
         "role": str(file_record.get("role", "output_artifact")),
         "sha256": sha256,
         "size_bytes": size_bytes,
+        "md5": file_record.get("md5"),
         "access_level": "local_only",
         "local_path": str(resolved),
     }
@@ -128,39 +205,63 @@ def merge_file_overlay(file_record: dict[str, Any], overlay: dict[str, Any]) -> 
 def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     merged = merge_file_overlay(file_record, overlay)
     local_path = str(merged.get("local_path") or merged.get("path") or "")
+    resolved = Path(local_path).resolve() if local_path else None
     role = str(merged.get("role", "input"))
-    node_id = str(merged.get("node_id") or stable_file_node_id(local_path, role, merged.get("sha256")))
-    hashes = {}
-    if merged.get("sha256"):
-        hashes["sha256"] = merged["sha256"]
-    identifiers = {}
-    if merged.get("persistent_id"):
-        identifiers["persistent_id"] = merged["persistent_id"]
-    if merged.get("stable_id"):
-        identifiers["stable_id"] = merged["stable_id"]
-    metadata = {}
-    for key in ("provider", "version", "license", "source", "description"):
+    sha256 = merged.get("sha256")
+    node_id = str(merged.get("node_id") or stable_file_node_id(local_path, role, sha256 if isinstance(sha256, str) else None))
+    file_uuid = str(merged.get("_uuid") or _stable_uuid({"node_id": node_id, "role": role}))
+    persistent_id = str(merged.get("persistent_id") or _stable_uuid({"node_id": node_id, "kind": "persistent"}))
+    filename = str(
+        merged.get("filename")
+        or (Path(local_path).name if local_path else Path(str(merged.get("path", role))).name)
+        or role
+    )
+    local_id = str(merged.get("local_id") or merged.get("canonical_uri") or local_path or merged.get("path") or filename)
+    size_bytes = merged.get("size_bytes")
+    if size_bytes is None and resolved is not None and resolved.exists() and resolved.is_file():
+        size_bytes = resolved.stat().st_size
+    md5 = _normalize_md5(merged.get("md5"), resolved if resolved is not None else None)
+    dcc_url = (
+        merged.get("dcc_url")
+        or merged.get("landing_page_url")
+        or merged.get("download_url")
+        or merged.get("canonical_uri")
+        or _path_to_uri(local_path)
+        or f"urn:file:{file_uuid}"
+    )
+    drc_url = (
+        merged.get("drc_url")
+        or merged.get("canonical_uri")
+        or merged.get("download_url")
+        or merged.get("landing_page_url")
+        or _path_to_uri(local_path)
+        or f"urn:file:{persistent_id}"
+    )
+    description_bits = []
+    for key in ("provider", "version", "license", "source"):
         value = merged.get(key)
         if value not in (None, ""):
-            metadata[key] = value
+            description_bits.append(f"{key}={value}")
     return {
         "id": node_id,
-        "kind": "file",
-        "label": str(merged.get("label") or Path(local_path or role).name or role),
-        "role": role,
-        "format": str(merged.get("format") or Path(local_path or merged.get("path", "")).suffix.lstrip(".") or "unknown"),
-        "access": {
-            "canonical_uri": merged.get("canonical_uri"),
-            "download_url": merged.get("download_url"),
-            "landing_page_url": merged.get("landing_page_url"),
-            "local_path": local_path or None,
-            "access_level": merged.get("access_level", "local_only"),
+        "type": "File",
+        "name": str(merged.get("label") or filename),
+        "description": _infer_node_description(
+            str(merged.get("label") or filename),
+            role,
+            "File",
+            "; ".join(description_bits) if description_bits else None,
+        ),
+        "dcc_url": str(dcc_url),
+        "drc_url": str(drc_url),
+        "c2m2_properties": {
+            "filename": filename,
+            "persistent_id": persistent_id,
+            "local_id": local_id,
+            "size_in_bytes": int(size_bytes or 0),
+            "_uuid": file_uuid,
+            "md5": md5,
         },
-        "identifiers": identifiers,
-        "hashes": hashes,
-        "size_bytes": merged.get("size_bytes"),
-        "metadata": metadata,
-        "extensions": merged.get("extensions", {}),
     }
 
 
@@ -170,17 +271,26 @@ def build_geneset_node(metadata_payload: dict[str, Any], overlay: dict[str, Any]
     if isinstance(overlay_gene_set, dict):
         for key, value in overlay_gene_set.items():
             gene_set.setdefault(key, value)
+    geneset_id = str(gene_set["id"])
+    name = str(gene_set.get("name", metadata_payload.get("geneset_id", geneset_id)))
+    description = str(
+        gene_set.get("description")
+        or f"Derived gene set for converter={metadata_payload.get('converter', {}).get('name', 'unknown')}"
+    )
+    dcc_url = str(gene_set.get("dcc_url") or f"urn:geneset:{metadata_payload.get('geneset_id', geneset_id)}")
+    drc_url = str(gene_set.get("drc_url") or dcc_url)
     return {
-        "id": str(gene_set["id"]),
-        "kind": "geneset",
-        "label": str(gene_set.get("name", metadata_payload.get("geneset_id", ""))),
-        "assay": gene_set.get("assay"),
-        "data_type": gene_set.get("data_type"),
-        "organism": gene_set.get("organism"),
-        "genome_build": gene_set.get("genome_build"),
-        "n_genes": gene_set.get("n_genes"),
-        "primary_artifact": gene_set.get("primary_artifact"),
-        "metadata": {k: v for k, v in gene_set.items() if k not in {"id", "name", "assay", "data_type", "organism", "genome_build", "n_genes", "primary_artifact"}},
+        "id": geneset_id,
+        "type": "GeneSet",
+        "name": name,
+        "description": description,
+        "dcc_url": dcc_url,
+        "drc_url": drc_url,
+        "c2m2_properties": {
+            "id": geneset_id,
+            "name": name,
+            "description": description,
+        },
     }
 
 
@@ -202,46 +312,96 @@ def build_operation(
             elif key in {"container_image", "workspace_template_url"}:
                 if execution.get(key) in (None, ""):
                     execution[key] = value
-    focus_node_id = str(metadata_payload.get("provenance", {}).get("focus_node_id", ""))
+            elif key in {"dcc_url", "drc_url", "description", "synonyms"}:
+                code.setdefault(key, value)
     operation_id = stable_operation_id(
         str(converter.get("name", "unknown")),
         str(metadata_payload.get("geneset_id", "")),
         [str(node["id"]) for node in input_nodes],
     )
+    method = str(converter.get("name", "unknown"))
+    label = f"generate_{_slug(metadata_payload.get('geneset_id', method))}"
+    analysis_description = str(
+        code.get("description")
+        or f"Analysis step that derives the gene set using converter {method}."
+    )
     command = execution.get("command")
-    if not command:
-        command = ["geneset-extractors", "convert", str(converter.get("name", "unknown")), "..."]
+    if isinstance(command, list):
+        command_text = shlex.join([str(token) for token in command])
+    elif command in (None, ""):
+        command_text = None
+    else:
+        command_text = str(command)
+    script_url = code.get("script_url") or code.get("notebook_url") or REPO_URL
     return {
         "id": operation_id,
-        "label": f"Extract {metadata_payload.get('gene_set', {}).get('name', metadata_payload.get('geneset_id', 'gene set'))}",
-        "operation_type": "extract_gene_set",
-        "method": str(converter.get("name", "unknown")),
-        "inputs": [str(node["id"]) for node in input_nodes],
-        "outputs": [focus_node_id] + [str(node["id"]) for node in output_nodes],
-        "code": {
-            "repo_url": code.get("repo_url", REPO_URL),
-            "git_commit": code.get("git_commit"),
-            "module": code.get("module"),
-            "script_url": code.get("script_url"),
-            "notebook_url": code.get("notebook_url"),
+        "type": "AnalysisType",
+        "name": label,
+        "description": analysis_description,
+        "dcc_url": str(code.get("dcc_url") or REPO_URL),
+        "drc_url": str(code.get("drc_url") or REPO_URL),
+        "c2m2_properties": {
+            "id": operation_id,
+            "name": label,
+            "description": analysis_description,
+            "synonyms": list(code.get("synonyms", [])) if isinstance(code.get("synonyms"), list) else [],
         },
-        "parameters": converter.get("parameters", {}),
-        "replay": {
-            "mode": execution.get("mode", "cli"),
-            "entrypoint": execution.get("entrypoint"),
-            "command": command,
-            "container_image": execution.get("container_image"),
-            "workspace_template_url": execution.get("workspace_template_url"),
-            "notes": execution.get("notes", "Template replay command; local inputs may require overlay URLs for portal replay."),
+        "analysis": {
+            "script_url": str(script_url),
+            "version": code.get("git_commit"),
+            "command": command_text,
+            "parameters": converter.get("parameters", {}),
+            "environment": {
+                "mode": execution.get("mode", "cli"),
+                "entrypoint": execution.get("entrypoint"),
+                "container_image": execution.get("container_image"),
+                "workspace_template_url": execution.get("workspace_template_url"),
+                "repo_url": code.get("repo_url", REPO_URL),
+                "module": code.get("module"),
+                "n_input_nodes": len(input_nodes),
+                "n_output_nodes": len(output_nodes),
+            },
         },
     }
 
 
-def build_edges(input_nodes: list[dict[str, Any]], operation_id: str, focus_node_id: str, output_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_edges(
+    input_nodes: list[dict[str, Any]],
+    operation_id: str,
+    focus_node_id: str,
+    output_nodes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     edges: list[dict[str, Any]] = []
     for node in input_nodes:
-        edges.append({"source": str(node["id"]), "target": operation_id, "kind": "used_by"})
-    edges.append({"source": operation_id, "target": focus_node_id, "kind": "generated"})
+        role = str(node.get("description", ""))
+        label = _classify_input_edge(role)
+        edge_id = f"{node['id']}_to_{operation_id}"
+        edges.append(
+            {
+                "id": edge_id,
+                "source": str(node["id"]),
+                "target": operation_id,
+                "label": label,
+                "description": f"{node['name']} is a {label} to {operation_id}.",
+            }
+        )
+    edges.append(
+        {
+            "id": f"{operation_id}_to_{focus_node_id}",
+            "source": operation_id,
+            "target": focus_node_id,
+            "label": "data output",
+            "description": f"{operation_id} produces {focus_node_id}.",
+        }
+    )
     for node in output_nodes:
-        edges.append({"source": focus_node_id, "target": str(node["id"]), "kind": "materialized_as"})
+        edges.append(
+            {
+                "id": f"{operation_id}_to_{node['id']}",
+                "source": operation_id,
+                "target": str(node["id"]),
+                "label": "data output",
+                "description": f"{operation_id} materializes output artifact {node['name']}.",
+            }
+        )
     return edges

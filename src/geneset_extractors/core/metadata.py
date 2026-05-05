@@ -103,7 +103,6 @@ def _ensure_output_files(output_files: list[dict[str, object]] | None) -> list[d
     defaults = [
         {"path": "geneset.tsv", "role": "selected_program"},
         {"path": "geneset.meta.json", "role": "metadata_json"},
-        {"path": "geneset.provenance.json", "role": "provenance_json"},
     ]
     for item in defaults:
         key = (item["path"], item["role"])
@@ -112,23 +111,40 @@ def _ensure_output_files(output_files: list[dict[str, object]] | None) -> list[d
     return out
 
 
+def _dedupe_output_files(meta_dir: Path, output_files: list[dict[str, object]]) -> list[dict[str, object]]:
+    deduped: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in output_files:
+        raw_path = str(item.get("path", "")).strip()
+        role = str(item.get("role", "")).strip()
+        if not raw_path:
+            continue
+        path_obj = Path(raw_path)
+        resolved = path_obj if path_obj.is_absolute() else (meta_dir / path_obj)
+        key = (str(resolved.resolve()), role)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(dict(item))
+    return deduped
+
+
 def _build_provenance_payload(metadata_payload: dict[str, Any], meta_dir: Path, overlay_path: str | None) -> dict[str, Any]:
     runtime_ctx = get_runtime_context()
     overlay = load_overlay(overlay_path or (runtime_ctx.overlay_path if runtime_ctx else None))
     input_files = [dict(item) for item in metadata_payload.get("input", {}).get("files", [])]
     input_nodes = [build_file_node(item, overlay) for item in input_files]
-    output_records = [build_output_file_record(meta_dir, item) for item in metadata_payload.get("output", {}).get("files", [])]
+    output_files = _dedupe_output_files(meta_dir, [dict(item) for item in metadata_payload.get("output", {}).get("files", [])])
+    output_records = [build_output_file_record(meta_dir, item) for item in output_files]
     output_nodes = [build_file_node(item, overlay) for item in output_records]
     geneset_node = build_geneset_node(metadata_payload, overlay)
     operation = build_operation(metadata_payload, input_nodes, output_nodes, overlay)
+    graph_key = str(metadata_payload.get("geneset_id", metadata_payload["provenance"]["focus_node_id"]))
     return {
-        "standard_name": STANDARD_NAME,
-        "standard_version": STANDARD_VERSION,
-        "file_type": "provenance",
-        "focus_node_id": metadata_payload["provenance"]["focus_node_id"],
-        "nodes": input_nodes + [geneset_node] + output_nodes,
-        "operations": [operation],
-        "edges": build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes),
+        graph_key: {
+            "nodes": input_nodes + [geneset_node, operation] + output_nodes,
+            "edges": build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes),
+        }
     }
 
 

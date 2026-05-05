@@ -1,76 +1,389 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "provenance_graph_schema.json",
+  "title": "CFDE Provenance Graphs",
+  "description": "Schema for CFDE provenance graphs mapping C2M2 source files to derived gene sets via analysis steps.",
   "type": "object",
-  "required": [
-    "standard_name",
-    "standard_version",
-    "file_type",
-    "focus_node_id",
-    "nodes",
-    "operations"
-  ],
-  "properties": {
-    "standard_name": {"const": "dig.geneset"},
-    "standard_version": {"type": "string"},
-    "file_type": {"const": "provenance"},
-    "focus_node_id": {"type": "string"},
-    "nodes": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "kind", "label"],
-        "properties": {
-          "id": {"type": "string"},
-          "kind": {"type": "string"},
-          "label": {"type": "string"},
-          "role": {"type": "string"},
-          "format": {"type": "string"},
-          "access": {"type": "object"},
-          "identifiers": {"type": "object"},
-          "hashes": {"type": "object"},
-          "size_bytes": {"type": ["integer", "null"]},
-          "metadata": {"type": "object"},
-          "extensions": {"type": "object"}
+  "additionalProperties": {
+    "$ref": "#/$defs/ProvenanceGraph"
+  },
+  "$defs": {
+    "ProvenanceGraph": {
+      "title": "ProvenanceGraph",
+      "description": "A provenance graph for a single gene set, consisting of nodes and directed edges.",
+      "type": "object",
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "description": "All nodes in the graph. Each node is one of: File, GeneSet, or AnalysisType.",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/FileNode"
+              },
+              {
+                "$ref": "#/$defs/GeneSetNode"
+              },
+              {
+                "$ref": "#/$defs/AnalysisTypeNode"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "type"
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Directed edges connecting nodes. The graph must contain at least one 'data input' and one 'data output' edge.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Edge"
+          }
         }
       }
     },
-    "operations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "id",
-          "label",
-          "operation_type",
-          "method",
-          "inputs",
-          "outputs",
-          "code",
-          "parameters",
-          "replay"
-        ],
-        "properties": {
-          "id": {"type": "string"},
-          "label": {"type": "string"},
-          "operation_type": {"const": "extract_gene_set"},
-          "method": {"type": "string"},
-          "inputs": {"type": "array", "items": {"type": "string"}},
-          "outputs": {"type": "array", "items": {"type": "string"}},
-          "code": {"type": "object"},
-          "parameters": {"type": "object"},
-          "replay": {"type": "object"}
+    "Edge": {
+      "title": "Edge",
+      "description": "A directed edge between two nodes in the provenance graph.",
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "label",
+        "target",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique edge identifier, typically '{source_id}_to_{target_id}'.",
+          "examples": [
+            "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_reads.gct.gz_to_generate_GTEx_Uterus_20-29_vs_40-49_Up"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "description": "ID of the source node."
+        },
+        "target": {
+          "type": "string",
+          "description": "ID of the target node."
+        },
+        "label": {
+          "type": "string",
+          "description": "Semantic role of the edge.",
+          "enum": [
+            "data input",
+            "metadata input",
+            "data output"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Human-readable description of the edge relationship."
         }
       }
     },
-    "edges": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["source", "target", "kind"],
-        "properties": {
-          "source": {"type": "string"},
-          "target": {"type": "string"},
-          "kind": {"type": "string"}
+    "BaseNode": {
+      "title": "BaseNode",
+      "description": "Common fields shared by all node types.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "name",
+        "description",
+        "dcc_url",
+        "drc_url"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier within the graph."
+        },
+        "type": {
+          "type": "string",
+          "description": "Node type discriminator.",
+          "enum": [
+            "File",
+            "GeneSet",
+            "AnalysisType"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable node name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the node."
+        },
+        "dcc_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the source DCC portal page for this resource."
+        },
+        "drc_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the DRC (CFDE Workbench) entity or resource page."
+        }
+      }
+    },
+    "FileNode": {
+      "title": "FileNode",
+      "description": "A C2M2 file node representing a raw or processed data file from a DCC.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNode"
+        }
+      ],
+      "required": [
+        "id",
+        "type",
+        "name",
+        "description",
+        "dcc_url",
+        "drc_url",
+        "c2m2_properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": true,
+        "type": {
+          "const": "File"
+        },
+        "name": true,
+        "description": true,
+        "dcc_url": true,
+        "drc_url": true,
+        "c2m2_properties": {
+          "$ref": "#/$defs/FileC2M2Properties"
+        }
+      }
+    },
+    "FileC2M2Properties": {
+      "title": "FileC2M2Properties",
+      "description": "C2M2 metadata fields for a File node, as defined by the Crosscut Metadata Model.",
+      "type": "object",
+      "required": [
+        "filename",
+        "persistent_id",
+        "local_id",
+        "size_in_bytes",
+        "_uuid",
+        "md5"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "type": "string",
+          "description": "Base filename as recorded in C2M2."
+        },
+        "persistent_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "C2M2 persistent identifier (UUID format)."
+        },
+        "local_id": {
+          "type": "string",
+          "description": "DCC-local identifier, typically a bucket path (e.g. gs://) or file path."
+        },
+        "size_in_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes."
+        },
+        "_uuid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Internal C2M2 UUID for the file node."
+        },
+        "md5": {
+          "type": "string",
+          "description": "Base64-encoded MD5 checksum of the file."
+        }
+      }
+    },
+    "GeneSetNode": {
+      "title": "GeneSetNode",
+      "description": "A node representing a derived gene set.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNode"
+        }
+      ],
+      "required": [
+        "id",
+        "type",
+        "name",
+        "description",
+        "dcc_url",
+        "drc_url",
+        "c2m2_properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": true,
+        "type": {
+          "const": "GeneSet"
+        },
+        "name": true,
+        "description": true,
+        "dcc_url": true,
+        "drc_url": true,
+        "c2m2_properties": {
+          "$ref": "#/$defs/GeneSetC2M2Properties"
+        }
+      }
+    },
+    "GeneSetC2M2Properties": {
+      "title": "GeneSetC2M2Properties",
+      "description": "C2M2 metadata fields for a GeneSet node.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Gene set identifier."
+        },
+        "name": {
+          "type": "string",
+          "description": "Gene set name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the gene set."
+        }
+      }
+    },
+    "AnalysisTypeNode": {
+      "title": "AnalysisTypeNode",
+      "description": "A node representing the analysis or computational method that produced a gene set.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNode"
+        }
+      ],
+      "required": [
+        "id",
+        "type",
+        "name",
+        "description",
+        "dcc_url",
+        "drc_url",
+        "c2m2_properties",
+        "analysis"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": true,
+        "type": {
+          "const": "AnalysisType"
+        },
+        "name": true,
+        "description": true,
+        "dcc_url": true,
+        "drc_url": true,
+        "c2m2_properties": {
+          "$ref": "#/$defs/AnalysisTypeC2M2Properties"
+        },
+        "analysis": {
+          "$ref": "#/$defs/AnalysisDetails"
+        }
+      }
+    },
+    "AnalysisTypeC2M2Properties": {
+      "title": "AnalysisTypeC2M2Properties",
+      "description": "C2M2 metadata fields for an AnalysisType node.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Analysis type identifier."
+        },
+        "name": {
+          "type": "string",
+          "description": "Analysis type name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the analysis."
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names for this analysis.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AnalysisDetails": {
+      "title": "AnalysisDetails",
+      "description": "Reproducibility details for the analysis step.",
+      "type": "object",
+      "required": [
+        "script_url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the script or notebook that implements this analysis."
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Version or git commit hash of the script."
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command used to execute the analysis, if applicable."
+        },
+        "parameters": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Key-value pairs of analysis parameters.",
+          "additionalProperties": true
+        },
+        "environment": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Execution environment details (e.g. software versions, container image).",
+          "additionalProperties": true
         }
       }
     }

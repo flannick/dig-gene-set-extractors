@@ -7,7 +7,7 @@ import pytest
 from geneset_extractors.converters import rna_sc_programs
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.extractors.rnaseq.sc_program_workflow import read_program_loadings
-from tests.provenance_helpers import assert_manifest_has_enriched_columns
+from tests.provenance_helpers import assert_manifest_has_enriched_columns, file_node_for_role, load_provenance
 
 
 class Args:
@@ -101,9 +101,9 @@ def test_rna_sc_programs_provenance_overlay_propagates(tmp_path: Path):
     rna_sc_programs.run(args)
 
     manifest_rows = list(csv.DictReader((Path(args.out_dir) / "manifest.tsv").open("r", encoding="utf-8"), delimiter="\t"))
-    provenance = json.loads((Path(args.out_dir) / manifest_rows[0]["provenance_path"]).read_text(encoding="utf-8"))
-    node = next(node for node in provenance["nodes"] if node.get("role") == "program_loadings_tsv")
-    assert node["access"]["download_url"] == "https://example.org/programs.tsv"
+    provenance = load_provenance(Path(args.out_dir) / manifest_rows[0]["path"])
+    node = file_node_for_role(provenance, "program_loadings_tsv")
+    assert node["drc_url"] == "https://example.org/programs.tsv"
 
 
 def test_rna_sc_programs_signed_split_gmt(tmp_path: Path):

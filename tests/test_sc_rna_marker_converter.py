@@ -4,7 +4,7 @@ from pathlib import Path
 
 from geneset_extractors.converters import sc_rna_marker
 from geneset_extractors.core.validate import validate_output_dir
-from tests.provenance_helpers import assert_manifest_has_enriched_columns
+from tests.provenance_helpers import assert_manifest_has_enriched_columns, file_node_for_role, load_provenance
 
 
 class Args:
@@ -57,6 +57,6 @@ def test_sc_rna_marker_overlay_propagates(tmp_path: Path):
     args.provenance_overlay_json = str(overlay_path)
     sc_rna_marker.run(args)
     rows = list(csv.DictReader((Path(args.out_dir) / "manifest.tsv").open("r", encoding="utf-8"), delimiter="\t"))
-    provenance = json.loads((Path(args.out_dir) / rows[0]["provenance_path"]).read_text(encoding="utf-8"))
-    node = next(node for node in provenance["nodes"] if node.get("role") == "counts_tsv")
-    assert node["access"]["landing_page_url"] == "https://example.org/counts"
+    provenance = load_provenance(Path(args.out_dir) / rows[0]["path"])
+    node = file_node_for_role(provenance, "counts_tsv")
+    assert node["dcc_url"] == "https://example.org/counts"

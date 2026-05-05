@@ -7,6 +7,7 @@ from pathlib import Path
 from geneset_extractors.converters import ptm_site_diff
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.workflows.ptm_prepare_reference_bundle import run as run_ptm_prepare_reference_bundle
+from tests.provenance_helpers import file_node_for_role, load_provenance
 
 
 class Args:
@@ -111,15 +112,13 @@ def test_ptm_site_diff_converter_end_to_end(tmp_path: Path):
     assert any("__neg__" in line for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    provenance = load_provenance(args.out_dir)
     resources_info = meta["converter"]["parameters"]["resources"]
     assert len(resources_info["used"]) == 2
     assert meta["summary"]["n_sites_matched_to_ubiquity_prior"] >= 1
-    alias_nodes = [node for node in provenance["nodes"] if node.get("role") == "site_alias_table"]
-    assert alias_nodes
-    assert alias_nodes[0]["identifiers"].get("stable_id")
-    assert alias_nodes[0]["metadata"].get("provider")
-    assert alias_nodes[0]["access"]["local_path"]
+    alias_node = file_node_for_role(provenance, "site_alias_table")
+    assert "provider=" in alias_node["description"]
+    assert alias_node["c2m2_properties"]["local_id"]
 
 
 
