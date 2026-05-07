@@ -85,6 +85,7 @@ class DEGWorkflowConfig:
     gmt_source: str
     emit_small_gene_sets: bool
     warn_biotype_missing: bool
+    upstream_provenance_graph_path: str | None = None
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -313,6 +314,21 @@ def _warn_technical_gene_dominance(selected_rows: list[dict[str, object]]) -> tu
         print(f"warning: {msg}", file=sys.stderr)
         return msg, qc
     return None, qc
+
+
+def _gene_set_description(
+    *,
+    cfg: DEGWorkflowConfig,
+    resolved_score_mode: str,
+) -> str:
+    parts = ["Bulk RNA-seq gene set"]
+    if cfg.signature_name:
+        parts.append(f"for signature '{cfg.signature_name}'")
+    if cfg.comparison_label:
+        parts.append(f"and comparison '{cfg.comparison_label}'")
+    parts.append("derived from differential expression results")
+    parts.append(f"and ranked by {resolved_score_mode}")
+    return " ".join(parts) + "."
 
 
 def run_deg_workflow(
@@ -744,6 +760,8 @@ def run_deg_workflow(
             "diagnostics": gmt_diagnostics,
             "plans": gmt_plans,
         },
+        gene_set_description=_gene_set_description(cfg=cfg, resolved_score_mode=resolved_score_mode),
+        upstream_provenance_graph_path=cfg.upstream_provenance_graph_path,
     )
     write_metadata(out_dir / "geneset.meta.json", meta)
 

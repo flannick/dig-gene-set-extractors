@@ -12,6 +12,16 @@ from typing import Any
 import numpy as np
 
 from geneset_extractors.converters import rna_deg_multi
+from geneset_extractors.core.metadata import current_invocation_context, input_file_record
+from geneset_extractors.core.provenance import (
+    REPO_URL,
+    build_analysis_node,
+    build_edges,
+    build_file_node,
+    build_output_file_record,
+    stable_operation_id,
+    write_canonical_json,
+)
 from geneset_extractors.preprocessing.rnaseq.de_backends.lightweight import LightweightContrastResult, run_lightweight_contrast
 from geneset_extractors.preprocessing.rnaseq.de_backends import r_dream, r_limma_voom
 from geneset_extractors.preprocessing.rnaseq.de_design import ComparisonSpec, build_cli_comparisons, comparison_manifest_rows, parse_csv_columns, read_comparisons_tsv
@@ -198,6 +208,117 @@ def _validate_count_matrix(counts: np.ndarray, *, allow_non_count_input: bool) -
         "allow_non_count_input": bool(allow_non_count_input),
         "non_count_input_detected": bool(not is_integer_like),
     }
+
+
+def _workflow_input_files(
+    *,
+    counts_tsv: str,
+    sample_metadata_tsv: str | None,
+    subject_metadata_tsv: str | None,
+    cell_metadata_tsv: str | None,
+    comparisons_tsv: str | None,
+    feature_mapping_tsv: str | None,
+) -> list[dict[str, object]]:
+    files = [input_file_record(counts_tsv, "counts_tsv")]
+    if sample_metadata_tsv:
+        files.append(input_file_record(sample_metadata_tsv, "sample_metadata_tsv"))
+    if subject_metadata_tsv:
+        files.append(input_file_record(subject_metadata_tsv, "subject_metadata_tsv"))
+    if cell_metadata_tsv:
+        files.append(input_file_record(cell_metadata_tsv, "cell_metadata_tsv"))
+    if comparisons_tsv:
+        files.append(input_file_record(comparisons_tsv, "comparisons_tsv"))
+    if feature_mapping_tsv:
+        files.append(input_file_record(feature_mapping_tsv, "feature_mapping_tsv"))
+    return files
+
+
+def _write_deg_long_provenance_graph(
+    *,
+    output_dir: Path,
+    deg_long_path: Path,
+    comparison_manifest_path: Path,
+    comparison_audit_path: Path,
+    selected_samples_path: Path,
+    workflow_input_files: list[dict[str, object]],
+    modality: str,
+    organism: str,
+    genome_build: str,
+    resolved_de_mode: str,
+    resolved_gene_filter_scope: str,
+    resolved_backend: str,
+    resolved_balance_groups: bool,
+    resolved_balance_seed: int,
+    covariate_cols: list[str],
+    batch_cols: list[str],
+    repeated_measures: bool,
+    approximate_repeated_measures: bool,
+) -> Path:
+    input_nodes = [build_file_node(record, {}) for record in workflow_input_files]
+    output_records = [
+        build_output_file_record(output_dir, {"path": str(deg_long_path), "role": "deg_tsv"}),
+        build_output_file_record(output_dir, {"path": str(comparison_manifest_path), "role": "comparison_manifest"}),
+        build_output_file_record(output_dir, {"path": str(comparison_audit_path), "role": "comparison_audit"}),
+        build_output_file_record(output_dir, {"path": str(selected_samples_path), "role": "comparison_selected_samples"}),
+    ]
+    output_nodes = [build_file_node(record, {}) for record in output_records]
+    deg_long_node = next(node for node in output_nodes if node["name"] == deg_long_path.name)
+    extra_output_nodes = [node for node in output_nodes if node["id"] != deg_long_node["id"]]
+
+    invocation = current_invocation_context()
+    command = invocation.get("argv") if invocation else list(sys.argv)
+    entrypoint = None
+    if invocation and invocation.get("argv"):
+        argv = [str(token) for token in invocation["argv"]]
+        if len(argv) >= 4 and argv[2] == "workflows":
+            entrypoint = " ".join(argv[1:4])
+    if not entrypoint:
+        entrypoint = "geneset-extractors workflows rna_de_prepare"
+
+    operation_id = stable_operation_id(
+        "rna_de_prepare",
+        str(deg_long_path),
+        [str(node["id"]) for node in input_nodes],
+    )
+    operation = build_analysis_node(
+        analysis_id=operation_id,
+        method="rna_de_prepare",
+        name=f"prepare_{deg_long_path.stem}",
+        description="Analysis step that prepares differential expression results and emits deg_long.tsv.",
+        parameters={
+            "modality": modality,
+            "organism": organism,
+            "genome_build": genome_build,
+            "de_mode": resolved_de_mode,
+            "gene_filter_scope": resolved_gene_filter_scope,
+            "backend": resolved_backend,
+            "balance_groups": bool(resolved_balance_groups),
+            "balance_seed": int(resolved_balance_seed),
+            "covariates": covariate_cols,
+            "batch_columns": batch_cols,
+            "repeated_measures": bool(repeated_measures),
+            "approximate_repeated_measures": bool(approximate_repeated_measures),
+        },
+        command=command,
+        entrypoint=entrypoint,
+        repo_url=REPO_URL,
+        module="geneset_extractors.workflows.rna_de_prepare",
+        script_url=REPO_URL,
+        version=None,
+        dcc_url=REPO_URL,
+        drc_url=REPO_URL,
+    )
+    graph_path = output_dir / "deg_long.provenance_graph.json"
+    write_canonical_json(
+        graph_path,
+        {
+            "deg_long": {
+                "nodes": input_nodes + [operation] + output_nodes,
+                "edges": build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes),
+            }
+        },
+    )
+    return graph_path
 
 
 
@@ -1047,6 +1168,34 @@ def run_de_prepare(
         + [str(key) for row in selected_sample_rows_all for key in row.keys()]
     )
     write_tsv(selected_samples_path, selected_sample_rows_all, fieldnames=selected_sample_fieldnames)
+    summary_path = output_dir / "prepare_summary.json"
+    workflow_graph_path = _write_deg_long_provenance_graph(
+        output_dir=output_dir,
+        deg_long_path=deg_long_path,
+        comparison_manifest_path=comparison_manifest_path,
+        comparison_audit_path=comparison_audit_path,
+        selected_samples_path=selected_samples_path,
+        workflow_input_files=_workflow_input_files(
+            counts_tsv=counts_tsv,
+            sample_metadata_tsv=sample_metadata_tsv,
+            subject_metadata_tsv=subject_metadata_tsv,
+            cell_metadata_tsv=cell_metadata_tsv,
+            comparisons_tsv=comparisons_tsv,
+            feature_mapping_tsv=feature_mapping_tsv,
+        ),
+        modality=modality,
+        organism=organism,
+        genome_build=genome_build,
+        resolved_de_mode=resolved_de_mode,
+        resolved_gene_filter_scope=resolved_gene_filter_scope,
+        resolved_backend=resolved_backend,
+        resolved_balance_groups=resolved_balance_groups,
+        resolved_balance_seed=resolved_balance_seed,
+        covariate_cols=covariate_cols,
+        batch_cols=batch_cols,
+        repeated_measures=repeated_measures,
+        approximate_repeated_measures=approximate_repeated_measures,
+    )
 
     extractor_result: dict[str, Any] | None = None
     if run_extractor:
@@ -1132,10 +1281,10 @@ def run_de_prepare(
         "comparison_selected_samples_path": str(selected_samples_path),
         "warnings": workflow_warnings,
         "deg_long_path": str(deg_long_path),
+        "deg_long_provenance_graph_path": str(workflow_graph_path),
         "backend_summary": backend_summary,
         "extractor": extractor_result,
     }
-    summary_path = output_dir / "prepare_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return {
         "out_dir": str(output_dir),

@@ -61,6 +61,15 @@ def load_overlay(path: str | Path | None) -> dict[str, Any]:
     return payload
 
 
+def load_graph_payload(path: str | Path | None) -> dict[str, Any]:
+    if not path:
+        return {}
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("provenance graph payload must be a JSON object")
+    return payload
+
+
 def _slug(value: str) -> str:
     out = []
     for char in str(value):
@@ -151,6 +160,47 @@ def _classify_input_edge(role: str) -> str:
     if any(token in lowered for token in metadata_tokens):
         return "metadata input"
     return "data input"
+
+
+def flatten_graph_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    for graph in payload.values():
+        if not isinstance(graph, dict):
+            continue
+        raw_nodes = graph.get("nodes", [])
+        raw_edges = graph.get("edges", [])
+        if isinstance(raw_nodes, list):
+            nodes.extend(node for node in raw_nodes if isinstance(node, dict))
+        if isinstance(raw_edges, list):
+            edges.extend(edge for edge in raw_edges if isinstance(edge, dict))
+    return nodes, edges
+
+
+def merge_graph_components(
+    node_groups: list[list[dict[str, Any]]],
+    edge_groups: list[list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    merged_nodes: list[dict[str, Any]] = []
+    seen_node_ids: set[str] = set()
+    for group in node_groups:
+        for node in group:
+            node_id = str(node.get("id", "")).strip()
+            if not node_id or node_id in seen_node_ids:
+                continue
+            seen_node_ids.add(node_id)
+            merged_nodes.append(node)
+
+    merged_edges: list[dict[str, Any]] = []
+    seen_edge_ids: set[str] = set()
+    for group in edge_groups:
+        for edge in group:
+            edge_id = str(edge.get("id", "")).strip()
+            if not edge_id or edge_id in seen_edge_ids:
+                continue
+            seen_edge_ids.add(edge_id)
+            merged_edges.append(edge)
+    return merged_nodes, merged_edges
 
 
 def build_output_file_record(meta_dir: Path, file_record: dict[str, Any]) -> dict[str, Any]:
@@ -265,6 +315,62 @@ def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dic
     }
 
 
+def build_analysis_node(
+    *,
+    analysis_id: str,
+    method: str,
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    command: list[str] | str | None,
+    entrypoint: str | None,
+    repo_url: str | None = None,
+    module: str | None = None,
+    script_url: str | None = None,
+    version: str | None = None,
+    container_image: str | None = None,
+    workspace_template_url: str | None = None,
+    dcc_url: str | None = None,
+    drc_url: str | None = None,
+) -> dict[str, Any]:
+    if isinstance(command, list):
+        command_text = shlex.join([str(token) for token in command])
+    elif command in (None, ""):
+        command_text = None
+    else:
+        command_text = str(command)
+    resolved_repo_url = repo_url or REPO_URL
+    resolved_script_url = script_url or resolved_repo_url
+    return {
+        "id": analysis_id,
+        "type": "AnalysisType",
+        "name": name,
+        "description": description,
+        "dcc_url": str(dcc_url or resolved_repo_url),
+        "drc_url": str(drc_url or resolved_repo_url),
+        "c2m2_properties": {
+            "id": analysis_id,
+            "name": name,
+            "description": description,
+            "synonyms": [],
+        },
+        "analysis": {
+            "script_url": str(resolved_script_url),
+            "version": version,
+            "command": command_text,
+            "parameters": parameters,
+            "environment": {
+                "mode": "cli",
+                "entrypoint": entrypoint,
+                "container_image": container_image,
+                "workspace_template_url": workspace_template_url,
+                "repo_url": resolved_repo_url,
+                "module": module,
+            },
+        },
+    }
+
+
 def build_geneset_node(metadata_payload: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     gene_set = dict(metadata_payload.get("gene_set", {}))
     overlay_gene_set = overlay.get("gene_set", {})
@@ -325,44 +431,27 @@ def build_operation(
         code.get("description")
         or f"Analysis step that derives the gene set using converter {method}."
     )
-    command = execution.get("command")
-    if isinstance(command, list):
-        command_text = shlex.join([str(token) for token in command])
-    elif command in (None, ""):
-        command_text = None
-    else:
-        command_text = str(command)
-    script_url = code.get("script_url") or code.get("notebook_url") or REPO_URL
-    return {
-        "id": operation_id,
-        "type": "AnalysisType",
-        "name": label,
-        "description": analysis_description,
-        "dcc_url": str(code.get("dcc_url") or REPO_URL),
-        "drc_url": str(code.get("drc_url") or REPO_URL),
-        "c2m2_properties": {
-            "id": operation_id,
-            "name": label,
-            "description": analysis_description,
-            "synonyms": list(code.get("synonyms", [])) if isinstance(code.get("synonyms"), list) else [],
-        },
-        "analysis": {
-            "script_url": str(script_url),
-            "version": code.get("git_commit"),
-            "command": command_text,
-            "parameters": converter.get("parameters", {}),
-            "environment": {
-                "mode": execution.get("mode", "cli"),
-                "entrypoint": execution.get("entrypoint"),
-                "container_image": execution.get("container_image"),
-                "workspace_template_url": execution.get("workspace_template_url"),
-                "repo_url": code.get("repo_url", REPO_URL),
-                "module": code.get("module"),
-                "n_input_nodes": len(input_nodes),
-                "n_output_nodes": len(output_nodes),
-            },
-        },
-    }
+    operation = build_analysis_node(
+        analysis_id=operation_id,
+        method=method,
+        name=label,
+        description=analysis_description,
+        parameters=converter.get("parameters", {}),
+        command=execution.get("command"),
+        entrypoint=execution.get("entrypoint"),
+        repo_url=code.get("repo_url", REPO_URL),
+        module=code.get("module"),
+        script_url=code.get("script_url") or code.get("notebook_url") or REPO_URL,
+        version=code.get("git_commit"),
+        container_image=execution.get("container_image"),
+        workspace_template_url=execution.get("workspace_template_url"),
+        dcc_url=code.get("dcc_url") or REPO_URL,
+        drc_url=code.get("drc_url") or REPO_URL,
+    )
+    operation["c2m2_properties"]["synonyms"] = list(code.get("synonyms", [])) if isinstance(code.get("synonyms"), list) else []
+    operation["analysis"]["environment"]["n_input_nodes"] = len(input_nodes)
+    operation["analysis"]["environment"]["n_output_nodes"] = len(output_nodes)
+    return operation
 
 
 def build_edges(

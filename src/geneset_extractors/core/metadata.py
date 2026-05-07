@@ -22,9 +22,12 @@ from geneset_extractors.core.provenance import (
     build_geneset_node,
     build_operation,
     build_output_file_record,
+    flatten_graph_payload,
     geneset_node_id,
     get_runtime_context,
+    load_graph_payload,
     load_overlay,
+    merge_graph_components,
     write_canonical_json,
 )
 
@@ -45,7 +48,13 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
     write_canonical_json(p, clean_payload)
     if p.name == "geneset.meta.json":
         overlay_path = payload.get("_provenance_overlay_json")
-        provenance_payload = _build_provenance_payload(clean_payload, p.parent, overlay_path if isinstance(overlay_path, str) else None)
+        upstream_graph_path = payload.get("_upstream_provenance_graph_path")
+        provenance_payload = _build_provenance_payload(
+            clean_payload,
+            p.parent,
+            overlay_path if isinstance(overlay_path, str) else None,
+            upstream_graph_path if isinstance(upstream_graph_path, str) else None,
+        )
         write_canonical_json(p.parent / "geneset.provenance.json", provenance_payload)
 
 
@@ -129,7 +138,12 @@ def _dedupe_output_files(meta_dir: Path, output_files: list[dict[str, object]]) 
     return deduped
 
 
-def _build_provenance_payload(metadata_payload: dict[str, Any], meta_dir: Path, overlay_path: str | None) -> dict[str, Any]:
+def _build_provenance_payload(
+    metadata_payload: dict[str, Any],
+    meta_dir: Path,
+    overlay_path: str | None,
+    upstream_graph_path: str | None = None,
+) -> dict[str, Any]:
     runtime_ctx = get_runtime_context()
     overlay = load_overlay(overlay_path or (runtime_ctx.overlay_path if runtime_ctx else None))
     input_files = [dict(item) for item in metadata_payload.get("input", {}).get("files", [])]
@@ -139,11 +153,21 @@ def _build_provenance_payload(metadata_payload: dict[str, Any], meta_dir: Path, 
     output_nodes = [build_file_node(item, overlay) for item in output_records]
     geneset_node = build_geneset_node(metadata_payload, overlay)
     operation = build_operation(metadata_payload, input_nodes, output_nodes, overlay)
+    current_edges = build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes)
+    upstream_nodes: list[dict[str, Any]] = []
+    upstream_edges: list[dict[str, Any]] = []
+    if upstream_graph_path:
+        upstream_payload = load_graph_payload(upstream_graph_path)
+        upstream_nodes, upstream_edges = flatten_graph_payload(upstream_payload)
+    merged_nodes, merged_edges = merge_graph_components(
+        [upstream_nodes, input_nodes, [geneset_node, operation], output_nodes],
+        [upstream_edges, current_edges],
+    )
     graph_key = str(metadata_payload.get("geneset_id", metadata_payload["provenance"]["focus_node_id"]))
     return {
         graph_key: {
-            "nodes": input_nodes + [geneset_node, operation] + output_nodes,
-            "edges": build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes),
+            "nodes": merged_nodes,
+            "edges": merged_edges,
         }
     }
 
@@ -165,6 +189,10 @@ def invocation_context(command_argv: list[str], cwd: str | Path | None = None):
 def _current_invocation_context() -> dict[str, object] | None:
     value = getattr(_INVOCATION_CONTEXT, "value", None)
     return dict(value) if isinstance(value, dict) else None
+
+
+def current_invocation_context() -> dict[str, object] | None:
+    return _current_invocation_context()
 
 
 def _slug(value: str) -> str:
@@ -323,7 +351,9 @@ def make_metadata(
     program_extraction: dict[str, object] | None = None,
     output_files: list[dict[str, str]] | None = None,
     gmt: dict[str, object] | None = None,
+    gene_set_description: str | None = None,
     provenance_overlay_json: str | None = None,
+    upstream_provenance_graph_path: str | None = None,
 ) -> dict[str, object]:
     file_hashes = [f["sha256"] for f in files]
     geneset_id = build_geneset_id(converter_name, file_hashes, parameters)
@@ -341,6 +371,7 @@ def make_metadata(
         "gene_set": {
             "id": focus_node_id,
             "name": gene_set_name,
+            "description": str(gene_set_description or "").strip(),
             "assay": assay,
             "data_type": data_type,
             "organism": organism,
@@ -398,6 +429,7 @@ def make_metadata(
     if gmt is not None:
         payload["gmt"] = gmt
     payload["_provenance_overlay_json"] = provenance_overlay_json
+    payload["_upstream_provenance_graph_path"] = upstream_provenance_graph_path
     payload["lineage"] = _build_lineage(
         converter_name=converter_name,
         parameters=parameters,

@@ -82,7 +82,9 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert meta["converter"]["parameters"]["score_mode"] == "stat"
     assert meta["provenance"]["path"] == "geneset.provenance.json"
     assert meta["geneset_id"] in provenance_payload
-    assert any(node["id"] == meta["provenance"]["focus_node_id"] and node["type"] == "GeneSet" for node in provenance["nodes"])
+    geneset_nodes = [node for node in provenance["nodes"] if node["id"] == meta["provenance"]["focus_node_id"] and node["type"] == "GeneSet"]
+    assert geneset_nodes
+    assert geneset_nodes[0]["c2m2_properties"]["description"] == "Bulk RNA-seq gene set for signature 'toy' derived from differential expression results and ranked by stat."
     lineage = meta["lineage"]
     assert lineage["graph_version"] == "1.0.0"
     assert lineage["nodes"]

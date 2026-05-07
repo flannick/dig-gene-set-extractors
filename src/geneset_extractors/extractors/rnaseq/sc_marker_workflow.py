@@ -116,6 +116,10 @@ def run(args) -> dict[str, object]:
                 "n_features_assigned": len(rows),
                 "fraction_features_assigned": 1.0 if rows else 0.0,
             },
+            gene_set_description=(
+                f"Single-cell RNA-seq marker gene set for group '{group}', "
+                "derived from aggregated expression across cells."
+            ),
         )
         write_metadata(group_dir / "geneset.meta.json", meta)
         manifest_rows.append(enrich_manifest_row(out_dir, group_dir, {"group": group}))

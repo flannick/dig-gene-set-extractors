@@ -835,6 +835,11 @@ def run_sc_programs_workflow(
                 "diagnostics": gmt_diagnostics,
                 "plans": gmt_plans,
             },
+            gene_set_description=(
+                f"Single-cell RNA-seq program gene set for dataset '{cfg.dataset_label}', "
+                f"signature '{cfg.signature_name}', and program '{base_program_id}', "
+                f"derived from program loading scores with score_transform={cfg.score_transform}."
+            ),
         )
         write_metadata(program_dir / "geneset.meta.json", meta)
         manifest_rows.append(enrich_manifest_row(out_dir, program_dir, {"program_id": base_program_id}))

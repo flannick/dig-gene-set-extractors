@@ -23,6 +23,14 @@ def _should_skip_empty_filtered_comparison(postprocess_mode: str, exc: ValueErro
     return str(exc) == "No DE rows remain after applying padj/pvalue/logFC row filters."
 
 
+def _resolve_upstream_provenance_graph_path(deg_tsv: str | Path) -> str | None:
+    deg_path = Path(deg_tsv)
+    if not deg_path.exists():
+        return None
+    candidate = deg_path.with_name(f"{deg_path.stem}.provenance_graph.json")
+    return str(candidate) if candidate.exists() else None
+
+
 def run(args) -> dict[str, object]:
     activate_runtime_context("rna_deg_multi", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
@@ -51,6 +59,7 @@ def run(args) -> dict[str, object]:
     files = [input_file_record(args.deg_tsv, "deg_tsv")]
     if args.gtf:
         files.append(input_file_record(args.gtf, "gtf"))
+    upstream_graph_path = _resolve_upstream_provenance_graph_path(args.deg_tsv)
 
     used_paths: set[str] = set()
     manifest_rows: list[dict[str, object]] = []
@@ -115,6 +124,7 @@ def run(args) -> dict[str, object]:
             gmt_source=args.gmt_source,
             emit_small_gene_sets=args.emit_small_gene_sets,
             warn_biotype_missing=not biotype_warning_seen,
+            upstream_provenance_graph_path=upstream_graph_path,
         )
         try:
             result = run_deg_workflow(
