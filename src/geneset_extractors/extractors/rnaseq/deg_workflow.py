@@ -100,7 +100,13 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
     if any("rank" in row for row in rows):
         fieldnames.append("rank")
     with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
@@ -537,14 +543,10 @@ def run_deg_workflow(
         )
         _warn_split_signed_no_negatives(gmt_rows, cfg)
         safe_signature = sanitize_name_component(cfg.signature_name)
-        safe_score_mode = sanitize_name_component(resolved_score_mode)
-        base_name = f"{cfg.converter_name}__signature={safe_signature}__score_mode={safe_score_mode}"
+        base_name = safe_signature
         if cfg.comparison_label:
             safe_comparison = sanitize_name_component(cfg.comparison_label)
-            base_name = (
-                f"{cfg.converter_name}__comparison={safe_comparison}__signature={safe_signature}"
-                f"__score_mode={safe_score_mode}"
-            )
+            base_name = f"{safe_signature}__{safe_comparison}"
         gmt_sets, gmt_plans = build_gmt_sets_from_rows(
             rows=gmt_rows,
             base_name=base_name,

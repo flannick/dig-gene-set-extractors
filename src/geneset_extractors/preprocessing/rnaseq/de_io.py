@@ -74,7 +74,13 @@ def write_tsv(path: str | Path, rows: list[dict[str, Any]], *, fieldnames: list[
             keyset.update(str(k) for k in row.keys())
         fieldnames = sorted(keyset)
     with out_path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(
+            fh,
+            delimiter="\t",
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
         writer.writeheader()
         for row in rows:
             writer.writerow({key: row.get(key, "") for key in fieldnames})

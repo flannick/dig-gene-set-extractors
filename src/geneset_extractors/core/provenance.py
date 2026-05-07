@@ -49,7 +49,7 @@ def get_runtime_context() -> RuntimeContext | None:
 def write_canonical_json(path: str | Path, payload: dict[str, Any]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    p.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
 
 
 def load_overlay(path: str | Path | None) -> dict[str, Any]:

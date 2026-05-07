@@ -56,7 +56,7 @@ def write_gmt(
     fmt = str(gmt_format).strip().lower() or "dig2col"
     if fmt not in {"dig2col", "classic"}:
         raise ValueError(f"Unsupported gmt_format: {gmt_format}")
-    with p.open("w", encoding="utf-8", newline="") as fh:
+    with p.open("w", encoding="utf-8", newline="\n") as fh:
         for name, genes in gene_sets:
             sanitized = sanitize_gmt_name(name)
             if fmt == "classic":
@@ -214,6 +214,7 @@ def build_gmt_sets_from_rows(
         diagnostics.append({**context_payload, **event})
 
     for sign_suffix, variant_rows in variants:
+        use_plain_name = (len(topk_list) == 1 and not mass_list) or (len(mass_list) == 1 and not topk_list)
         positive_rows = [r for r in variant_rows if float(r.get("score", 0.0)) > 0.0]
         if require_symbol and positive_rows:
             total_rows = len(positive_rows)
@@ -299,7 +300,10 @@ def build_gmt_sets_from_rows(
             k = _clamp_k(int(requested_k), min_genes, max_genes)
             selected_rows = _topk_plan_rows(positive_rows, k)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
-            set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
+            if use_plain_name:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
+            else:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:
@@ -345,7 +349,10 @@ def build_gmt_sets_from_rows(
             selected_rows, k = _mass_plan_rows(positive_rows, float(tau), min_genes, max_genes)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             tau_str = format(float(tau), ".6g")
-            set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
+            if use_plain_name:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
+            else:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:

@@ -58,10 +58,10 @@
   ],
   "outputs": [
     {"name": "manifest.tsv", "description": "Comparison-to-output-path mapping"},
-    {"name": "comparison=<NAME>/geneset.tsv", "description": "Selected gene program per comparison"},
-    {"name": "comparison=<NAME>/geneset.meta.json", "description": "Metadata per comparison"},
-    {"name": "comparison=<NAME>/geneset.full.tsv", "description": "Full signed scores per comparison (optional)"},
-    {"name": "comparison=<NAME>/genesets.gmt", "description": "Per-comparison directional GMT sets (optional)"},
+    {"name": "<NAME>/geneset.tsv", "description": "Selected gene program per comparison"},
+    {"name": "<NAME>/geneset.meta.json", "description": "Metadata per comparison"},
+    {"name": "<NAME>/geneset.full.tsv", "description": "Full signed scores per comparison (optional)"},
+    {"name": "<NAME>/genesets.gmt", "description": "Per-comparison directional GMT sets (optional)"},
     {"name": "genesets.gmt", "description": "Combined GMT across comparisons (optional)"}
   ]
 }

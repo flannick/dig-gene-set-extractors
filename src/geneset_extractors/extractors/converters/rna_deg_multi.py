@@ -75,7 +75,7 @@ def run(args) -> dict[str, object]:
             suffix += 1
         used_paths.add(safe)
 
-        group_dir = out_dir / f"comparison={safe}"
+        group_dir = out_dir / safe
         cfg = DEGWorkflowConfig(
             converter_name="rna_deg_multi",
             out_dir=group_dir,
@@ -163,6 +163,7 @@ def run(args) -> dict[str, object]:
             fh,
             delimiter="\t",
             fieldnames=["comparison", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id"],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(manifest_rows)
