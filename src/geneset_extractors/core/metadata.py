@@ -58,6 +58,28 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
         write_canonical_json(p.parent / "geneset.provenance.json", provenance_payload)
 
 
+def write_provenance_from_metadata(
+    metadata_path: str | Path,
+    *,
+    provenance_path: str | Path | None = None,
+    provenance_overlay_json: str | None = None,
+    upstream_provenance_graph_path: str | None = None,
+) -> Path:
+    meta_path = Path(metadata_path)
+    payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("metadata payload must be a JSON object")
+    out_path = Path(provenance_path) if provenance_path is not None else (meta_path.parent / "geneset.provenance.json")
+    provenance_payload = _build_provenance_payload(
+        payload,
+        meta_path.parent,
+        provenance_overlay_json,
+        upstream_provenance_graph_path,
+    )
+    write_canonical_json(out_path, provenance_payload)
+    return out_path
+
+
 _GIT_COMMIT_CACHE: str | None = None
 _GIT_COMMIT_LOCK = threading.Lock()
 _INVOCATION_CONTEXT = threading.local()

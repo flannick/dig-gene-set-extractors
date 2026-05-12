@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from geneset_extractors.core.metadata import invocation_context
+from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -1425,6 +1425,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = sub.add_parser("validate")
     p_val.add_argument("output_dir")
 
+    p_provenance = sub.add_parser("provenance")
+    prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
+    p_prov_build = prov_sub.add_parser("build")
+    p_prov_build.add_argument("metadata_json", help="Path to an existing geneset.meta.json file.")
+    p_prov_build.add_argument(
+        "--out",
+        dest="provenance_out",
+        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json.",
+    )
+    _add_provenance_flags(p_prov_build)
+    p_prov_build.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
+    )
+
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
 
@@ -1941,6 +1956,17 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("ok")
             return 0
+
+        if args.command == "provenance":
+            if args.provenance_command == "build":
+                out_path = write_provenance_from_metadata(
+                    args.metadata_json,
+                    provenance_path=args.provenance_out,
+                    provenance_overlay_json=getattr(args, "provenance_overlay_json", None),
+                    upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
+                )
+                print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
+                return 0
 
         if args.command == "resources":
             merge_with_bundled = bool(getattr(args, "manifest_mode", "overlay") == "overlay")

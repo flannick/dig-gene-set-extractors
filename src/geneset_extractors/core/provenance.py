@@ -115,7 +115,7 @@ def _file_md5_base64(path: Path) -> str:
     return base64.b64encode(digest.digest()).decode("ascii")
 
 
-def _normalize_md5(value: object, resolved: Path | None) -> str:
+def _normalize_md5(value: object, resolved: Path | None, *, local_path: str, role: str) -> str:
     if isinstance(value, str) and value.strip():
         raw = value.strip()
         try:
@@ -125,7 +125,7 @@ def _normalize_md5(value: object, resolved: Path | None) -> str:
         return base64.b64encode(digest).decode("ascii")
     if resolved is not None and resolved.exists() and resolved.is_file():
         return _file_md5_base64(resolved)
-    return base64.b64encode(hashlib.md5(b"").digest()).decode("ascii")
+    raise ValueError(f"Unable to compute MD5 for provenance file node role={role} path={local_path}")
 
 
 def _path_to_uri(local_path: str) -> str | None:
@@ -270,7 +270,12 @@ def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dic
     size_bytes = merged.get("size_bytes")
     if size_bytes is None and resolved is not None and resolved.exists() and resolved.is_file():
         size_bytes = resolved.stat().st_size
-    md5 = _normalize_md5(merged.get("md5"), resolved if resolved is not None else None)
+    md5 = _normalize_md5(
+        merged.get("md5"),
+        resolved if resolved is not None else None,
+        local_path=local_path,
+        role=role,
+    )
     dcc_url = (
         merged.get("dcc_url")
         or merged.get("landing_page_url")
