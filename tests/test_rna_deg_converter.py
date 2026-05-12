@@ -72,8 +72,8 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
     gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__pos__" in line for line in gmt_lines)
-    assert any("__neg__" in line for line in gmt_lines)
+    assert any(line.split("\t", 1)[0].endswith("__pos") for line in gmt_lines)
+    assert any(line.split("\t", 1)[0].endswith("__neg") for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     provenance_payload = load_provenance_payload(args.out_dir)
@@ -81,7 +81,10 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert meta["converter"]["parameters"]["signature_name"] == "toy"
     assert meta["converter"]["parameters"]["score_mode"] == "stat"
     assert meta["provenance"]["path"] == "geneset.provenance.json"
-    assert meta["geneset_id"] in provenance_payload
+    assert provenance_payload["replay"]["geneset"]["id"] == meta["provenance"]["record_id"]
+    assert provenance_payload["schema_version"] == meta["provenance"]["schema_version"]
+    assert provenance_payload["record_type"] == "single_geneset"
+    assert "c2m2" in provenance_payload
     geneset_nodes = [node for node in provenance["nodes"] if node["id"] == meta["provenance"]["focus_node_id"] and node["type"] == "GeneSet"]
     assert geneset_nodes
     assert geneset_nodes[0]["c2m2_properties"]["description"] == "Bulk RNA-seq gene set for signature 'toy' derived from differential expression results and ranked by stat."
@@ -342,7 +345,8 @@ def test_rna_deg_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["converter"]["parameters"]["signature_name"] == "airway_conditionA_vs_B"
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__signature=airway_conditionA_vs_B__" in gmt_text
+    assert "airway_conditionA_vs_B__pos" in gmt_text
+    assert "airway_conditionA_vs_B__neg" in gmt_text
 
 
 def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
@@ -362,8 +366,8 @@ def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
     rna_deg.run(args)
 
     lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__abs__topk=1" in line for line in lines)
-    abs_line = next(line for line in lines if "__abs__topk=1" in line)
+    assert any(line.split("\t", 1)[0].endswith("__abs") for line in lines)
+    abs_line = next(line for line in lines if line.split("\t", 1)[0].endswith("__abs"))
     abs_gene = abs_line.split("\t", 1)[1]
     assert abs_gene == "B"
 

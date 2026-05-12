@@ -19,6 +19,9 @@ from geneset_extractors.core.provenance import (
     build_edges,
     build_file_node,
     build_output_file_record,
+    flatten_graph_payload,
+    load_graph_payload,
+    merge_graph_components,
     stable_operation_id,
     write_canonical_json,
 )
@@ -233,6 +236,74 @@ def _workflow_input_files(
     return files
 
 
+def _append_cli_value(argv: list[str], name: str, value: object) -> None:
+    if value is None:
+        return
+    flag = f"--{name}"
+    if isinstance(value, bool):
+        argv.extend([flag, "true" if value else "false"])
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _append_cli_value(argv, name, item)
+        return
+    argv.extend([flag, str(value)])
+
+
+def _reconstruct_de_prepare_command(
+    *,
+    workflow_input_files: list[dict[str, object]],
+    output_dir: Path,
+    modality: str,
+    organism: str,
+    genome_build: str,
+    resolved_de_mode: str,
+    resolved_gene_filter_scope: str,
+    resolved_backend: str,
+    resolved_balance_groups: bool,
+    resolved_balance_seed: int,
+    covariate_cols: list[str],
+    batch_cols: list[str],
+    repeated_measures: bool,
+    approximate_repeated_measures: bool,
+) -> list[str]:
+    argv = [sys.executable, "-m", "geneset_extractors.cli", "workflows", "rna_de_prepare"]
+    role_map = {str(item.get("role", "")): str(item.get("path", "")) for item in workflow_input_files}
+    _append_cli_value(argv, "modality", modality)
+    _append_cli_value(argv, "counts_tsv", role_map.get("counts_tsv"))
+    _append_cli_value(argv, "sample_metadata_tsv", role_map.get("sample_metadata_tsv"))
+    _append_cli_value(argv, "subject_metadata_tsv", role_map.get("subject_metadata_tsv"))
+    _append_cli_value(argv, "cell_metadata_tsv", role_map.get("cell_metadata_tsv"))
+    _append_cli_value(argv, "comparisons_tsv", role_map.get("comparisons_tsv"))
+    _append_cli_value(argv, "feature_mapping_tsv", role_map.get("feature_mapping_tsv"))
+    _append_cli_value(argv, "out_dir", str(output_dir))
+    _append_cli_value(argv, "organism", organism)
+    _append_cli_value(argv, "genome_build", genome_build)
+    _append_cli_value(argv, "de_mode", resolved_de_mode)
+    _append_cli_value(argv, "gene_filter_scope", resolved_gene_filter_scope)
+    _append_cli_value(argv, "backend", resolved_backend)
+    _append_cli_value(argv, "balance_groups", resolved_balance_groups)
+    _append_cli_value(argv, "balance_seed", resolved_balance_seed)
+    _append_cli_value(argv, "covariate_cols", covariate_cols)
+    _append_cli_value(argv, "batch_cols", batch_cols)
+    _append_cli_value(argv, "repeated_measures", repeated_measures)
+    _append_cli_value(argv, "approximate_repeated_measures", approximate_repeated_measures)
+    return argv
+
+
+def _resolve_upstream_prepare_graph_path(counts_tsv: str | Path) -> Path | None:
+    counts_path = Path(counts_tsv)
+    name = counts_path.name
+    if name.endswith(".tsv.gz"):
+        stem = name[:-7]
+    elif name.endswith(".tsv"):
+        stem = name[:-4]
+    else:
+        stem = counts_path.stem
+    candidate = counts_path.with_name(f"{stem}.provenance_graph.json")
+    return candidate if candidate.exists() and candidate.is_file() else None
+
+
 def _write_deg_long_provenance_graph(
     *,
     output_dir: Path,
@@ -253,6 +324,7 @@ def _write_deg_long_provenance_graph(
     batch_cols: list[str],
     repeated_measures: bool,
     approximate_repeated_measures: bool,
+    upstream_graph_path: Path | None = None,
 ) -> Path:
     input_nodes = [build_file_node(record, {}) for record in workflow_input_files]
     output_records = [
@@ -266,7 +338,7 @@ def _write_deg_long_provenance_graph(
     extra_output_nodes = [node for node in output_nodes if node["id"] != deg_long_node["id"]]
 
     invocation = current_invocation_context()
-    command = invocation.get("argv") if invocation else list(sys.argv)
+    command = invocation.get("argv") if invocation else []
     entrypoint = None
     if invocation and invocation.get("argv"):
         argv = [str(token) for token in invocation["argv"]]
@@ -274,6 +346,24 @@ def _write_deg_long_provenance_graph(
             entrypoint = " ".join(argv[1:4])
     if not entrypoint:
         entrypoint = "geneset-extractors workflows rna_de_prepare"
+    command_argv = [str(token) for token in command] if command else []
+    if not command_argv or "rna_de_prepare" not in " ".join(command_argv):
+        command_argv = _reconstruct_de_prepare_command(
+            workflow_input_files=workflow_input_files,
+            output_dir=output_dir,
+            modality=modality,
+            organism=organism,
+            genome_build=genome_build,
+            resolved_de_mode=resolved_de_mode,
+            resolved_gene_filter_scope=resolved_gene_filter_scope,
+            resolved_backend=resolved_backend,
+            resolved_balance_groups=resolved_balance_groups,
+            resolved_balance_seed=resolved_balance_seed,
+            covariate_cols=covariate_cols,
+            batch_cols=batch_cols,
+            repeated_measures=repeated_measures,
+            approximate_repeated_measures=approximate_repeated_measures,
+        )
 
     operation_id = stable_operation_id(
         "rna_de_prepare",
@@ -299,7 +389,7 @@ def _write_deg_long_provenance_graph(
             "repeated_measures": bool(repeated_measures),
             "approximate_repeated_measures": bool(approximate_repeated_measures),
         },
-        command=command,
+        command=command_argv,
         entrypoint=entrypoint,
         repo_url=REPO_URL,
         module="geneset_extractors.workflows.rna_de_prepare",
@@ -309,12 +399,23 @@ def _write_deg_long_provenance_graph(
         drc_url=REPO_URL,
     )
     graph_path = output_dir / "deg_long.provenance_graph.json"
+    current_nodes = input_nodes + [operation] + output_nodes
+    current_edges = build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes)
+    upstream_nodes: list[dict[str, Any]] = []
+    upstream_edges: list[dict[str, Any]] = []
+    if upstream_graph_path is not None:
+        upstream_payload = load_graph_payload(upstream_graph_path)
+        upstream_nodes, upstream_edges = flatten_graph_payload(upstream_payload)
+    merged_nodes, merged_edges = merge_graph_components(
+        [upstream_nodes, current_nodes],
+        [upstream_edges, current_edges],
+    )
     write_canonical_json(
         graph_path,
         {
             "deg_long": {
-                "nodes": input_nodes + [operation] + output_nodes,
-                "edges": build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes),
+                "nodes": merged_nodes,
+                "edges": merged_edges,
             }
         },
     )
@@ -1169,6 +1270,7 @@ def run_de_prepare(
     )
     write_tsv(selected_samples_path, selected_sample_rows_all, fieldnames=selected_sample_fieldnames)
     summary_path = output_dir / "prepare_summary.json"
+    upstream_prepare_graph_path = _resolve_upstream_prepare_graph_path(counts_tsv)
     workflow_graph_path = _write_deg_long_provenance_graph(
         output_dir=output_dir,
         deg_long_path=deg_long_path,
@@ -1195,6 +1297,7 @@ def run_de_prepare(
         batch_cols=batch_cols,
         repeated_measures=repeated_measures,
         approximate_repeated_measures=approximate_repeated_measures,
+        upstream_graph_path=upstream_prepare_graph_path,
     )
 
     extractor_result: dict[str, Any] | None = None

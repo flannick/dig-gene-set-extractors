@@ -30,6 +30,14 @@ from geneset_extractors.core.provenance import (
     merge_graph_components,
     write_canonical_json,
 )
+from geneset_extractors.provenance.builder import build_single_record
+from geneset_extractors.provenance.overlay import load_overlay as load_single_record_overlay
+from geneset_extractors.provenance.replay import (
+    write_checksums,
+    write_compare_to_s3_sh,
+    write_input_downloads,
+    write_reproduce_sh,
+)
 
 
 def build_geneset_id(converter_name: str, file_hashes: list[str], params: dict[str, object]) -> str:
@@ -49,13 +57,20 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
     if p.name == "geneset.meta.json":
         overlay_path = payload.get("_provenance_overlay_json")
         upstream_graph_path = payload.get("_upstream_provenance_graph_path")
-        provenance_payload = _build_provenance_payload(
+        provenance_payload = _build_single_provenance_payload(
             clean_payload,
             p.parent,
             overlay_path if isinstance(overlay_path, str) else None,
             upstream_graph_path if isinstance(upstream_graph_path, str) else None,
         )
         write_canonical_json(p.parent / "geneset.provenance.json", provenance_payload)
+        c2m2_export = provenance_payload.get("c2m2")
+        if isinstance(c2m2_export, dict):
+            write_canonical_json(p.parent / "geneset.provenance.compact.json", c2m2_export)
+        write_reproduce_sh(provenance_payload, p.parent / "reproduce.sh")
+        write_checksums(provenance_payload, p.parent / "reproduce.checksums.tsv")
+        write_input_downloads(provenance_payload, p.parent / "input_downloads.sh")
+        write_compare_to_s3_sh(provenance_payload, p.parent / "compare_to_s3.sh")
 
 
 def write_provenance_from_metadata(
@@ -70,13 +85,20 @@ def write_provenance_from_metadata(
     if not isinstance(payload, dict):
         raise ValueError("metadata payload must be a JSON object")
     out_path = Path(provenance_path) if provenance_path is not None else (meta_path.parent / "geneset.provenance.json")
-    provenance_payload = _build_provenance_payload(
+    provenance_payload = _build_single_provenance_payload(
         payload,
         meta_path.parent,
         provenance_overlay_json,
         upstream_provenance_graph_path,
     )
     write_canonical_json(out_path, provenance_payload)
+    c2m2_export = provenance_payload.get("c2m2")
+    if isinstance(c2m2_export, dict):
+        write_canonical_json(out_path.with_name("geneset.provenance.compact.json"), c2m2_export)
+    write_reproduce_sh(provenance_payload, out_path.with_name("reproduce.sh"))
+    write_checksums(provenance_payload, out_path.with_name("reproduce.checksums.tsv"))
+    write_input_downloads(provenance_payload, out_path.with_name("input_downloads.sh"))
+    write_compare_to_s3_sh(provenance_payload, out_path.with_name("compare_to_s3.sh"))
     return out_path
 
 
@@ -160,7 +182,7 @@ def _dedupe_output_files(meta_dir: Path, output_files: list[dict[str, object]]) 
     return deduped
 
 
-def _build_provenance_payload(
+def _build_compact_provenance_payload(
     metadata_payload: dict[str, Any],
     meta_dir: Path,
     overlay_path: str | None,
@@ -192,6 +214,25 @@ def _build_provenance_payload(
             "edges": merged_edges,
         }
     }
+
+
+def _build_single_provenance_payload(
+    metadata_payload: dict[str, Any],
+    meta_dir: Path,
+    overlay_path: str | None,
+    upstream_graph_path: str | None = None,
+) -> dict[str, Any]:
+    compact_payload = _build_compact_provenance_payload(metadata_payload, meta_dir, overlay_path, upstream_graph_path)
+    runtime_ctx = get_runtime_context()
+    overlay = load_single_record_overlay(overlay_path or (runtime_ctx.overlay_path if runtime_ctx else None))
+    repo_root = Path(__file__).resolve().parents[3]
+    return build_single_record(
+        metadata_payload=metadata_payload,
+        compact_payload=compact_payload,
+        overlay=overlay,
+        output_dir=meta_dir,
+        repo_root=repo_root,
+    )
 
 
 @contextmanager
@@ -442,7 +483,14 @@ def make_metadata(
         "summary": summary,
         "provenance": {
             "path": "geneset.provenance.json",
+            "compact_path": "geneset.provenance.compact.json",
+            "replay_script_path": "reproduce.sh",
+            "checksums_path": "reproduce.checksums.tsv",
             "focus_node_id": focus_node_id,
+            "record_id": f"#geneset:{geneset_id}",
+            "schema_version": "geneset-provenance/1.0",
+            "replay_plan_id": "replay",
+            "model_fingerprint": stable_hash_object(parameters),
         },
     }
     if program_extraction is not None:

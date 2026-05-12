@@ -4,6 +4,8 @@ import csv
 import json
 from pathlib import Path
 
+from geneset_extractors.provenance.validate import validate_single_record
+
 
 def _validate_required_fallback(payload: object, schema: dict[str, object], path: str = "$") -> None:
     if not isinstance(payload, dict):
@@ -47,6 +49,12 @@ def _validate_provenance_graph_fallback(payload: object, path: str = "$") -> Non
                     raise ValueError(f"{path}.{graph_key}.edges[{index}]: missing required key '{required_key}'")
 
 
+def _validate_single_record_fallback(payload: object) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("provenance payload must be an object")
+    validate_single_record(payload)
+
+
 def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -65,7 +73,9 @@ def validate_provenance_schema(provenance_path: Path, schema_path: Path) -> None
     try:
         import jsonschema  # type: ignore
     except ModuleNotFoundError:
-        if "$defs" in schema and isinstance(schema.get("additionalProperties"), dict):
+        if "@graph" in payload or "replay_plan" in payload:
+            _validate_single_record_fallback(payload)
+        elif "$defs" in schema and isinstance(schema.get("additionalProperties"), dict):
             _validate_provenance_graph_fallback(payload)
         else:
             _validate_required_fallback(payload, schema)

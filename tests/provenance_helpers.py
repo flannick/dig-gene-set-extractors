@@ -5,10 +5,13 @@ from pathlib import Path
 
 
 def _graph_from_payload(payload: dict[str, object]) -> dict[str, object]:
+    compact = payload.get("c2m2")
+    if isinstance(compact, dict) and "nodes" in compact and "edges" in compact:
+        return compact
     if "nodes" in payload and "edges" in payload:
         return payload
     if len(payload) != 1:
-        raise AssertionError(f"expected exactly one provenance graph, found keys={list(payload.keys())}")
+        raise AssertionError(f"expected single-record provenance or exactly one provenance graph, found keys={list(payload.keys())}")
     graph = next(iter(payload.values()))
     if not isinstance(graph, dict):
         raise AssertionError("provenance graph payload is not an object")

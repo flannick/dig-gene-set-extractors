@@ -67,8 +67,8 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
     assert (out_dir / "manifest.tsv").exists()
     assert (out_dir / "genesets.gmt").exists()
     gmt_lines = (out_dir / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__pos__" in line for line in gmt_lines)
-    assert any("__neg__" in line for line in gmt_lines)
+    assert any(line.split("\t", 1)[0].endswith("__pos") for line in gmt_lines)
+    assert any(line.split("\t", 1)[0].endswith("__neg") for line in gmt_lines)
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
@@ -136,7 +136,8 @@ def test_rna_deg_multi_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
     rna_deg_multi.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__signature=toy_deg_long__" in gmt_text
+    assert "toy_deg_long__case_vs_control__pos" in gmt_text
+    assert "toy_deg_long__treat_vs_baseline__neg" in gmt_text
 
 
 def test_rna_deg_multi_biotype_missing_warning_emitted_once(
@@ -173,9 +174,9 @@ def test_rna_deg_multi_filters_rows_before_grouped_conversion(tmp_path: Path):
     args.min_abs_logfc = 0.5
     result = rna_deg_multi.run(args)
     assert result["n_groups"] == 2
-    with (Path(args.out_dir) / "comparison=c1" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+    with (Path(args.out_dir) / "c1" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
         rows1 = list(csv.DictReader(fh, delimiter="\t"))
-    with (Path(args.out_dir) / "comparison=c2" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+    with (Path(args.out_dir) / "c2" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
         rows2 = list(csv.DictReader(fh, delimiter="\t"))
     assert [row["gene_id"] for row in rows1] == ["A"]
     assert [row["gene_id"] for row in rows2] == ["C"]

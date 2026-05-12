@@ -7,6 +7,9 @@ from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
 from geneset_extractors.core.validate import validate_output_dir
+from geneset_extractors.provenance.compare import compare_record_to_mirrors
+from geneset_extractors.provenance.replay import write_reproduce_sh
+from geneset_extractors.provenance.validate import validate_single_record
 from geneset_extractors.resource_manager import (
     describe_resource,
     fetch_resources,
@@ -157,6 +160,9 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
         "--provenance_overlay_json",
         help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
     )
+    parser.add_argument("--emit_replay", type=_parse_bool, default=True)
+    parser.add_argument("--emit_compact_provenance", type=_parse_bool, default=True)
+    parser.add_argument("--s3_mirror_prefix", help="Optional convenience prefix for S3 mirror targets.")
 
 
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
@@ -686,6 +692,24 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--extractor_gmt_topk_list", default="200")
     parser.add_argument("--extractor_gmt_min_genes", type=int, default=100)
     parser.add_argument("--extractor_gmt_max_genes", type=int, default=500)
+
+
+def _add_rna_prepare_bulk_tissue_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_gct", required=True)
+    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--subject_metadata_tsv", required=True)
+    parser.add_argument("--tissue_label", required=True, help="Human-readable tissue label for summaries only.")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--sample_id_column", default="SAMPID")
+    parser.add_argument("--subject_id_column_sample", default="SUBJID")
+    parser.add_argument("--subject_id_column_subject", default="SUBJID")
+    parser.add_argument("--age_column", default="AGE")
+    parser.add_argument("--sex_column", default="SEX")
+    parser.add_argument("--primary_tissue_column", default="SMTS")
+    parser.add_argument("--detailed_tissue_column", default="SMTSD")
+    parser.add_argument("--reference_age_bin", default="20-29")
+    parser.add_argument("--age_bins", default="20-29,30-39,40-49,50-59,60-69,70-79")
+    parser.add_argument("--min_samples_per_group", type=int, default=2)
 
 
 def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
@@ -1439,6 +1463,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--upstream_provenance_graph_json",
         help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
     )
+    p_prov_validate = prov_sub.add_parser("validate")
+    p_prov_validate.add_argument("provenance_json")
+    p_prov_compare = prov_sub.add_parser("compare")
+    p_prov_compare.add_argument("provenance_json")
+    p_prov_compare.add_argument("--workdir", default=".")
+    p_prov_render = prov_sub.add_parser("render-replay")
+    p_prov_render.add_argument("provenance_json")
+    p_prov_render.add_argument("--out", required=True)
+    p_prov_compact = prov_sub.add_parser("compact")
+    p_prov_compact.add_argument("provenance_json")
+    p_prov_compact.add_argument("--out", required=True)
 
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
@@ -1449,6 +1484,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scrna_cnmf_prepare_flags(p_scrna_cnmf_prepare)
     p_cnmf_select_k = wf_sub.add_parser("cnmf_select_k")
     _add_cnmf_select_k_flags(p_cnmf_select_k)
+    p_rna_prepare_bulk_tissue = wf_sub.add_parser("rna_prepare_bulk_tissue")
+    _add_rna_prepare_bulk_tissue_flags(p_rna_prepare_bulk_tissue)
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
@@ -1967,6 +2004,30 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
                 return 0
+            if args.provenance_command == "validate":
+                payload = json.loads(Path(args.provenance_json).read_text(encoding="utf-8"))
+                validate_single_record(payload)
+                print("ok")
+                return 0
+            if args.provenance_command == "compare":
+                payload = json.loads(Path(args.provenance_json).read_text(encoding="utf-8"))
+                print(json.dumps(compare_record_to_mirrors(payload, Path(args.workdir)), indent=2, sort_keys=True))
+                return 0
+            if args.provenance_command == "render-replay":
+                payload = json.loads(Path(args.provenance_json).read_text(encoding="utf-8"))
+                out_path = Path(args.out)
+                write_reproduce_sh(payload, out_path)
+                print(json.dumps({"status": "ok", "replay_script": str(out_path)}))
+                return 0
+            if args.provenance_command == "compact":
+                payload = json.loads(Path(args.provenance_json).read_text(encoding="utf-8"))
+                compact = payload.get("c2m2")
+                if not isinstance(compact, dict):
+                    raise ValueError("provenance record does not contain c2m2")
+                out_path = Path(args.out)
+                out_path.write_text(json.dumps(compact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                print(json.dumps({"status": "ok", "compact_path": str(out_path)}))
+                return 0
 
         if args.command == "resources":
             merge_with_bundled = bool(getattr(args, "manifest_mode", "overlay") == "overlay")
@@ -2092,6 +2153,17 @@ def main(argv: list[str] | None = None) -> int:
                 from geneset_extractors.workflows.cnmf_select_k import run as run_cnmf_select_k
 
                 _ = run_cnmf_select_k(args)
+                return 0
+            if args.workflow_command == "rna_prepare_bulk_tissue":
+                from geneset_extractors.workflows.rna_prepare_bulk_tissue import run as run_rna_prepare_bulk_tissue
+
+                result = run_rna_prepare_bulk_tissue(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=rna_prepare_bulk_tissue n_samples={result.get('n_samples_retained')} "
+                    f"n_comparisons={result.get('n_comparisons')} out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
                 return 0
             if args.workflow_command == "rna_de_prepare":
                 from geneset_extractors.workflows.rna_de_prepare import run as run_rna_de_prepare
