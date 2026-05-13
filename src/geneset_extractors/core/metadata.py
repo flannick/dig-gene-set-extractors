@@ -28,6 +28,7 @@ from geneset_extractors.core.provenance import (
     load_graph_payload,
     load_overlay,
     merge_graph_components,
+    mirror_graph_payload,
     write_canonical_json,
 )
 
@@ -49,11 +50,20 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
     if p.name == "geneset.meta.json":
         overlay_path = payload.get("_provenance_overlay_json")
         upstream_graph_path = payload.get("_upstream_provenance_graph_path")
+        runtime_ctx = get_runtime_context()
+        mirror_local_prefix = payload.get("_provenance_mirror_local_prefix")
+        if not isinstance(mirror_local_prefix, str) and runtime_ctx is not None:
+            mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix
+        mirror_remote_prefix = payload.get("_provenance_mirror_remote_prefix")
+        if not isinstance(mirror_remote_prefix, str) and runtime_ctx is not None:
+            mirror_remote_prefix = runtime_ctx.provenance_mirror_remote_prefix
         provenance_payload = _build_provenance_payload(
             clean_payload,
             p.parent,
             overlay_path if isinstance(overlay_path, str) else None,
             upstream_graph_path if isinstance(upstream_graph_path, str) else None,
+            mirror_local_prefix if isinstance(mirror_local_prefix, str) else None,
+            mirror_remote_prefix if isinstance(mirror_remote_prefix, str) else None,
         )
         write_canonical_json(p.parent / "geneset.provenance.json", provenance_payload)
 
@@ -64,6 +74,8 @@ def write_provenance_from_metadata(
     provenance_path: str | Path | None = None,
     provenance_overlay_json: str | None = None,
     upstream_provenance_graph_path: str | None = None,
+    provenance_mirror_local_prefix: str | None = None,
+    provenance_mirror_remote_prefix: str | None = None,
 ) -> Path:
     meta_path = Path(metadata_path)
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -75,6 +87,8 @@ def write_provenance_from_metadata(
         meta_path.parent,
         provenance_overlay_json,
         upstream_provenance_graph_path,
+        provenance_mirror_local_prefix,
+        provenance_mirror_remote_prefix,
     )
     write_canonical_json(out_path, provenance_payload)
     return out_path
@@ -165,24 +179,57 @@ def _build_provenance_payload(
     meta_dir: Path,
     overlay_path: str | None,
     upstream_graph_path: str | None = None,
+    mirror_local_prefix: str | None = None,
+    mirror_remote_prefix: str | None = None,
 ) -> dict[str, Any]:
     runtime_ctx = get_runtime_context()
     overlay = load_overlay(overlay_path or (runtime_ctx.overlay_path if runtime_ctx else None))
     input_files = [dict(item) for item in metadata_payload.get("input", {}).get("files", [])]
-    input_nodes = [build_file_node(item, overlay) for item in input_files]
+    input_nodes = [
+        build_file_node(
+            item,
+            overlay,
+            mirror_local_prefix=mirror_local_prefix,
+            mirror_remote_prefix=mirror_remote_prefix,
+        )
+        for item in input_files
+    ]
     output_files = _dedupe_output_files(meta_dir, [dict(item) for item in metadata_payload.get("output", {}).get("files", [])])
     output_records = [build_output_file_record(meta_dir, item) for item in output_files]
-    output_nodes = [build_file_node(item, overlay) for item in output_records]
+    output_nodes = [
+        build_file_node(
+            item,
+            overlay,
+            mirror_local_prefix=mirror_local_prefix,
+            mirror_remote_prefix=mirror_remote_prefix,
+        )
+        for item in output_records
+    ]
     geneset_node = build_geneset_node(metadata_payload, overlay)
     operation = build_operation(metadata_payload, input_nodes, output_nodes, overlay)
     current_edges = build_edges(input_nodes, str(operation["id"]), str(geneset_node["id"]), output_nodes)
     upstream_nodes: list[dict[str, Any]] = []
     upstream_edges: list[dict[str, Any]] = []
     if upstream_graph_path:
-        upstream_payload = load_graph_payload(upstream_graph_path)
+        upstream_payload = mirror_graph_payload(
+            load_graph_payload(upstream_graph_path),
+            mirror_local_prefix,
+            mirror_remote_prefix,
+        )
         upstream_nodes, upstream_edges = flatten_graph_payload(upstream_payload)
+    current_payload = mirror_graph_payload(
+        {
+            "__current__": {
+                "nodes": [geneset_node, operation],
+                "edges": current_edges,
+            }
+        },
+        mirror_local_prefix,
+        mirror_remote_prefix,
+    )
+    current_nodes, current_edges = flatten_graph_payload(current_payload)
     merged_nodes, merged_edges = merge_graph_components(
-        [upstream_nodes, input_nodes, [geneset_node, operation], output_nodes],
+        [upstream_nodes, input_nodes, current_nodes, output_nodes],
         [upstream_edges, current_edges],
     )
     graph_key = str(metadata_payload.get("geneset_id", metadata_payload["provenance"]["focus_node_id"]))
@@ -376,6 +423,8 @@ def make_metadata(
     gene_set_description: str | None = None,
     provenance_overlay_json: str | None = None,
     upstream_provenance_graph_path: str | None = None,
+    provenance_mirror_local_prefix: str | None = None,
+    provenance_mirror_remote_prefix: str | None = None,
 ) -> dict[str, object]:
     file_hashes = [f["sha256"] for f in files]
     geneset_id = build_geneset_id(converter_name, file_hashes, parameters)
@@ -452,6 +501,8 @@ def make_metadata(
         payload["gmt"] = gmt
     payload["_provenance_overlay_json"] = provenance_overlay_json
     payload["_upstream_provenance_graph_path"] = upstream_provenance_graph_path
+    payload["_provenance_mirror_local_prefix"] = provenance_mirror_local_prefix
+    payload["_provenance_mirror_remote_prefix"] = provenance_mirror_remote_prefix
     payload["lineage"] = _build_lineage(
         converter_name=converter_name,
         parameters=parameters,

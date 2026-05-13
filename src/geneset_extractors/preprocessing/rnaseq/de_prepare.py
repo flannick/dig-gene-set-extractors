@@ -19,6 +19,8 @@ from geneset_extractors.core.provenance import (
     build_edges,
     build_file_node,
     build_output_file_record,
+    mirror_graph_payload,
+    get_runtime_context,
     stable_operation_id,
     write_canonical_json,
 )
@@ -254,14 +256,33 @@ def _write_deg_long_provenance_graph(
     repeated_measures: bool,
     approximate_repeated_measures: bool,
 ) -> Path:
-    input_nodes = [build_file_node(record, {}) for record in workflow_input_files]
+    runtime_ctx = get_runtime_context()
+    mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
+    mirror_remote_prefix = runtime_ctx.provenance_mirror_remote_prefix if runtime_ctx is not None else None
+    input_nodes = [
+        build_file_node(
+            record,
+            {},
+            mirror_local_prefix=mirror_local_prefix,
+            mirror_remote_prefix=mirror_remote_prefix,
+        )
+        for record in workflow_input_files
+    ]
     output_records = [
         build_output_file_record(output_dir, {"path": str(deg_long_path), "role": "deg_tsv"}),
         build_output_file_record(output_dir, {"path": str(comparison_manifest_path), "role": "comparison_manifest"}),
         build_output_file_record(output_dir, {"path": str(comparison_audit_path), "role": "comparison_audit"}),
         build_output_file_record(output_dir, {"path": str(selected_samples_path), "role": "comparison_selected_samples"}),
     ]
-    output_nodes = [build_file_node(record, {}) for record in output_records]
+    output_nodes = [
+        build_file_node(
+            record,
+            {},
+            mirror_local_prefix=mirror_local_prefix,
+            mirror_remote_prefix=mirror_remote_prefix,
+        )
+        for record in output_records
+    ]
     deg_long_node = next(node for node in output_nodes if node["name"] == deg_long_path.name)
     extra_output_nodes = [node for node in output_nodes if node["id"] != deg_long_node["id"]]
 
@@ -309,15 +330,17 @@ def _write_deg_long_provenance_graph(
         drc_url=REPO_URL,
     )
     graph_path = output_dir / "deg_long.provenance_graph.json"
-    write_canonical_json(
-        graph_path,
+    payload = mirror_graph_payload(
         {
             "deg_long": {
                 "nodes": input_nodes + [operation] + output_nodes,
                 "edges": build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes),
             }
         },
+        mirror_local_prefix,
+        mirror_remote_prefix,
     )
+    write_canonical_json(graph_path, payload)
     return graph_path
 
 

@@ -9,6 +9,7 @@ import shlex
 import sys
 import threading
 from typing import Any
+from urllib.parse import unquote, urlparse
 from uuid import NAMESPACE_URL, uuid5
 
 from geneset_extractors.hashing import sha256_file, stable_hash_object
@@ -26,6 +27,69 @@ class RuntimeContext:
     entrypoint: str
     command: list[str]
     overlay_path: str | None
+    provenance_mirror_local_prefix: str | None
+    provenance_mirror_remote_prefix: str | None
+
+
+def _extract_cli_option(command: list[str], flag: str) -> str | None:
+    for index, token in enumerate(command):
+        if token == flag and index + 1 < len(command):
+            value = str(command[index + 1]).strip()
+            return value or None
+        if token.startswith(flag + "="):
+            value = token.split("=", 1)[1].strip()
+            return value or None
+    return None
+
+
+def _normalize_cli_argv(argv: list[str]) -> list[str]:
+    if not argv:
+        return []
+    tokens = [str(token) for token in argv]
+    if len(tokens) >= 3 and tokens[1] == "-m" and tokens[2] == "geneset_extractors.cli":
+        normalized = list(tokens)
+        normalized[0] = "python"
+        return normalized
+    first = tokens[0]
+    if first.endswith("/geneset_extractors/cli.py") or first.endswith("\\geneset_extractors\\cli.py") or first.endswith("/cli.py") or first.endswith("\\cli.py"):
+        return ["python", "-m", "geneset_extractors.cli", *tokens[1:]]
+    return tokens
+
+
+def normalize_cli_command(command: list[str] | str | None) -> list[str] | str | None:
+    if command is None:
+        return None
+    if isinstance(command, list):
+        return _normalize_cli_argv(command)
+    raw = str(command).strip()
+    if not raw:
+        return raw
+    try:
+        tokens = shlex.split(raw)
+    except ValueError:
+        return raw
+    normalized = _normalize_cli_argv(tokens)
+    return shlex.join(normalized)
+
+
+def normalize_cli_entrypoint(entrypoint: str | None) -> str | None:
+    if entrypoint in (None, ""):
+        return entrypoint
+    raw = str(entrypoint).strip()
+    try:
+        tokens = shlex.split(raw)
+    except ValueError:
+        tokens = raw.split()
+    if not tokens:
+        return raw
+    if len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-m" and tokens[2] == "geneset_extractors.cli":
+        return " ".join(["geneset-extractors", *tokens[3:]]) or "geneset-extractors"
+    if len(tokens) >= 3 and tokens[1] == "-m" and tokens[2] == "geneset_extractors.cli":
+        return " ".join(["geneset-extractors", *tokens[3:]]) or "geneset-extractors"
+    first = tokens[0]
+    if first.endswith("/geneset_extractors/cli.py") or first.endswith("\\geneset_extractors\\cli.py") or first.endswith("/cli.py") or first.endswith("\\cli.py"):
+        return " ".join(["geneset-extractors", *tokens[1:]]) or "geneset-extractors"
+    return raw
 
 
 def activate_runtime_context(converter_name: str, overlay_path: str | None = None) -> None:
@@ -38,6 +102,8 @@ def activate_runtime_context(converter_name: str, overlay_path: str | None = Non
         entrypoint=entrypoint,
         command=command,
         overlay_path=(str(overlay_path).strip() if overlay_path else None),
+        provenance_mirror_local_prefix=_extract_cli_option(command, "--provenance_mirror_local_prefix"),
+        provenance_mirror_remote_prefix=_extract_cli_option(command, "--provenance_mirror_remote_prefix"),
     )
 
 
@@ -90,6 +156,64 @@ def _stable_uuid(parts: dict[str, object]) -> str:
 def stable_file_node_id(local_path: str, role: str, sha256: str | None) -> str:
     file_uuid = _stable_uuid({"local_path": local_path, "role": role, "sha256": sha256 or ""})
     return f"file:{_slug(role)}:{file_uuid}"
+
+
+def mirror_provenance_path(
+    path: str | None,
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> str | None:
+    raw_path = str(path or "").strip()
+    if not raw_path or not mirror_local_prefix or not mirror_remote_prefix:
+        return raw_path or None
+    if "://" in raw_path and not raw_path.startswith("file://"):
+        return raw_path
+    try:
+        local_root = Path(mirror_local_prefix).resolve()
+        if raw_path.startswith("file://"):
+            parsed = urlparse(raw_path)
+            candidate = Path(unquote(parsed.path))
+        else:
+            candidate = Path(raw_path)
+        resolved_candidate = candidate.resolve()
+        relative = resolved_candidate.relative_to(local_root)
+    except Exception:
+        return raw_path
+    remote_root = str(mirror_remote_prefix).rstrip("/")
+    suffix = relative.as_posix()
+    return f"{remote_root}/{suffix}" if suffix else remote_root
+
+
+def _mirror_string_content(
+    value: str,
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> str:
+    if not value or not mirror_local_prefix or not mirror_remote_prefix:
+        return value
+    remote_root = str(mirror_remote_prefix).rstrip("/")
+    local_root = str(Path(mirror_local_prefix).resolve()).rstrip("/")
+    file_root = Path(local_root).as_uri().rstrip("/")
+    for source_root in sorted({local_root, file_root}, key=len, reverse=True):
+        value = value.replace(source_root, remote_root)
+    return value
+
+
+def _mirror_json_like(
+    value: Any,
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> Any:
+    if isinstance(value, str):
+        return _mirror_string_content(value, mirror_local_prefix, mirror_remote_prefix)
+    if isinstance(value, list):
+        return [_mirror_json_like(item, mirror_local_prefix, mirror_remote_prefix) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _mirror_json_like(item, mirror_local_prefix, mirror_remote_prefix)
+            for key, item in value.items()
+        }
+    return value
 
 
 def stable_operation_id(converter_name: str, geneset_id: str, input_ids: list[str]) -> str:
@@ -250,15 +374,31 @@ def merge_file_overlay(file_record: dict[str, Any], overlay: dict[str, Any]) -> 
     for key, value in _overlay_for_file(file_record, overlay).items():
         merged.setdefault(key, value)
     return merged
-
-
-def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+def build_file_node(
+    file_record: dict[str, Any],
+    overlay: dict[str, Any],
+    *,
+    mirror_local_prefix: str | None = None,
+    mirror_remote_prefix: str | None = None,
+) -> dict[str, Any]:
     merged = merge_file_overlay(file_record, overlay)
     local_path = str(merged.get("local_path") or merged.get("path") or "")
     resolved = Path(local_path).resolve() if local_path else None
     role = str(merged.get("role", "input"))
     sha256 = merged.get("sha256")
-    node_id = str(merged.get("node_id") or stable_file_node_id(local_path, role, sha256 if isinstance(sha256, str) else None))
+    mirrored_local_id = mirror_provenance_path(local_path, mirror_local_prefix, mirror_remote_prefix)
+    mirrored_explicit_local_id = mirror_provenance_path(
+        str(merged.get("local_id", "")).strip() or None,
+        mirror_local_prefix,
+        mirror_remote_prefix,
+    )
+    identity_path = (
+        mirrored_explicit_local_id
+        or str(merged.get("canonical_uri") or "").strip()
+        or mirrored_local_id
+        or local_path
+    )
+    node_id = str(merged.get("node_id") or stable_file_node_id(identity_path, role, sha256 if isinstance(sha256, str) else None))
     file_uuid = str(merged.get("_uuid") or _stable_uuid({"node_id": node_id, "role": role}))
     persistent_id = str(merged.get("persistent_id") or _stable_uuid({"node_id": node_id, "kind": "persistent"}))
     filename = str(
@@ -266,7 +406,13 @@ def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dic
         or (Path(local_path).name if local_path else Path(str(merged.get("path", role))).name)
         or role
     )
-    local_id = str(merged.get("local_id") or merged.get("canonical_uri") or local_path or merged.get("path") or filename)
+    local_id = str(
+        mirrored_explicit_local_id
+        or merged.get("canonical_uri")
+        or mirrored_local_id
+        or merged.get("path")
+        or filename
+    )
     size_bytes = merged.get("size_bytes")
     if size_bytes is None and resolved is not None and resolved.exists() and resolved.is_file():
         size_bytes = resolved.stat().st_size
@@ -281,6 +427,7 @@ def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dic
         or merged.get("landing_page_url")
         or merged.get("download_url")
         or merged.get("canonical_uri")
+        or mirrored_local_id
         or _path_to_uri(local_path)
         or f"urn:file:{file_uuid}"
     )
@@ -289,6 +436,7 @@ def build_file_node(file_record: dict[str, Any], overlay: dict[str, Any]) -> dic
         or merged.get("canonical_uri")
         or merged.get("download_url")
         or merged.get("landing_page_url")
+        or mirrored_local_id
         or _path_to_uri(local_path)
         or f"urn:file:{persistent_id}"
     )
@@ -338,12 +486,14 @@ def build_analysis_node(
     dcc_url: str | None = None,
     drc_url: str | None = None,
 ) -> dict[str, Any]:
-    if isinstance(command, list):
-        command_text = shlex.join([str(token) for token in command])
-    elif command in (None, ""):
+    normalized_command = normalize_cli_command(command)
+    normalized_entrypoint = normalize_cli_entrypoint(entrypoint)
+    if isinstance(normalized_command, list):
+        command_text = shlex.join([str(token) for token in normalized_command])
+    elif normalized_command in (None, ""):
         command_text = None
     else:
-        command_text = str(command)
+        command_text = str(normalized_command)
     resolved_repo_url = repo_url or REPO_URL
     resolved_script_url = script_url or resolved_repo_url
     return {
@@ -366,7 +516,7 @@ def build_analysis_node(
             "parameters": parameters,
             "environment": {
                 "mode": "cli",
-                "entrypoint": entrypoint,
+                "entrypoint": normalized_entrypoint,
                 "container_image": container_image,
                 "workspace_template_url": workspace_template_url,
                 "repo_url": resolved_repo_url,
@@ -374,6 +524,104 @@ def build_analysis_node(
             },
         },
     }
+
+
+def mirror_graph_payload(
+    payload: dict[str, Any],
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> dict[str, Any]:
+    if not mirror_local_prefix or not mirror_remote_prefix:
+        return payload
+    rewritten: dict[str, Any] = {}
+    for graph_key, graph in payload.items():
+        if not isinstance(graph, dict):
+            rewritten[str(graph_key)] = graph
+            continue
+        id_map: dict[str, str] = {}
+        new_nodes: list[dict[str, Any]] = []
+        for node in graph.get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            node_copy = json.loads(json.dumps(node))
+            if node_copy.get("type") == "File":
+                c2m2 = node_copy.get("c2m2_properties", {})
+                if not isinstance(c2m2, dict):
+                    c2m2 = {}
+                    node_copy["c2m2_properties"] = c2m2
+                role = "file"
+                description = str(node_copy.get("description", ""))
+                marker = "(role:"
+                if marker in description:
+                    role = description.split(marker, 1)[1].split(")", 1)[0].strip() or role
+                original_identity = (
+                    str(c2m2.get("local_id") or "").strip()
+                    or str(node_copy.get("dcc_url") or "").strip()
+                    or str(node_copy.get("drc_url") or "").strip()
+                )
+                mirrored_identity = mirror_provenance_path(
+                    original_identity,
+                    mirror_local_prefix,
+                    mirror_remote_prefix,
+                )
+                if mirrored_identity and mirrored_identity != original_identity:
+                    original_id = str(node_copy.get("id", ""))
+                    sha256 = None
+                    new_id = stable_file_node_id(mirrored_identity, role, sha256)
+                    id_map[original_id] = new_id
+                    node_copy["id"] = new_id
+                    file_uuid = _stable_uuid({"node_id": new_id, "role": role})
+                    c2m2["_uuid"] = file_uuid
+                    c2m2["persistent_id"] = _stable_uuid({"node_id": new_id, "kind": "persistent"})
+                    c2m2["local_id"] = mirrored_identity
+                    node_copy["dcc_url"] = _mirror_string_content(str(node_copy.get("dcc_url", "")), mirror_local_prefix, mirror_remote_prefix)
+                    node_copy["drc_url"] = _mirror_string_content(str(node_copy.get("drc_url", "")), mirror_local_prefix, mirror_remote_prefix)
+            elif node_copy.get("type") == "AnalysisType":
+                analysis = node_copy.get("analysis", {})
+                if isinstance(analysis, dict):
+                    if isinstance(analysis.get("command"), str):
+                        mirrored_command = _mirror_string_content(
+                            str(analysis["command"]),
+                            mirror_local_prefix,
+                            mirror_remote_prefix,
+                        )
+                        analysis["command"] = normalize_cli_command(mirrored_command)
+                    if "parameters" in analysis:
+                        analysis["parameters"] = _mirror_json_like(
+                            analysis.get("parameters"),
+                            mirror_local_prefix,
+                            mirror_remote_prefix,
+                        )
+                    environment = analysis.get("environment", {})
+                    if isinstance(environment, dict):
+                        for key in ("entrypoint", "workspace_template_url"):
+                            if isinstance(environment.get(key), str):
+                                environment[key] = _mirror_string_content(
+                                    str(environment[key]),
+                                    mirror_local_prefix,
+                                    mirror_remote_prefix,
+                                )
+                        if isinstance(environment.get("entrypoint"), str):
+                            environment["entrypoint"] = normalize_cli_entrypoint(environment.get("entrypoint"))
+            new_nodes.append(node_copy)
+        new_edges: list[dict[str, Any]] = []
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            edge_copy = json.loads(json.dumps(edge))
+            source = str(edge_copy.get("source", ""))
+            target = str(edge_copy.get("target", ""))
+            if source in id_map:
+                edge_copy["source"] = id_map[source]
+            if target in id_map:
+                edge_copy["target"] = id_map[target]
+            edge_copy["id"] = _mirror_string_content(str(edge_copy.get("id", "")), mirror_local_prefix, mirror_remote_prefix)
+            new_edges.append(edge_copy)
+        rewritten[str(graph_key)] = {
+            "nodes": new_nodes,
+            "edges": new_edges,
+        }
+    return rewritten
 
 
 def build_geneset_node(metadata_payload: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:

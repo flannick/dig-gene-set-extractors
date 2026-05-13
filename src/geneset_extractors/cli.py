@@ -157,6 +157,14 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
         "--provenance_overlay_json",
         help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
     )
+    parser.add_argument(
+        "--provenance_mirror_local_prefix",
+        help="Optional local path prefix to rewrite to a mirrored remote prefix in emitted provenance.",
+    )
+    parser.add_argument(
+        "--provenance_mirror_remote_prefix",
+        help="Optional remote prefix, such as an s3:// URI, used to replace the local mirror prefix in emitted provenance.",
+    )
 
 
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:
@@ -1964,6 +1972,8 @@ def main(argv: list[str] | None = None) -> int:
                     provenance_path=args.provenance_out,
                     provenance_overlay_json=getattr(args, "provenance_overlay_json", None),
                     upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
+                    provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+                    provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
                 )
                 print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
                 return 0
