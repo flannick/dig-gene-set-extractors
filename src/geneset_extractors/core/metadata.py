@@ -300,10 +300,18 @@ def _append_parameter_tokens(tokens: list[str], name: str, value: object) -> Non
     tokens.extend([flag, str(value)])
 
 
-def _reconstruct_command_argv(converter_name: str, parameters: dict[str, object]) -> list[str]:
+def _reconstruct_command_argv(
+    converter_name: str,
+    parameters: dict[str, object],
+    command_io: dict[str, object] | None = None,
+) -> list[str]:
     argv = [sys.executable, "-m", "geneset_extractors.cli", "convert", converter_name]
-    for key in sorted(parameters):
-        _append_parameter_tokens(argv, key, parameters[key])
+    merged: dict[str, object] = {}
+    if command_io:
+        merged.update(command_io)
+    merged.update(parameters)
+    for key in sorted(merged):
+        _append_parameter_tokens(argv, key, merged[key])
     return argv
 
 
@@ -421,6 +429,7 @@ def make_metadata(
     output_files: list[dict[str, str]] | None = None,
     gmt: dict[str, object] | None = None,
     gene_set_description: str | None = None,
+    command_io: dict[str, object] | None = None,
     provenance_overlay_json: str | None = None,
     upstream_provenance_graph_path: str | None = None,
     provenance_mirror_local_prefix: str | None = None,
@@ -469,10 +478,11 @@ def make_metadata(
                 "entrypoint": (
                     runtime_ctx.entrypoint if runtime_ctx is not None else f"geneset-extractors convert {converter_name}"
                 ),
-                "command": (
-                    runtime_ctx.command
+                "command": _reconstruct_command_argv(converter_name, parameters, command_io=command_io),
+                "observed_command": (
+                    list(runtime_ctx.command)
                     if runtime_ctx is not None and runtime_ctx.command
-                    else ["geneset-extractors", "convert", converter_name, "..."]
+                    else None
                 ),
                 "container_image": None,
                 "workspace_template_url": None,

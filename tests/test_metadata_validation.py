@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from geneset_extractors.core.provenance import REPO_URL, build_analysis_node, build_file_node, mirror_graph_payload
+from geneset_extractors.core.metadata import make_metadata
+from geneset_extractors.core.provenance import REPO_URL, activate_runtime_context, build_analysis_node, build_file_node, mirror_graph_payload
+from geneset_extractors.hashing import sha256_file
 from geneset_extractors.core.validate import validate_metadata_schema, validate_provenance_schema
 
 
@@ -138,3 +140,91 @@ def test_build_analysis_node_normalizes_local_cli_paths_to_portable_forms():
     )
     assert node["analysis"]["command"].startswith("python -m geneset_extractors.cli convert rna_deg_multi ")
     assert node["analysis"]["environment"]["entrypoint"] == "geneset-extractors convert rna_deg_multi"
+
+
+def test_mirror_graph_payload_preserves_file_identity_consistent_with_build_file_node(tmp_path: Path):
+    local_file = tmp_path / "workflow" / "deg_long.tsv"
+    local_file.parent.mkdir(parents=True, exist_ok=True)
+    local_file.write_text("x\n", encoding="utf-8")
+    record = {
+        "path": str(local_file),
+        "local_path": str(local_file),
+        "role": "deg_tsv",
+        "sha256": sha256_file(local_file),
+        "size_bytes": local_file.stat().st_size,
+    }
+    original = build_file_node(
+        record,
+        {},
+    )
+    payload = {
+        "deg_long": {
+            "nodes": [original],
+            "edges": [],
+        }
+    }
+    mirrored_payload = mirror_graph_payload(payload, str(tmp_path), "s3://bucket/published")
+    mirrored_node = mirrored_payload["deg_long"]["nodes"][0]
+    rebuilt_node = build_file_node(
+        record,
+        {},
+        mirror_local_prefix=str(tmp_path),
+        mirror_remote_prefix="s3://bucket/published",
+    )
+    assert mirrored_node["id"] == rebuilt_node["id"]
+
+
+def test_make_metadata_stores_effective_command_and_preserves_observed_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    input_file = tmp_path / "deg_long.tsv"
+    input_file.write_text("x\n", encoding="utf-8")
+    monkeypatch.setattr(
+        __import__("sys"),
+        "argv",
+        [
+            "/home/ryank/software/geneset_extractors/dig-gene-set-extractors/src/geneset_extractors/cli.py",
+            "convert",
+            "rna_deg_multi",
+            "--score_mode",
+            "auto",
+            "--postprocess_mode",
+            "harmonizome",
+        ],
+    )
+    activate_runtime_context("rna_deg_multi")
+    meta = make_metadata(
+        converter_name="rna_deg_multi",
+        parameters={
+            "signature_name": "AB1",
+            "comparison_label": "age30_20",
+            "score_mode": "signed_neglog10padj",
+            "score_mode_requested": "signed_neglog10padj",
+            "padj_max": 0.05,
+            "emit_small_gene_sets": True,
+        },
+        data_type="rna_seq",
+        assay="bulk",
+        organism="human",
+        genome_build="hg38",
+        files=[{"path": str(input_file), "local_path": str(input_file), "role": "deg_tsv", "sha256": "abc", "size_bytes": 2}],
+        command_io={
+            "deg_tsv": str(input_file),
+            "out_dir": str(tmp_path / "out"),
+            "organism": "human",
+            "genome_build": "hg38",
+        },
+        gene_annotation={"mode": "none"},
+        weights={"weight_type": "signed"},
+        summary={"n_genes": 1},
+    )
+    execution = meta["converter"]["execution"]
+    command = execution["command"]
+    observed = execution["observed_command"]
+    assert command[:4] == [__import__("sys").executable, "-m", "geneset_extractors.cli", "convert"]
+    assert "--deg_tsv" in command and str(input_file) in command
+    assert "--out_dir" in command and str(tmp_path / "out") in command
+    assert "--organism" in command and "human" in command
+    assert "--genome_build" in command and "hg38" in command
+    assert "--score_mode" in command and "signed_neglog10padj" in command
+    assert "--padj_max" in command and "0.05" in command
+    assert observed[0].endswith("cli.py")
+    assert "--score_mode" in observed and "auto" in observed

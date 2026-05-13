@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 from geneset_extractors.converters import rna_deg_multi
-from geneset_extractors.core.metadata import current_invocation_context, input_file_record
+from geneset_extractors.core.metadata import _resolve_git_commit, current_invocation_context, input_file_record
 from geneset_extractors.core.provenance import (
     REPO_URL,
     build_analysis_node,
@@ -325,7 +325,7 @@ def _write_deg_long_provenance_graph(
         repo_url=REPO_URL,
         module="geneset_extractors.workflows.rna_de_prepare",
         script_url=REPO_URL,
-        version=None,
+        version=_resolve_git_commit(),
         dcc_url=REPO_URL,
         drc_url=REPO_URL,
     )

@@ -1459,6 +1459,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cnmf_select_k_flags(p_cnmf_select_k)
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
+    _add_provenance_flags(p_rna_de_prepare)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")

@@ -678,6 +678,14 @@ def run_deg_workflow(
         "gmt_biotype_allowlist": gmt_biotype_allowlist,
         "emit_small_gene_sets": cfg.emit_small_gene_sets,
     }
+    deg_input_path = next(
+        (
+            str(record.get("local_path") or record.get("path") or "")
+            for record in input_files
+            if str(record.get("role") or "") == "deg_tsv"
+        ),
+        "",
+    )
 
     meta = make_metadata(
         converter_name=cfg.converter_name,
@@ -708,6 +716,13 @@ def run_deg_workflow(
                 "target_sum": 1.0 if cfg.normalize in {"within_set_l1", "l1"} else None,
             },
             "aggregation": cfg.duplicate_gene_policy,
+        },
+        command_io={
+            "deg_tsv": deg_input_path,
+            "out_dir": str(out_dir),
+            "organism": cfg.organism,
+            "genome_build": cfg.genome_build,
+            **({"gtf": str(cfg.gtf)} if cfg.gtf else {}),
         },
         summary={
             "n_input_features": int(n_input_features),

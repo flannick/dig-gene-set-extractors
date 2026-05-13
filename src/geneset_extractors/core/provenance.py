@@ -261,6 +261,34 @@ def _path_to_uri(local_path: str) -> str | None:
         return None
 
 
+def _resolved_local_path_from_node(node: dict[str, Any]) -> Path | None:
+    c2m2 = node.get("c2m2_properties", {})
+    candidates: list[str] = []
+    if isinstance(c2m2, dict):
+        local_id = str(c2m2.get("local_id", "")).strip()
+        if local_id:
+            candidates.append(local_id)
+    for key in ("dcc_url", "drc_url"):
+        value = str(node.get(key, "")).strip()
+        if value:
+            candidates.append(value)
+    for raw in candidates:
+        try:
+            if raw.startswith("file://"):
+                parsed = urlparse(raw)
+                candidate = Path(unquote(parsed.path))
+            elif "://" in raw:
+                continue
+            else:
+                candidate = Path(raw)
+            resolved = candidate.resolve()
+            if resolved.exists() and resolved.is_file():
+                return resolved
+        except Exception:
+            continue
+    return None
+
+
 def _infer_node_description(label: str, role: str, kind: str, extra: str | None = None) -> str:
     base = f"{kind} node for {label} (role: {role})"
     if extra:
@@ -477,6 +505,7 @@ def build_analysis_node(
     parameters: dict[str, Any],
     command: list[str] | str | None,
     entrypoint: str | None,
+    observed_command: list[str] | str | None = None,
     repo_url: str | None = None,
     module: str | None = None,
     script_url: str | None = None,
@@ -487,6 +516,7 @@ def build_analysis_node(
     drc_url: str | None = None,
 ) -> dict[str, Any]:
     normalized_command = normalize_cli_command(command)
+    normalized_observed_command = normalize_cli_command(observed_command)
     normalized_entrypoint = normalize_cli_entrypoint(entrypoint)
     if isinstance(normalized_command, list):
         command_text = shlex.join([str(token) for token in normalized_command])
@@ -513,6 +543,11 @@ def build_analysis_node(
             "script_url": str(resolved_script_url),
             "version": version,
             "command": command_text,
+            "observed_command": (
+                shlex.join([str(token) for token in normalized_observed_command])
+                if isinstance(normalized_observed_command, list)
+                else (str(normalized_observed_command) if normalized_observed_command not in (None, "") else None)
+            ),
             "parameters": parameters,
             "environment": {
                 "mode": "cli",
@@ -567,6 +602,12 @@ def mirror_graph_payload(
                 if mirrored_identity and mirrored_identity != original_identity:
                     original_id = str(node_copy.get("id", ""))
                     sha256 = None
+                    resolved_local = _resolved_local_path_from_node(node)
+                    if resolved_local is not None:
+                        try:
+                            sha256 = sha256_file(resolved_local)
+                        except Exception:
+                            sha256 = None
                     new_id = stable_file_node_id(mirrored_identity, role, sha256)
                     id_map[original_id] = new_id
                     node_copy["id"] = new_id
@@ -586,6 +627,13 @@ def mirror_graph_payload(
                             mirror_remote_prefix,
                         )
                         analysis["command"] = normalize_cli_command(mirrored_command)
+                    if isinstance(analysis.get("observed_command"), str):
+                        mirrored_observed = _mirror_string_content(
+                            str(analysis["observed_command"]),
+                            mirror_local_prefix,
+                            mirror_remote_prefix,
+                        )
+                        analysis["observed_command"] = normalize_cli_command(mirrored_observed)
                     if "parameters" in analysis:
                         analysis["parameters"] = _mirror_json_like(
                             analysis.get("parameters"),
@@ -692,6 +740,7 @@ def build_operation(
         parameters=converter.get("parameters", {}),
         command=execution.get("command"),
         entrypoint=execution.get("entrypoint"),
+        observed_command=execution.get("observed_command"),
         repo_url=code.get("repo_url", REPO_URL),
         module=code.get("module"),
         script_url=code.get("script_url") or code.get("notebook_url") or REPO_URL,
