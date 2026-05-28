@@ -11,6 +11,7 @@ from geneset_extractors.core.gmt import (
     parse_mass_list_csv,
     parse_str_list_csv,
     resolve_gmt_out_path,
+    sanitize_gmt_name,
     write_gmt,
 )
 from geneset_extractors.core.metadata import make_metadata, write_metadata
@@ -85,6 +86,9 @@ class DEGWorkflowConfig:
     gmt_signed_labels: str
     gmt_emit_abs: bool
     gmt_source: str
+    gmt_mode: str
+    gmt_top_n_per_direction: int | None
+    gmt_sort_by: str
     emit_small_gene_sets: bool
     warn_biotype_missing: bool
     upstream_provenance_graph_path: str | None = None
@@ -141,6 +145,169 @@ def _selected_weights(magnitude_scores: dict[str, float], selected_gene_ids: lis
     if normalize == "within_set_l1":
         return within_set_l1_weights(magnitude_scores, selected_gene_ids)
     raise ValueError(f"Unsupported normalization method: {normalize}")
+
+
+def _gmt_candidate_token(row: dict[str, object], *, prefer_symbol: bool, require_symbol: bool) -> str:
+    gene_id = str(row.get("gene_id", "")).strip()
+    gene_symbol_obj = row.get("gene_symbol")
+    gene_symbol = "" if gene_symbol_obj is None else str(gene_symbol_obj).strip()
+    if require_symbol:
+        return gene_symbol
+    if prefer_symbol and gene_symbol:
+        return gene_symbol
+    return gene_id
+
+
+def _top_per_direction_sort_key(
+    row: DEGRow,
+    *,
+    resolved_columns: dict[str, str | None],
+    direction: str,
+    sort_by: str,
+) -> tuple[float, str]:
+    logfc_column = resolved_columns["logfc_column"]
+    logfc = parse_float_soft(row.values.get(str(logfc_column))) if logfc_column else None
+    if logfc is None:
+        return (float("-inf"), "")
+    if direction == "pos" and logfc <= 0.0:
+        return (float("-inf"), "")
+    if direction == "neg" and logfc >= 0.0:
+        return (float("-inf"), "")
+    if sort_by == "logFC_abs":
+        metric = abs(float(logfc))
+    elif sort_by == "adj.P.Val":
+        padj_column = resolved_columns["padj_column"]
+        value = parse_float_soft(row.values.get(str(padj_column))) if padj_column else None
+        metric = float("inf") if value is None else -float(value)
+    elif sort_by == "P.Value":
+        pvalue_column = resolved_columns["pvalue_column"]
+        value = parse_float_soft(row.values.get(str(pvalue_column))) if pvalue_column else None
+        metric = float("inf") if value is None else -float(value)
+    elif sort_by == "t":
+        stat_column = resolved_columns["stat_column"]
+        value = parse_float_soft(row.values.get(str(stat_column))) if stat_column else None
+        if value is None:
+            metric = float("-inf")
+        else:
+            metric = float(value) if direction == "pos" else -float(value)
+    else:
+        raise ValueError(f"Unsupported gmt_sort_by: {sort_by}")
+    return (metric, str(row.values.get(str(resolved_columns["gene_id_column"]), "")).strip())
+
+
+def _build_top_per_direction_gmt_sets(
+    *,
+    rows: list[DEGRow],
+    resolved_columns: dict[str, str | None],
+    base_name: str,
+    prefer_symbol: bool,
+    require_symbol: bool,
+    top_n_per_direction: int,
+    sort_by: str,
+    min_genes: int,
+    emit_small_gene_sets: bool,
+    diagnostics: list[dict[str, object]] | None,
+    context: dict[str, object] | None,
+    name_separator: str,
+    positive_label: str,
+    negative_label: str,
+) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
+    if not resolved_columns["logfc_column"]:
+        raise ValueError("gmt_mode=top_per_direction requires a resolvable logFC column")
+    if sort_by == "adj.P.Val" and not resolved_columns["padj_column"]:
+        raise ValueError("gmt_mode=top_per_direction with gmt_sort_by=adj.P.Val requires a resolvable padj column")
+    if sort_by == "P.Value" and not resolved_columns["pvalue_column"]:
+        raise ValueError("gmt_mode=top_per_direction with gmt_sort_by=P.Value requires a resolvable pvalue column")
+    if sort_by == "t" and not resolved_columns["stat_column"]:
+        raise ValueError("gmt_mode=top_per_direction with gmt_sort_by=t requires a resolvable stat column")
+    context_payload = context or {}
+    gmt_sets: list[tuple[str, list[str]]] = []
+    gmt_plans: list[dict[str, object]] = []
+    for direction, label in (("pos", positive_label), ("neg", negative_label)):
+        ranked_rows = sorted(
+            rows,
+            key=lambda row: _top_per_direction_sort_key(
+                row,
+                resolved_columns=resolved_columns,
+                direction=direction,
+                sort_by=sort_by,
+            ),
+            reverse=True,
+        )
+        genes: list[str] = []
+        seen_tokens: set[str] = set()
+        selected_rows = 0
+        for row in ranked_rows:
+            gene_row = {
+                "gene_id": str(row.values.get(str(resolved_columns["gene_id_column"]), "")).strip(),
+                "gene_symbol": (
+                    str(row.values.get(str(resolved_columns["gene_symbol_column"]), "")).strip()
+                    if resolved_columns["gene_symbol_column"]
+                    else ""
+                ),
+            }
+            token = _gmt_candidate_token(gene_row, prefer_symbol=prefer_symbol, require_symbol=require_symbol)
+            if not token or token in seen_tokens:
+                continue
+            sort_metric, _ = _top_per_direction_sort_key(
+                row,
+                resolved_columns=resolved_columns,
+                direction=direction,
+                sort_by=sort_by,
+            )
+            if not math.isfinite(sort_metric) or sort_metric == float("-inf"):
+                continue
+            seen_tokens.add(token)
+            genes.append(token)
+            selected_rows += 1
+            if len(genes) >= top_n_per_direction:
+                break
+        set_name = sanitize_gmt_name(f"{base_name}{name_separator}{label}")
+        if not genes:
+            if diagnostics is not None:
+                diagnostics.append(
+                    {
+                        **context_payload,
+                        "level": "warning",
+                        "code": "no_positive_genes",
+                        "base_name": base_name,
+                        "variant": label,
+                        "n_genes": 0,
+                        "reason": "no genes remained for notebook-style top_per_direction emission",
+                    }
+                )
+            continue
+        if len(genes) < min_genes:
+            code = "small_gene_set_emitted" if emit_small_gene_sets else "small_gene_set_skipped"
+            if diagnostics is not None:
+                diagnostics.append(
+                    {
+                        **context_payload,
+                        "level": "warning",
+                        "code": code,
+                        "base_name": base_name,
+                        "name": set_name,
+                        "variant": label,
+                        "n_genes": len(genes),
+                        "min_genes": min_genes,
+                        "method": "top_per_direction",
+                        "reason": "set smaller than gmt_min_genes after notebook-style signed selection",
+                    }
+                )
+            if not emit_small_gene_sets:
+                continue
+        gmt_sets.append((set_name, genes))
+        gmt_plans.append(
+            {
+                "name": set_name,
+                "method": "top_per_direction",
+                "parameters": {"top_n": int(top_n_per_direction), "sort_by": sort_by, "direction": direction},
+                "n_genes_emitted": len(genes),
+                "token_type": "gene_symbol" if prefer_symbol else "gene_id",
+                "n_duplicates_dropped": max(0, selected_rows - len(genes)),
+            }
+        )
+    return gmt_sets, gmt_plans
 
 
 def _collect_skipped_gmt_outputs(gmt_diagnostics: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -355,6 +522,8 @@ def run_deg_workflow(
     cfg = _resolved_postprocess_cfg(cfg)
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if cfg.gmt_mode not in {"standard", "top_per_direction"}:
+        raise ValueError(f"Unsupported gmt_mode: {cfg.gmt_mode}")
     if cfg.gmt_source not in {"full", "selected"}:
         raise ValueError(f"Unsupported gmt_source: {cfg.gmt_source}")
 
@@ -556,28 +725,50 @@ def run_deg_workflow(
             safe_comparison = sanitize_name_component(cfg.comparison_label)
             base_name = f"{safe_signature}{cfg.gmt_name_separator}{safe_comparison}"
         positive_label, negative_label = _resolve_gmt_signed_labels(cfg.gmt_signed_labels)
-        gmt_sets, gmt_plans = build_gmt_sets_from_rows(
-            rows=gmt_rows,
-            base_name=base_name,
-            prefer_symbol=bool(cfg.gmt_prefer_symbol),
-            min_genes=int(cfg.gmt_min_genes),
-            max_genes=int(cfg.gmt_max_genes),
-            topk_list=gmt_topk_list,
-            mass_list=gmt_mass_list,
-            split_signed=bool(cfg.gmt_split_signed),
-            require_symbol=bool(cfg.gmt_require_symbol),
-            allowed_biotypes={x.lower() for x in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
-            emit_small_gene_sets=bool(cfg.emit_small_gene_sets),
-            diagnostics=gmt_diagnostics,
-            context={
-                "converter": cfg.converter_name,
-                "comparison": cfg.comparison_label or "",
-            },
-            name_separator=cfg.gmt_name_separator,
-            positive_label=positive_label,
-            negative_label=negative_label,
-        )
-        if cfg.gmt_emit_abs:
+        if cfg.gmt_mode == "top_per_direction":
+            requested_top_n = int(cfg.gmt_top_n_per_direction or cfg.top_k)
+            gmt_sets, gmt_plans = _build_top_per_direction_gmt_sets(
+                rows=filtered_input_rows,
+                resolved_columns=resolved_columns,
+                base_name=base_name,
+                prefer_symbol=bool(cfg.gmt_prefer_symbol),
+                require_symbol=bool(cfg.gmt_require_symbol),
+                top_n_per_direction=requested_top_n,
+                sort_by=cfg.gmt_sort_by,
+                min_genes=int(cfg.gmt_min_genes),
+                emit_small_gene_sets=bool(cfg.emit_small_gene_sets),
+                diagnostics=gmt_diagnostics,
+                context={
+                    "converter": cfg.converter_name,
+                    "comparison": cfg.comparison_label or "",
+                },
+                name_separator=cfg.gmt_name_separator,
+                positive_label=positive_label,
+                negative_label=negative_label,
+            )
+        else:
+            gmt_sets, gmt_plans = build_gmt_sets_from_rows(
+                rows=gmt_rows,
+                base_name=base_name,
+                prefer_symbol=bool(cfg.gmt_prefer_symbol),
+                min_genes=int(cfg.gmt_min_genes),
+                max_genes=int(cfg.gmt_max_genes),
+                topk_list=gmt_topk_list,
+                mass_list=gmt_mass_list,
+                split_signed=bool(cfg.gmt_split_signed),
+                require_symbol=bool(cfg.gmt_require_symbol),
+                allowed_biotypes={x.lower() for x in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
+                emit_small_gene_sets=bool(cfg.emit_small_gene_sets),
+                diagnostics=gmt_diagnostics,
+                context={
+                    "converter": cfg.converter_name,
+                    "comparison": cfg.comparison_label or "",
+                },
+                name_separator=cfg.gmt_name_separator,
+                positive_label=positive_label,
+                negative_label=negative_label,
+            )
+        if cfg.gmt_emit_abs and cfg.gmt_mode == "standard":
             abs_rows = [
                 {
                     "gene_id": str(row.get("gene_id", "")),
@@ -688,6 +879,9 @@ def run_deg_workflow(
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,
         "gmt_source": cfg.gmt_source,
+        "gmt_mode": cfg.gmt_mode,
+        "gmt_top_n_per_direction": cfg.gmt_top_n_per_direction,
+        "gmt_sort_by": cfg.gmt_sort_by,
         "gmt_min_genes": cfg.gmt_min_genes,
         "gmt_max_genes": cfg.gmt_max_genes,
         "gmt_prefer_symbol": cfg.gmt_prefer_symbol,
@@ -784,6 +978,9 @@ def run_deg_workflow(
             "require_symbol": bool(cfg.gmt_require_symbol),
             "biotype_allowlist": gmt_biotype_allowlist,
             "source": cfg.gmt_source,
+            "mode": cfg.gmt_mode,
+            "top_n_per_direction": cfg.gmt_top_n_per_direction,
+            "sort_by": cfg.gmt_sort_by,
             "emit_abs": bool(cfg.gmt_emit_abs),
             "min_genes": int(cfg.gmt_min_genes),
             "max_genes": int(cfg.gmt_max_genes),

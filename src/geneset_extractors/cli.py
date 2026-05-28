@@ -235,6 +235,26 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         default="full",
         help="Source table for GMT export: full ranked scores or selected geneset.tsv rows.",
     )
+    parser.add_argument(
+        "--gmt_mode",
+        choices=["standard", "top_per_direction"],
+        default="standard",
+        help=(
+            "GMT emission mode. standard uses the existing score-ranked builder. "
+            "top_per_direction reproduces notebook-style signed top-N selection from raw DEG columns."
+        ),
+    )
+    parser.add_argument(
+        "--gmt_top_n_per_direction",
+        type=int,
+        help="When gmt_mode=top_per_direction, keep this many genes separately for positive and negative logFC sets.",
+    )
+    parser.add_argument(
+        "--gmt_sort_by",
+        choices=["P.Value", "adj.P.Val", "t", "logFC_abs"],
+        default="adj.P.Val",
+        help="When gmt_mode=top_per_direction, ranking column used within each logFC direction.",
+    )
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=True,
@@ -242,6 +262,32 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         gmt_min_genes=100,
         gmt_max_genes=500,
     )
+
+
+def _add_gtex_aging_signatures_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True, help="GTEx raw reads GCT file.")
+    parser.add_argument("--sample_attributes_tsv", required=True, help="GTEx sample attributes TSV.")
+    parser.add_argument("--subject_phenotypes_tsv", required=True, help="GTEx subject phenotypes TSV.")
+    parser.add_argument("--human_gene_info", required=True, help="NCBI human_gene_info file used for Ensembl-to-symbol mapping.")
+    parser.add_argument("--out_dir", required=True, help="Workflow output directory.")
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--tissue_column", default="SMTS", help="Metadata tissue-grouping column used to select samples.")
+    parser.add_argument("--tissue_value", required=True, help="Metadata value in tissue_column defining the broad tissue cohort.")
+    parser.add_argument("--tissue_label", help="Optional human-readable tissue label used in summaries and signature names.")
+    parser.add_argument("--tissue_id", help="Optional stable tissue identifier used in summaries.")
+    parser.add_argument("--reference_age_group", default="20-29")
+    parser.add_argument(
+        "--comparison_age_groups",
+        default="30-39,40-49,50-59,60-69,70-79",
+        help="Comma-separated age groups to compare against the reference age group.",
+    )
+    parser.add_argument("--random_state", type=int, default=1, help="Deterministic balancing seed.")
+    parser.add_argument("--min_samples_per_group", type=int, default=3)
+    parser.add_argument("--filter_mode", choices=["none", "tissue"], default="none")
+    parser.add_argument("--chunksize", type=int, default=1000)
+    _add_provenance_flags(parser)
 
 
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
@@ -1462,6 +1508,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     _add_provenance_flags(p_rna_de_prepare)
+    p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
+    _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2114,6 +2162,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_aging_signatures":
+                from geneset_extractors.workflows.gtex_aging_signatures import run as run_gtex_aging_signatures
+
+                result = run_gtex_aging_signatures(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_aging_signatures n_comparisons={result.get('n_comparisons')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
