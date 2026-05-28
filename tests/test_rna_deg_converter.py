@@ -51,6 +51,8 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_name_separator = "__"
+    gmt_signed_labels = "pos_neg"
     gmt_emit_abs = False
     gmt_source = "full"
     emit_small_gene_sets = True
@@ -72,8 +74,8 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
     gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__pos__" in line for line in gmt_lines)
-    assert any("__neg__" in line for line in gmt_lines)
+    assert any("__pos" in line for line in gmt_lines)
+    assert any("__neg" in line for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     provenance_payload = load_provenance_payload(args.out_dir)
@@ -192,6 +194,23 @@ def test_rna_deg_default_symbol_filters_can_be_disabled(tmp_path: Path):
         rows_disabled = list(csv.DictReader(fh, delimiter="\t"))
     assert "GENE_MITO" in {r["gene_id"] for r in rows_disabled}
     assert "GENE_RIBO" in {r["gene_id"] for r in rows_disabled}
+
+
+def test_rna_deg_can_emit_custom_gtex_style_gmt_names(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_deg_gtex_style")
+    args.signature_name = "GTEx_tissue_adipose_subcutaneous"
+    args.gmt_name_separator = "_"
+    args.gmt_signed_labels = "up_dn"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+
+    gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert any(line.startswith("GTEx_tissue_adipose_subcutaneous_up\t") for line in gmt_lines)
+    assert any(line.startswith("GTEx_tissue_adipose_subcutaneous_dn\t") for line in gmt_lines)
 
 
 def test_rna_deg_auto_mode_errors_on_missing_columns(tmp_path: Path):
@@ -342,7 +361,7 @@ def test_rna_deg_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["converter"]["parameters"]["signature_name"] == "airway_conditionA_vs_B"
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__signature=airway_conditionA_vs_B__" in gmt_text
+    assert "airway_conditionA_vs_B__pos" in gmt_text
 
 
 def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
@@ -362,8 +381,8 @@ def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
     rna_deg.run(args)
 
     lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__abs__topk=1" in line for line in lines)
-    abs_line = next(line for line in lines if "__abs__topk=1" in line)
+    assert any("__abs" in line for line in lines)
+    abs_line = next(line for line in lines if "__abs" in line)
     abs_gene = abs_line.split("\t", 1)[1]
     assert abs_gene == "B"
 

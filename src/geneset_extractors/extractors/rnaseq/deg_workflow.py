@@ -81,11 +81,19 @@ class DEGWorkflowConfig:
     gmt_topk_list: str
     gmt_mass_list: str
     gmt_split_signed: bool
+    gmt_name_separator: str
+    gmt_signed_labels: str
     gmt_emit_abs: bool
     gmt_source: str
     emit_small_gene_sets: bool
     warn_biotype_missing: bool
     upstream_provenance_graph_path: str | None = None
+
+
+def _resolve_gmt_signed_labels(style: str) -> tuple[str, str]:
+    if style == "up_dn":
+        return "up", "dn"
+    return "pos", "neg"
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -546,7 +554,8 @@ def run_deg_workflow(
         base_name = safe_signature
         if cfg.comparison_label:
             safe_comparison = sanitize_name_component(cfg.comparison_label)
-            base_name = f"{safe_signature}__{safe_comparison}"
+            base_name = f"{safe_signature}{cfg.gmt_name_separator}{safe_comparison}"
+        positive_label, negative_label = _resolve_gmt_signed_labels(cfg.gmt_signed_labels)
         gmt_sets, gmt_plans = build_gmt_sets_from_rows(
             rows=gmt_rows,
             base_name=base_name,
@@ -564,6 +573,9 @@ def run_deg_workflow(
                 "converter": cfg.converter_name,
                 "comparison": cfg.comparison_label or "",
             },
+            name_separator=cfg.gmt_name_separator,
+            positive_label=positive_label,
+            negative_label=negative_label,
         )
         if cfg.gmt_emit_abs:
             abs_rows = [
@@ -578,7 +590,7 @@ def run_deg_workflow(
             ]
             abs_sets, abs_plans = build_gmt_sets_from_rows(
                 rows=abs_rows,
-                base_name=f"{base_name}__abs",
+                base_name=f"{base_name}{cfg.gmt_name_separator}abs",
                 prefer_symbol=bool(cfg.gmt_prefer_symbol),
                 min_genes=int(cfg.gmt_min_genes),
                 max_genes=int(cfg.gmt_max_genes),
@@ -594,6 +606,9 @@ def run_deg_workflow(
                     "comparison": cfg.comparison_label or "",
                     "direction": "abs",
                 },
+                name_separator=cfg.gmt_name_separator,
+                positive_label=positive_label,
+                negative_label=negative_label,
             )
             gmt_sets.extend(abs_sets)
             gmt_plans.extend(abs_plans)
@@ -667,6 +682,8 @@ def run_deg_workflow(
         "emit_full": cfg.emit_full,
         "emit_gmt": cfg.emit_gmt,
         "gmt_split_signed": cfg.gmt_split_signed,
+        "gmt_name_separator": cfg.gmt_name_separator,
+        "gmt_signed_labels": cfg.gmt_signed_labels,
         "gmt_emit_abs": cfg.gmt_emit_abs,
         "gmt_topk_list": gmt_topk_list,
         "gmt_mass_list": gmt_mass_list,

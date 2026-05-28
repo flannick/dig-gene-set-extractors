@@ -369,6 +369,13 @@
           ],
           "description": "Command used to execute the analysis, if applicable."
         },
+        "observed_command": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Original runtime command captured for the analysis step, if different from the canonical replay command."
+        },
         "parameters": {
           "type": [
             "object",

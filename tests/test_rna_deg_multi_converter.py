@@ -13,6 +13,7 @@ from tests.provenance_helpers import assert_manifest_has_enriched_columns
 class Args:
     deg_tsv = "tests/data/toy_deg_long.tsv"
     comparison_column = "comparison_id"
+    comparison_name_column = None
     out_dir = "tests/tmp/rna_deg_multi"
     organism = "human"
     genome_build = "hg38"
@@ -52,6 +53,8 @@ class Args:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_name_separator = "__"
+    gmt_signed_labels = "pos_neg"
     gmt_emit_abs = False
     gmt_source = "full"
     emit_small_gene_sets = True
@@ -67,8 +70,8 @@ def test_rna_deg_multi_grouped_output_and_validation(tmp_path: Path):
     assert (out_dir / "manifest.tsv").exists()
     assert (out_dir / "genesets.gmt").exists()
     gmt_lines = (out_dir / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__pos__" in line for line in gmt_lines)
-    assert any("__neg__" in line for line in gmt_lines)
+    assert any("__pos" in line for line in gmt_lines)
+    assert any("__neg" in line for line in gmt_lines)
 
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(out_dir, schema)
@@ -136,7 +139,7 @@ def test_rna_deg_multi_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
     rna_deg_multi.run(args)
 
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__signature=toy_deg_long__" in gmt_text
+    assert "toy_deg_long__case_vs_control__pos" in gmt_text
 
 
 def test_rna_deg_multi_biotype_missing_warning_emitted_once(
@@ -173,9 +176,37 @@ def test_rna_deg_multi_filters_rows_before_grouped_conversion(tmp_path: Path):
     args.min_abs_logfc = 0.5
     result = rna_deg_multi.run(args)
     assert result["n_groups"] == 2
-    with (Path(args.out_dir) / "comparison=c1" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+    with (Path(args.out_dir) / "c1" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
         rows1 = list(csv.DictReader(fh, delimiter="\t"))
-    with (Path(args.out_dir) / "comparison=c2" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+    with (Path(args.out_dir) / "c2" / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
         rows2 = list(csv.DictReader(fh, delimiter="\t"))
     assert [row["gene_id"] for row in rows1] == ["A"]
     assert [row["gene_id"] for row in rows2] == ["C"]
+
+
+def test_rna_deg_multi_can_use_separate_display_comparison_name_for_gmt(tmp_path: Path):
+    tsv = tmp_path / "gtex_style.tsv"
+    tsv.write_text(
+        "comparison_id\tgmt_comparison_label\tgene_id\tstat\n"
+        "age30_20\t30_39_20_29\tG1\t5.0\n"
+        "age30_20\t30_39_20_29\tG2\t-4.0\n",
+        encoding="utf-8",
+    )
+
+    args = Args()
+    args.deg_tsv = str(tsv)
+    args.out_dir = str(tmp_path / "gtex_style_multi")
+    args.signature_name = "GTEx_aging_adipose_subcutaneous"
+    args.comparison_name_column = "gmt_comparison_label"
+    args.gmt_name_separator = "_"
+    args.gmt_signed_labels = "up_dn"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "1"
+    args.emit_small_gene_sets = True
+    result = rna_deg_multi.run(args)
+
+    assert result["n_groups"] == 1
+    gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert any(line.startswith("GTEx_aging_adipose_subcutaneous_30_39_20_29_up\t") for line in gmt_lines)
+    assert any(line.startswith("GTEx_aging_adipose_subcutaneous_30_39_20_29_dn\t") for line in gmt_lines)

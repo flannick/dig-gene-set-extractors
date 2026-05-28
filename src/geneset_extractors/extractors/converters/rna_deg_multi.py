@@ -42,12 +42,27 @@ def run(args) -> dict[str, object]:
             f"comparison_column '{args.comparison_column}' not found in DE table. "
             f"Available columns: {', '.join(fieldnames)}"
         )
+    if getattr(args, "comparison_name_column", None) and args.comparison_name_column not in fieldnames:
+        raise ValueError(
+            f"comparison_name_column '{args.comparison_name_column}' not found in DE table. "
+            f"Available columns: {', '.join(fieldnames)}"
+        )
 
     grouped: dict[str, list[DEGRow]] = {}
+    comparison_display_names: dict[str, str] = {}
     for row in rows:
         comparison = str(row.values.get(args.comparison_column, "")).strip()
         if not comparison:
             continue
+        display_name = str(
+            row.values.get(getattr(args, "comparison_name_column", None) or args.comparison_column, "")
+        ).strip()
+        if comparison in comparison_display_names and comparison_display_names[comparison] != display_name:
+            raise ValueError(
+                f"comparison '{comparison}' has inconsistent display labels in "
+                f"{getattr(args, 'comparison_name_column', args.comparison_column)}"
+            )
+        comparison_display_names[comparison] = display_name or comparison
         grouped.setdefault(comparison, []).append(row)
     if not grouped:
         raise ValueError("No non-empty comparison labels found in comparison_column.")
@@ -83,7 +98,7 @@ def run(args) -> dict[str, object]:
             genome_build=args.genome_build,
             signature_name=signature_name,
             deg_tsv_label=Path(args.deg_tsv).name,
-            comparison_label=comparison,
+            comparison_label=comparison_display_names.get(comparison, comparison),
             gene_id_column=args.gene_id_column,
             gene_symbol_column=args.gene_symbol_column,
             stat_column=args.stat_column,
@@ -120,6 +135,8 @@ def run(args) -> dict[str, object]:
             gmt_topk_list=args.gmt_topk_list,
             gmt_mass_list=args.gmt_mass_list,
             gmt_split_signed=args.gmt_split_signed,
+            gmt_name_separator=args.gmt_name_separator,
+            gmt_signed_labels=args.gmt_signed_labels,
             gmt_emit_abs=args.gmt_emit_abs,
             gmt_source=args.gmt_source,
             emit_small_gene_sets=args.emit_small_gene_sets,

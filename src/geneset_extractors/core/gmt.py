@@ -182,6 +182,9 @@ def build_gmt_sets_from_rows(
     emit_small_gene_sets: bool = False,
     diagnostics: list[dict[str, object]] | None = None,
     context: dict[str, object] | None = None,
+    name_separator: str = "__",
+    positive_label: str = "pos",
+    negative_label: str = "neg",
 ) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
     if min_genes <= 0 or max_genes <= 0:
         raise ValueError("gmt_min_genes and gmt_max_genes must be positive")
@@ -199,7 +202,10 @@ def build_gmt_sets_from_rows(
         neg_rows = _rows_sorted_by_score(
             [{**r, "score": max(-float(r.get("score", 0.0)), 0.0)} for r in ranked]
         )
-        variants = [("__pos", pos_rows), ("__neg", neg_rows)]
+        variants = [
+            (f"{name_separator}{positive_label}", pos_rows),
+            (f"{name_separator}{negative_label}", neg_rows),
+        ]
     else:
         variants = [("", ranked)]
 
@@ -303,7 +309,7 @@ def build_gmt_sets_from_rows(
             if use_plain_name:
                 set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
             else:
-                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}{name_separator}topk={k}")
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:
@@ -352,7 +358,9 @@ def build_gmt_sets_from_rows(
             if use_plain_name:
                 set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
             else:
-                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
+                set_name = sanitize_gmt_name(
+                    f"{base_name}{sign_suffix}{name_separator}hpd_mass={tau_str}{name_separator}k={k}"
+                )
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:

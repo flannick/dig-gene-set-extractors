@@ -1226,6 +1226,7 @@ def run_de_prepare(
         extractor_args = SimpleNamespace(
             deg_tsv=str(deg_long_path),
             comparison_column="comparison_id",
+            comparison_name_column=None,
             out_dir=str(extractor_dir),
             organism=organism,
             genome_build=genome_build,
@@ -1263,6 +1264,8 @@ def run_de_prepare(
             gmt_topk_list=extractor_gmt_topk_list,
             gmt_mass_list="",
             gmt_split_signed=extractor_gmt_split_signed,
+            gmt_name_separator="__",
+            gmt_signed_labels="pos_neg",
             gmt_emit_abs=False,
             gmt_source="full",
             emit_small_gene_sets=False,
