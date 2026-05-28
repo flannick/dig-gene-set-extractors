@@ -519,9 +519,8 @@
     {
       "name": "gmt_format",
       "type": "string",
-      "default": "dig2col",
+      "default": "classic",
       "enum": [
-        "dig2col",
         "classic"
       ],
       "help": "GMT serialization format"

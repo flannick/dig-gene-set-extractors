@@ -14,7 +14,7 @@ def test_choose_gene_tokens_deduplicates_with_symbol_preference():
     assert tokens == ["A", "GENE3", "GENE4"]
 
 
-def test_write_gmt_uses_single_tab_and_space_separated_genes(tmp_path: Path):
+def test_write_gmt_uses_classic_tab_expanded_format(tmp_path: Path):
     out = tmp_path / "genesets.gmt"
     set_name = sanitize_gmt_name("my set / alpha")
     write_gmt([(set_name, ["G1", "G2", "G3"])], out)
@@ -22,10 +22,11 @@ def test_write_gmt_uses_single_tab_and_space_separated_genes(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     lines = text.splitlines()
     assert len(lines) == 1
-    assert lines[0].count("\t") == 1
-    name, genes = lines[0].split("\t")
+    assert lines[0].count("\t") == 4
+    name, description, gene1, gene2, gene3 = lines[0].split("\t")
     assert name == "my_set___alpha"
-    assert genes == "G1 G2 G3"
+    assert description == "na"
+    assert [gene1, gene2, gene3] == ["G1", "G2", "G3"]
 
 
 def test_choose_gene_tokens_require_symbol_drops_ensembl_like_symbols():

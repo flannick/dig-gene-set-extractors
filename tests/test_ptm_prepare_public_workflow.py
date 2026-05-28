@@ -80,7 +80,7 @@ class MatrixArgs:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
-    gmt_format = "dig2col"
+    gmt_format = "classic"
     emit_small_gene_sets = True
     neglog10p_cap = 50.0
     neglog10p_eps = 1e-300

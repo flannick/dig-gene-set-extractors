@@ -383,7 +383,8 @@ def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
     lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
     assert any("__abs" in line for line in lines)
     abs_line = next(line for line in lines if "__abs" in line)
-    abs_gene = abs_line.split("\t", 1)[1]
+    _name, description, abs_gene = abs_line.split("\t")
+    assert description == "na"
     assert abs_gene == "B"
 
 

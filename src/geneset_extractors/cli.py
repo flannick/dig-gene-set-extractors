@@ -143,7 +143,7 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_topk_list", default="200")
     parser.add_argument("--gmt_mass_list", default="")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
-    parser.add_argument("--gmt_format", choices=["dig2col", "classic"], default="dig2col")
+    parser.add_argument("--gmt_format", choices=["classic"], default="classic")
     parser.add_argument(
         "--emit_small_gene_sets",
         type=_parse_bool,

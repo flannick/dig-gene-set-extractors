@@ -97,7 +97,7 @@ class Args:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = True
-    gmt_format = "dig2col"
+    gmt_format = "classic"
     emit_small_gene_sets = True
     provenance_overlay_json = None
 

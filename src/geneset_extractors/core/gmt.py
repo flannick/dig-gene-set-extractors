@@ -49,20 +49,17 @@ def write_gmt(
     gene_sets: list[tuple[str, list[str]]],
     out_path: str | Path,
     *,
-    gmt_format: str = "dig2col",
+    gmt_format: str = "classic",
 ) -> None:
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    fmt = str(gmt_format).strip().lower() or "dig2col"
-    if fmt not in {"dig2col", "classic"}:
+    fmt = str(gmt_format).strip().lower() or "classic"
+    if fmt != "classic":
         raise ValueError(f"Unsupported gmt_format: {gmt_format}")
     with p.open("w", encoding="utf-8", newline="\n") as fh:
         for name, genes in gene_sets:
             sanitized = sanitize_gmt_name(name)
-            if fmt == "classic":
-                fh.write("\t".join([sanitized, "na", *genes]) + "\n")
-            else:
-                fh.write(f"{sanitized}\t{' '.join(genes)}\n")
+            fh.write("\t".join([sanitized, "na", *genes]) + "\n")
 
 
 def parse_int_list_csv(value: str) -> list[int]:

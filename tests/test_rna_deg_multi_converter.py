@@ -121,9 +121,10 @@ def test_rna_deg_multi_sanitizes_unsafe_comparison_label_in_gmt(tmp_path: Path):
     lines = [line for line in gmt_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert lines
     for line in lines:
-        assert line.count("\t") == 1
-        set_name, genes = line.split("\t")
+        assert line.count("\t") >= 2
+        set_name, description, *genes = line.split("\t")
         assert set_name
+        assert description == "na"
         assert genes
         assert all(not ch.isspace() for ch in set_name)
 

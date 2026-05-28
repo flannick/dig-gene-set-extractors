@@ -109,7 +109,7 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
-    gmt_format = "dig2col"
+    gmt_format = "classic"
     emit_small_gene_sets = True
     cluster_stats_tsv = None
     provenance_overlay_json = None
