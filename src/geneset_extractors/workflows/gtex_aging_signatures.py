@@ -232,7 +232,7 @@ def _prepare_counts_matrix(
     sample_ids: list[str],
     ensembl_to_symbol: dict[str, str],
     out_path: Path,
-) -> dict[str, int]:
+) -> dict[str, object]:
     requested = set(sample_ids)
     with _open_text(expression_gct) as handle:
         _ = handle.readline()
@@ -284,7 +284,9 @@ def _prepare_counts_matrix(
         count_rows.append(row)
     _write_tsv(out_path, count_rows, ["gene_id", "gene_symbol", *selected_sample_ids])
     return {
+        "selected_sample_ids": selected_sample_ids,
         "n_selected_samples": len(selected_sample_ids),
+        "n_requested_samples": len(sample_ids),
         "n_rows_after_ensembl_dedup": len(best_by_ensembl),
         "n_rows_after_symbol_dedup": len(count_rows),
         "n_rows_seen": rows_seen,
@@ -653,13 +655,6 @@ def run(args) -> dict[str, object]:
     metadata_rows.sort(key=lambda row: (row["age_group"], row["sample_id"]))
     sample_ids = [row["sample_id"] for row in metadata_rows]
 
-    sample_metadata_path = out_dir / "sample_metadata.tsv"
-    _write_tsv(
-        sample_metadata_path,
-        metadata_rows,
-        ["sample_id", "subject_id", "tissue_id", "tissue_label", "tissue_compact", "SMTS", "SMTSD", "sex", "age_group"],
-    )
-
     raw_counts_path = out_dir / "counts_gene_by_sample.raw.tsv"
     matrix_summary = _prepare_counts_matrix(
         expression_gct=expression_gct,
@@ -667,6 +662,25 @@ def run(args) -> dict[str, object]:
         ensembl_to_symbol=ensembl_to_symbol,
         out_path=raw_counts_path,
     )
+    selected_sample_ids = {
+        str(sample_id)
+        for sample_id in matrix_summary.get("selected_sample_ids", [])
+        if str(sample_id).strip()
+    }
+    metadata_rows = [row for row in metadata_rows if row["sample_id"] in selected_sample_ids]
+    if not metadata_rows:
+        raise ValueError(
+            "No overlapping samples remained after intersecting tissue metadata with the expression GCT"
+        )
+    metadata_rows.sort(key=lambda row: (row["age_group"], row["sample_id"]))
+
+    sample_metadata_path = out_dir / "sample_metadata.tsv"
+    _write_tsv(
+        sample_metadata_path,
+        metadata_rows,
+        ["sample_id", "subject_id", "tissue_id", "tissue_label", "tissue_compact", "SMTS", "SMTSD", "sex", "age_group"],
+    )
+
     counts_path = out_dir / "counts_gene_by_sample.tsv"
     filter_summary = {
         "filter_mode": str(args.filter_mode),
