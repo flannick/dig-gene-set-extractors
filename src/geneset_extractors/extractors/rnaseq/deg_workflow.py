@@ -159,21 +159,21 @@ def _gmt_candidate_token(row: dict[str, object], *, prefer_symbol: bool, require
     return gene_id
 
 
-def _top_per_direction_sort_key(
+def _top_per_direction_sort_metric(
     row: DEGRow,
     *,
     resolved_columns: dict[str, str | None],
     direction: str,
     sort_by: str,
-) -> tuple[float, str]:
+) -> float:
     logfc_column = resolved_columns["logfc_column"]
     logfc = parse_float_soft(row.values.get(str(logfc_column))) if logfc_column else None
     if logfc is None:
-        return (float("-inf"), "")
+        return float("-inf")
     if direction == "pos" and logfc <= 0.0:
-        return (float("-inf"), "")
+        return float("-inf")
     if direction == "neg" and logfc >= 0.0:
-        return (float("-inf"), "")
+        return float("-inf")
     if sort_by == "logFC_abs":
         metric = abs(float(logfc))
     elif sort_by == "adj.P.Val":
@@ -193,7 +193,7 @@ def _top_per_direction_sort_key(
             metric = float(value) if direction == "pos" else -float(value)
     else:
         raise ValueError(f"Unsupported gmt_sort_by: {sort_by}")
-    return (metric, str(row.values.get(str(resolved_columns["gene_id_column"]), "")).strip())
+    return metric
 
 
 def _build_top_per_direction_gmt_sets(
@@ -225,16 +225,21 @@ def _build_top_per_direction_gmt_sets(
     gmt_sets: list[tuple[str, list[str]]] = []
     gmt_plans: list[dict[str, object]] = []
     for direction, label in (("pos", positive_label), ("neg", negative_label)):
-        ranked_rows = sorted(
-            rows,
-            key=lambda row: _top_per_direction_sort_key(
-                row,
-                resolved_columns=resolved_columns,
-                direction=direction,
-                sort_by=sort_by,
-            ),
-            reverse=True,
-        )
+        ranked_rows = [
+            row
+            for _idx, row in sorted(
+                list(enumerate(rows)),
+                key=lambda item: (
+                    -_top_per_direction_sort_metric(
+                        item[1],
+                        resolved_columns=resolved_columns,
+                        direction=direction,
+                        sort_by=sort_by,
+                    ),
+                    item[0],
+                ),
+            )
+        ]
         genes: list[str] = []
         seen_tokens: set[str] = set()
         selected_rows = 0
@@ -250,7 +255,7 @@ def _build_top_per_direction_gmt_sets(
             token = _gmt_candidate_token(gene_row, prefer_symbol=prefer_symbol, require_symbol=require_symbol)
             if not token or token in seen_tokens:
                 continue
-            sort_metric, _ = _top_per_direction_sort_key(
+            sort_metric = _top_per_direction_sort_metric(
                 row,
                 resolved_columns=resolved_columns,
                 direction=direction,

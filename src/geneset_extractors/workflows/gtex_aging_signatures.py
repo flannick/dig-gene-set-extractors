@@ -494,6 +494,7 @@ count_mat <- as.matrix(counts[, count_cols, drop=FALSE])
 storage.mode(count_mat) <- "numeric"
 gene_ids <- as.character(counts$gene_id)
 gene_symbols <- as.character(counts$gene_symbol)
+rownames(count_mat) <- gene_symbols
 dir.create("{comparisons_dir}", recursive=TRUE, showWarnings=FALSE)
 all_rows <- list()
 
@@ -508,29 +509,38 @@ for (i in seq_len(nrow(comps))) {{
   sel$sample_id <- as.character(sel$sample_id)
   sub_meta <- merge(sel, meta, by="sample_id", all.x=TRUE, sort=FALSE)
   sub_meta <- sub_meta[match(sel$sample_id, sub_meta$sample_id), , drop=FALSE]
-  sub_meta$.__group <- factor(as.character(sub_meta$group_label), levels=c(group_b, group_a))
-  if (sum(sub_meta$.__group == group_a) < 2 || sum(sub_meta$.__group == group_b) < 2) next
-  sub_counts <- count_mat[, sub_meta$sample_id, drop=FALSE]
-  y <- DGEList(counts=sub_counts)
-  y <- calcNormFactors(y)
-  design <- model.matrix(~ .__group, data=sub_meta)
-  v <- voom(y, design, plot=FALSE)
-  fit <- lmFit(v, design)
+  ref_samples <- as.character(sel$sample_id[as.character(sel$group_label) == group_b])
+  case_samples <- as.character(sel$sample_id[as.character(sel$group_label) == group_a])
+  if (length(ref_samples) < 2 || length(case_samples) < 2) next
+  selected_samples <- c(ref_samples, case_samples)
+  expression <- count_mat[, selected_samples, drop=FALSE]
+  colnames(expression) <- paste0("s", seq_len(ncol(expression)) - 1L)
+  design <- data.frame(
+    A = as.integer(selected_samples %in% ref_samples),
+    B = as.integer(selected_samples %in% case_samples),
+    row.names = colnames(expression),
+    check.names = FALSE
+  )
+  dge <- DGEList(counts=expression)
+  dge <- calcNormFactors(dge)
+  v <- voom(dge, plot=FALSE)
+  fit <- lmFit(v, as.matrix(design))
+  cont.matrix <- makeContrasts(de=B-A, levels=as.matrix(design))
+  fit <- contrasts.fit(fit, cont.matrix)
   fit <- eBayes(fit)
-  coef_name <- grep("^.__group", colnames(design), value=TRUE)[1]
-  tt <- topTable(fit, coef=coef_name, number=Inf, sort.by="none")
+  tt <- topTable(fit, adjust="BH", number=nrow(expression))
+  tt$gene_symbol <- rownames(tt)
+  tt$gene_id <- gene_ids[match(tt$gene_symbol, gene_symbols)]
   tt$comparison_id <- comparison_id
   tt$aging_signature <- aging_signature
-  tt$gene_id <- gene_ids
-  tt$gene_symbol <- gene_symbols
   tt$group_a <- group_a
   tt$group_b <- group_b
   tt$stratum <- paste("tissue={tissue_label}", sep="")
-  tt$backend <- "r_limma_voom"
-  tt$n_group_a <- sum(sub_meta$.__group == group_a)
-  tt$n_group_b <- sum(sub_meta$.__group == group_b)
+  tt$backend <- "maayan_limma_voom_compatible"
+  tt$n_group_a <- length(case_samples)
+  tt$n_group_b <- length(ref_samples)
   tt$mean_expr <- tt$AveExpr
-  tt$model_formula <- ".__group"
+  tt$model_formula <- "B-A"
   keep_cols <- c("comparison_id", "aging_signature", "gene_id", "gene_symbol", "logFC", "t", "P.Value", "adj.P.Val", "group_a", "group_b", "stratum", "backend", "n_group_a", "n_group_b", "mean_expr", "model_formula")
   tt <- tt[, keep_cols, drop=FALSE]
   write.table(tt, file=file.path("{comparisons_dir}", paste0(comparison_id, ".tsv")), sep="\\t", row.names=FALSE, quote=FALSE)
