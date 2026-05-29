@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-import numpy as np
+import pandas as pd
 
 from geneset_extractors.core.metadata import _resolve_git_commit, current_invocation_context
 from geneset_extractors.core.provenance import (
@@ -118,9 +118,11 @@ def _sample_variance(values: list[float]) -> float:
 def _balanced_sample_ids(sample_ids: list[str], n: int, random_state: int) -> list[str]:
     if n <= 0:
         return []
-    rng = np.random.RandomState(random_state)
-    indices = rng.choice(np.arange(len(sample_ids)), size=n, replace=False)
-    return [sample_ids[int(index)] for index in indices]
+    return (
+        pd.Series(list(sample_ids))
+        .sample(n=n, random_state=random_state, replace=False)
+        .tolist()
+    )
 
 
 def _read_human_gene_info_mapping(path: Path) -> dict[str, str]:
@@ -234,60 +236,86 @@ def _prepare_counts_matrix(
     out_path: Path,
 ) -> dict[str, object]:
     requested = set(sample_ids)
-    with _open_text(expression_gct) as handle:
-        _ = handle.readline()
-        _ = handle.readline()
-        header = handle.readline().rstrip("\n").split("\t")
-        if len(header) < 3:
-            raise ValueError(f"GCT header is malformed: {expression_gct}")
-        data_sample_ids = header[2:]
-        sample_indices = [index for index, sample_id in enumerate(data_sample_ids, start=2) if sample_id in requested]
-        selected_sample_ids = [header[index] for index in sample_indices]
-        if not selected_sample_ids:
-            raise ValueError("No selected samples were present in the expression GCT")
-        best_by_ensembl: dict[str, tuple[float, str, list[float]]] = {}
-        rows_seen = 0
-        for raw_line in handle:
-            rows_seen += 1
-            parts = raw_line.rstrip("\n").split("\t")
-            if len(parts) <= max(sample_indices):
-                continue
-            ensembl = _strip_ensembl_version(parts[0])
-            symbol = ensembl_to_symbol.get(ensembl)
-            if not symbol:
-                continue
-            values: list[float] = []
-            for index in sample_indices:
-                try:
-                    values.append(float(parts[index]))
-                except ValueError:
-                    values.append(0.0)
-            variance = _sample_variance(values)
-            existing = best_by_ensembl.get(ensembl)
-            if existing is None or variance >= existing[0]:
-                best_by_ensembl[ensembl] = (variance, symbol, values)
-        if not best_by_ensembl:
-            raise ValueError("No mapped Ensembl genes were retained from the expression GCT")
+    header = _gct_sample_columns(expression_gct)
+    selected_sample_ids = [sample_id for sample_id in header if sample_id in requested]
+    if not selected_sample_ids:
+        raise ValueError("No selected samples were present in the expression GCT")
 
-    best_by_symbol: dict[str, tuple[float, str, list[float]]] = {}
-    for ensembl, (variance, symbol, values) in best_by_ensembl.items():
-        existing = best_by_symbol.get(symbol)
-        if existing is None or variance >= existing[0]:
-            best_by_symbol[symbol] = (variance, ensembl, values)
+    usecols = ["Name", "Description", *selected_sample_ids]
+    chunks: list[pd.DataFrame] = []
+    rows_seen = 0
+
+    reader = pd.read_csv(
+        expression_gct,
+        sep="\t",
+        skiprows=2,
+        usecols=usecols,
+        chunksize=1000,
+        low_memory=False,
+    )
+
+    for chunk in reader:
+        rows_seen += int(chunk.shape[0])
+        work = chunk[["Name", *selected_sample_ids]].copy()
+        work["Ens"] = work["Name"].map(_strip_ensembl_version)
+        work = work[work["Ens"].isin(ensembl_to_symbol)].copy()
+        if work.empty:
+            continue
+
+        counts_only = work.loc[:, selected_sample_ids].apply(pd.to_numeric, errors="coerce").fillna(0)
+        work["_Var"] = counts_only.var(axis=1)
+        keep_idx = (
+            work[["Ens", "_Var"]]
+            .sort_values(by=["Ens", "_Var"], ascending=True)
+            .drop_duplicates(subset=["Ens"], keep="last")
+            .index
+        )
+
+        kept = work.loc[keep_idx, ["Ens", "_Var"]].copy()
+        counts = counts_only.loc[keep_idx, :].copy()
+        counts.insert(0, "_Var", kept["_Var"].to_numpy())
+        counts.insert(0, "Ens", kept["Ens"].to_numpy())
+        chunks.append(counts)
+
+    if not chunks:
+        raise ValueError("No mapped Ensembl genes were retained from the expression GCT")
+
+    work_all = pd.concat(chunks, axis=0, ignore_index=True)
+    keep_idx = (
+        work_all[["Ens", "_Var"]]
+        .sort_values(by=["Ens", "_Var"], ascending=True)
+        .drop_duplicates(subset=["Ens"], keep="last")
+        .index
+    )
+    work_all = work_all.loc[keep_idx, :].copy()
+
+    counts_with_meta = work_all.loc[:, ["Ens", "_Var", *selected_sample_ids]].copy()
+    counts_with_meta["gene_symbol"] = counts_with_meta["Ens"].map(
+        lambda value: ensembl_to_symbol.get(value, value)
+    ).astype(str)
+    keep_symbol_idx = (
+        counts_with_meta[["gene_symbol", "_Var"]]
+        .sort_values(by=["gene_symbol", "_Var"], ascending=True)
+        .drop_duplicates(subset=["gene_symbol"], keep="last")
+        .index
+    )
+    counts_with_meta = counts_with_meta.loc[keep_symbol_idx, :].copy()
 
     count_rows: list[dict[str, Any]] = []
-    for symbol in sorted(best_by_symbol):
-        _variance, ensembl, values = best_by_symbol[symbol]
-        row: dict[str, Any] = {"gene_id": ensembl, "gene_symbol": symbol}
-        for sample_id, value in zip(selected_sample_ids, values, strict=True):
-            row[sample_id] = value
-        count_rows.append(row)
+    for _, row in counts_with_meta.iterrows():
+        out_row: dict[str, Any] = {
+            "gene_id": str(row["Ens"]),
+            "gene_symbol": str(row["gene_symbol"]),
+        }
+        for sample_id in selected_sample_ids:
+            out_row[sample_id] = row[sample_id]
+        count_rows.append(out_row)
     _write_tsv(out_path, count_rows, ["gene_id", "gene_symbol", *selected_sample_ids])
     return {
         "selected_sample_ids": selected_sample_ids,
         "n_selected_samples": len(selected_sample_ids),
         "n_requested_samples": len(sample_ids),
-        "n_rows_after_ensembl_dedup": len(best_by_ensembl),
+        "n_rows_after_ensembl_dedup": int(work_all["Ens"].nunique()),
         "n_rows_after_symbol_dedup": len(count_rows),
         "n_rows_seen": rows_seen,
     }
@@ -652,7 +680,6 @@ def run(args) -> dict[str, object]:
         tissue_label=tissue_label,
         tissue_id=tissue_id,
     )
-    metadata_rows.sort(key=lambda row: (row["age_group"], row["sample_id"]))
     sample_ids = [row["sample_id"] for row in metadata_rows]
 
     raw_counts_path = out_dir / "counts_gene_by_sample.raw.tsv"
@@ -672,8 +699,6 @@ def run(args) -> dict[str, object]:
         raise ValueError(
             "No overlapping samples remained after intersecting tissue metadata with the expression GCT"
         )
-    metadata_rows.sort(key=lambda row: (row["age_group"], row["sample_id"]))
-
     sample_metadata_path = out_dir / "sample_metadata.tsv"
     _write_tsv(
         sample_metadata_path,
