@@ -59,7 +59,7 @@ def write_gmt(
     with p.open("w", encoding="utf-8", newline="\n") as fh:
         for name, genes in gene_sets:
             sanitized = sanitize_gmt_name(name)
-            fh.write("\t".join([sanitized, "na", *genes]) + "\n")
+            fh.write("\t".join([sanitized, "", *genes]) + "\n")
 
 
 def parse_int_list_csv(value: str) -> list[int]:
