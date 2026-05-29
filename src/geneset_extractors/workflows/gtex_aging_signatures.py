@@ -388,7 +388,7 @@ def _build_comparisons(
         case_all = age_to_samples.get(age_group, [])
         n_balanced = min(len(reference_all), len(case_all))
         comparison_id = _comparison_id(age_group, reference_age_group)
-        aging_signature = f"GTEx_{tissue_compact}_{reference_age_group}_vs_{age_group}"
+        aging_signature = f"GTEx_aging_{tissue_compact}_{reference_age_group}_{age_group}"
         status = "ok"
         if n_balanced < min_samples_per_group:
             status = f"skipped: n per group < {min_samples_per_group}"
