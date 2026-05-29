@@ -725,7 +725,8 @@ def run_deg_workflow(
             else False
         )
         _warn_split_signed_no_negatives(gmt_rows, cfg)
-        safe_signature = sanitize_name_component(cfg.signature_name)
+        raw_signature = str(cfg.signature_name or "").strip()
+        safe_signature = sanitize_name_component(raw_signature) if raw_signature else ""
         safe_comparison = sanitize_name_component(cfg.comparison_label) if cfg.comparison_label else ""
         base_name = safe_signature
         if safe_comparison:
