@@ -68,7 +68,9 @@ def run(args) -> dict[str, object]:
         raise ValueError("No non-empty comparison labels found in comparison_column.")
 
     signature_name = str(args.signature_name or "").strip()
-    if not signature_name or signature_name == "contrast":
+    if signature_name == "__comparison_only__":
+        signature_name = ""
+    elif not signature_name or signature_name == "contrast":
         signature_name = sanitize_name_component(Path(args.deg_tsv).stem)
 
     files = [input_file_record(args.deg_tsv, "deg_tsv")]

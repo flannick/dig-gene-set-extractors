@@ -721,10 +721,14 @@ def run_deg_workflow(
         )
         _warn_split_signed_no_negatives(gmt_rows, cfg)
         safe_signature = sanitize_name_component(cfg.signature_name)
+        safe_comparison = sanitize_name_component(cfg.comparison_label) if cfg.comparison_label else ""
         base_name = safe_signature
-        if cfg.comparison_label:
-            safe_comparison = sanitize_name_component(cfg.comparison_label)
-            base_name = f"{safe_signature}{cfg.gmt_name_separator}{safe_comparison}"
+        if safe_comparison:
+            base_name = (
+                f"{safe_signature}{cfg.gmt_name_separator}{safe_comparison}"
+                if safe_signature
+                else safe_comparison
+            )
         positive_label, negative_label = _resolve_gmt_signed_labels(cfg.gmt_signed_labels)
         if cfg.gmt_mode == "top_per_direction":
             requested_top_n = int(cfg.gmt_top_n_per_direction or cfg.top_k)
