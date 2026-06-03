@@ -1,0 +1,28 @@
+{
+  "name": "unsigned_term_gene",
+  "description": "Unsigned term-gene membership table converted to authoritative GMT gene sets",
+  "inputs": [
+    {
+      "name": "table_tsv",
+      "description": "Tab-delimited table with one row per term-gene membership"
+    }
+  ],
+  "parameters": [
+    {"name": "term_column", "type": "string", "default": "term", "help": "Column containing the term/signature name"},
+    {"name": "gene_id_column", "type": "string", "default": "gene_id", "help": "Column containing gene ids"},
+    {"name": "gene_symbol_column", "type": "string", "default": "gene_symbol", "help": "Column containing gene symbols"},
+    {"name": "score_column", "type": "string", "default": "score", "help": "Optional nonnegative score column"},
+    {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol over gene_id in GMT emission"},
+    {"name": "gmt_require_symbol", "type": "boolean", "default": true, "help": "Require gene_symbol for GMT emission"},
+    {"name": "gmt_min_genes", "type": "integer", "default": 5, "help": "Minimum number of genes required to emit a set"},
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "If true, emit sets smaller than gmt_min_genes"}
+  ],
+  "outputs": [
+    {"name": "genesets.gmt", "description": "Authoritative unsigned GMT library"},
+    {"name": "geneset.tsv", "description": "Combined term-gene table"},
+    {"name": "geneset.full.tsv", "description": "Full term-gene table"},
+    {"name": "signature_summary.tsv", "description": "Per-set counts"},
+    {"name": "geneset.meta.json", "description": "Metadata JSON"},
+    {"name": "geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}

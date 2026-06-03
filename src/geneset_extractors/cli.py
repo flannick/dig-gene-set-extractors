@@ -1970,6 +1970,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_scrna.add_argument("--normalize", choices=["l1", "none"], default="l1")
     _add_provenance_flags(p_scrna)
 
+    p_signed_term = conv.add_parser("signed_term_gene")
+    p_signed_term.add_argument("--table_tsv", required=True)
+    p_signed_term.add_argument("--out_dir", required=True)
+    p_signed_term.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_signed_term.add_argument("--genome_build", required=True)
+    p_signed_term.add_argument("--term_column", default="term")
+    p_signed_term.add_argument("--gene_id_column", default="gene_id")
+    p_signed_term.add_argument("--gene_symbol_column", default="gene_symbol")
+    p_signed_term.add_argument("--score_column", default="score")
+    p_signed_term.add_argument("--sign_column", default="sign")
+    p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_"], default="_")
+    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn"], default="up_dn")
+    _add_gmt_flags(p_signed_term)
+    _add_provenance_flags(p_signed_term)
+    p_signed_term.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_prefer_symbol=True,
+        gmt_require_symbol=True,
+        gmt_min_genes=5,
+        gmt_max_genes=50000,
+        emit_small_gene_sets=False,
+    )
+
+    p_unsigned_term = conv.add_parser("unsigned_term_gene")
+    p_unsigned_term.add_argument("--table_tsv", required=True)
+    p_unsigned_term.add_argument("--out_dir", required=True)
+    p_unsigned_term.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_unsigned_term.add_argument("--genome_build", required=True)
+    p_unsigned_term.add_argument("--term_column", default="term")
+    p_unsigned_term.add_argument("--gene_id_column", default="gene_id")
+    p_unsigned_term.add_argument("--gene_symbol_column", default="gene_symbol")
+    p_unsigned_term.add_argument("--score_column", default="score")
+    _add_gmt_flags(p_unsigned_term)
+    _add_provenance_flags(p_unsigned_term)
+    p_unsigned_term.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=False,
+        gmt_prefer_symbol=True,
+        gmt_require_symbol=True,
+        gmt_min_genes=5,
+        gmt_max_genes=50000,
+        emit_small_gene_sets=False,
+    )
+
     return parser
 
 
