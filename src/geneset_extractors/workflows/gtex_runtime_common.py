@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import gzip
 from pathlib import Path
+import sys
 from typing import Any, Iterable
 
 from geneset_extractors.core.metadata import _resolve_git_commit, current_invocation_context
@@ -277,7 +278,7 @@ def write_workflow_provenance_graph(
     focus_node = next(node for node in output_nodes if node["name"] == focus_output_path.name)
     extra_output_nodes = [node for node in output_nodes if node["id"] != focus_node["id"]]
     invocation = current_invocation_context()
-    command = invocation.get("argv") if invocation else []
+    command = invocation.get("argv") if invocation else list(sys.argv)
     entrypoint = f"geneset-extractors workflows {workflow_name}"
     operation_id = stable_operation_id(
         workflow_name,
