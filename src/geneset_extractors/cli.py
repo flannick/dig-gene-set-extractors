@@ -290,6 +290,45 @@ def _add_gtex_aging_signatures_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_gtex_age_binned_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True)
+    parser.add_argument("--sample_attributes_tsv", required=True)
+    parser.add_argument("--subject_phenotypes_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--tissue_label", required=True)
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--tissue_column", help="Optional metadata tissue-grouping column.")
+    parser.add_argument("--tissue_value", help="Optional metadata value in tissue_column defining the cohort.")
+    parser.add_argument("--reference_age_bin", default="20-29")
+    parser.add_argument("--age_bins", default="20-29,30-39,40-49,50-59,60-69,70-79")
+    parser.add_argument("--min_samples_per_group", type=int, default=2)
+    parser.add_argument("--de_mode", choices=["modern", "harmonizome"], default="modern")
+    parser.add_argument("--balance_groups", type=_parse_bool, default=False)
+    parser.add_argument("--balance_seed", type=int, default=0)
+    parser.add_argument("--gene_filter_scope", choices=["contrast", "stratum"], default="contrast")
+    parser.add_argument("--backend", default="auto")
+    parser.add_argument("--covariates", default="SEX")
+    _add_provenance_flags(parser)
+
+
+def _add_gtex_continuous_age_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True)
+    parser.add_argument("--sample_attributes_tsv", required=True)
+    parser.add_argument("--subject_phenotypes_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--tissue_label", required=True)
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--tissue_column", help="Optional metadata tissue-grouping column.")
+    parser.add_argument("--tissue_value", help="Optional metadata value in tissue_column defining the cohort.")
+    parser.add_argument("--covariates", default="SEX")
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1510,6 +1549,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_provenance_flags(p_rna_de_prepare)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
+    p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
+    _add_gtex_age_binned_flags(p_gtex_age_binned)
+    p_gtex_continuous_age = wf_sub.add_parser("gtex_continuous_age")
+    _add_gtex_continuous_age_flags(p_gtex_continuous_age)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2219,6 +2262,28 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=gtex_aging_signatures n_comparisons={result.get('n_comparisons')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_age_binned":
+                from geneset_extractors.workflows.gtex_age_binned import run as run_gtex_age_binned
+
+                result = run_gtex_age_binned(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_age_binned n_comparisons={result.get('n_comparisons')} "
+                    f"out={args.out_dir}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_continuous_age":
+                from geneset_extractors.workflows.gtex_continuous_age import run as run_gtex_continuous_age
+
+                result = run_gtex_continuous_age(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_continuous_age n_samples={result.get('n_samples')} "
+                    f"out={args.out_dir}",
                     file=sys.stderr,
                 )
                 return 0
