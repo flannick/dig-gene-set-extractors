@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import csv
-import re
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
 
@@ -67,172 +67,144 @@ def _threshold(score: float) -> int | None:
     return None
 
 
-def _build_gene_mapper(feature_annot: Path) -> dict[str, str]:
-    with feature_annot.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
+def _load_feature_annotation(feature_annot: Path) -> pd.DataFrame:
+    _require_file(feature_annot, "TRNSCRPT_FEATURE_ANNOT.txt")
+    return pd.read_csv(feature_annot, sep="\t")
+
+
+def _build_gene_mapper(feature_df: pd.DataFrame) -> dict[str, str]:
     required = {"gene_id", "gene_name"}
-    if not rows:
-        raise ValueError(f"No feature annotation rows found in {feature_annot}")
-    missing = required - set(rows[0].keys())
+    missing = required - set(feature_df.columns)
     if missing:
         raise ValueError(f"Feature annotation is missing required columns: {sorted(missing)}")
-    return {
-        str(row.get("gene_id", "")).strip(): str(row.get("gene_name", "")).strip()
-        for row in rows
-        if str(row.get("gene_id", "")).strip() and str(row.get("gene_name", "")).strip()
-    }
+
+    gene_mapper: dict[str, str] = {}
+    for _, row in feature_df.iterrows():
+        gene_mapper[row["gene_id"]] = row["gene_name"]
+    return gene_mapper
 
 
 def _load_symbol_map(mapping_file: Path) -> dict[str, str]:
-    rows: list[list[str]] = []
-    with mapping_file.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.reader(handle, delimiter="\t")
-        rows = [list(row) for row in reader]
-    if not rows:
-        raise ValueError(f"Mapping file was empty: {mapping_file}")
-    width = max(len(row) for row in rows)
-    if width >= 3:
+    _require_file(mapping_file, "Harmonizome mapping file")
+    df = pd.read_csv(mapping_file, sep="\t", header=None, dtype=str, keep_default_na=False)
+
+    if df.shape[1] >= 3:
         input_col, output_col = 1, 2
-    elif width == 2:
+    elif df.shape[1] == 2:
         input_col, output_col = 0, 1
     else:
-        raise ValueError("Mapping file must have at least two tab-delimited columns")
-    symbol_map: dict[str, str] = {}
-    for row in rows:
-        if len(row) <= max(input_col, output_col):
-            continue
-        source = str(row[input_col]).strip()
-        target = str(row[output_col]).strip()
-        if source and target:
-            symbol_map[source] = target
-    return symbol_map
+        raise ValueError(
+            "Mapping file must have either two tab-delimited columns "
+            "(input_symbol, approved_symbol) or at least three columns "
+            "where columns 2 and 3 are input_symbol and approved_symbol."
+        )
+
+    df[input_col] = df[input_col].astype(str).str.strip()
+    df[output_col] = df[output_col].astype(str).str.strip()
+    df = df[(df[input_col] != "") & (df[output_col] != "")]
+    return dict(zip(df[input_col], df[output_col]))
 
 
-def _load_timewise_rows(
-    *,
+def _load_timewise_dea(
     dea_dir: Path,
     gene_mapper: dict[str, str],
     symbol_map: dict[str, str],
     padj_max: float,
-) -> tuple[list[dict[str, Any]], dict[str, int], list[Path]]:
-    rows_out: list[dict[str, Any]] = []
+) -> tuple[pd.DataFrame, dict[str, int], list[Path]]:
+    _require_dir(dea_dir, "MoTrPAC DEA directory")
+
+    motrpac = pd.DataFrame([])
     dea_paths: list[Path] = []
-    rows_loaded = 0
-    rows_after_gene_mapper = 0
-    rows_after_padj = 0
-    rows_after_symbol_map = 0
-    for dea_path in sorted(dea_dir.iterdir()):
-        if "timewise" not in dea_path.name or not dea_path.is_file():
-            continue
-        dea_paths.append(dea_path)
-        with dea_path.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
-            for row in reader:
-                rows_loaded += 1
-                feature_id = str(row.get("feature_ID", "")).strip()
-                mapped_gene = gene_mapper.get(feature_id)
-                if not mapped_gene:
-                    continue
-                rows_after_gene_mapper += 1
-                try:
-                    adj_p_value = float(str(row.get("adj_p_value", "")).strip())
-                except ValueError:
-                    continue
-                if adj_p_value >= float(padj_max):
-                    continue
-                rows_after_padj += 1
-                human_gene = symbol_map.get(mapped_gene.upper())
-                if not human_gene:
-                    continue
-                rows_after_symbol_map += 1
-                try:
-                    logfc = float(str(row.get("logFC", "")).strip())
-                except ValueError:
-                    continue
-                sign = _threshold(logfc)
-                if sign is None:
-                    continue
-                term = "_".join(
-                    [
-                        str(row.get("tissue", "")).strip(),
-                        str(row.get("sex", "")).strip(),
-                        str(row.get("comparison_group", "")).strip(),
-                    ]
-                )
-                rows_out.append(
-                    {
-                        "term": term,
-                        "gene": human_gene,
-                        "adj_p_value": adj_p_value,
-                        "threshold": sign,
-                    }
-                )
-    if not dea_paths:
+    for rnaseqfile in sorted(os.listdir(dea_dir)):
+        if "timewise" in rnaseqfile:
+            rnaseq_path = dea_dir / rnaseqfile
+            dea_paths.append(rnaseq_path)
+            rnaseq = pd.read_csv(rnaseq_path, sep="\t").get(
+                ["feature_ID", "tissue", "sex", "comparison_group", "adj_p_value", "logFC"]
+            )
+            if rnaseq is None:
+                raise ValueError(f"{rnaseq_path} is missing one or more required timewise columns")
+            rnaseq["term"] = rnaseq["tissue"] + "_" + rnaseq["sex"] + "_" + rnaseq["comparison_group"]
+            motrpac = pd.concat([motrpac, rnaseq])
+
+    if motrpac.empty:
         raise ValueError(f"No DEA files containing 'timewise' were found in {dea_dir}")
+
+    before_gene_mapper = len(motrpac)
+    motrpac["feature_ID"] = motrpac["feature_ID"].map(gene_mapper)
+    motrpac = motrpac.dropna()
+
+    before_padj = len(motrpac)
+    motrpac = motrpac[["term", "feature_ID", "adj_p_value", "logFC"]]
+    motrpac = motrpac[motrpac["adj_p_value"] < padj_max]
+
+    before_symbolmap = len(motrpac)
+    motrpac["feature_ID"] = motrpac["feature_ID"].apply(str.upper).map(symbol_map)
+    motrpac = motrpac.dropna()
+    motrpac["logFC"] = motrpac["logFC"].apply(_threshold)
+    motrpac.columns = ["term", "gene", "adj_p_value", "threshold"]
+
     audit = {
-        "timewise_rows_loaded": rows_loaded,
-        "timewise_rows_after_gene_mapper": rows_after_gene_mapper,
-        "timewise_rows_after_padj": rows_after_padj,
-        "timewise_rows_after_symbol_map": rows_after_symbol_map,
+        "timewise_rows_loaded": before_gene_mapper,
+        "timewise_rows_after_gene_mapper": before_padj,
+        "timewise_rows_after_padj": before_symbolmap,
+        "timewise_rows_after_symbol_map": len(motrpac),
     }
-    return rows_out, audit, dea_paths
+    return motrpac, audit, dea_paths
 
 
-def _load_training_rows(
-    *,
+def _load_training_dea(
     dea_dir: Path,
     gene_mapper: dict[str, str],
     symbol_map: dict[str, str],
     padj_max: float,
-) -> tuple[list[dict[str, Any]], dict[str, int], list[Path]]:
-    rows_out: list[dict[str, Any]] = []
+) -> tuple[pd.DataFrame, dict[str, int], list[Path]]:
+    _require_dir(dea_dir, "MoTrPAC DEA directory")
+
+    motrpac_training = pd.DataFrame([])
     dea_paths: list[Path] = []
-    rows_loaded = 0
-    rows_after_gene_mapper = 0
-    rows_after_padj = 0
-    rows_after_symbol_map = 0
-    for dea_path in sorted(dea_dir.iterdir()):
-        if "training" not in dea_path.name or not dea_path.is_file():
-            continue
-        dea_paths.append(dea_path)
-        with dea_path.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
-            for row in reader:
-                rows_loaded += 1
-                feature_id = str(row.get("feature_ID", "")).strip()
-                mapped_gene = gene_mapper.get(feature_id)
-                if not mapped_gene:
-                    continue
-                rows_after_gene_mapper += 1
-                try:
-                    adj_p_value = float(str(row.get("adj_p_value", "")).strip())
-                except ValueError:
-                    continue
-                if adj_p_value >= float(padj_max):
-                    continue
-                rows_after_padj += 1
-                human_gene = symbol_map.get(mapped_gene.upper())
-                if not human_gene:
-                    continue
-                rows_after_symbol_map += 1
-                term = f"{str(row.get('tissue', '')).strip()}_consensus"
-                rows_out.append(
-                    {
-                        "term": term,
-                        "gene": human_gene,
-                        "adj_p_value": adj_p_value,
-                        "threshold": 1,
-                    }
-                )
-    if not dea_paths:
+    for rnaseqfile in sorted(os.listdir(dea_dir)):
+        if "training" in rnaseqfile:
+            rnaseq_path = dea_dir / rnaseqfile
+            dea_paths.append(rnaseq_path)
+            rnaseq = pd.read_csv(rnaseq_path, sep="\t").get(["feature_ID", "tissue", "adj_p_value"])
+            if rnaseq is None:
+                raise ValueError(f"{rnaseq_path} is missing one or more required training columns")
+            motrpac_training = pd.concat([motrpac_training, rnaseq])
+
+    if motrpac_training.empty:
         raise ValueError(f"No DEA files containing 'training' were found in {dea_dir}")
+
+    before_gene_mapper = len(motrpac_training)
+    motrpac_training["feature_ID"] = motrpac_training["feature_ID"].map(gene_mapper)
+    motrpac_training = motrpac_training.dropna()
+
+    before_padj = len(motrpac_training)
+    motrpac_training = motrpac_training[["tissue", "feature_ID", "adj_p_value"]]
+    motrpac_training = motrpac_training[motrpac_training["adj_p_value"] < padj_max]
+
+    before_symbolmap = len(motrpac_training)
+    motrpac_training["feature_ID"] = motrpac_training["feature_ID"].apply(str.upper).map(symbol_map)
+    motrpac_training = motrpac_training.dropna()
+    motrpac_training["threshold"] = 1
+
+    motrpac_training["tissue"] = motrpac_training["tissue"] + "_consensus"
+    motrpac_training.columns = ["term", "gene", "adj_p_value", "threshold"]
+
     audit = {
-        "training_rows_loaded": rows_loaded,
-        "training_rows_after_gene_mapper": rows_after_gene_mapper,
-        "training_rows_after_padj": rows_after_padj,
-        "training_rows_after_symbol_map": rows_after_symbol_map,
+        "training_rows_loaded": before_gene_mapper,
+        "training_rows_after_gene_mapper": before_padj,
+        "training_rows_after_padj": before_symbolmap,
+        "training_rows_after_symbol_map": len(motrpac_training),
     }
-    return rows_out, audit, dea_paths
+    return motrpac_training, audit, dea_paths
+
+
+def _combine_and_standardize(motrpac: pd.DataFrame, motrpac_training: pd.DataFrame) -> pd.DataFrame:
+    combined = pd.concat([motrpac, motrpac_training]).reset_index(drop=True)
+    combined["adj_p_value"] = combined["adj_p_value"].apply(lambda x: np.log10(x) * -1)
+    combined["adj_p_value"] = combined["adj_p_value"].mul(combined["threshold"])
+    return combined
 
 
 def _legacy_base_term(term: str) -> str:
@@ -250,16 +222,14 @@ def _legacy_base_term(term: str) -> str:
     return base
 
 
-def _build_signed_term_rows(processed_rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+def _build_signed_term_rows(processed_df: pd.DataFrame) -> list[dict[str, str]]:
     rows_out: list[dict[str, str]] = []
-    for row in processed_rows:
+    for _, row in processed_df.iterrows():
         term = str(row.get("term", "")).strip()
         gene = str(row.get("gene", "")).strip()
-        if not term or not gene:
-            continue
         score_value = float(row.get("adj_p_value", 0.0) or 0.0)
         sign_value = float(row.get("threshold", 0.0) or 0.0)
-        if sign_value == 0.0:
+        if not term or not gene or sign_value == 0.0:
             continue
         rows_out.append(
             {
@@ -284,41 +254,39 @@ def run(args) -> dict[str, object]:
     _require_dir(dea_dir, "DEA directory")
     _require_file(mapping_file, "mapping file")
 
-    gene_mapper = _build_gene_mapper(feature_annot)
+    feature_df = _load_feature_annotation(feature_annot)
+    gene_mapper = _build_gene_mapper(feature_df)
     symbol_map = _load_symbol_map(mapping_file)
-    timewise_rows, timewise_audit, timewise_paths = _load_timewise_rows(
+    timewise_df, timewise_audit, timewise_paths = _load_timewise_dea(
         dea_dir=dea_dir,
         gene_mapper=gene_mapper,
         symbol_map=symbol_map,
         padj_max=float(args.padj_max),
     )
-    training_rows, training_audit, training_paths = _load_training_rows(
+    training_df, training_audit, training_paths = _load_training_dea(
         dea_dir=dea_dir,
         gene_mapper=gene_mapper,
         symbol_map=symbol_map,
         padj_max=float(args.padj_max),
     )
-    processed_rows = list(timewise_rows) + list(training_rows)
-    for row in processed_rows:
-        standardized = np.log10(float(row["adj_p_value"])) * -1
-        row["adj_p_value"] = standardized * float(row["threshold"])
+    processed_df = _combine_and_standardize(timewise_df, training_df)
 
     processed_path = out_dir / "motrpac_processed.tsv"
     signed_term_path = out_dir / "motrpac_signed_term_gene.tsv"
     audit_path = out_dir / "motrpac_processing_audit.tsv"
-    write_tsv(processed_path, processed_rows, ["term", "gene", "adj_p_value", "threshold"])
+    processed_df.to_csv(processed_path, sep="\t", index=False)
     audit_rows = (
         [{"metric": key, "value": value} for key, value in timewise_audit.items()]
         + [{"metric": key, "value": value} for key, value in training_audit.items()]
         + [
-            {"metric": "combined_rows", "value": len(processed_rows)},
-            {"metric": "unique_terms", "value": len({str(row["term"]) for row in processed_rows})},
-            {"metric": "unique_genes", "value": len({str(row["gene"]) for row in processed_rows})},
+            {"metric": "combined_rows", "value": len(processed_df)},
+            {"metric": "unique_terms", "value": int(processed_df["term"].nunique())},
+            {"metric": "unique_genes", "value": int(processed_df["gene"].nunique())},
             {"metric": "padj_max", "value": float(args.padj_max)},
         ]
     )
     write_tsv(audit_path, audit_rows, ["metric", "value"])
-    signed_term_rows = _build_signed_term_rows(processed_rows)
+    signed_term_rows = _build_signed_term_rows(processed_df)
     write_tsv(signed_term_path, signed_term_rows, ["term", "gene_id", "gene_symbol", "score", "sign"])
 
     input_paths: list[tuple[Path, str]] = [
@@ -342,15 +310,15 @@ def run(args) -> dict[str, object]:
         input_paths=input_paths,
         parameters={
             "padj_max": float(args.padj_max),
-            "n_processed_rows": len(processed_rows),
+            "n_processed_rows": len(processed_df),
             "n_signed_term_rows": len(signed_term_rows),
-            "n_terms": len({str(row["term"]) for row in processed_rows}),
-            "n_genes": len({str(row["gene"]) for row in processed_rows}),
+            "n_terms": int(processed_df["term"].nunique()),
+            "n_genes": int(processed_df["gene"].nunique()),
         },
     )
     return {
-        "n_rows": len(processed_rows),
-        "n_terms": len({str(row["term"]) for row in processed_rows}),
-        "n_genes": len({str(row["gene"]) for row in processed_rows}),
+        "n_rows": len(processed_df),
+        "n_terms": int(processed_df["term"].nunique()),
+        "n_genes": int(processed_df["gene"].nunique()),
         "out_dir": str(out_dir),
     }
