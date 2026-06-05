@@ -8,6 +8,7 @@ import sys
 from geneset_extractors.core.gmt import write_gmt
 from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record
 from geneset_extractors.core.provenance import activate_runtime_context
+from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.extractors.rnaseq.deg_scoring import DEGRow, read_deg_tsv, sanitize_name_component
 from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
@@ -18,9 +19,70 @@ def _safe_name(value: str) -> str:
 
 
 def _should_skip_empty_filtered_comparison(postprocess_mode: str, exc: ValueError) -> bool:
-    if str(postprocess_mode) != "harmonizome":
-        return False
     return str(exc) == "No DE rows remain after applying padj/pvalue/logFC row filters."
+
+
+def _write_empty_deg_rows(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["gene_id", "score"],
+            delimiter="\t",
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+
+def _emit_empty_comparison_output(
+    *,
+    group_dir: Path,
+    cfg: DEGWorkflowConfig,
+    comparison: str,
+    comparison_label: str,
+    reason: str,
+) -> dict[str, object]:
+    group_dir.mkdir(parents=True, exist_ok=True)
+
+    geneset_path = group_dir / "geneset.tsv"
+    _write_empty_deg_rows(geneset_path)
+
+    output_files = [{"path": str(geneset_path), "role": "selected_program"}]
+    if cfg.emit_full:
+        full_path = group_dir / "geneset.full.tsv"
+        _write_empty_deg_rows(full_path)
+        output_files.append({"path": str(full_path), "role": "full_scores"})
+
+    run_summary_payload = {
+        "converter": cfg.converter_name,
+        "signature_name": cfg.signature_name,
+        "comparison": cfg.comparison_label,
+        "score_mode": cfg.score_mode,
+        "n_input_features": 0,
+        "n_genes_after_filter": 0,
+        "n_genes_selected": 0,
+        "n_rows_skipped_unparseable": 0,
+        "n_rows_filtered_by_thresholds": 0,
+        "n_genes_filtered_by_symbol_regex": 0,
+        "duplicate_gene_policy": cfg.duplicate_gene_policy,
+        "n_gene_ids_with_duplicates": 0,
+        "n_duplicate_rows": 0,
+        "warnings": [
+            "No DE rows remained after row-level filtering; emitted empty comparison outputs."
+        ],
+        "parse_summary": {"reason": reason},
+    }
+    write_run_summary_files(group_dir, run_summary_payload)
+    return {
+        "comparison": comparison,
+        "geneset_id": "",
+        "label": comparison_label,
+        "path": str(group_dir.name),
+        "meta_path": "",
+        "provenance_path": "",
+        "focus_node_id": "",
+    }
 
 
 def _resolve_upstream_provenance_graph_path(deg_tsv: str | Path) -> str | None:
@@ -158,13 +220,17 @@ def run(args) -> dict[str, object]:
         except ValueError as exc:
             if not _should_skip_empty_filtered_comparison(getattr(args, "postprocess_mode", "legacy"), exc):
                 raise
-            if group_dir.exists():
-                try:
-                    group_dir.rmdir()
-                except OSError:
-                    pass
+            manifest_rows.append(
+                _emit_empty_comparison_output(
+                    group_dir=group_dir,
+                    cfg=cfg,
+                    comparison=comparison,
+                    comparison_label=comparison_display_names.get(comparison, comparison),
+                    reason=str(exc),
+                )
+            )
             print(
-                "warning: skipping comparison with no rows remaining after Harmonizome significance filtering: "
+                "warning: emitting empty comparison output after row filters removed all DE rows: "
                 f"{comparison}",
                 file=sys.stderr,
             )
