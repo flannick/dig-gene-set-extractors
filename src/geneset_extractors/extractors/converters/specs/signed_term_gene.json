@@ -13,6 +13,7 @@
     {"name": "gene_symbol_column", "type": "string", "default": "gene_symbol", "help": "Column containing gene symbols"},
     {"name": "score_column", "type": "string", "default": "score", "help": "Column containing signed or absolute score values"},
     {"name": "sign_column", "type": "string", "default": "sign", "help": "Column containing sign values; positive=up, negative=down"},
+    {"name": "emit_mode", "type": "string", "default": "grouped_rows", "enum": ["grouped_rows", "ternary_matrix_notebook"], "help": "GMT emission mode. ternary_matrix_notebook collapses to one ternary sign per term-gene pair before writing Up/Down sets."},
     {"name": "gmt_name_separator", "type": "string", "default": "_", "enum": ["__", "_"], "help": "Separator between base term name and signed label"},
     {"name": "gmt_signed_labels", "type": "string", "default": "up_dn", "enum": ["pos_neg", "up_dn"], "help": "Signed suffix labels"},
     {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol over gene_id in GMT emission"},

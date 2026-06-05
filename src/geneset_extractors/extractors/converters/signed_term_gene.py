@@ -82,7 +82,7 @@ def _write_full_tables(out_dir: Path, rows: list[dict[str, object]]) -> None:
             writer.writerows(sorted_rows)
 
 
-def _build_gene_sets(args, rows: list[dict[str, object]]) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
+def _build_gene_sets_grouped_rows(args, rows: list[dict[str, object]]) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
     grouped: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
     for row in rows:
         grouped[(str(row["term"]), str(row["direction"]))].append(row)
@@ -113,6 +113,58 @@ def _build_gene_sets(args, rows: list[dict[str, object]]) -> tuple[list[tuple[st
     return gene_sets, summary_rows
 
 
+def _build_gene_sets_ternary_matrix_notebook(args, rows: list[dict[str, object]]) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
+    label_map = {"up": "up", "dn": "dn"}
+    if args.gmt_signed_labels == "pos_neg":
+        label_map = {"up": "pos", "dn": "neg"}
+
+    term_gene_sign: dict[str, dict[str, float]] = defaultdict(dict)
+    for row in rows:
+        gene_symbol = str(row.get("gene_symbol", "")).strip()
+        gene_id = str(row.get("gene_id", "")).strip()
+        if bool(args.gmt_require_symbol):
+            gene_token = gene_symbol
+        elif bool(args.gmt_prefer_symbol):
+            gene_token = gene_symbol or gene_id
+        else:
+            gene_token = gene_id or gene_symbol
+        if not gene_token:
+            continue
+        term = str(row["term"])
+        sign = float(row["sign"])
+        existing = term_gene_sign[term].get(gene_token)
+        if existing is None or sign > existing:
+            term_gene_sign[term][gene_token] = sign
+
+    gene_sets: list[tuple[str, list[str]]] = []
+    summary_rows: list[dict[str, object]] = []
+    for term in sorted(term_gene_sign):
+        genes_by_term = term_gene_sign[term]
+        up_genes = sorted(gene for gene, sign in genes_by_term.items() if sign > 0)
+        dn_genes = sorted(gene for gene, sign in genes_by_term.items() if sign < 0)
+        for direction, genes in [("up", up_genes), ("dn", dn_genes)]:
+            if len(genes) < int(args.gmt_min_genes) and not bool(args.emit_small_gene_sets):
+                continue
+            set_name = f"{term}{args.gmt_name_separator}{label_map[direction]}"
+            gene_sets.append((set_name, genes))
+            summary_rows.append(
+                {
+                    "term": term,
+                    "direction": direction,
+                    "set_name": set_name,
+                    "gene_count": len(genes),
+                }
+            )
+    return gene_sets, summary_rows
+
+
+def _build_gene_sets(args, rows: list[dict[str, object]]) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
+    emit_mode = str(getattr(args, "emit_mode", "grouped_rows") or "grouped_rows").strip()
+    if emit_mode == "ternary_matrix_notebook":
+        return _build_gene_sets_ternary_matrix_notebook(args, rows)
+    return _build_gene_sets_grouped_rows(args, rows)
+
+
 def run(args) -> dict[str, object]:
     activate_runtime_context("signed_term_gene", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
@@ -139,6 +191,7 @@ def run(args) -> dict[str, object]:
             "gene_symbol_column": args.gene_symbol_column,
             "score_column": args.score_column,
             "sign_column": args.sign_column,
+            "emit_mode": args.emit_mode,
             "gmt_name_separator": args.gmt_name_separator,
             "gmt_signed_labels": args.gmt_signed_labels,
             "gmt_min_genes": args.gmt_min_genes,
@@ -153,7 +206,7 @@ def run(args) -> dict[str, object]:
         weights={
             "weight_type": "signed",
             "normalization": {"method": "none", "target_sum": None},
-            "aggregation": "group_by_term_and_direction",
+            "aggregation": "ternary_matrix_per_term" if args.emit_mode == "ternary_matrix_notebook" else "group_by_term_and_direction",
         },
         summary={
             "n_input_features": len(rows),

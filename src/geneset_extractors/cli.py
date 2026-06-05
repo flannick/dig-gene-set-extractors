@@ -2048,6 +2048,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_signed_term.add_argument("--gene_symbol_column", default="gene_symbol")
     p_signed_term.add_argument("--score_column", default="score")
     p_signed_term.add_argument("--sign_column", default="sign")
+    p_signed_term.add_argument(
+        "--emit_mode",
+        choices=["grouped_rows", "ternary_matrix_notebook"],
+        default="grouped_rows",
+    )
     p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_"], default="_")
     p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn"], default="up_dn")
     _add_gmt_flags(p_signed_term)
