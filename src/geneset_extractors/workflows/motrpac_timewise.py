@@ -24,6 +24,7 @@ def _augment_metadata_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     for row in rows:
         updated = {str(key): str(value) for key, value in row.items()}
         updated["tissue_slug"] = _slugify(updated.get("tissue", ""))
+        updated["tissue_code_no"] = str(updated.get("tissue_code_no", "")).strip().lower()
         augmented.append(updated)
     return augmented
 
