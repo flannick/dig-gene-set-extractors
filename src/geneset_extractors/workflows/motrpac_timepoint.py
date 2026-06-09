@@ -111,7 +111,8 @@ for (i in seq_len(nrow(comparisons))) {{
   meta_tp <- meta[meta$timepoint_label == tp, , drop=FALSE]
   count_mat_tp <- count_mat[, meta_tp$sample_id, drop=FALSE]
   y <- DGEList(counts=count_mat_tp)
-  design <- model.matrix(~ intervention + sex, data=meta_tp)
+  design_formula <- if (length(unique(as.character(meta_tp$sex))) > 1) ~ intervention + sex else ~ intervention
+  design <- model.matrix(design_formula, data=meta_tp)
   keep_genes <- filterByExpr(y, design=design)
   y <- y[keep_genes, , keep.lib.sizes=FALSE]
   gene_ids_tp <- gene_ids[keep_genes]
@@ -131,7 +132,7 @@ for (i in seq_len(nrow(comparisons))) {{
   tt$n_group_a <- sum(meta_tp$intervention == "training")
   tt$n_group_b <- sum(meta_tp$intervention == "control")
   tt$mean_expr <- tt$AveExpr
-  tt$model_formula <- "intervention + sex"
+  tt$model_formula <- if (length(unique(as.character(meta_tp$sex))) > 1) "intervention + sex" else "intervention"
   keep_cols <- c("comparison_id", "gene_id", "gene_symbol", "logFC", "t", "P.Value", "adj.P.Val", "group_a", "group_b", "stratum", "backend", "n_group_a", "n_group_b", "mean_expr", "model_formula")
   tt <- tt[, keep_cols, drop=FALSE]
   colnames(tt)[colnames(tt) == "t"] <- "stat"
