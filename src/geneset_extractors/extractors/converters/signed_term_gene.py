@@ -92,6 +92,8 @@ def _build_gene_sets_grouped_rows(args, rows: list[dict[str, object]]) -> tuple[
     label_map = {"up": "up", "dn": "dn"}
     if args.gmt_signed_labels == "pos_neg":
         label_map = {"up": "pos", "dn": "neg"}
+    elif args.gmt_signed_labels == "Up_Down":
+        label_map = {"up": "Up", "dn": "Down"}
     for (term, direction), group_rows in sorted(grouped.items()):
         genes = choose_gene_tokens(
             group_rows,
@@ -117,6 +119,8 @@ def _build_gene_sets_ternary_matrix_notebook(args, rows: list[dict[str, object]]
     label_map = {"up": "up", "dn": "dn"}
     if args.gmt_signed_labels == "pos_neg":
         label_map = {"up": "pos", "dn": "neg"}
+    elif args.gmt_signed_labels == "Up_Down":
+        label_map = {"up": "Up", "dn": "Down"}
 
     term_gene_sign: dict[str, dict[str, float]] = defaultdict(dict)
     for row in rows:

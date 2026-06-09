@@ -8,45 +8,7 @@ import numpy as np
 import pandas as pd
 
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
-
-
-LEGACY_TISSUE_TERMS: dict[str, str] = {
-    "BLOOD": "T30-Blood-RNA",
-    "BLOOD-RNA": "T30-Blood-RNA",
-    "HIPPOC": "T52-Hippocampus",
-    "HIPPOCAMPUS": "T52-Hippocampus",
-    "CORTEX": "T53-Cortex",
-    "HYPOTH": "T54-Hypothalamus",
-    "HYPOTHALAMUS": "T54-Hypothalamus",
-    "SKM-GN": "T55-Gastrocnemius",
-    "SKMGN": "T55-Gastrocnemius",
-    "GASTROCNEMIUS": "T55-Gastrocnemius",
-    "SKM-VL": "T56-Vastus-Lateralis",
-    "SKMVL": "T56-Vastus-Lateralis",
-    "VASTUS-LATERALIS": "T56-Vastus-Lateralis",
-    "HEART": "T58-Heart",
-    "KIDNEY": "T59-Kidney",
-    "ADRNL": "T60-Adrenal",
-    "ADRENAL": "T60-Adrenal",
-    "COLON": "T61-Colon",
-    "SPLEEN": "T62-Spleen",
-    "TESTES": "T63-Testes",
-    "OVARY": "T64-Ovaries",
-    "OVARIES": "T64-Ovaries",
-    "LUNG": "T66-Lung",
-    "SMLINT": "T67-Small-Intestine",
-    "SMALL-INTESTINE": "T67-Small-Intestine",
-    "SMALL_INTESTINE": "T67-Small-Intestine",
-    "LIVER": "T68-Liver",
-    "BAT": "T69-Brown-Adipose",
-    "BROWN-ADIPOSE": "T69-Brown-Adipose",
-    "WAT-SC": "T70-White-Adipose",
-    "WATSC": "T70-White-Adipose",
-    "WHITE-ADIPOSE": "T70-White-Adipose",
-    "VENACV": "T99-Vena-Cava",
-    "VENA-CAVA": "T99-Vena-Cava",
-    "VENA_CAVA": "T99-Vena-Cava",
-}
+from geneset_extractors.workflows.motrpac_common import canonical_motrpac_tissue_term, format_motrpac_signature_name
 
 
 def _require_file(path: Path, label: str) -> None:
@@ -210,16 +172,14 @@ def _combine_and_standardize(motrpac: pd.DataFrame, motrpac_training: pd.DataFra
 def _legacy_base_term(term: str) -> str:
     term = str(term).strip()
     parts = term.split("_")
-    tissue = parts[0]
-    tissue_key = tissue.upper().replace(" ", "-")
-    base = LEGACY_TISSUE_TERMS.get(tissue_key, tissue)
+    base = canonical_motrpac_tissue_term(parts[0] if parts else "")
     if len(parts) >= 2 and parts[1].lower() == "consensus":
-        return f"{base}_Consensus"
+        return format_motrpac_signature_name(tissue_term=base, consensus=True)
     if len(parts) >= 3:
         sex = parts[1].capitalize()
         week = parts[2].upper()
-        return f"{base}_{sex}_{week}"
-    return base
+        return format_motrpac_signature_name(tissue_term=base, sex=sex, timepoint=week)
+    return format_motrpac_signature_name(tissue_term=base)
 
 
 def _build_signed_term_rows(processed_df: pd.DataFrame) -> list[dict[str, str]]:

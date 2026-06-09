@@ -209,7 +209,7 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
     parser.add_argument("--exclude_gene_regex", action="append")
     parser.add_argument("--gmt_name_separator", choices=["__", "_"], default="__")
-    parser.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn"], default="pos_neg")
+    parser.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "Up_Down"], default="pos_neg")
     parser.add_argument("--disable_default_excludes", action="store_true")
     parser.add_argument("--gtf")
     parser.add_argument("--gtf_gene_id_field", default="gene_id")
@@ -2146,7 +2146,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="grouped_rows",
     )
     p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_"], default="_")
-    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn"], default="up_dn")
+    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "Up_Down"], default="up_dn")
     _add_gmt_flags(p_signed_term)
     _add_provenance_flags(p_signed_term)
     p_signed_term.set_defaults(

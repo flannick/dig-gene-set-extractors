@@ -98,6 +98,8 @@ class DEGWorkflowConfig:
 def _resolve_gmt_signed_labels(style: str) -> tuple[str, str]:
     if style == "up_dn":
         return "up", "dn"
+    if style == "Up_Down":
+        return "Up", "Down"
     return "pos", "neg"
 
 

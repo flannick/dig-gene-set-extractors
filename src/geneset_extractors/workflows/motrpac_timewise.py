@@ -7,7 +7,12 @@ from typing import Any
 
 from geneset_extractors.preprocessing.rnaseq.de_prepare import run_de_prepare
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
-from geneset_extractors.workflows.motrpac_common import prepare_tissue_inputs, write_prepared_tissue_inputs
+from geneset_extractors.workflows.motrpac_common import (
+    canonical_motrpac_tissue_term,
+    format_motrpac_signature_name,
+    prepare_tissue_inputs,
+    write_prepared_tissue_inputs,
+)
 
 
 def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
@@ -52,7 +57,12 @@ def _build_comparison_rows(
     summary_rows: list[dict[str, Any]] = []
     for sex_label, timepoint_label, tissue_code_no, tissue_slug in sorted(counts_by_stratum):
         counts = counts_by_stratum[(sex_label, timepoint_label, tissue_code_no, tissue_slug)]
-        comparison_id = f"{tissue_code_no}-{tissue_slug}_{sex_label}_{timepoint_label}"
+        tissue_term = canonical_motrpac_tissue_term(tissue_code_no, tissue_slug)
+        comparison_id = format_motrpac_signature_name(
+            tissue_term=tissue_term,
+            sex=sex_label,
+            timepoint=timepoint_label,
+        )
         summary_rows.append(
             {
                 "comparison_id": comparison_id,

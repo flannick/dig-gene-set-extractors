@@ -6,7 +6,12 @@ import subprocess
 from pathlib import Path
 
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
-from geneset_extractors.workflows.motrpac_common import prepare_tissue_inputs, write_prepared_tissue_inputs
+from geneset_extractors.workflows.motrpac_common import (
+    canonical_motrpac_tissue_term,
+    format_motrpac_signature_name,
+    prepare_tissue_inputs,
+    write_prepared_tissue_inputs,
+)
 
 
 def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
@@ -33,7 +38,6 @@ def _slugify_tissue_id(tissue_id: str) -> str:
 def _build_comparison_rows(
     *,
     metadata_rows: list[dict[str, str]],
-    tissue_slug: str,
     min_samples_per_group: int,
 ) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
     counts_by_timepoint: dict[tuple[str, str], dict[str, int]] = {}
@@ -51,7 +55,11 @@ def _build_comparison_rows(
     summary_rows: list[dict[str, object]] = []
     for timepoint_label, tissue_code_no in sorted(counts_by_timepoint):
         counts = counts_by_timepoint[(timepoint_label, tissue_code_no)]
-        comparison_id = f"{tissue_code_no}-{tissue_slug}_{timepoint_label}"
+        tissue_term = canonical_motrpac_tissue_term(tissue_code_no)
+        comparison_id = format_motrpac_signature_name(
+            tissue_term=tissue_term,
+            timepoint=timepoint_label,
+        )
         summary_rows.append(
             {
                 "comparison_id": comparison_id,
@@ -71,7 +79,7 @@ def _build_comparison_rows(
                 "group_b": "control",
                 "timepoint_label": timepoint_label,
                 "tissue_code_no": tissue_code_no,
-                "tissue_slug": tissue_slug,
+                "tissue_slug": _slugify_tissue_id(tissue_term),
             }
         )
     return comparisons, summary_rows
@@ -206,10 +214,8 @@ def run(args) -> dict[str, object]:
         ]
 
     metadata_rows = _read_tsv_rows(sample_metadata_tsv)
-    tissue_slug = _slugify_tissue_id(str(args.tissue_id))
     comparisons, comparison_summary = _build_comparison_rows(
         metadata_rows=metadata_rows,
-        tissue_slug=tissue_slug,
         min_samples_per_group=int(args.min_samples_per_group),
     )
     if not comparisons:

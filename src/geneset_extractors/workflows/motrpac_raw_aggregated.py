@@ -5,8 +5,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
-from geneset_extractors.workflows.motrpac_common import prepare_tissue_inputs, read_tsv, write_json, write_tsv
-from geneset_extractors.workflows.motrpac_released_dea import LEGACY_TISSUE_TERMS
+from geneset_extractors.workflows.motrpac_common import (
+    canonical_motrpac_tissue_term,
+    format_motrpac_signature_name,
+    prepare_tissue_inputs,
+    read_tsv,
+    write_json,
+    write_tsv,
+)
 from geneset_extractors.workflows.motrpac_timepoint import run as run_motrpac_timepoint
 from geneset_extractors.workflows.motrpac_timewise import run as run_motrpac_timewise
 from geneset_extractors.workflows.motrpac_training import run as run_motrpac_training
@@ -33,8 +39,10 @@ def _build_signed_term_rows_from_pooled(
     tissue_id: str,
     padj_max: float,
 ) -> list[dict[str, str]]:
-    base_term = LEGACY_TISSUE_TERMS.get(tissue_id, tissue_id)
-    term = f"{base_term}_Consensus"
+    term = format_motrpac_signature_name(
+        tissue_term=canonical_motrpac_tissue_term(tissue_id),
+        consensus=True,
+    )
     out_rows: list[dict[str, str]] = []
     for row in deg_rows:
         gene_id = str(row.get("gene_id", "")).strip()
@@ -62,7 +70,7 @@ def _build_signed_term_rows_from_stratified(
     tissue_id: str,
     padj_max: float,
 ) -> list[dict[str, str]]:
-    base_term = LEGACY_TISSUE_TERMS.get(tissue_id, tissue_id)
+    tissue_term = canonical_motrpac_tissue_term(tissue_id)
     out_rows: list[dict[str, str]] = []
     for row in deg_rows:
         comparison_id = str(row.get("comparison_id", "")).strip()
@@ -77,16 +85,26 @@ def _build_signed_term_rows_from_stratified(
             continue
         if padj <= 0.0 or padj > padj_max or logfc == 0.0:
             continue
-        parts = comparison_id.split("_")
-        if len(parts) == 3:
-            sex = parts[1].capitalize()
-            timepoint = parts[2].upper()
-            term = f"{base_term}_{sex}_{timepoint}"
-        elif len(parts) == 2:
-            timepoint = parts[1].upper()
-            term = f"{base_term}_{timepoint}"
-        else:
+        if comparison_id.startswith("MoTrPAC_"):
             term = comparison_id
+        else:
+            parts = comparison_id.split("_")
+            if len(parts) == 3:
+                sex = parts[1].capitalize()
+                timepoint = parts[2].upper()
+                term = format_motrpac_signature_name(
+                    tissue_term=tissue_term,
+                    sex=sex,
+                    timepoint=timepoint,
+                )
+            elif len(parts) == 2:
+                timepoint = parts[1].upper()
+                term = format_motrpac_signature_name(
+                    tissue_term=tissue_term,
+                    timepoint=timepoint,
+                )
+            else:
+                term = comparison_id
         sign = 1.0 if logfc > 0 else -1.0
         signed_score = -math.log10(padj) * sign
         out_rows.append(

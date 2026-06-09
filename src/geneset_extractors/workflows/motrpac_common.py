@@ -8,6 +8,67 @@ from pathlib import Path
 from typing import Any
 
 
+CANONICAL_TISSUE_TERMS: dict[str, str] = {
+    "T30": "T30-Blood-RNA",
+    "BLOOD": "T30-Blood-RNA",
+    "BLOOD-RNA": "T30-Blood-RNA",
+    "PAXGENE-RNA": "T30-Blood-RNA",
+    "T52": "T52-Hippocampus",
+    "HIPPOC": "T52-Hippocampus",
+    "HIPPOCAMPUS": "T52-Hippocampus",
+    "T53": "T53-Cortex",
+    "CORTEX": "T53-Cortex",
+    "T54": "T54-Hypothalamus",
+    "HYPOTH": "T54-Hypothalamus",
+    "HYPOTHALAMUS": "T54-Hypothalamus",
+    "T55": "T55-Gastrocnemius",
+    "SKM-GN": "T55-Gastrocnemius",
+    "SKMGN": "T55-Gastrocnemius",
+    "GASTROCNEMIUS": "T55-Gastrocnemius",
+    "T56": "T56-Vastus-Lateralis",
+    "SKM-VL": "T56-Vastus-Lateralis",
+    "SKMVL": "T56-Vastus-Lateralis",
+    "VASTUS-LATERALIS": "T56-Vastus-Lateralis",
+    "T58": "T58-Heart",
+    "HEART": "T58-Heart",
+    "T59": "T59-Kidney",
+    "KIDNEY": "T59-Kidney",
+    "T60": "T60-Adrenals",
+    "ADRNL": "T60-Adrenals",
+    "ADRENAL": "T60-Adrenals",
+    "ADRENALS": "T60-Adrenals",
+    "T61": "T61-Colon",
+    "COLON": "T61-Colon",
+    "T62": "T62-Spleen",
+    "SPLEEN": "T62-Spleen",
+    "T63": "T63-Testes",
+    "TESTES": "T63-Testes",
+    "T64": "T64-Ovaries",
+    "OVARY": "T64-Ovaries",
+    "OVARIES": "T64-Ovaries",
+    "T66": "T66-Lung",
+    "LUNG": "T66-Lung",
+    "T67": "T67-Small-Intestine",
+    "SMLINT": "T67-Small-Intestine",
+    "SMALL-INTESTESTINE": "T67-Small-Intestine",
+    "SMALL-INTESTINE": "T67-Small-Intestine",
+    "SMALL_INTESTINE": "T67-Small-Intestine",
+    "T68": "T68-Liver",
+    "LIVER": "T68-Liver",
+    "T69": "T69-Brown-Adipose",
+    "BAT": "T69-Brown-Adipose",
+    "BROWN-ADIPOSE": "T69-Brown-Adipose",
+    "T70": "T70-White-Adipose",
+    "WAT-SC": "T70-White-Adipose",
+    "WATSC": "T70-White-Adipose",
+    "WHITE-ADIPOSE": "T70-White-Adipose",
+    "T99": "T99-Vena-Cava",
+    "VENACV": "T99-Vena-Cava",
+    "VENA-CAVA": "T99-Vena-Cava",
+    "VENA_CAVA": "T99-Vena-Cava",
+}
+
+
 def open_maybe_gzip(path: Path):
     if path.suffix == ".gz":
         return gzip.open(path, "rt", encoding="utf-8", newline="")
@@ -85,6 +146,58 @@ def parse_timepoint_label(raw: str) -> str:
     if match:
         return f"{match.group(1)}w"
     return ""
+
+
+def _normalize_tissue_key(raw: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "-", str(raw or "").strip().upper()).strip("-")
+
+
+def canonical_motrpac_tissue_term(*candidates: str) -> str:
+    for candidate in candidates:
+        key = _normalize_tissue_key(candidate)
+        if not key:
+            continue
+        if key in CANONICAL_TISSUE_TERMS:
+            return CANONICAL_TISSUE_TERMS[key]
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            display = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
+            return display
+    return "Unknown-Tissue"
+
+
+def motrpac_display_sex(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"male", "m"}:
+        return "Male"
+    if value in {"female", "f"}:
+        return "Female"
+    return str(raw or "").strip()
+
+
+def motrpac_display_timepoint(raw: str | None) -> str:
+    return str(raw or "").strip().upper()
+
+
+def format_motrpac_signature_name(
+    *,
+    tissue_term: str,
+    sex: str | None = None,
+    timepoint: str | None = None,
+    consensus: bool = False,
+    training_vs_control: bool = False,
+) -> str:
+    base = f"MoTrPAC_{tissue_term}"
+    if training_vs_control:
+        return f"{base}_TrainingVsControl"
+    if consensus:
+        return f"{base}_Consensus"
+    if sex:
+        base = f"{base}_{motrpac_display_sex(sex)}"
+    if timepoint:
+        base = f"{base}_{motrpac_display_timepoint(timepoint)}"
+    return base
 
 
 def parse_counts(path: Path) -> tuple[list[str], list[dict[str, str]]]:
