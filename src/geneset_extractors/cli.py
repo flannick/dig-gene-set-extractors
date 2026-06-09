@@ -386,6 +386,28 @@ def _add_motrpac_raw_aggregated_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--covariates", default="sex")
     parser.add_argument("--min_samples_per_group", type=int, default=5)
     parser.add_argument("--padj_max", type=float, default=0.05)
+
+
+def _add_lincs_l1000_chempert_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--mapping_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--z_threshold", type=float, default=3.0)
+    parser.add_argument("--min_gmt_size", type=int, default=5)
+
+
+def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--mapping_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--top_n", type=int, default=250)
+    parser.add_argument("--min_gmt_size", type=int, default=5)
     _add_provenance_flags(parser)
 
 
@@ -1623,6 +1645,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_motrpac_released_dea_flags(p_motrpac_released_dea)
     p_motrpac_raw_aggregated = wf_sub.add_parser("motrpac_raw_aggregated")
     _add_motrpac_raw_aggregated_flags(p_motrpac_raw_aggregated)
+    p_lincs_l1000_chempert = wf_sub.add_parser("lincs_l1000_chempert")
+    _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
+    p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
+    _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2412,6 +2438,28 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=motrpac_raw_aggregated n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_chempert":
+                from geneset_extractors.workflows.lincs_l1000_chempert import run as run_lincs_l1000_chempert
+
+                result = run_lincs_l1000_chempert(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_chempert n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_crisprko":
+                from geneset_extractors.workflows.lincs_l1000_crisprko import run as run_lincs_l1000_crisprko
+
+                result = run_lincs_l1000_crisprko(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
