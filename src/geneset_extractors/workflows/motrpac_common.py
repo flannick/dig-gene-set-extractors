@@ -276,3 +276,44 @@ def prepare_tissue_inputs(
         ],
         "summary": summary,
     }
+
+
+def write_prepared_tissue_inputs(*, out_dir: Path, prepared: dict[str, Any]) -> dict[str, Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sample_metadata_path = out_dir / "prepared_sample_metadata.tsv"
+    counts_path = out_dir / "prepared_tissue_counts.tsv"
+    summary_path = out_dir / "prepare_summary.json"
+    log_path = out_dir / "prepare.log"
+
+    write_tsv(
+        sample_metadata_path,
+        prepared["sample_metadata_rows"],
+        prepared["sample_metadata_fieldnames"],
+    )
+    write_tsv(
+        counts_path,
+        prepared["counts_rows"],
+        prepared["counts_fieldnames"],
+    )
+    write_json(summary_path, prepared["summary"])
+    write_text(
+        log_path,
+        "\n".join(
+            [
+                f"counts_tsv={prepared['summary']['counts_tsv']}",
+                f"transcript_metadata_tsv={prepared['summary']['transcript_metadata_tsv']}",
+                f"phenotype_metadata_tsv={prepared['summary']['phenotype_metadata_tsv']}",
+                f"feature_to_gene_tsv={prepared['summary']['feature_to_gene_tsv']}",
+                f"rat_to_human_tsv={prepared['summary']['rat_to_human_tsv']}",
+                f"retained_samples={prepared['summary']['n_retained_samples']}",
+                f"retained_genes={prepared['summary']['n_genes_retained']}",
+                "",
+            ]
+        ),
+    )
+    return {
+        "sample_metadata_tsv": sample_metadata_path,
+        "counts_tsv": counts_path,
+        "prepare_summary_json": summary_path,
+        "prepare_log": log_path,
+    }

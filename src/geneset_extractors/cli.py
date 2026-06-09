@@ -331,7 +331,14 @@ def _add_gtex_continuous_age_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_motrpac_timewise_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--counts_tsv", required=True)
-    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")
@@ -352,7 +359,14 @@ def _add_motrpac_released_dea_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_motrpac_training_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--counts_tsv", required=True)
-    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")
@@ -363,7 +377,14 @@ def _add_motrpac_training_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_motrpac_timepoint_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--counts_tsv", required=True)
-    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")

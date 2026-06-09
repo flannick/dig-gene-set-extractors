@@ -7,6 +7,7 @@ from typing import Any
 
 from geneset_extractors.preprocessing.rnaseq.de_prepare import run_de_prepare
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
+from geneset_extractors.workflows.motrpac_common import prepare_tissue_inputs, write_prepared_tissue_inputs
 
 
 def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
@@ -80,10 +81,61 @@ def _build_comparison_rows(
 
 
 def run(args) -> dict[str, object]:
-    counts_tsv = Path(args.counts_tsv).resolve()
-    sample_metadata_tsv = Path(args.sample_metadata_tsv).resolve()
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_counts_tsv = Path(args.counts_tsv).resolve()
+
+    workflow_outputs: list[tuple[Path, str]] = []
+    provenance_inputs: list[tuple[Path, str]]
+    if getattr(args, "sample_metadata_tsv", None):
+        counts_tsv = source_counts_tsv
+        sample_metadata_tsv = Path(args.sample_metadata_tsv).resolve()
+        provenance_inputs = [
+            (counts_tsv, "counts_tsv"),
+            (sample_metadata_tsv, "sample_metadata_tsv"),
+        ]
+    else:
+        required = [
+            ("transcript_metadata_tsv", getattr(args, "transcript_metadata_tsv", None)),
+            ("phenotype_metadata_tsv", getattr(args, "phenotype_metadata_tsv", None)),
+            ("feature_to_gene_tsv", getattr(args, "feature_to_gene_tsv", None)),
+            ("rat_to_human_tsv", getattr(args, "rat_to_human_tsv", None)),
+            ("tissue_label", getattr(args, "tissue_label", None)),
+            ("transcript_tissue_label", getattr(args, "transcript_tissue_label", None)),
+        ]
+        missing = [name for name, value in required if not value]
+        if missing:
+            raise ValueError(
+                "motrpac_timewise requires either --sample_metadata_tsv or the raw-input prep arguments: "
+                + ", ".join(missing)
+            )
+        prepared = prepare_tissue_inputs(
+            counts_tsv=source_counts_tsv,
+            transcript_metadata_tsv=Path(args.transcript_metadata_tsv).resolve(),
+            phenotype_metadata_tsv=Path(args.phenotype_metadata_tsv).resolve(),
+            feature_to_gene_tsv=Path(args.feature_to_gene_tsv).resolve(),
+            rat_to_human_tsv=Path(args.rat_to_human_tsv).resolve(),
+            tissue_label=str(args.tissue_label),
+            transcript_tissue_label=str(args.transcript_tissue_label),
+        )
+        prepared_paths = write_prepared_tissue_inputs(out_dir=out_dir, prepared=prepared)
+        counts_tsv = prepared_paths["counts_tsv"]
+        sample_metadata_tsv = prepared_paths["sample_metadata_tsv"]
+        workflow_outputs.extend(
+            [
+                (prepared_paths["counts_tsv"], "prepared_counts_tsv"),
+                (prepared_paths["sample_metadata_tsv"], "prepared_sample_metadata_tsv"),
+                (prepared_paths["prepare_summary_json"], "prepare_summary_json"),
+                (prepared_paths["prepare_log"], "prepare_log"),
+            ]
+        )
+        provenance_inputs = [
+            (source_counts_tsv, "raw_counts_tsv"),
+            (Path(args.transcript_metadata_tsv).resolve(), "transcript_metadata_tsv"),
+            (Path(args.phenotype_metadata_tsv).resolve(), "phenotype_metadata_tsv"),
+            (Path(args.feature_to_gene_tsv).resolve(), "feature_to_gene_tsv"),
+            (Path(args.rat_to_human_tsv).resolve(), "rat_to_human_tsv"),
+        ]
 
     metadata_rows = _augment_metadata_rows(_read_tsv_rows(sample_metadata_tsv))
     augmented_metadata_path = out_dir / "sample_metadata.tsv"
@@ -210,7 +262,7 @@ def run(args) -> dict[str, object]:
         module_name="geneset_extractors.workflows.motrpac_timewise",
         output_dir=out_dir,
         focus_output_path=deg_long_path,
-        output_paths=[
+        output_paths=workflow_outputs + [
             (deg_long_path, "deg_tsv"),
             (augmented_metadata_path, "sample_metadata_tsv"),
             (comparisons_path, "comparisons_tsv"),
@@ -219,10 +271,7 @@ def run(args) -> dict[str, object]:
             (comparison_audit_path, "comparison_audit"),
             (selected_samples_path, "comparison_selected_samples"),
         ],
-        input_paths=[
-            (counts_tsv, "counts_tsv"),
-            (sample_metadata_tsv, "sample_metadata_tsv"),
-        ],
+        input_paths=provenance_inputs,
         parameters={
             "group_column": "intervention",
             "group_a": "training",

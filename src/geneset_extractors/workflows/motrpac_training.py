@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
+from geneset_extractors.workflows.motrpac_common import prepare_tissue_inputs, write_prepared_tissue_inputs
 
 
 def _resolve_rscript_bin(rscript_bin: str) -> str:
@@ -81,10 +82,61 @@ write.table(tt, file="{output_tsv}", sep="\\t", row.names=FALSE, quote=FALSE)
 
 
 def run(args) -> dict[str, object]:
-    counts_tsv = Path(args.counts_tsv).resolve()
-    sample_metadata_tsv = Path(args.sample_metadata_tsv).resolve()
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_counts_tsv = Path(args.counts_tsv).resolve()
+
+    workflow_outputs: list[tuple[Path, str]] = []
+    provenance_inputs: list[tuple[Path, str]]
+    if getattr(args, "sample_metadata_tsv", None):
+        counts_tsv = source_counts_tsv
+        sample_metadata_tsv = Path(args.sample_metadata_tsv).resolve()
+        provenance_inputs = [
+            (counts_tsv, "counts_tsv"),
+            (sample_metadata_tsv, "sample_metadata_tsv"),
+        ]
+    else:
+        required = [
+            ("transcript_metadata_tsv", getattr(args, "transcript_metadata_tsv", None)),
+            ("phenotype_metadata_tsv", getattr(args, "phenotype_metadata_tsv", None)),
+            ("feature_to_gene_tsv", getattr(args, "feature_to_gene_tsv", None)),
+            ("rat_to_human_tsv", getattr(args, "rat_to_human_tsv", None)),
+            ("tissue_label", getattr(args, "tissue_label", None)),
+            ("transcript_tissue_label", getattr(args, "transcript_tissue_label", None)),
+        ]
+        missing = [name for name, value in required if not value]
+        if missing:
+            raise ValueError(
+                "motrpac_training requires either --sample_metadata_tsv or the raw-input prep arguments: "
+                + ", ".join(missing)
+            )
+        prepared = prepare_tissue_inputs(
+            counts_tsv=source_counts_tsv,
+            transcript_metadata_tsv=Path(args.transcript_metadata_tsv).resolve(),
+            phenotype_metadata_tsv=Path(args.phenotype_metadata_tsv).resolve(),
+            feature_to_gene_tsv=Path(args.feature_to_gene_tsv).resolve(),
+            rat_to_human_tsv=Path(args.rat_to_human_tsv).resolve(),
+            tissue_label=str(args.tissue_label),
+            transcript_tissue_label=str(args.transcript_tissue_label),
+        )
+        prepared_paths = write_prepared_tissue_inputs(out_dir=out_dir, prepared=prepared)
+        counts_tsv = prepared_paths["counts_tsv"]
+        sample_metadata_tsv = prepared_paths["sample_metadata_tsv"]
+        workflow_outputs.extend(
+            [
+                (prepared_paths["counts_tsv"], "prepared_counts_tsv"),
+                (prepared_paths["sample_metadata_tsv"], "prepared_sample_metadata_tsv"),
+                (prepared_paths["prepare_summary_json"], "prepare_summary_json"),
+                (prepared_paths["prepare_log"], "prepare_log"),
+            ]
+        )
+        provenance_inputs = [
+            (source_counts_tsv, "raw_counts_tsv"),
+            (Path(args.transcript_metadata_tsv).resolve(), "transcript_metadata_tsv"),
+            (Path(args.phenotype_metadata_tsv).resolve(), "phenotype_metadata_tsv"),
+            (Path(args.feature_to_gene_tsv).resolve(), "feature_to_gene_tsv"),
+            (Path(args.rat_to_human_tsv).resolve(), "rat_to_human_tsv"),
+        ]
 
     include_sex = str(getattr(args, "covariates", "sex") or "sex").strip().lower() != "none"
     r_script_path = out_dir / "run_motrpac_training_limma_voom.R"
@@ -115,14 +167,11 @@ def run(args) -> dict[str, object]:
         module_name="geneset_extractors.workflows.motrpac_training",
         output_dir=out_dir,
         focus_output_path=deg_path,
-        output_paths=[
+        output_paths=workflow_outputs + [
             (deg_path, "deg_tsv"),
             (r_script_path, "workflow_r_script"),
         ],
-        input_paths=[
-            (counts_tsv, "counts_tsv"),
-            (sample_metadata_tsv, "sample_metadata_tsv"),
-        ],
+        input_paths=provenance_inputs,
         parameters={
             "covariates": "sex" if include_sex else "none",
             "model_formula": "intervention + sex" if include_sex else "intervention",
