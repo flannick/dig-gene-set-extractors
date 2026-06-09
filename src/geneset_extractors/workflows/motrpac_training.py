@@ -48,7 +48,8 @@ meta$sex <- factor(as.character(meta$sex), levels=c("M", "F"))
 meta$intervention <- factor(as.character(meta$intervention), levels=c("control", "training"))
 count_mat <- count_mat[, meta$sample_id, drop=FALSE]
 y <- DGEList(counts=count_mat)
-design <- model.matrix({formula_expr}, data=meta)
+design_formula <- if ({str(include_sex).upper()} && length(unique(as.character(meta$sex))) > 1) ~ intervention + sex else ~ intervention
+design <- model.matrix(design_formula, data=meta)
 keep_genes <- filterByExpr(y, design=design)
 y <- y[keep_genes, , keep.lib.sizes=FALSE]
 gene_ids <- gene_ids[keep_genes]
@@ -68,7 +69,7 @@ tt$backend <- "r_limma_voom_motrpac_training"
 tt$n_group_a <- sum(meta$intervention == "training")
 tt$n_group_b <- sum(meta$intervention == "control")
 tt$mean_expr <- tt$AveExpr
-tt$model_formula <- "{model_formula_label}"
+tt$model_formula <- if ({str(include_sex).upper()} && length(unique(as.character(meta$sex))) > 1) "intervention + sex" else "intervention"
 keep_cols <- c("comparison_id", "gene_id", "gene_symbol", "logFC", "t", "P.Value", "adj.P.Val", "group_a", "group_b", "stratum", "backend", "n_group_a", "n_group_b", "mean_expr", "model_formula")
 tt <- tt[, keep_cols, drop=FALSE]
 colnames(tt)[colnames(tt) == "t"] <- "stat"
