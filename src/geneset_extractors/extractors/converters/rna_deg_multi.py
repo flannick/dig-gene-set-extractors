@@ -146,7 +146,8 @@ def run(args) -> dict[str, object]:
     biotype_warning_seen = False
 
     for comparison in sorted(grouped):
-        base = _safe_name(comparison)
+        comparison_label = comparison_display_names.get(comparison, comparison)
+        base = _safe_name(comparison_label)
         safe = base
         suffix = 2
         while safe in used_paths:
@@ -225,7 +226,7 @@ def run(args) -> dict[str, object]:
                     group_dir=group_dir,
                     cfg=cfg,
                     comparison=comparison,
-                    comparison_label=comparison_display_names.get(comparison, comparison),
+                    comparison_label=comparison_label,
                     reason=str(exc),
                 )
             )
