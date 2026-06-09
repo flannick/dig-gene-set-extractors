@@ -8,6 +8,14 @@ from geneset_extractors.extractors.rnaseq.deg_scoring import read_deg_tsv, sanit
 from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
 
+def _resolve_upstream_provenance_graph_path(deg_tsv: str | Path) -> str | None:
+    deg_path = Path(deg_tsv)
+    if not deg_path.exists():
+        return None
+    candidate = deg_path.with_name(f"{deg_path.stem}.provenance_graph.json")
+    return str(candidate) if candidate.exists() else None
+
+
 def run(args) -> dict[str, object]:
     activate_runtime_context("rna_deg", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
@@ -75,7 +83,7 @@ def run(args) -> dict[str, object]:
         gmt_sort_by=args.gmt_sort_by,
         emit_small_gene_sets=args.emit_small_gene_sets,
         warn_biotype_missing=True,
-        upstream_provenance_graph_path=None,
+        upstream_provenance_graph_path=_resolve_upstream_provenance_graph_path(args.deg_tsv),
     )
     result = run_deg_workflow(
         cfg=cfg,
