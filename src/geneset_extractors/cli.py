@@ -350,6 +350,45 @@ def _add_motrpac_released_dea_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_motrpac_training_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--covariates", default="sex")
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_timepoint_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--min_samples_per_group", type=int, default=5)
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_raw_aggregated_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--raw_counts_dir", required=True)
+    parser.add_argument("--transcript_metadata_tsv", required=True)
+    parser.add_argument("--phenotype_metadata_tsv", required=True)
+    parser.add_argument("--feature_to_gene_tsv", required=True)
+    parser.add_argument("--rat_to_human_tsv", required=True)
+    parser.add_argument("--tissue_list_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--workflow_mode", choices=["pooled", "stratified_sex_timepoint", "stratified_timepoint"], required=True)
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--covariates", default="sex")
+    parser.add_argument("--min_samples_per_group", type=int, default=5)
+    parser.add_argument("--padj_max", type=float, default=0.05)
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1576,8 +1615,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_gtex_continuous_age_flags(p_gtex_continuous_age)
     p_motrpac_timewise = wf_sub.add_parser("motrpac_timewise")
     _add_motrpac_timewise_flags(p_motrpac_timewise)
+    p_motrpac_training = wf_sub.add_parser("motrpac_training")
+    _add_motrpac_training_flags(p_motrpac_training)
+    p_motrpac_timepoint = wf_sub.add_parser("motrpac_timepoint")
+    _add_motrpac_timepoint_flags(p_motrpac_timepoint)
     p_motrpac_released_dea = wf_sub.add_parser("motrpac_released_dea")
     _add_motrpac_released_dea_flags(p_motrpac_released_dea)
+    p_motrpac_raw_aggregated = wf_sub.add_parser("motrpac_raw_aggregated")
+    _add_motrpac_raw_aggregated_flags(p_motrpac_raw_aggregated)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2328,6 +2373,27 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 0
+            if args.workflow_command == "motrpac_training":
+                from geneset_extractors.workflows.motrpac_training import run as run_motrpac_training
+
+                result = run_motrpac_training(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_training out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_timepoint":
+                from geneset_extractors.workflows.motrpac_timepoint import run as run_motrpac_timepoint
+
+                result = run_motrpac_timepoint(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_timepoint n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
             if args.workflow_command == "motrpac_released_dea":
                 from geneset_extractors.workflows.motrpac_released_dea import run as run_motrpac_released_dea
 
@@ -2335,6 +2401,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=motrpac_released_dea n_terms={result.get('n_terms')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_raw_aggregated":
+                from geneset_extractors.workflows.motrpac_raw_aggregated import run as run_motrpac_raw_aggregated
+
+                result = run_motrpac_raw_aggregated(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_raw_aggregated n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
