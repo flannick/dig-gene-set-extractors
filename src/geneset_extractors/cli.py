@@ -409,6 +409,28 @@ def _add_motrpac_raw_aggregated_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--padj_max", type=float, default=0.05)
 
 
+def _add_hubmap_asctb_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--human_gene_info", required=True)
+    parser.add_argument("--raw_asctb_dir")
+    parser.add_argument("--asctb_dir")
+    parser.add_argument("--out_dir", required=True)
+    _add_provenance_flags(parser)
+
+
+def _add_hubmap_asctb_augmented_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--input_matrix", required=True)
+    parser.add_argument("--human_gene_info", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--augmentation_threshold", type=float, default=0.67)
+    parser.add_argument("--cap_multiplier", type=int, default=4)
+    parser.add_argument("--geneshot_url", default="https://maayanlab.cloud/geneshot/api/associate")
+    parser.add_argument("--request_timeout", type=int, default=120)
+    parser.add_argument("--request_retries", type=int, default=2)
+    parser.add_argument("--pause_seconds", type=float, default=0.1)
+    parser.add_argument("--limit_terms", type=int)
+    _add_provenance_flags(parser)
+
+
 def _add_lincs_l1000_chempert_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--expression_tsv", required=True)
     parser.add_argument("--mapping_file", required=True)
@@ -1666,6 +1688,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_motrpac_released_dea_flags(p_motrpac_released_dea)
     p_motrpac_raw_aggregated = wf_sub.add_parser("motrpac_raw_aggregated")
     _add_motrpac_raw_aggregated_flags(p_motrpac_raw_aggregated)
+    p_hubmap_asctb = wf_sub.add_parser("hubmap_asctb")
+    _add_hubmap_asctb_flags(p_hubmap_asctb)
+    p_hubmap_asctb_augmented = wf_sub.add_parser("hubmap_asctb_augmented")
+    _add_hubmap_asctb_augmented_flags(p_hubmap_asctb_augmented)
     p_lincs_l1000_chempert = wf_sub.add_parser("lincs_l1000_chempert")
     _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
     p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
@@ -2481,6 +2507,28 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "hubmap_asctb":
+                from geneset_extractors.workflows.hubmap_asctb import run as run_hubmap_asctb
+
+                result = run_hubmap_asctb(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=hubmap_asctb n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "hubmap_asctb_augmented":
+                from geneset_extractors.workflows.hubmap_asctb_augmented import run as run_hubmap_asctb_augmented
+
+                result = run_hubmap_asctb_augmented(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=hubmap_asctb_augmented n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
