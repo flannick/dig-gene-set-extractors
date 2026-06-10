@@ -165,6 +165,12 @@ def _map_and_filter_genes(asctb: pd.DataFrame, exact_map: dict[str, str], synony
     return asctb[["Label", "CTID", "Genes"]].dropna().reset_index(drop=True)
 
 
+def _build_gene_attribute_matrix(asctb: pd.DataFrame) -> pd.DataFrame:
+    matrix = pd.crosstab(asctb["Genes"], asctb["Label"]).astype(int)
+    matrix.index.name = "Gene"
+    return matrix
+
+
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -191,6 +197,7 @@ def run(args) -> dict[str, object]:
     geneinfo = _load_geneinfo(human_gene_info)
     exact_map, synonym_map = _make_gene_mappers(geneinfo)
     asctb = _map_and_filter_genes(asctb, exact_map, synonym_map)
+    matrix = _build_gene_attribute_matrix(asctb)
 
     edge_rows = [
         {
@@ -204,6 +211,8 @@ def run(args) -> dict[str, object]:
     ]
     edge_path = out_dir / "gene_attribute_edges.txt.gz"
     pd.DataFrame(edge_rows).to_csv(edge_path, sep="\t", compression="gzip", index=False)
+    matrix_path = out_dir / "gene_attribute_matrix.txt.gz"
+    matrix.to_csv(matrix_path, sep="\t", compression="gzip")
 
     unsigned_rows = [
         {
@@ -225,6 +234,7 @@ def run(args) -> dict[str, object]:
         output_paths=[
             (unsigned_path, "unsigned_term_gene_tsv"),
             (edge_path, "gene_attribute_edges_tsv_gz"),
+            (matrix_path, "gene_attribute_matrix_tsv_gz"),
             *[(path, "prepared_asctb_table_csv") for path in prepared_tables],
         ],
         input_paths=input_paths,
@@ -232,6 +242,7 @@ def run(args) -> dict[str, object]:
             "n_terms": int(asctb["Label"].nunique()) if not asctb.empty else 0,
             "n_genes": int(asctb["Genes"].nunique()) if not asctb.empty else 0,
             "n_edges": len(unsigned_rows),
+            "matrix_shape": [int(matrix.shape[0]), int(matrix.shape[1])],
         },
     )
     return {"n_rows": len(unsigned_rows), "out_dir": str(out_dir)}
