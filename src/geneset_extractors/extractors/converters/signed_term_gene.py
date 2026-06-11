@@ -13,8 +13,14 @@ def _resolve_upstream_provenance_graph_path(table_tsv: str | Path) -> str | None
     table_path = Path(table_tsv)
     if not table_path.exists():
         return None
-    candidate = table_path.with_name(f"{table_path.stem}.provenance_graph.json")
-    return str(candidate) if candidate.exists() else None
+    candidates = [table_path.with_name(f"{table_path.stem}.provenance_graph.json")]
+    if table_path.stem.endswith("_prefixed"):
+        base_stem = table_path.stem[: -len("_prefixed")]
+        candidates.append(table_path.with_name(f"{base_stem}.provenance_graph.json"))
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _read_rows(args) -> list[dict[str, object]]:

@@ -9,6 +9,20 @@ from geneset_extractors.core.metadata import input_file_record, make_metadata, w
 from geneset_extractors.core.provenance import activate_runtime_context
 
 
+def _resolve_upstream_provenance_graph_path(table_tsv: str | Path) -> str | None:
+    table_path = Path(table_tsv)
+    if not table_path.exists():
+        return None
+    candidates = [table_path.with_name(f"{table_path.stem}.provenance_graph.json")]
+    if table_path.stem.endswith("_prefixed"):
+        base_stem = table_path.stem[: -len("_prefixed")]
+        candidates.append(table_path.with_name(f"{base_stem}.provenance_graph.json"))
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def _read_rows(args) -> list[dict[str, object]]:
     path = Path(args.table_tsv)
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -93,6 +107,7 @@ def run(args) -> dict[str, object]:
     rows = _read_rows(args)
     _write_full_tables(out_dir, rows)
     gene_sets, summary_rows = _build_gene_sets(args, rows)
+    upstream_graph_path = _resolve_upstream_provenance_graph_path(args.table_tsv)
     if bool(args.emit_gmt):
         write_gmt(gene_sets, out_dir / "genesets.gmt", gmt_format=getattr(args, "gmt_format", "classic"))
 
@@ -130,6 +145,7 @@ def run(args) -> dict[str, object]:
             "fraction_features_assigned": 1.0 if rows else 0.0,
             "n_sets_emitted": len(gene_sets),
         },
+        upstream_provenance_graph_path=upstream_graph_path,
         output_files=[
             {"path": "genesets.gmt", "role": "gmt_library"},
             {"path": "geneset.tsv", "role": "selected_program"},
