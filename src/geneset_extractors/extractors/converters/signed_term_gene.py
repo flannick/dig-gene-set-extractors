@@ -40,6 +40,9 @@ def _read_rows(args) -> list[dict[str, object]]:
         out: list[dict[str, object]] = []
         for row in reader:
             term = str(row.get(args.term_column, "")).strip()
+            term_prefix = str(getattr(args, "term_prefix", "") or "").strip()
+            if term_prefix:
+                term = f"{term_prefix}_{term}" if term else term_prefix
             gene_symbol = str(row.get(args.gene_symbol_column, "")).strip()
             gene_id = (
                 str(row.get(args.gene_id_column, "")).strip()
@@ -197,6 +200,7 @@ def run(args) -> dict[str, object]:
         converter_name="signed_term_gene",
         parameters={
             "term_column": args.term_column,
+            "term_prefix": getattr(args, "term_prefix", ""),
             "gene_id_column": args.gene_id_column,
             "gene_symbol_column": args.gene_symbol_column,
             "score_column": args.score_column,
