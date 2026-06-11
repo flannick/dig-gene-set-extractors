@@ -48,6 +48,17 @@ def _prepare_raw_asctb_tables(raw_asctb_dir: Path, prepared_asctb_dir: Path) -> 
     return prepared_paths
 
 
+def _list_asctb_source_files(asctb_dir: Path) -> list[Path]:
+    paths = [
+        path
+        for path in sorted(asctb_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in {".csv", ".tsv"}
+    ]
+    if not paths:
+        raise RuntimeError(f"No ASCT+B source tables found in {asctb_dir}")
+    return paths
+
+
 def _load_asctb_tables(asctb_dir: Path) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for table in tqdm(sorted(asctb_dir.iterdir()), desc="Combining ASCT+B tables"):
@@ -117,7 +128,7 @@ def _add_raw_genes(asctb: pd.DataFrame) -> pd.DataFrame:
 
 def _load_geneinfo(human_gene_info: Path) -> pd.DataFrame:
     geneinfo = pd.read_csv(human_gene_info, sep="\t")
-    geneinfo = geneinfo[geneinfo["#tax_id"] == 9606][geneinfo["type_of_gene"] == "protein-coding"].copy()
+    geneinfo = geneinfo[(geneinfo["#tax_id"] == 9606) & (geneinfo["type_of_gene"] == "protein-coding")].copy()
     geneinfo["Synonyms"] = geneinfo["Synonyms"].apply(str.split, sep="|")
     return geneinfo.explode("Synonyms")[["GeneID", "Symbol", "Synonyms", "description"]]
 
@@ -183,13 +194,15 @@ def run(args) -> dict[str, object]:
     if getattr(args, "raw_asctb_dir", None):
         raw_asctb_dir = Path(args.raw_asctb_dir).resolve()
         _require_dir(raw_asctb_dir, "raw ASCT+B directory")
-        input_paths.append((raw_asctb_dir, "raw_asctb_dir"))
+        raw_input_tables = _list_asctb_source_files(raw_asctb_dir)
+        input_paths.extend((path, "raw_asctb_table") for path in raw_input_tables)
         asctb_dir = out_dir / "ASCTB_Tables"
         prepared_tables = _prepare_raw_asctb_tables(raw_asctb_dir, asctb_dir)
     else:
         asctb_dir = Path(args.asctb_dir).resolve()
         _require_dir(asctb_dir, "ASCTB directory")
-        input_paths.append((asctb_dir, "asctb_dir"))
+        prepared_input_tables = _list_asctb_source_files(asctb_dir)
+        input_paths.extend((path, "asctb_table") for path in prepared_input_tables)
 
     asctb = _load_asctb_tables(asctb_dir)
     asctb = _add_labels(asctb)
