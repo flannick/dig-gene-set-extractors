@@ -16,13 +16,15 @@ def _resolve_source(args) -> tuple[str, str]:
     provided: list[tuple[str, str]] = []
     if args.program_loadings_tsv:
         provided.append(("program_loadings_tsv", str(args.program_loadings_tsv)))
+    if getattr(args, "liger_gene_loadings_tsv", None):
+        provided.append(("liger_gene_loadings_tsv", str(args.liger_gene_loadings_tsv)))
     if args.cnmf_gene_spectra_tsv:
         provided.append(("cnmf_gene_spectra_tsv", str(args.cnmf_gene_spectra_tsv)))
     if args.schpf_gene_scores_tsv:
         provided.append(("schpf_gene_scores_tsv", str(args.schpf_gene_scores_tsv)))
     if len(provided) != 1:
         raise ValueError(
-            "Provide exactly one input source: --program_loadings_tsv, --cnmf_gene_spectra_tsv, or --schpf_gene_scores_tsv"
+            "Provide exactly one input source: --program_loadings_tsv, --liger_gene_loadings_tsv, --cnmf_gene_spectra_tsv, or --schpf_gene_scores_tsv"
         )
     return provided[0]
 
@@ -42,6 +44,10 @@ def _resolve_requested_format(args, source_kind: str, source_path: str) -> str:
     if source_kind == "schpf_gene_scores_tsv":
         if requested == "auto":
             return "schpf_gene_scores"
+        return requested
+    if source_kind == "liger_gene_loadings_tsv":
+        if requested == "auto":
+            return "wide_genes_by_program"
         return requested
     return requested
 

@@ -46,6 +46,7 @@ where = ["src"]
 geneset_extractors = [
   "schemas/*.json",
   "extractors/converters/specs/*.json",
+  "preprocessing/rnaseq/*.R",
   "resources/*.json",
   "resources/*.tsv",
   "resources/*.tsv.gz",

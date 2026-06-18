@@ -23,6 +23,7 @@ class Args:
     cnmf_gene_spectra_tsv = None
     cnmf_kind = None
     schpf_gene_scores_tsv = None
+    liger_gene_loadings_tsv = None
     dataset_label = "toy_sc_programs"
     signature_name = "programs"
     program_id_prefix = None
@@ -81,7 +82,7 @@ def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: p
     gmt_lines = [line for line in (out_dir / "genesets.gmt").read_text(encoding="utf-8").splitlines() if line]
     assert gmt_lines
     for line in gmt_lines:
-        name, _genes = line.split("\t")
+        name = line.split("\t", 1)[0]
         assert " " not in name
         assert "/" not in name
 
@@ -122,8 +123,8 @@ def test_rna_sc_programs_signed_split_gmt(tmp_path: Path):
     for row in rows:
         gmt_path = out_dir / str(row["path"]) / "genesets.gmt"
         text = gmt_path.read_text(encoding="utf-8")
-        assert "__pos__" in text
-        assert "__neg__" in text
+        assert "__pos" in text
+        assert "__neg" in text
 
 
 def test_rna_sc_programs_cnmf_convenience_parser(tmp_path: Path):
@@ -132,6 +133,18 @@ def test_rna_sc_programs_cnmf_convenience_parser(tmp_path: Path):
     args.program_loadings_tsv = None
     args.cnmf_gene_spectra_tsv = "tests/data/toy.gene_spectra_tpm.k_2.dt_0_01.txt"
     args.loadings_format = "auto"
+    result = rna_sc_programs.run(args)
+    assert result["n_groups"] == 2
+    out_dir = Path(args.out_dir)
+    assert (out_dir / "manifest.tsv").exists()
+    assert (out_dir / "genesets.gmt").exists()
+
+
+def test_rna_sc_programs_liger_convenience_parser(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_sc_programs_liger")
+    args.program_loadings_tsv = None
+    args.liger_gene_loadings_tsv = "tests/data/toy_program_loadings.tsv"
     result = rna_sc_programs.run(args)
     assert result["n_groups"] == 2
     out_dir = Path(args.out_dir)

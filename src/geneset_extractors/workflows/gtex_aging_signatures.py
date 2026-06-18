@@ -51,7 +51,7 @@ def _write_tsv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) ->
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_text(text, encoding="utf-8")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

@@ -14,6 +14,7 @@ Upstream RNA preparation and inference now live under `workflows` / internal `pr
 
 - `workflows rna_de_prepare`: counts + metadata -> feature preprocessing + DE -> standardized long DE table
 - `workflows scrna_cnmf_prepare`: scRNA matrix + metadata -> cNMF-ready subsets/scripts
+- `workflows scrna_liger_prepare`: scRNA matrix / h5ad / Seurat / mtx -> LIGER-ready scripts and optional prepared subsets
 - `workflows cnmf_select_k`: cNMF k-selection helper
 - `convert rna_deg`, `convert rna_deg_multi`, `convert rna_sc_programs`: already-scored assay result -> gene set
 
@@ -35,6 +36,7 @@ RNA converters are dependency-light and do not require reference bundles.
 - Optional workflows:
   - `workflows rna_de_prepare` generates standardized DE tables from bulk RNA-seq or scRNA-seq plus metadata.
   - `workflows scrna_cnmf_prepare` generates cNMF-ready subset matrices and shell scripts.
+  - `workflows scrna_liger_prepare` generates LIGER run scripts and a `gene_loadings.tsv -> rna_sc_programs` handoff.
 
 If you run without `--gtf`, GMT output may drop rows when `--gmt_require_symbol true` and symbols are missing.
 
@@ -60,6 +62,7 @@ Upstream RNA workflows:
 
 - `rna_de_prepare`: bulk/scRNA pseudobulk DE staging workflow that writes `deg_long.tsv`
 - `scrna_cnmf_prepare`: cNMF-oriented scRNA matrix preparation
+- `scrna_liger_prepare`: LIGER/iNMF-oriented scRNA preparation
 - `cnmf_select_k`: k-selection helper
 
 Dedicated DE workflow guide: `docs/assays/rnaseq/de_workflow.md`.
@@ -392,6 +395,19 @@ geneset-extractors convert rna_sc_programs \
 geneset-extractors validate results/rna_sc_programs
 ```
 
+### LIGER convenience input
+
+```bash
+geneset-extractors convert rna_sc_programs \
+  --liger_gene_loadings_tsv path/to/gene_loadings.tsv \
+  --out_dir results/rna_sc_programs_liger \
+  --organism human \
+  --genome_build hg38 \
+  --score_transform positive \
+  --select top_k \
+  --top_k 250
+```
+
 ### cNMF convenience input
 
 ```bash
@@ -452,6 +468,9 @@ Recommended upstream workflow:
 - Keep gene filtering policy stable between factorization and conversion (especially mitochondrial/ribosomal handling).
 - Start with moderate `K` values and increase only if programs remain interpretable.
 - cNMF expects nonnegative expression matrices and should not include zero-total cells or zero-total genes. The `workflows scrna_cnmf_prepare` command enforces these filters.
+- LIGER/iNMF benefits from the same atlas hygiene: split by cell type when appropriate, cap cells per donor or dataset, and avoid letting a single dataset dominate factorization.
+
+LIGER workflow page: `docs/assays/rnaseq/liger_workflow.md`.
 
 Large atlas best-practice checklist:
 

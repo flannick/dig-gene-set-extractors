@@ -1,0 +1,33 @@
+
+
+- commands 
+
+mduby (md_rnaseq) MethodGeneSetExtractors $ cd src/
+mduby (md_rnaseq) src $ python3 -m geneset_extractors.cli list
+atac_bulk	Bulk ATAC-seq peaks and per-peak weights mapped to compact gene programs
+atac_bulk_matrix	Bulk ATAC peak-by-sample matrix differential converter producing OPEN/CLOSE gene programs
+atac_sc_10x	10x scATAC peak-by-cell matrix converted to compact gene programs
+calr_ontology_mapper	CalR-compatible indirect calorimetry dataset mapped through phenotype term templates and phenotype-to-gene edges into weighted gene programs and GMT gene sets
+calr_profile_query	CalR-compatible indirect calorimetry dataset queried against a gene-labeled calorimetry reference library to produce weighted gene programs and GMT gene sets
+chipseq_peak	ChIP-seq peaks to gene weights via shared peak-to-gene linking
+cnv_gene_extractor	CNV segment table to per-sample amplification/deletion gene programs and GMT gene sets
+drug_response_screen	Drug response screen tables (generic or PRISM) to gene vulnerability programs and GMT gene sets
+methylation_cpg_diff	Differential CpG/probe table to methylation-driven gene programs and GMT gene sets
+methylation_dmr	Legacy: pre-aggregated gene-level DMR summary table converted to gene weights
+methylation_dmr_regions	Differential methylated regions (DMR) table to methylation-driven gene programs and GMT gene sets
+morphology_profile_query	Morphology profile query against a reference perturbation library to gene-weighted programs and GMT gene sets
+proteomics_diff	Differential proteomics table converted to gene weights
+ptm_site_diff	Site-level PTM differential table converted to signed gene programs and GMT gene sets
+ptm_site_matrix	Site-by-sample PTM matrix plus sample metadata converted into one or more contrast-specific gene programs and GMT gene sets
+rna_deg	RNA-seq differential expression table converted to signed gene programs and GMT gene sets
+rna_deg_multi	Long-format RNA-seq DE table grouped by comparison_column into one output per contrast
+rna_sc_programs	scRNA-seq gene programs from external factorization loadings (generic/cNMF/scHPF) to grouped gene sets
+sc_rna_marker	Single-cell RNA counts summary converted to gene weights, optionally by group
+signed_term_gene	Signed term-gene table converted to authoritative GMT gene sets
+splice_event_diff	Event-level splicing differential table converted to signed gene programs and GMT gene sets
+splice_event_matrix	PSI matrix plus sample metadata converted to one or more splicing-derived gene programs
+unsigned_term_gene	Unsigned term-gene membership table converted to authoritative GMT gene sets
+mduby (md_rnaseq) src $ 
+
+
+

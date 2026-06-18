@@ -620,6 +620,7 @@ def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program_loadings_tsv")
+    parser.add_argument("--liger_gene_loadings_tsv")
     parser.add_argument(
         "--loadings_format",
         choices=[
@@ -758,13 +759,71 @@ def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
         help="Whether generated cnmf prepare command includes --densify.",
     )
     parser.add_argument("--write_postprocess_template", type=_parse_bool, default=True)
+
+
+def _add_scrna_liger_prepare_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--matrix_tsv", help="Cell x gene dense TSV (header required).")
+    parser.add_argument("--h5ad", help="Input h5ad file for direct LIGER execution.")
+    parser.add_argument("--seurat_rds", help="Input serialized Seurat object (.rds).")
+    parser.add_argument("--mtx_dir", help="Directory containing 10x-style matrix.mtx plus features/barcodes.")
+    parser.add_argument(
+        "--matrix_orientation",
+        choices=["auto", "cell_by_gene", "gene_by_cell"],
+        default="auto",
+        help="Input matrix orientation for --matrix_tsv (default auto).",
+    )
+    parser.add_argument(
+        "--matrix_cell_id_column",
+        help="Column name containing cell IDs in matrix_tsv (default: first column).",
+    )
+    parser.add_argument(
+        "--matrix_gene_id_column",
+        help="Gene ID column for gene_by_cell orientation (default: first column).",
+    )
+    parser.add_argument("--matrix_delim", default="\t", help="Matrix delimiter (default: tab).")
+    parser.add_argument("--meta_tsv", help="Cell metadata TSV. Required for --matrix_tsv; optional for --mtx_dir.")
+    parser.add_argument("--meta_cell_id_column", default="cell_id")
+    parser.add_argument(
+        "--dataset_column",
+        default="dataset",
+        help="Dataset or donor grouping column used as the LIGER batch field when present.",
+    )
+    parser.add_argument("--cell_type_column", help="Optional cell-type column in metadata.")
+    parser.add_argument(
+        "--split_by_cell_type",
+        type=_parse_bool,
+        default=None,
+        help="If true, emit one prepared subset per cell_type for matrix_tsv input. Default: true when --cell_type_column is provided.",
+    )
+    parser.add_argument("--cell_type_allowlist", help="Optional comma-separated cell types to keep.")
+    parser.add_argument("--min_cells_per_cell_type", type=int, default=500)
+    parser.add_argument(
+        "--bucket_columns",
+        help=(
+            "Optional comma-separated bucket columns for matrix_tsv downsampling. "
+            "Default: (cell_type,dataset) when split, dataset when not split, else global."
+        ),
+    )
+    parser.add_argument("--max_cells_per_bucket", type=int, default=200)
+    parser.add_argument("--max_cells_total", type=int, default=50000)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--matrix_value_type", choices=["counts", "logcounts"], default="logcounts")
+    parser.add_argument("--min_total_per_cell", type=float)
+    parser.add_argument("--min_total_per_gene", type=float)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--keep_tmp", type=_parse_bool, default=False)
     parser.add_argument("--execute", type=_parse_bool, default=False)
-    parser.add_argument("--cnmf_local_density_threshold", type=float, default=0.5)
-    parser.add_argument("--cnmf_local_neighborhood_size", type=float, default=0.3)
-    parser.add_argument("--cnmf_show_clustering", type=_parse_bool, default=False)
-    parser.add_argument("--cnmf_export_kind", choices=["tpm", "score"], default="tpm")
-    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
-    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--organism", choices=["human", "mouse"], required=True)
+    parser.add_argument("--genome_build", required=True)
+    parser.add_argument("--liger_k_grid", default="10,12,14,16,18,20,22,24")
+    parser.add_argument("--liger_n_reps", type=int, default=5)
+    parser.add_argument("--liger_fixed_k", type=int)
+    parser.add_argument("--liger_top_n_genes", type=int, default=250)
+    parser.add_argument("--liger_min_cells_per_dataset", type=int, default=30)
+    parser.add_argument("--liger_min_features", type=int, default=200)
+    parser.add_argument("--liger_min_umi", type=float, default=500.0)
+    parser.add_argument("--liger_max_mito", type=float, default=5.0)
+    parser.add_argument("--extractor_top_k", type=int, default=250)
 
 
 def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:
@@ -1672,6 +1731,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     _add_provenance_flags(p_rna_de_prepare)
+    p_scrna_liger_prepare = wf_sub.add_parser("scrna_liger_prepare")
+    _add_scrna_liger_prepare_flags(p_scrna_liger_prepare)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2400,6 +2461,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "scrna_liger_prepare":
+                from geneset_extractors.workflows.scrna_liger_prepare import run as run_scrna_liger_prepare
+
+                result = run_scrna_liger_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=scrna_liger_prepare n_subsets={result.get('n_subsets')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

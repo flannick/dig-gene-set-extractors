@@ -21,7 +21,7 @@ def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_text(text, encoding="utf-8")
 
 
 def _resolve_rscript_bin(rscript_bin: str) -> str:
