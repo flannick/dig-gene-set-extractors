@@ -9,6 +9,12 @@
       "required": false
     },
     {
+      "name": "liger_gene_loadings_tsv",
+      "type": "tsv",
+      "description": "LIGER gene loadings table convenience input; interpreted as wide genes-by-program when loadings_format=auto",
+      "required": false
+    },
+    {
       "name": "cnmf_gene_spectra_tsv",
       "type": "tsv",
       "description": "cNMF gene spectra table (TPM or score) convenience input",

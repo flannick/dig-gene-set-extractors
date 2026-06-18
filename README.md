@@ -21,6 +21,7 @@ Detailed `geneset_extractors` CLI and method behavior is split by assay:
 - `docs/assays/atac/guide.md` (ATAC practical guide)
 - `docs/assays/rnaseq/guide.md` (RNA practical guide; includes a decision table for DE mode, covariates, ranking, and warning interpretation)
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md` (scRNA cNMF preparation workflow)
+- `docs/assays/rnaseq/liger_workflow.md` (scRNA LIGER/iNMF preparation workflow)
 - `docs/assays/proteomics/guide.md` (proteomics PTM practical guide)
 - `docs/assays/proteomics/reference_bundle.md` (proteomics PTM bundle guide)
 - `docs/assays/splicing/guide.md` (alternative splicing practical guide)
@@ -80,6 +81,7 @@ RNA workflow commands:
 
 - `workflows rna_de_prepare` (bulk/scRNA pseudobulk DE staging into standardized long DE tables; can optionally call `rna_deg_multi`)
 - `workflows scrna_cnmf_prepare` (downsample/split/filter + generate per-subset cNMF scripts)
+- `workflows scrna_liger_prepare` (prepare scRNA inputs and generate per-subset or direct LIGER/iNMF run scripts)
 - `workflows cnmf_select_k` (auto-select K from cNMF k-selection stats with reproducible heuristic)
 - `workflows prism_prepare` (fetch/prepare PRISM files into standardized long tables)
 - `workflows jump_prepare_reference_bundle` (prepare a local morphology/JUMP reference bundle)
@@ -138,6 +140,7 @@ Practical guides, CLI flags, inputs, modes, and examples:
 - `docs/assays/atac/guide.md`
 - `docs/assays/rnaseq/guide.md`
 - `docs/assays/rnaseq/scrna_cnmf_workflow.md`
+- `docs/assays/rnaseq/liger_workflow.md`
 - `docs/assays/splicing/guide.md`
 - `docs/assays/splicing/reference_bundle.md`
 - `docs/assays/proteomics/guide.md`

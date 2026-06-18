@@ -79,6 +79,8 @@ def test_cli_describe_rna_sc_programs():
     assert "loadings_format" in param_names
     assert "score_transform" in param_names
     assert "cnmf_gene_spectra_tsv" not in param_names  # input entry, not parameter
+    input_names = {str(item.get("name")) for item in payload.get("inputs", [])}
+    assert "liger_gene_loadings_tsv" in input_names
 
 
 def test_cli_describe_methylation_cpg_diff():
@@ -253,6 +255,36 @@ def test_cli_workflow_ptm_prepare_public(tmp_path: Path):
     assert (out / "ptm_matrix.tsv").exists()
     assert (out / "sample_metadata.tsv").exists()
     assert (out / "prepare_summary.json").exists()
+
+
+def test_cli_workflow_scrna_liger_prepare(tmp_path: Path):
+    out = tmp_path / "scrna_liger_prepare_cli"
+    p = _run(
+        "workflows",
+        "scrna_liger_prepare",
+        "--matrix_tsv",
+        "tests/data/toy_scrna_matrix.tsv",
+        "--meta_tsv",
+        "tests/data/toy_scrna_meta.tsv",
+        "--meta_cell_id_column",
+        "cell_id",
+        "--dataset_column",
+        "donor_id",
+        "--cell_type_column",
+        "cell_type",
+        "--min_cells_per_cell_type",
+        "1",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+    )
+    assert p.returncode == 0
+    assert "workflow=scrna_liger_prepare" in p.stderr
+    assert (out / "prepare_summary.json").exists()
+    assert (out / "subsets_manifest.tsv").exists()
 
 
 def test_cli_workflow_calr_prepare_public(tmp_path: Path):

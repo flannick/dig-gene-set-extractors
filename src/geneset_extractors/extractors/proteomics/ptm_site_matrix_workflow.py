@@ -749,8 +749,10 @@ def run_ptm_site_matrix_workflow(
                         if not line:
                             continue
                         parts = line.split("\t")
-                        if len(parts) >= 2:
-                            combined_gmt_sets.append((parts[0], parts[1:]))
+                        if len(parts) >= 3:
+                            combined_gmt_sets.append((parts[0], parts[2:]))
+                        elif len(parts) == 2:
+                            combined_gmt_sets.append((parts[0], parts[1].split(" ")))
 
     if multiple:
         with (out_dir / "manifest.tsv").open("w", encoding="utf-8", newline="") as fh:
