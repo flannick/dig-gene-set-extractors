@@ -81,8 +81,9 @@ load_h5ad_mode <- function(input_path) {
   adata <- anndata::read_h5ad(input_path)
   raw_x <- adata$X
   if (inherits(raw_x, "Matrix")) {
-    counts <- Matrix::t(Matrix::Matrix(raw_x, sparse = TRUE))
-    counts <- Matrix::Matrix(counts, sparse = TRUE)
+    counts <- methods::as(Matrix::Matrix(raw_x, sparse = TRUE), "CsparseMatrix")
+    counts <- Matrix::t(counts)
+    counts <- methods::as(counts, "CsparseMatrix")
     counts <- methods::as(counts, "dgCMatrix")
   } else {
     counts <- t(as.matrix(raw_x))
