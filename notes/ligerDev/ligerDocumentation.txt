@@ -1,0 +1,86 @@
+
+
+
+
+• The main LIGER run documentation is in docs/assays/rnaseq/liger_workflow.md. That is the workflow-specific guide.
+
+  The RNA index also points to it in docs/assays/rnaseq/guide.md:473, and the root repo README lists it in README.md:24.
+
+  The practical command is:
+
+  geneset-extractors workflows scrna_liger_prepare --help
+
+  Two common paths are documented:
+
+  geneset-extractors workflows scrna_liger_prepare \
+    --matrix_tsv path/to/cell_by_gene_logcounts.tsv \
+    --meta_tsv path/to/cell_meta.tsv \
+    --meta_cell_id_column cell_id \
+    --dataset_column donor_id \
+    --cell_type_column cell_type \
+    --split_by_cell_type true \
+    --max_cells_total 50000 \
+    --liger_top_n_genes 250 \
+    --out_dir results/scrna_liger_prepare \
+    --organism human \
+    --genome_build hg38
+
+  geneset-extractors workflows scrna_liger_prepare \
+    --h5ad path/to/cells.h5ad \
+    --dataset_column donor_id \
+    --cell_type_column cell_type__kp \
+    --max_cells_total 50000 \
+    --liger_top_n_genes 250 \
+    --out_dir results/scrna_liger_prepare_h5ad \
+    --organism human \
+    --genome_build hg38
+
+  That workflow writes run_liger.sh and run_geneset_extractors_from_liger.sh under each subset directory. The downstream conversion docs are also in docs/assays/rnaseq/liger_workflow.md:91, using:
+
+  geneset-extractors convert rna_sc_programs \
+    --liger_gene_loadings_tsv path/to/gene_loadings.tsv \
+    --out_dir results/rna_sc_programs_liger \
+    --organism human \
+    --genome_build hg38 \
+    --score_transform positive \
+    --select top_k \
+    --top_k 250
+
+
+• For h5ad, the shortest end-to-end path is:
+
+  geneset-extractors workflows scrna_liger_prepare \
+    --h5ad path/to/data.h5ad \
+    --dataset_column donor_id \
+    --cell_type_column cell_type__kp \
+    --max_cells_total 50000 \
+    --liger_top_n_genes 250 \
+    --out_dir results/scrna_liger \
+    --organism human \
+    --genome_build hg38
+
+  Then run the generated scripts:
+
+  bash results/scrna_liger/subsets/all/run_liger.sh
+  bash results/scrna_liger/subsets/all/run_geneset_extractors_from_liger.sh
+
+  That produces LIGER outputs under:
+
+  - results/scrna_liger/subsets/all/liger_out/<cell_type>/gene_loadings.tsv
+  - results/scrna_liger/subsets/all/liger_out/<cell_type>/gene_programs.txt
+  - results/scrna_liger/subsets/all/liger_out/<cell_type>/geneset_extractors_programs/
+
+  If you want to run the conversion manually for one cell type:
+
+  geneset-extractors convert rna_sc_programs \
+    --liger_gene_loadings_tsv results/scrna_liger/subsets/all/liger_out/<cell_type>/gene_loadings.tsv \
+    --out_dir results/liger_gene_sets_<cell_type> \
+    --organism human \
+    --genome_build hg38 \
+    --score_transform positive \
+    --select top_k \
+    --top_k 250
+
+  If your h5ad uses a different metadata field than donor_id or cell_type__kp, replace those two flags with the actual column names.
+
+
