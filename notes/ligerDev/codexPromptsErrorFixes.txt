@@ -1,0 +1,113 @@
+
+
+
+I am getting the following error from the docker process running the liger method.
+The docker code checks out this repo on the md_liger branch and resides at 
+/Users/mduby/Code/DccWorkspace/ServerGeneSetCompute
+the error is: 
+Installed 21 packages in 40ms
+Error in h(simpleError(msg, call)) : 
+  error in evaluating the argument 'x' in selecting a method for function 't': no method or default for coercing “dgRMatrix” to “dgCMatrix”
+Calls: main -> load_input -> load_h5ad_mode -> t -> as
+Execution halted
+Traceback (most recent call last):
+  File "/work/LIGER/src/run_liger_h5ad_batch.py", line 159, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/work/LIGER/src/run_liger_h5ad_batch.py", line 129, in main
+    run_command(["bash", str(run_liger_script)], cwd=subset_dir)
+  File "/work/LIGER/src/run_liger_h5ad_batch.py", line 46, in run_command
+    subprocess.run(command, cwd=str(cwd) if cwd is not None else None, check=True)
+  File "/opt/conda/envs/geneset-extractors/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['bash', '/liger_outputs/pancreas/plasmablast/subsets/all/run_liger.sh']' returned non-zero exit status 1.
+ERROR conda.cli.main_run:execute(148): `conda run python LIGER/src/run_liger_h5ad_batch.py --input_root /inputs --out_root /liger_outputs --dataset_column donor_id --cell_type_column cell_type__kp --organism human --genome_build hg38 --max_cells_total 50000 --liger_top_n_genes 250 --extractor_top_k 250 --liger_k_grid 10,12,14,16,18,20,22,24 --liger_n_reps 5 --overwrite` failed. (See above for error)
+
+What's next:
+    Debug this container error with Gordon → docker ai "help me fix this container error"
+
+
+
+
+
+-- codex error fixes responses 
+
+-- 20260622
+
+- error 03
+
+
+- error 02
+• The extra Matrix::Matrix(...) still isn’t normalizing this Matrix build. I’m changing the sparse path to coerce through the virtual CsparseMatrix class explicitly before and after transpose, which is the safer route for dgRMatrix inputs.
+
+• Edited src/geneset_extractors/preprocessing/rnaseq/liger_inmf.R (+3 -2)
+    83    if (inherits(raw_x, "Matrix")) {
+    84 -    counts <- Matrix::t(Matrix::Matrix(raw_x, sparse = TRUE))
+    85 -    counts <- Matrix::Matrix(counts, sparse = TRUE)
+    84 +    counts <- methods::as(Matrix::Matrix(raw_x, sparse = TRUE), "CsparseMatrix")
+    85 +    counts <- Matrix::t(counts)
+    86 +    counts <- methods::as(counts, "CsparseMatrix")
+    87      counts <- methods::as(counts, "dgCMatrix")
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The current failure means the transpose path is still yielding an R-compressed sparse matrix in that container’s Matrix build.
+
+  I updated src/geneset_extractors/preprocessing/rnaseq/liger_inmf.R again so the sparse branch now forces column-compressed sparse form explicitly:
+
+  counts <- methods::as(Matrix::Matrix(raw_x, sparse = TRUE), "CsparseMatrix")
+  counts <- Matrix::t(counts)
+  counts <- methods::as(counts, "CsparseMatrix")
+  counts <- methods::as(counts, "dgCMatrix")
+
+  This is a more direct fix for dgRMatrix inputs than the previous patch.
+
+  Next:
+
+  1. Commit and push md_liger.
+  2. Rebuild the Docker image with --no-cache.
+  3. Rerun the batch job.
+
+  If this still fails, the next step is to temporarily log the matrix classes inside load_h5ad_mode():
+
+  message("class(raw_x)=", paste(class(raw_x), collapse=","))
+  message("class(counts_after_t)=", paste(class(counts), collapse=","))
+
+  right before the final as(..., "dgCMatrix"). That would tell us exactly what reticulate/anndata is handing R in that container.
+
+
+- error 01
+• I confirmed the current code transposes and then coerces directly. The fix is to normalize the transposed sparse matrix once more before coercion so dgRMatrix doesn’t leak through.
+
+• Edited src/geneset_extractors/preprocessing/rnaseq/liger_inmf.R (+1 -0)
+    84      counts <- Matrix::t(Matrix::Matrix(raw_x, sparse = TRUE))
+    85 +    counts <- Matrix::Matrix(counts, sparse = TRUE)
+    86      counts <- methods::as(counts, "dgCMatrix")
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The container is now using the patched branch, and the failure moved one step later: Matrix::t(...) is producing a dgRMatrix, so the direct methods::as(counts, "dgCMatrix") still fails.
+
+  I updated src/geneset_extractors/preprocessing/rnaseq/liger_inmf.R again so the sparse branch now does:
+
+  counts <- Matrix::t(Matrix::Matrix(raw_x, sparse = TRUE))
+  counts <- Matrix::Matrix(counts, sparse = TRUE)
+  counts <- methods::as(counts, "dgCMatrix")
+
+  That extra Matrix::Matrix(...) after transpose should normalize the transposed sparse object before coercion.
+
+  Next steps:
+
+  1. Commit and push this new change on md_liger.
+  2. Rebuild the Docker image again with --no-cache.
+  3. Rerun the batch job.
+
+  If it still fails after that, the next thing I’d inspect is the exact class of adata$X and counts inside the container by adding temporary debug lines like:
+
+  message("class(raw_x)=", paste(class(raw_x), collapse=","))
+  message("class(counts)=", paste(class(counts), collapse=","))
+
+  right before the coercion.
+
+
+

@@ -1,3 +1,43 @@
 
 
-for
+
+- implement
+I added the following 3 files in src/temp; please move them to the approriate directories and 
+inmf_liger_v2-4_mod.R	
+liger.py		
+makeH5ad.py
+integrate the new workflow
+make all the recommended CLI modifications
+
+
+- how to implement
+in this code, I need to inplement the following:
+I attached the current R script I use. For R the packages needed are something along the lines of
+R -e "install.packages('BiocManager', repos='http://cran.rstudio.com/')"
+R -e "BiocManager::install('DelayedArray')"
+R -e "BiocManager::install('HDF5Array')"
+R -e "install.packages('purrr', repos='http://cran.rstudio.com/')"
+R -e "install.packages('dplyr', repos='http://cran.rstudio.com/')"
+R -e "install.packages('clue', repos='http://cran.rstudio.com/')"
+R -e "install.packages('proxy', repos='http://cran.rstudio.com/')"
+R -e "install.packages('reticulate', repos='http://cran.rstudio.com/')"
+R -e "install.packages('anndata', repos='http://cran.rstudio.com/')"
+R -e "install.packages('Seurat', repos='http://cran.rstudio.com/')" # 5.4.0 when generated
+R -e "install.packages('rliger', repos='http://cran.rstudio.com/')" # 2.2.1 when generatedIt currently runs off of either a seurat object (which I was testing on the Pankbase object from zenodo) or an h5ad file (which I make from our single cell data). Based on the tutorial here it can also, at least, run off of a mtx file. The python script for running liger once the h5ad file is produced is very small. The "donor_id" in the liger script is typically the dataset field, donor_id is a holdover from testing on matkp where there wasn't (isn't?) more than one dataset per file.
+
+I guess it would be [seurat / h5ad / mtx / other?] -> liger -> gene_sets (which I would assume would be the top 250 for each gene program produced). The files produced by liger include a gene_program.txt file which has the top 50 genes for each program (one program per column), and so changing the n_genes parameter in write_liger_latent would make the gene sets as small or large as we want in the end.
+
+I've also attached the makeH5ad.py file I use, but it is still very janky and ad hoc. The current version of that downsamples to 100K cells, and liger further downsamples to 50K, but in theory liger is supposed for work on 5K decently, so for space/speed considerations there is some wiggle room there I imagine.3 files
+For testing:
+
+There are a bunch of h5ad files in dig-analysis-data (e.g. s3://dig-analysis-data/out/single_cell/staging/h5ad/FNIH_Pancreas_scRNA_v2.2/beta cell.h5ad which could be used with the script I gave you. Just basically by deleting the h5ad loading bit and loading directly into Seurat you can use something like the rds file in Kyle's zenodo (https://zenodo.org/records/15611730 quite large, that is sparse and compressed, so it inflates to like 100GB or something in memory). The h5ad files are derived from the data in s3://dig-analysis-data/single_cell/ directory (sample_metadata.tsv.gz and norm_counts.tsv.gz). There isn't any other files needed for liger as long as all the R packages are installed. Easiest is to just run one of the smallish h5ad files I've made
+
+please explain to me:
+- what these changes are meant to calculate, from a computational biology standpoint
+- the input files i need
+- the outputs it creates
+- how to integrate into this code
+
+
+
+
