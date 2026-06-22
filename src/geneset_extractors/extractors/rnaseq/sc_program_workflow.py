@@ -98,6 +98,7 @@ class SCRNAProgramsWorkflowConfig:
     gtf_gene_id_field: str
     gtf_source: str | None
     program_id_prefix: str | None
+    upstream_provenance_graph_path: str | None
 
 
 def _open_text(path: Path):
@@ -840,6 +841,7 @@ def run_sc_programs_workflow(
                 f"signature '{cfg.signature_name}', and program '{base_program_id}', "
                 f"derived from program loading scores with score_transform={cfg.score_transform}."
             ),
+            upstream_provenance_graph_path=cfg.upstream_provenance_graph_path,
         )
         write_metadata(program_dir / "geneset.meta.json", meta)
         manifest_rows.append(enrich_manifest_row(out_dir, program_dir, {"program_id": base_program_id}))

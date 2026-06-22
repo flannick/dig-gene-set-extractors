@@ -26,6 +26,7 @@ from geneset_extractors.preprocessing.rnaseq.cnmf_prepare import (
     _write_meta_subset,
     _write_tmp_subset_from_gene_by_cell,
 )
+from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
 
 
 @dataclass
@@ -109,6 +110,7 @@ def _write_geneset_extractors_from_liger_script(*, subset_dir: Path, args) -> Pa
         "set -euo pipefail",
         "",
         'OUTDIR="$(pwd)/liger_out"',
+        'WORKFLOW_GRAPH="$(cd ../.. && pwd)/prepare_summary.provenance_graph.json"',
         "shopt -s nullglob",
         'MATCHES=( "$OUTDIR"/*/gene_loadings.tsv )',
         "shopt -u nullglob",
@@ -122,6 +124,7 @@ def _write_geneset_extractors_from_liger_script(*, subset_dir: Path, args) -> Pa
         '  OUT_GENESETS="$PROGRAM_DIR/geneset_extractors_programs"',
         "  geneset-extractors convert rna_sc_programs \\",
         '    --liger_gene_loadings_tsv "$LOADINGS" \\',
+        '    --upstream_provenance_graph_json "$WORKFLOW_GRAPH" \\',
         '    --out_dir "$OUT_GENESETS" \\',
         f'    --organism {args.organism} \\',
         f'    --genome_build {args.genome_build} \\',
@@ -145,6 +148,53 @@ def _execute_script_if_requested(script_path: Path, execute: bool) -> None:
             "Install the required R environment or rerun with --execute false."
         )
     subprocess.run(["bash", str(script_path)], check=True)
+
+
+def _write_liger_prepare_provenance_graph(
+    *,
+    args,
+    out_dir: Path,
+    focus_output_path: Path,
+    output_paths: list[tuple[Path, str]],
+    input_paths: list[tuple[Path, str]],
+) -> Path:
+    return write_workflow_provenance_graph(
+        workflow_name="scrna_liger_prepare",
+        module_name="geneset_extractors.preprocessing.rnaseq.liger_prepare",
+        output_dir=out_dir,
+        focus_output_path=focus_output_path,
+        output_paths=output_paths,
+        input_paths=input_paths,
+        parameters={
+            "input_mode": (
+                "matrix_tsv"
+                if getattr(args, "matrix_tsv", None)
+                else ("h5ad" if getattr(args, "h5ad", None) else ("seurat_rds" if getattr(args, "seurat_rds", None) else "mtx_dir"))
+            ),
+            "dataset_column": getattr(args, "dataset_column", None),
+            "cell_type_column": getattr(args, "cell_type_column", None),
+            "split_by_cell_type": getattr(args, "split_by_cell_type", None),
+            "max_cells_per_bucket": int(getattr(args, "max_cells_per_bucket", 0) or 0),
+            "max_cells_total": int(getattr(args, "max_cells_total", 0) or 0),
+            "seed": int(getattr(args, "seed", 0) or 0),
+            "liger_k_grid": str(getattr(args, "liger_k_grid", "")),
+            "liger_n_reps": int(getattr(args, "liger_n_reps", 0) or 0),
+            "liger_fixed_k": getattr(args, "liger_fixed_k", None),
+            "liger_top_n_genes": int(getattr(args, "liger_top_n_genes", 0) or 0),
+            "liger_min_cells_per_dataset": int(getattr(args, "liger_min_cells_per_dataset", 0) or 0),
+            "liger_min_features": int(getattr(args, "liger_min_features", 0) or 0),
+            "liger_min_umi": float(getattr(args, "liger_min_umi", 0.0) or 0.0),
+            "liger_max_mito": float(getattr(args, "liger_max_mito", 0.0) or 0.0),
+            "extractor_top_k": int(getattr(args, "extractor_top_k", 0) or 0),
+            "organism": str(getattr(args, "organism", "")),
+            "genome_build": str(getattr(args, "genome_build", "")),
+        },
+        description=(
+            "Analysis step that prepares single-cell RNA-seq inputs for LIGER/iNMF, "
+            "emits subset manifests and execution scripts, and records the workflow context "
+            "used to generate downstream LIGER gene-program loadings."
+        ),
+    )
 
 
 def _run_matrix_mode(args, out_dir: Path) -> dict[str, object]:
@@ -497,7 +547,36 @@ def _run_matrix_mode(args, out_dir: Path) -> dict[str, object]:
         ],
         "subsets_manifest": str(manifest_path.relative_to(out_dir)),
     }
-    (out_dir / "prepare_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    summary_path = out_dir / "prepare_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    output_paths: list[tuple[Path, str]] = [
+        (summary_path, "workflow_summary"),
+        (manifest_path, "subsets_manifest"),
+    ]
+    for sid in retained_subset_ids:
+        plan = plans[sid]
+        if plan.counts_path is not None:
+            output_paths.append((plan.counts_path, "counts_tsv"))
+        if plan.meta_path is not None:
+            output_paths.append((plan.meta_path, "meta_tsv"))
+        if plan.run_liger_script_path is not None:
+            output_paths.append((plan.run_liger_script_path, "run_liger_script"))
+        if plan.run_geneset_extractors_from_liger_script_path is not None:
+            output_paths.append((plan.run_geneset_extractors_from_liger_script_path, "run_geneset_extractors_script"))
+    input_paths: list[tuple[Path, str]] = [
+        (matrix_path, "matrix_tsv"),
+        (meta_path, "meta_tsv"),
+        (_r_script_path(), "workflow_r_script"),
+    ]
+    graph_path = _write_liger_prepare_provenance_graph(
+        args=args,
+        out_dir=out_dir,
+        focus_output_path=summary_path,
+        output_paths=output_paths,
+        input_paths=input_paths,
+    )
+    summary["prepare_provenance_graph_path"] = str(graph_path.relative_to(out_dir))
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     print(f"prepared scrna_liger subsets={len(retained_subset_ids)} out={out_dir} manifest={manifest_path}", file=sys.stderr)
     return {"out_dir": str(out_dir), "n_subsets": len(retained_subset_ids), "subsets_manifest": str(manifest_path)}
 
@@ -565,7 +644,29 @@ def _run_direct_mode(args, out_dir: Path, input_mode: str, input_path: str) -> d
         ],
         "subsets_manifest": str(manifest_path.relative_to(out_dir)),
     }
-    (out_dir / "prepare_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    summary_path = out_dir / "prepare_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    output_paths: list[tuple[Path, str]] = [
+        (summary_path, "workflow_summary"),
+        (manifest_path, "subsets_manifest"),
+        (run_liger, "run_liger_script"),
+        (run_convert, "run_geneset_extractors_script"),
+    ]
+    input_paths: list[tuple[Path, str]] = [
+        (Path(input_path), input_mode),
+        (_r_script_path(), "workflow_r_script"),
+    ]
+    if meta_path:
+        input_paths.append((Path(meta_path), "meta_tsv"))
+    graph_path = _write_liger_prepare_provenance_graph(
+        args=args,
+        out_dir=out_dir,
+        focus_output_path=summary_path,
+        output_paths=output_paths,
+        input_paths=input_paths,
+    )
+    summary["prepare_provenance_graph_path"] = str(graph_path.relative_to(out_dir))
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     print(f"prepared scrna_liger subsets=1 out={out_dir} manifest={manifest_path}", file=sys.stderr)
     return {"out_dir": str(out_dir), "n_subsets": 1, "subsets_manifest": str(manifest_path)}
 

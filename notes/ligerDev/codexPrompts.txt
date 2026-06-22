@@ -1,6 +1,23 @@
 
 
 
+- add provenance graph
+scrna_liger_prepare itself does not write a workflow provenance graph. In liger_prepare.py, it writes subsets_manifest.tsv and prepare_summary.json, but there is no write_workflow_provenance_graph(...) call and no *.provenance_graph.json output.
+You can see that from the outputs around liger_prepare.py:425 and liger_prepare.py:500.
+
+The downstream rna_sc_programs conversion does emit per-program provenance JSONs, because it writes geneset.meta.json and write_metadata() automatically materializes geneset.provenance.json. That path is visible in sc_program_workflow.py:844 and
+core/metadata.py:46.
+
+So the current state is:
+
+- scrna_liger_prepare / run_liger.sh: no workflow provenance graph
+- rna_sc_programs outputs: yes, geneset.provenance.json per program
+- End-to-end LIGER run provenance: partial, not equivalent to the other workflows yet
+
+add full workflow provenance for the LIGER prepare/run path so it behaves like the GTEx workflows.
+
+
+
 - implement
 I added the following 3 files in src/temp; please move them to the approriate directories and 
 inmf_liger_v2-4_mod.R	

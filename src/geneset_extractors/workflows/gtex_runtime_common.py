@@ -248,6 +248,7 @@ def write_workflow_provenance_graph(
     output_paths: list[tuple[Path, str]],
     input_paths: list[tuple[Path, str]],
     parameters: dict[str, Any],
+    description: str | None = None,
 ) -> Path:
     runtime_ctx = get_runtime_context()
     mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
@@ -289,7 +290,11 @@ def write_workflow_provenance_graph(
         analysis_id=operation_id,
         method=workflow_name,
         name=f"prepare_{focus_output_path.stem}",
-        description=f"Analysis step that prepares GTEx differential expression results and emits {focus_output_path.name}.",
+        description=(
+            str(description).strip()
+            if description is not None and str(description).strip()
+            else f"Analysis step that prepares GTEx differential expression results and emits {focus_output_path.name}."
+        ),
         parameters=parameters,
         command=command,
         entrypoint=entrypoint,

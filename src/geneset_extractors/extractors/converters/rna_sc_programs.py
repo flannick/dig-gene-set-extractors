@@ -114,6 +114,7 @@ def run(args) -> dict[str, object]:
         gtf_gene_id_field=args.gtf_gene_id_field,
         gtf_source=args.gtf_source,
         program_id_prefix=args.program_id_prefix,
+        upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
     )
     result = run_sc_programs_workflow(
         cfg=cfg,
