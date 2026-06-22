@@ -79,7 +79,14 @@ load_matrix_mode <- function(input_path, meta_path) {
 
 load_h5ad_mode <- function(input_path) {
   adata <- anndata::read_h5ad(input_path)
-  counts <- t(as(adata$X, "dgCMatrix"))
+  raw_x <- adata$X
+  if (inherits(raw_x, "Matrix")) {
+    counts <- Matrix::t(Matrix::Matrix(raw_x, sparse = TRUE))
+    counts <- methods::as(counts, "dgCMatrix")
+  } else {
+    counts <- t(as.matrix(raw_x))
+    counts <- methods::as(Matrix::Matrix(counts, sparse = TRUE), "dgCMatrix")
+  }
   meta <- py_to_r(adata$obs)
   meta <- as.data.frame(meta, stringsAsFactors = FALSE)
   if (nrow(meta) == 0) {
