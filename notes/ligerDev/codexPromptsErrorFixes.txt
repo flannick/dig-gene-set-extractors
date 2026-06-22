@@ -34,7 +34,37 @@ What's next:
 
 -- 20260622
 
-- error 03
+- added provenance 
+
+• Added full workflow provenance for the LIGER prepare path and threaded it into downstream rna_sc_programs provenance.
+
+  What changed:
+
+  - scrna_liger_prepare now writes prepare_summary.provenance_graph.json at the workflow root.
+  - prepare_summary.json now includes prepare_provenance_graph_path.
+  - Generated run_geneset_extractors_from_liger.sh now passes --upstream_provenance_graph_json pointing at that workflow graph.
+  - rna_sc_programs now accepts and propagates --upstream_provenance_graph_json into emitted geneset.provenance.json.
+  - I generalized write_workflow_provenance_graph() slightly so LIGER can provide a workflow-appropriate description instead of the GTEx-specific default.
+
+  Key files:
+
+  - src/geneset_extractors/preprocessing/rnaseq/liger_prepare.py
+  - src/geneset_extractors/extractors/converters/rna_sc_programs.py
+  - src/geneset_extractors/extractors/rnaseq/sc_program_workflow.py
+  - src/geneset_extractors/cli.py
+  - src/geneset_extractors/workflows/gtex_runtime_common.py
+
+  Verification:
+
+  - python3 -m pytest -q tests/test_scrna_liger_prepare_workflow.py tests/test_rna_sc_programs_converter.py tests/test_cli_smoke.py
+  - Result: 58 passed
+
+  This gives you:
+
+  - scrna_liger_prepare / run_liger.sh: workflow provenance graph present
+  - rna_sc_programs outputs: per-program geneset.provenance.json still present
+  - End-to-end LIGER provenance: now connected via the upstream workflow graph rather than partial/disconnected only at the converter layer
+  
 
 
 - error 02

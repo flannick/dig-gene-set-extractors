@@ -182,6 +182,10 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
         "--provenance_mirror_remote_prefix",
         help="Optional remote prefix, such as an s3:// URI, used to replace the local mirror prefix in emitted provenance.",
     )
+    parser.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream workflow provenance graph JSON to merge into emitted geneset provenance.",
+    )
 
 
 def _add_transform_flags(parser: argparse.ArgumentParser, default: str) -> None:

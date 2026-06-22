@@ -55,6 +55,7 @@ def test_scrna_liger_prepare_creates_split_subsets_and_scripts(tmp_path: Path):
 
     assert int(result["n_subsets"]) == 2
     assert (out_dir / "prepare_summary.json").exists()
+    assert (out_dir / "prepare_summary.provenance_graph.json").exists()
     assert (out_dir / "subsets_manifest.tsv").exists()
 
     with (out_dir / "subsets_manifest.tsv").open("r", encoding="utf-8") as fh:
@@ -73,10 +74,12 @@ def test_scrna_liger_prepare_creates_split_subsets_and_scripts(tmp_path: Path):
         assert run_convert.stat().st_mode & 0o111
         text = run_convert.read_text(encoding="utf-8")
         assert "--liger_gene_loadings_tsv" in text
+        assert "--upstream_provenance_graph_json" in text
 
     summary = json.loads((out_dir / "prepare_summary.json").read_text(encoding="utf-8"))
     assert summary["workflow"] == "scrna_liger_prepare"
     assert summary["n_subsets"] == 2
+    assert summary["prepare_provenance_graph_path"] == "prepare_summary.provenance_graph.json"
 
 
 def test_scrna_liger_prepare_cli_entrypoint(tmp_path: Path):
@@ -107,4 +110,5 @@ def test_scrna_liger_prepare_cli_entrypoint(tmp_path: Path):
     )
     assert code == 0
     assert (out_dir / "prepare_summary.json").exists()
+    assert (out_dir / "prepare_summary.provenance_graph.json").exists()
     assert (out_dir / "subsets_manifest.tsv").exists()
