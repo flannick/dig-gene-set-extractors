@@ -386,6 +386,7 @@ def merge_graph_components(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     merged_nodes: list[dict[str, Any]] = []
     seen_node_ids: set[str] = set()
+    node_index_by_id: dict[str, int] = {}
     canonical_file_ids: dict[str, str] = {}
     rewritten_node_ids: dict[str, str] = {}
     for group in node_groups:
@@ -401,8 +402,17 @@ def merge_graph_components(
                     continue
                 canonical_file_ids[file_identity] = node_id
             if node_id in seen_node_ids:
+                existing_index = node_index_by_id.get(node_id)
+                if existing_index is not None:
+                    existing_node = merged_nodes[existing_index]
+                    if (
+                        str(existing_node.get("type", "")).strip() == "GeneSet"
+                        and str(node.get("type", "")).strip() == "GeneSet"
+                    ):
+                        merged_nodes[existing_index] = node
                 continue
             seen_node_ids.add(node_id)
+            node_index_by_id[node_id] = len(merged_nodes)
             merged_nodes.append(node)
 
     merged_edges: list[dict[str, Any]] = []
