@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
+from geneset_extractors.core.metadata_patch import apply_metadata_patch, flatten_template_context, load_metadata
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -30,6 +31,17 @@ class _StoreWithExplicitFlag(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):  # type: ignore[override]
         setattr(namespace, self.dest, values)
         setattr(namespace, f"{self.dest}_explicit", True)
+
+
+def _parse_set_kv(value: str) -> tuple[str, str]:
+    raw = str(value)
+    if "=" not in raw:
+        raise argparse.ArgumentTypeError("expected KEY=VALUE")
+    key, val = raw.split("=", 1)
+    key = key.strip()
+    if not key:
+        raise argparse.ArgumentTypeError("expected non-empty KEY in KEY=VALUE")
+    return key, val
 
 
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
@@ -1660,6 +1672,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
     )
 
+    p_metadata = sub.add_parser("metadata")
+    metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
+    p_meta_patch = metadata_sub.add_parser("patch")
+    p_meta_patch.add_argument("metadata_json", help="Path to an existing geneset.meta.json file.")
+    p_meta_patch.add_argument(
+        "--meta_out",
+        help="Optional output path for patched metadata. Defaults to in-place rewrite of metadata_json.",
+    )
+    p_meta_patch.add_argument(
+        "--provenance_out",
+        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json next to meta_out.",
+    )
+    p_meta_patch.add_argument(
+        "--gene_set_description",
+        help="Direct replacement for gene_set.description in metadata.",
+    )
+    p_meta_patch.add_argument(
+        "--description_template",
+        help="Template for gene_set.description using metadata variables like {signature_name} or {comparison_label}.",
+    )
+    p_meta_patch.add_argument(
+        "--set",
+        dest="set_values",
+        action="append",
+        type=_parse_set_kv,
+        default=[],
+        help="Set a dotted metadata field using KEY=VALUE, for example gene_set.description=New text.",
+    )
+    p_meta_patch.add_argument(
+        "--show_template_vars",
+        action="store_true",
+        help="Print available template variables derived from metadata and exit.",
+    )
+    _add_provenance_flags(p_meta_patch)
+    p_meta_patch.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
+    )
+
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
 
@@ -2266,6 +2317,29 @@ def main(argv: list[str] | None = None) -> int:
                     provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
                 )
                 print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
+                return 0
+
+        if args.command == "metadata":
+            if args.metadata_command == "patch":
+                if args.show_template_vars:
+                    payload = load_metadata(args.metadata_json)
+                    context = flatten_template_context(payload)
+                    for key in sorted(context):
+                        print("{0}\t{1}".format(key, context[key]))
+                    return 0
+                result = apply_metadata_patch(
+                    metadata_path=args.metadata_json,
+                    meta_out=args.meta_out,
+                    provenance_out=args.provenance_out,
+                    description_template=args.description_template,
+                    gene_set_description=args.gene_set_description,
+                    set_values=list(args.set_values or []),
+                    provenance_overlay_json=getattr(args, "provenance_overlay_json", None),
+                    upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
+                    provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+                    provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
+                )
+                print(json.dumps({"status": "ok", **result}))
                 return 0
 
         if args.command == "resources":
