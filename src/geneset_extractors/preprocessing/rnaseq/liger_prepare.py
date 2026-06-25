@@ -70,6 +70,8 @@ def _r_script_path() -> Path:
 def _write_liger_script(*, subset_dir: Path, input_mode: str, input_path: str, meta_path: str, subset_label: str, args) -> Path:
     script_path = subset_dir / "run_liger.sh"
     out_dir = subset_dir / "liger_out"
+    runtime_graph_path = subset_dir / "liger_run.provenance_graph.json"
+    prepare_graph_path = subset_dir.parent.parent / "prepare_summary.provenance_graph.json"
     fixed_k = "" if getattr(args, "liger_fixed_k", None) in {None, ""} else str(args.liger_fixed_k)
     lines = [
         "#!/usr/bin/env bash",
@@ -94,8 +96,34 @@ def _write_liger_script(*, subset_dir: Path, input_mode: str, input_path: str, m
         f'MIN_FEATURES="{int(args.liger_min_features)}"',
         f'MIN_UMI="{float(args.liger_min_umi)}"',
         f'MAX_MITO="{float(args.liger_max_mito)}"',
+        f'RUNTIME_GRAPH_PATH="{runtime_graph_path}"',
+        f'PREPARE_GRAPH_PATH="{prepare_graph_path}"',
         "",
         'Rscript "$R_SCRIPT" "$INPUT_MODE" "$INPUT_PATH" "$OUTPUT_DIR" "$DATASET_COLUMN" "$CELL_TYPE_COLUMN" "$MAX_CELLS_TOTAL" "$MIN_CELLS_PER_CELL_TYPE" "$SEED" "$TOP_N_GENES" "$META_PATH" "$CELL_TYPE_LABEL" "$K_GRID" "$N_REPS" "$FIXED_K" "$MIN_CELLS_PER_DATASET" "$MIN_FEATURES" "$MIN_UMI" "$MAX_MITO"',
+        "geneset-extractors workflows scrna_liger_runtime_provenance \\",
+        '  --subset_dir "$(pwd)" \\',
+        '  --input_mode "$INPUT_MODE" \\',
+        '  --input_path "$INPUT_PATH" \\',
+        '  --liger_output_dir "$OUTPUT_DIR" \\',
+        '  --run_liger_script "$(pwd)/run_liger.sh" \\',
+        '  --r_script "$R_SCRIPT" \\',
+        '  --runtime_graph_out "$RUNTIME_GRAPH_PATH" \\',
+        '  --prepare_provenance_graph_json "$PREPARE_GRAPH_PATH" \\',
+        '  --dataset_column "$DATASET_COLUMN" \\',
+        '  --cell_type_column "$CELL_TYPE_COLUMN" \\',
+        '  --max_cells_total "$MAX_CELLS_TOTAL" \\',
+        '  --min_cells_per_cell_type "$MIN_CELLS_PER_CELL_TYPE" \\',
+        '  --seed "$SEED" \\',
+        '  --liger_top_n_genes "$TOP_N_GENES" \\',
+        '  --meta_path "$META_PATH" \\',
+        '  --cell_type_label "$CELL_TYPE_LABEL" \\',
+        '  --liger_k_grid "$K_GRID" \\',
+        '  --liger_n_reps "$N_REPS" \\',
+        '  --liger_fixed_k "$FIXED_K" \\',
+        '  --liger_min_cells_per_dataset "$MIN_CELLS_PER_DATASET" \\',
+        '  --liger_min_features "$MIN_FEATURES" \\',
+        '  --liger_min_umi "$MIN_UMI" \\',
+        '  --liger_max_mito "$MAX_MITO"',
     ]
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     script_path.chmod(0o755)
@@ -110,12 +138,16 @@ def _write_geneset_extractors_from_liger_script(*, subset_dir: Path, args) -> Pa
         "set -euo pipefail",
         "",
         'OUTDIR="$(pwd)/liger_out"',
-        'WORKFLOW_GRAPH="$(cd ../.. && pwd)/prepare_summary.provenance_graph.json"',
+        'WORKFLOW_GRAPH="$(pwd)/liger_run.provenance_graph.json"',
         "shopt -s nullglob",
         'MATCHES=( "$OUTDIR"/*/gene_loadings.tsv )',
         "shopt -u nullglob",
         'if [[ ${#MATCHES[@]} -eq 0 ]]; then',
         '  echo "error: no LIGER gene_loadings.tsv files found. Run run_liger.sh first." >&2',
+        "  exit 2",
+        "fi",
+        'if [[ ! -f "$WORKFLOW_GRAPH" ]]; then',
+        '  echo "error: missing LIGER runtime provenance graph $WORKFLOW_GRAPH. Run run_liger.sh first." >&2',
         "  exit 2",
         "fi",
         'for LOADINGS in "${MATCHES[@]}"; do',
@@ -194,6 +226,62 @@ def _write_liger_prepare_provenance_graph(
             "emits subset manifests and execution scripts, and records the workflow context "
             "used to generate downstream LIGER gene-program loadings."
         ),
+    )
+
+
+def _write_liger_runtime_provenance_graph(
+    *,
+    subset_dir: Path,
+    runtime_graph_out: Path,
+    input_mode: str,
+    input_path: Path,
+    liger_output_dir: Path,
+    run_liger_script: Path,
+    r_script: Path,
+    prepare_provenance_graph_path: Path | None,
+    meta_path: Path | None,
+    parameters: dict[str, object],
+) -> Path:
+    output_paths: list[tuple[Path, str]] = []
+    for program_dir in sorted(p for p in liger_output_dir.iterdir() if p.is_dir()):
+        for filename, role in [
+            ("gene_loadings.tsv", "liger_gene_loadings_tsv"),
+            ("gene_programs.txt", "liger_gene_programs_txt"),
+            ("cell_scores.tsv", "liger_cell_scores_tsv"),
+            ("metadata.txt", "liger_metadata_txt"),
+            ("k_stability.tsv", "liger_k_stability_tsv"),
+            ("factor_importance.txt", "liger_factor_importance_txt"),
+        ]:
+            candidate = program_dir / filename
+            if candidate.exists():
+                output_paths.append((candidate, role))
+    if not output_paths:
+        raise ValueError(f"No LIGER outputs found under {liger_output_dir}")
+    focus_output_path = next(
+        (path for path, role in output_paths if role == "liger_gene_loadings_tsv"),
+        output_paths[0][0],
+    )
+    input_paths: list[tuple[Path, str]] = [
+        (input_path, input_mode),
+        (run_liger_script, "run_liger_script"),
+        (r_script, "workflow_r_script"),
+    ]
+    if meta_path is not None and meta_path.exists():
+        input_paths.append((meta_path, "meta_tsv"))
+    return write_workflow_provenance_graph(
+        workflow_name="scrna_liger_runtime_provenance",
+        module_name="geneset_extractors.preprocessing.rnaseq.liger_prepare",
+        output_dir=subset_dir,
+        focus_output_path=focus_output_path,
+        output_paths=output_paths,
+        input_paths=input_paths,
+        parameters=parameters,
+        description=(
+            "Analysis step that runs LIGER/iNMF on prepared single-cell RNA-seq inputs "
+            "and emits gene-program loadings and related latent-factor outputs."
+        ),
+        upstream_graph_path=prepare_provenance_graph_path,
+        graph_path=runtime_graph_out,
     )
 
 
@@ -680,3 +768,62 @@ def run(args) -> dict[str, object]:
             raise ValueError("--meta_tsv is required when using --matrix_tsv")
         return _run_matrix_mode(args, out_dir)
     return _run_direct_mode(args, out_dir, input_mode, input_path)
+
+
+def write_runtime_provenance(args) -> dict[str, object]:
+    subset_dir = Path(args.subset_dir).resolve()
+    liger_output_dir = Path(args.liger_output_dir)
+    if not liger_output_dir.is_absolute():
+        liger_output_dir = (subset_dir / liger_output_dir).resolve()
+    runtime_graph_out = Path(args.runtime_graph_out)
+    if not runtime_graph_out.is_absolute():
+        runtime_graph_out = (subset_dir / runtime_graph_out).resolve()
+    input_path = Path(args.input_path)
+    if not input_path.is_absolute():
+        input_path = (subset_dir / input_path).resolve()
+    run_liger_script = Path(args.run_liger_script)
+    if not run_liger_script.is_absolute():
+        run_liger_script = (subset_dir / run_liger_script).resolve()
+    r_script = Path(args.r_script)
+    if not r_script.is_absolute():
+        r_script = (subset_dir / r_script).resolve()
+    meta_path: Path | None = None
+    raw_meta = str(getattr(args, "meta_path", "") or "").strip()
+    if raw_meta:
+        candidate = Path(raw_meta)
+        meta_path = candidate.resolve() if candidate.is_absolute() else (subset_dir / candidate).resolve()
+    prepare_graph: Path | None = None
+    raw_prepare_graph = str(getattr(args, "prepare_provenance_graph_json", "") or "").strip()
+    if raw_prepare_graph:
+        candidate = Path(raw_prepare_graph)
+        prepare_graph = candidate.resolve() if candidate.is_absolute() else (subset_dir / candidate).resolve()
+    parameters = {
+        "input_mode": str(args.input_mode),
+        "dataset_column": getattr(args, "dataset_column", None) or None,
+        "cell_type_column": getattr(args, "cell_type_column", None) or None,
+        "cell_type_label": getattr(args, "cell_type_label", None) or None,
+        "max_cells_total": int(args.max_cells_total),
+        "min_cells_per_cell_type": int(args.min_cells_per_cell_type),
+        "seed": int(args.seed),
+        "liger_top_n_genes": int(args.liger_top_n_genes),
+        "liger_k_grid": str(args.liger_k_grid),
+        "liger_n_reps": int(args.liger_n_reps),
+        "liger_fixed_k": getattr(args, "liger_fixed_k", None) or None,
+        "liger_min_cells_per_dataset": int(args.liger_min_cells_per_dataset),
+        "liger_min_features": int(args.liger_min_features),
+        "liger_min_umi": float(args.liger_min_umi),
+        "liger_max_mito": float(args.liger_max_mito),
+    }
+    graph_path = _write_liger_runtime_provenance_graph(
+        subset_dir=subset_dir,
+        runtime_graph_out=runtime_graph_out,
+        input_mode=str(args.input_mode),
+        input_path=input_path,
+        liger_output_dir=liger_output_dir,
+        run_liger_script=run_liger_script,
+        r_script=r_script,
+        prepare_provenance_graph_path=prepare_graph,
+        meta_path=meta_path,
+        parameters=parameters,
+    )
+    return {"runtime_provenance_graph": str(graph_path)}

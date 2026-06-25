@@ -13,7 +13,10 @@ from geneset_extractors.core.provenance import (
     build_edges,
     build_file_node,
     build_output_file_record,
+    flatten_graph_payload,
     get_runtime_context,
+    load_graph_payload,
+    merge_graph_components,
     mirror_graph_payload,
     stable_operation_id,
     write_canonical_json,
@@ -249,6 +252,8 @@ def write_workflow_provenance_graph(
     input_paths: list[tuple[Path, str]],
     parameters: dict[str, Any],
     description: str | None = None,
+    upstream_graph_path: Path | None = None,
+    graph_path: Path | None = None,
 ) -> Path:
     runtime_ctx = get_runtime_context()
     mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
@@ -305,7 +310,7 @@ def write_workflow_provenance_graph(
         dcc_url=REPO_URL,
         drc_url=REPO_URL,
     )
-    graph_path = output_dir / f"{focus_output_path.stem}.provenance_graph.json"
+    resolved_graph_path = graph_path if graph_path is not None else (output_dir / f"{focus_output_path.stem}.provenance_graph.json")
     payload = mirror_graph_payload(
         {
             focus_output_path.stem: {
@@ -316,5 +321,23 @@ def write_workflow_provenance_graph(
         mirror_local_prefix,
         mirror_remote_prefix,
     )
-    write_canonical_json(graph_path, payload)
-    return graph_path
+    if upstream_graph_path is not None:
+        upstream_payload = mirror_graph_payload(
+            load_graph_payload(upstream_graph_path),
+            mirror_local_prefix,
+            mirror_remote_prefix,
+        )
+        upstream_nodes, upstream_edges = flatten_graph_payload(upstream_payload)
+        current_nodes, current_edges = flatten_graph_payload(payload)
+        merged_nodes, merged_edges = merge_graph_components(
+            [upstream_nodes, current_nodes],
+            [upstream_edges, current_edges],
+        )
+        payload = {
+            focus_output_path.stem: {
+                "nodes": merged_nodes,
+                "edges": merged_edges,
+            }
+        }
+    write_canonical_json(resolved_graph_path, payload)
+    return resolved_graph_path

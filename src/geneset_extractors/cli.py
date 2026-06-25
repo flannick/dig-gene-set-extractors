@@ -830,6 +830,32 @@ def _add_scrna_liger_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--extractor_top_k", type=int, default=250)
 
 
+def _add_scrna_liger_runtime_provenance_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--subset_dir", required=True)
+    parser.add_argument("--input_mode", required=True, choices=["matrix_tsv", "h5ad", "seurat_rds", "mtx_dir"])
+    parser.add_argument("--input_path", required=True)
+    parser.add_argument("--liger_output_dir", required=True)
+    parser.add_argument("--run_liger_script", required=True)
+    parser.add_argument("--r_script", required=True)
+    parser.add_argument("--runtime_graph_out", required=True)
+    parser.add_argument("--prepare_provenance_graph_json")
+    parser.add_argument("--meta_path")
+    parser.add_argument("--dataset_column", default="")
+    parser.add_argument("--cell_type_column", default="")
+    parser.add_argument("--cell_type_label", default="")
+    parser.add_argument("--max_cells_total", type=int, required=True)
+    parser.add_argument("--min_cells_per_cell_type", type=int, required=True)
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--liger_top_n_genes", type=int, required=True)
+    parser.add_argument("--liger_k_grid", required=True)
+    parser.add_argument("--liger_n_reps", type=int, required=True)
+    parser.add_argument("--liger_fixed_k")
+    parser.add_argument("--liger_min_cells_per_dataset", type=int, required=True)
+    parser.add_argument("--liger_min_features", type=int, required=True)
+    parser.add_argument("--liger_min_umi", type=float, required=True)
+    parser.add_argument("--liger_max_mito", type=float, required=True)
+
+
 def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cnmf_output_dir", required=True)
     parser.add_argument("--name", required=True)
@@ -1733,6 +1759,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_provenance_flags(p_rna_de_prepare)
     p_scrna_liger_prepare = wf_sub.add_parser("scrna_liger_prepare")
     _add_scrna_liger_prepare_flags(p_scrna_liger_prepare)
+    p_scrna_liger_runtime_provenance = wf_sub.add_parser("scrna_liger_runtime_provenance")
+    _add_scrna_liger_runtime_provenance_flags(p_scrna_liger_runtime_provenance)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2473,6 +2501,18 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=scrna_liger_prepare n_subsets={result.get('n_subsets')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "scrna_liger_runtime_provenance":
+                from geneset_extractors.workflows.scrna_liger_prepare import (
+                    write_runtime_provenance as write_scrna_liger_runtime_provenance,
+                )
+
+                result = write_scrna_liger_runtime_provenance(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=scrna_liger_runtime_provenance graph={result.get('runtime_provenance_graph')}",
                     file=sys.stderr,
                 )
                 return 0
