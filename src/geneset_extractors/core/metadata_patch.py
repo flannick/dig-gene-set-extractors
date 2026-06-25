@@ -83,7 +83,26 @@ def render_template(template: str, context: dict[str, str]) -> str:
             missing.append(field_name)
     if missing:
         raise ValueError("Template references unknown variable(s): {0}".format(", ".join(sorted(set(missing)))))
-    return template.format_map(context)
+    rendered_parts: list[str] = []
+    for literal_text, field_name, format_spec, conversion in Formatter().parse(template):
+        if literal_text:
+            rendered_parts.append(literal_text)
+        if field_name is None:
+            continue
+        value = context[field_name]
+        if conversion:
+            if conversion == "r":
+                value = repr(value)
+            elif conversion == "s":
+                value = str(value)
+            elif conversion == "a":
+                value = ascii(value)
+            else:
+                raise ValueError(f"Unsupported template conversion: !{conversion}")
+        if format_spec:
+            value = format(value, format_spec)
+        rendered_parts.append(str(value))
+    return "".join(rendered_parts)
 
 
 def set_dotted_value(payload: dict[str, Any], dotted_key: str, value: str) -> None:
