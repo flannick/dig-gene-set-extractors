@@ -329,29 +329,102 @@ def flatten_graph_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]]
     return nodes, edges
 
 
+def _normalize_file_identity_value(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("file://"):
+        try:
+            parsed = urlparse(raw)
+            return str(Path(unquote(parsed.path)).resolve())
+        except Exception:
+            return raw
+    if "://" in raw:
+        if raw.startswith("urn:file:"):
+            return ""
+        return raw.rstrip("/")
+    try:
+        return str(Path(raw).resolve())
+    except Exception:
+        return raw
+
+
+def _file_node_identity(node: dict[str, Any]) -> str:
+    if str(node.get("type", "")).strip() != "File":
+        return ""
+    c2m2 = node.get("c2m2_properties", {})
+    candidates: list[str] = []
+    if isinstance(c2m2, dict):
+        local_id = str(c2m2.get("local_id", "")).strip()
+        if local_id:
+            candidates.append(local_id)
+    for key in ("dcc_url", "drc_url"):
+        value = str(node.get(key, "")).strip()
+        if value:
+            candidates.append(value)
+    normalized_identity = ""
+    for candidate in candidates:
+        normalized_identity = _normalize_file_identity_value(candidate)
+        if normalized_identity:
+            break
+    sha256 = ""
+    if isinstance(c2m2, dict):
+        sha256 = str(c2m2.get("sha256", "")).strip()
+    if not normalized_identity and not sha256:
+        return ""
+    return stable_hash_object(
+        {
+            "identity": normalized_identity,
+            "sha256": sha256,
+        }
+    )
+
+
 def merge_graph_components(
     node_groups: list[list[dict[str, Any]]],
     edge_groups: list[list[dict[str, Any]]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     merged_nodes: list[dict[str, Any]] = []
     seen_node_ids: set[str] = set()
+    canonical_file_ids: dict[str, str] = {}
+    rewritten_node_ids: dict[str, str] = {}
     for group in node_groups:
         for node in group:
             node_id = str(node.get("id", "")).strip()
-            if not node_id or node_id in seen_node_ids:
+            if not node_id:
+                continue
+            file_identity = _file_node_identity(node)
+            if file_identity:
+                canonical_id = canonical_file_ids.get(file_identity)
+                if canonical_id:
+                    rewritten_node_ids[node_id] = canonical_id
+                    continue
+                canonical_file_ids[file_identity] = node_id
+            if node_id in seen_node_ids:
                 continue
             seen_node_ids.add(node_id)
             merged_nodes.append(node)
 
     merged_edges: list[dict[str, Any]] = []
     seen_edge_ids: set[str] = set()
+    seen_edge_keys: set[tuple[str, str, str]] = set()
     for group in edge_groups:
         for edge in group:
+            source = rewritten_node_ids.get(str(edge.get("source", "")).strip(), str(edge.get("source", "")).strip())
+            target = rewritten_node_ids.get(str(edge.get("target", "")).strip(), str(edge.get("target", "")).strip())
+            label = str(edge.get("label", "")).strip()
+            edge_key = (source, target, label)
+            if edge_key in seen_edge_keys:
+                continue
+            edge_copy = json.loads(json.dumps(edge))
+            edge_copy["source"] = source
+            edge_copy["target"] = target
             edge_id = str(edge.get("id", "")).strip()
             if not edge_id or edge_id in seen_edge_ids:
                 continue
+            seen_edge_keys.add(edge_key)
             seen_edge_ids.add(edge_id)
-            merged_edges.append(edge)
+            merged_edges.append(edge_copy)
     return merged_nodes, merged_edges
 
 
