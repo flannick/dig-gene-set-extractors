@@ -763,10 +763,7 @@ def build_geneset_node(metadata_payload: dict[str, Any], overlay: dict[str, Any]
             gene_set.setdefault(key, value)
     geneset_id = str(gene_set["id"])
     name = str(gene_set.get("name", metadata_payload.get("geneset_id", geneset_id)))
-    description = str(
-        gene_set.get("description")
-        or f"Derived gene set for converter={metadata_payload.get('converter', {}).get('name', 'unknown')}"
-    )
+    description = str(gene_set.get("description") or "")
     dcc_url = str(gene_set.get("dcc_url") or f"urn:geneset:{metadata_payload.get('geneset_id', geneset_id)}")
     drc_url = str(gene_set.get("drc_url") or dcc_url)
     return {
