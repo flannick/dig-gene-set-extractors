@@ -28,29 +28,27 @@ def flatten_template_context(payload: dict[str, Any]) -> dict[str, str]:
             return
         if isinstance(value, list):
             return
-        if value in (None, ""):
+        if not prefix:
             return
-        context[prefix] = str(value)
+        context[prefix] = "" if value is None else str(value)
 
     converter = payload.get("converter", {})
     if isinstance(converter, dict):
         parameters = converter.get("parameters", {})
         if isinstance(parameters, dict):
             for key, value in parameters.items():
-                if value not in (None, "") and not isinstance(value, (dict, list)):
-                    context[str(key)] = str(value)
+                if not isinstance(value, (dict, list)):
+                    context[str(key)] = "" if value is None else str(value)
 
     gene_set = payload.get("gene_set", {})
     if isinstance(gene_set, dict):
         for key in ("id", "name", "description", "assay", "data_type", "organism", "genome_build"):
             value = gene_set.get(key)
-            if value not in (None, ""):
-                context[f"gene_set_{key}"] = str(value)
+            context[f"gene_set_{key}"] = "" if value is None else str(value)
 
     for key in ("geneset_id", "standard_name", "standard_version", "schema_version"):
         value = payload.get(key)
-        if value not in (None, ""):
-            context[str(key)] = str(value)
+        context[str(key)] = "" if value is None else str(value)
 
     add_flat("", payload)
     return dict(sorted(context.items()))
