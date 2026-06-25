@@ -28,6 +28,19 @@ def load_model_sidecar(metadata_path: str | Path) -> dict[str, Any] | None:
     return payload
 
 
+def infer_upstream_provenance_graph_path(
+    metadata_path: str | Path,
+    explicit_upstream_path: str | None = None,
+) -> str | None:
+    if explicit_upstream_path:
+        return explicit_upstream_path
+    meta_path = Path(metadata_path)
+    provenance_path = meta_path.parent / "geneset.provenance.json"
+    if provenance_path.exists() and provenance_path.is_file():
+        return str(provenance_path)
+    return None
+
+
 def flatten_template_context(payload: dict[str, Any], model_payload: dict[str, Any] | None = None) -> dict[str, str]:
     context: dict[str, str] = {}
 
@@ -147,11 +160,15 @@ def apply_metadata_patch(
 
     out_meta_path = Path(meta_out) if meta_out is not None else meta_path
     write_canonical_json(out_meta_path, payload)
+    resolved_upstream_path = infer_upstream_provenance_graph_path(
+        meta_path,
+        upstream_provenance_graph_path,
+    )
     out_prov_path = write_provenance_from_metadata(
         out_meta_path,
         provenance_path=provenance_out,
         provenance_overlay_json=provenance_overlay_json,
-        upstream_provenance_graph_path=upstream_provenance_graph_path,
+        upstream_provenance_graph_path=resolved_upstream_path,
         provenance_mirror_local_prefix=provenance_mirror_local_prefix,
         provenance_mirror_remote_prefix=provenance_mirror_remote_prefix,
     )
