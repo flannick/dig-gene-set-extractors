@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
-from geneset_extractors.core.metadata_patch import apply_metadata_patch, flatten_template_context, load_metadata
+from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -2322,8 +2322,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "metadata":
             if args.metadata_command == "patch":
                 if args.show_template_vars:
-                    payload = load_metadata(args.metadata_json)
-                    context = flatten_template_context(payload)
+                    context = build_template_context(args.metadata_json)
                     for key in sorted(context):
                         print("{0}\t{1}".format(key, context[key]))
                     return 0

@@ -17,7 +17,18 @@ def load_metadata(path: str | Path) -> dict[str, Any]:
     return payload
 
 
-def flatten_template_context(payload: dict[str, Any]) -> dict[str, str]:
+def load_model_sidecar(metadata_path: str | Path) -> dict[str, Any] | None:
+    meta_path = Path(metadata_path)
+    sidecar_path = meta_path.with_name("geneset.model.json")
+    if not sidecar_path.exists():
+        return None
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("model sidecar payload must be a JSON object")
+    return payload
+
+
+def flatten_template_context(payload: dict[str, Any], model_payload: dict[str, Any] | None = None) -> dict[str, str]:
     context: dict[str, str] = {}
 
     def add_flat(prefix: str, value: Any) -> None:
@@ -51,7 +62,16 @@ def flatten_template_context(payload: dict[str, Any]) -> dict[str, str]:
         context[str(key)] = "" if value is None else str(value)
 
     add_flat("", payload)
+    if isinstance(model_payload, dict):
+        add_flat("model", model_payload)
     return dict(sorted(context.items()))
+
+
+def build_template_context(metadata_path: str | Path, payload: dict[str, Any] | None = None) -> dict[str, str]:
+    meta_path = Path(metadata_path)
+    metadata_payload = payload if payload is not None else load_metadata(meta_path)
+    model_payload = load_model_sidecar(meta_path)
+    return flatten_template_context(metadata_payload, model_payload)
 
 
 def render_template(template: str, context: dict[str, str]) -> str:
@@ -99,7 +119,7 @@ def apply_metadata_patch(
     payload = load_metadata(meta_path)
 
     if description_template:
-        context = flatten_template_context(payload)
+        context = build_template_context(meta_path, payload)
         set_dotted_value(payload, "gene_set.description", render_template(description_template, context))
     if gene_set_description is not None:
         set_dotted_value(payload, "gene_set.description", gene_set_description)
