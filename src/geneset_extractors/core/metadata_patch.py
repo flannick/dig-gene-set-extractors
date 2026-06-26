@@ -28,13 +28,76 @@ def load_model_sidecar(metadata_path: str | Path) -> dict[str, Any] | None:
     return payload
 
 
+def _find_input_file_path(payload: dict[str, Any], preferred_roles: tuple[str, ...]) -> Path | None:
+    input_section = payload.get("input", {})
+    if not isinstance(input_section, dict):
+        return None
+    files = input_section.get("files", [])
+    if not isinstance(files, list):
+        return None
+
+    normalized_roles = {role.strip() for role in preferred_roles if role.strip()}
+    fallback: Path | None = None
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip()
+        raw_path = str(item.get("local_path") or item.get("path") or "").strip()
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        if fallback is None:
+            fallback = path
+        if role in normalized_roles:
+            return path
+    return fallback
+
+
+def _resolve_table_upstream_graph(table_path: Path) -> str | None:
+    if not table_path.exists():
+        return None
+    candidates = [table_path.with_name(f"{table_path.stem}.provenance_graph.json")]
+    if table_path.stem.endswith("_prefixed"):
+        base_stem = table_path.stem[: -len("_prefixed")]
+        candidates.append(table_path.with_name(f"{base_stem}.provenance_graph.json"))
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def _resolve_deg_upstream_graph(deg_path: Path) -> str | None:
+    if not deg_path.exists():
+        return None
+    candidate = deg_path.with_name(f"{deg_path.stem}.provenance_graph.json")
+    return str(candidate) if candidate.exists() else None
+
+
+def _infer_upstream_graph_from_metadata_payload(payload: dict[str, Any]) -> str | None:
+    converter = payload.get("converter", {})
+    if not isinstance(converter, dict):
+        return None
+    converter_name = str(converter.get("name", "")).strip()
+    if not converter_name:
+        return None
+
+    if converter_name in {"unsigned_term_gene", "signed_term_gene"}:
+        table_path = _find_input_file_path(payload, ("table_tsv",))
+        return _resolve_table_upstream_graph(table_path) if table_path is not None else None
+    if converter_name in {"rna_deg", "rna_deg_multi"}:
+        deg_path = _find_input_file_path(payload, ("deg_tsv",))
+        return _resolve_deg_upstream_graph(deg_path) if deg_path is not None else None
+    return None
+
+
 def infer_upstream_provenance_graph_path(
     metadata_path: str | Path,
     explicit_upstream_path: str | None = None,
 ) -> str | None:
     if explicit_upstream_path:
         return explicit_upstream_path
-    return None
+    payload = load_metadata(metadata_path)
+    return _infer_upstream_graph_from_metadata_payload(payload)
 
 
 def flatten_template_context(payload: dict[str, Any], model_payload: dict[str, Any] | None = None) -> dict[str, str]:
