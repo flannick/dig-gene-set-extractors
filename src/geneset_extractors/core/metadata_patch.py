@@ -34,10 +34,6 @@ def infer_upstream_provenance_graph_path(
 ) -> str | None:
     if explicit_upstream_path:
         return explicit_upstream_path
-    meta_path = Path(metadata_path)
-    provenance_path = meta_path.parent / "geneset.provenance.json"
-    if provenance_path.exists() and provenance_path.is_file():
-        return str(provenance_path)
     return None
 
 
