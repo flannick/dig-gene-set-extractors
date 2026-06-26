@@ -92,13 +92,9 @@ def derive_subject_id(sample_id: str) -> str:
 
 
 def compact_age_comparison_label(age_bin: str, reference_age_bin: str) -> str:
-    left = str(age_bin or "").strip()
-    right = str(reference_age_bin or "").strip()
-    if not left or not right:
-        raise ValueError("age_bin and reference_age_bin must be non-empty")
-    left_decade = left.split("-", 1)[0]
-    right_decade = right.split("-", 1)[0]
-    return f"age{left_decade}_{right_decade}"
+    # Keep the helper name for compatibility with existing callers, but use the
+    # readable age-pair identifier directly as comparison_id.
+    return expanded_age_comparison_label(age_bin, reference_age_bin)
 
 
 def expanded_age_comparison_label(age_bin: str, reference_age_bin: str) -> str:
