@@ -193,6 +193,38 @@ def set_dotted_value(payload: dict[str, Any], dotted_key: str, value: str) -> No
     current[parts[-1]] = value
 
 
+def _mirror_string_content(
+    value: str,
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> str:
+    if not value or not mirror_local_prefix or not mirror_remote_prefix:
+        return value
+    remote_root = str(mirror_remote_prefix).rstrip("/")
+    local_root = str(Path(mirror_local_prefix).resolve()).rstrip("/")
+    file_root = Path(local_root).as_uri().rstrip("/")
+    for source_root in sorted({local_root, file_root}, key=len, reverse=True):
+        value = value.replace(source_root, remote_root)
+    return value
+
+
+def _mirror_json_like(
+    value: Any,
+    mirror_local_prefix: str | None,
+    mirror_remote_prefix: str | None,
+) -> Any:
+    if isinstance(value, str):
+        return _mirror_string_content(value, mirror_local_prefix, mirror_remote_prefix)
+    if isinstance(value, list):
+        return [_mirror_json_like(item, mirror_local_prefix, mirror_remote_prefix) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _mirror_json_like(item, mirror_local_prefix, mirror_remote_prefix)
+            for key, item in value.items()
+        }
+    return value
+
+
 def apply_metadata_patch(
     *,
     metadata_path: str | Path,
@@ -216,6 +248,12 @@ def apply_metadata_patch(
         set_dotted_value(payload, "gene_set.description", gene_set_description)
     for dotted_key, value in (set_values or []):
         set_dotted_value(payload, dotted_key, value)
+    if provenance_mirror_local_prefix and provenance_mirror_remote_prefix:
+        payload = _mirror_json_like(
+            payload,
+            provenance_mirror_local_prefix,
+            provenance_mirror_remote_prefix,
+        )
 
     out_meta_path = Path(meta_out) if meta_out is not None else meta_path
     write_canonical_json(out_meta_path, payload)
