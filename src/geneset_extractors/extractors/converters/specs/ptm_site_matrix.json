@@ -80,7 +80,7 @@
     {"name": "normalize", "type": "string", "default": "within_set_l1", "enum": ["none", "l1", "within_set_l1"], "help": "Weight normalization on selected genes"},
     {"name": "emit_full", "type": "boolean", "default": true, "help": "Write geneset.full.tsv"},
     {"name": "emit_gmt", "type": "boolean", "default": true, "help": "Write genesets.gmt"},
-    {"name": "gmt_format", "type": "string", "default": "dig2col", "enum": ["dig2col", "classic"], "help": "GMT serialization format"},
+    {"name": "gmt_format", "type": "string", "default": "classic", "enum": ["classic"], "help": "GMT serialization format"},
     {"name": "gmt_prefer_symbol", "type": "boolean", "default": true, "help": "Prefer gene_symbol tokens in GMT"},
     {"name": "gmt_require_symbol", "type": "boolean", "default": true, "help": "Drop rows without usable symbol tokens for GMT"},
     {"name": "gmt_biotype_allowlist", "type": "string", "default": "protein_coding", "help": "Comma-separated allowed biotypes for GMT"},

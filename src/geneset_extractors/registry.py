@@ -23,8 +23,10 @@ from geneset_extractors.extractors.converters import (
     rna_deg_multi,
     rna_sc_programs,
     sc_rna_marker,
+    signed_term_gene,
     splice_event_diff,
     splice_event_matrix,
+    unsigned_term_gene,
 )
 
 
@@ -48,8 +50,10 @@ CONVERTERS = {
     "rna_deg_multi": rna_deg_multi,
     "rna_sc_programs": rna_sc_programs,
     "sc_rna_marker": sc_rna_marker,
+    "signed_term_gene": signed_term_gene,
     "splice_event_diff": splice_event_diff,
     "splice_event_matrix": splice_event_matrix,
+    "unsigned_term_gene": unsigned_term_gene,
 }
 
 

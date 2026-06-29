@@ -8,6 +8,7 @@ import sys
 from geneset_extractors.core.gmt import write_gmt
 from geneset_extractors.core.metadata import enrich_manifest_row, input_file_record
 from geneset_extractors.core.provenance import activate_runtime_context
+from geneset_extractors.core.qc import write_run_summary_files
 from geneset_extractors.extractors.rnaseq.deg_scoring import DEGRow, read_deg_tsv, sanitize_name_component
 from geneset_extractors.extractors.rnaseq.deg_workflow import DEGWorkflowConfig, run_deg_workflow
 
@@ -18,9 +19,78 @@ def _safe_name(value: str) -> str:
 
 
 def _should_skip_empty_filtered_comparison(postprocess_mode: str, exc: ValueError) -> bool:
-    if str(postprocess_mode) != "harmonizome":
-        return False
     return str(exc) == "No DE rows remain after applying padj/pvalue/logFC row filters."
+
+
+def _write_empty_deg_rows(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["gene_id", "score"],
+            delimiter="\t",
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+
+def _emit_empty_comparison_output(
+    *,
+    group_dir: Path,
+    cfg: DEGWorkflowConfig,
+    comparison: str,
+    comparison_label: str,
+    reason: str,
+) -> dict[str, object]:
+    group_dir.mkdir(parents=True, exist_ok=True)
+
+    geneset_path = group_dir / "geneset.tsv"
+    _write_empty_deg_rows(geneset_path)
+
+    output_files = [{"path": str(geneset_path), "role": "selected_program"}]
+    if cfg.emit_full:
+        full_path = group_dir / "geneset.full.tsv"
+        _write_empty_deg_rows(full_path)
+        output_files.append({"path": str(full_path), "role": "full_scores"})
+
+    run_summary_payload = {
+        "converter": cfg.converter_name,
+        "signature_name": cfg.signature_name,
+        "comparison": cfg.comparison_label,
+        "score_mode": cfg.score_mode,
+        "n_input_features": 0,
+        "n_genes_after_filter": 0,
+        "n_genes_selected": 0,
+        "n_rows_skipped_unparseable": 0,
+        "n_rows_filtered_by_thresholds": 0,
+        "n_genes_filtered_by_symbol_regex": 0,
+        "duplicate_gene_policy": cfg.duplicate_gene_policy,
+        "n_gene_ids_with_duplicates": 0,
+        "n_duplicate_rows": 0,
+        "warnings": [
+            "No DE rows remained after row-level filtering; emitted empty comparison outputs."
+        ],
+        "parse_summary": {"reason": reason},
+    }
+    write_run_summary_files(group_dir, run_summary_payload)
+    return {
+        "comparison": comparison,
+        "geneset_id": "",
+        "label": comparison_label,
+        "path": str(group_dir.name),
+        "meta_path": "",
+        "provenance_path": "",
+        "focus_node_id": "",
+    }
+
+
+def _resolve_upstream_provenance_graph_path(deg_tsv: str | Path) -> str | None:
+    deg_path = Path(deg_tsv)
+    if not deg_path.exists():
+        return None
+    candidate = deg_path.with_name(f"{deg_path.stem}.provenance_graph.json")
+    return str(candidate) if candidate.exists() else None
 
 
 def run(args) -> dict[str, object]:
@@ -34,23 +104,41 @@ def run(args) -> dict[str, object]:
             f"comparison_column '{args.comparison_column}' not found in DE table. "
             f"Available columns: {', '.join(fieldnames)}"
         )
+    if getattr(args, "comparison_name_column", None) and args.comparison_name_column not in fieldnames:
+        raise ValueError(
+            f"comparison_name_column '{args.comparison_name_column}' not found in DE table. "
+            f"Available columns: {', '.join(fieldnames)}"
+        )
 
     grouped: dict[str, list[DEGRow]] = {}
+    comparison_display_names: dict[str, str] = {}
     for row in rows:
         comparison = str(row.values.get(args.comparison_column, "")).strip()
         if not comparison:
             continue
+        display_name = str(
+            row.values.get(getattr(args, "comparison_name_column", None) or args.comparison_column, "")
+        ).strip()
+        if comparison in comparison_display_names and comparison_display_names[comparison] != display_name:
+            raise ValueError(
+                f"comparison '{comparison}' has inconsistent display labels in "
+                f"{getattr(args, 'comparison_name_column', args.comparison_column)}"
+            )
+        comparison_display_names[comparison] = display_name or comparison
         grouped.setdefault(comparison, []).append(row)
     if not grouped:
         raise ValueError("No non-empty comparison labels found in comparison_column.")
 
     signature_name = str(args.signature_name or "").strip()
-    if not signature_name or signature_name == "contrast":
+    if signature_name == "__comparison_only__":
+        signature_name = ""
+    elif not signature_name or signature_name == "contrast":
         signature_name = sanitize_name_component(Path(args.deg_tsv).stem)
 
     files = [input_file_record(args.deg_tsv, "deg_tsv")]
     if args.gtf:
         files.append(input_file_record(args.gtf, "gtf"))
+    upstream_graph_path = _resolve_upstream_provenance_graph_path(args.deg_tsv)
 
     used_paths: set[str] = set()
     manifest_rows: list[dict[str, object]] = []
@@ -58,7 +146,8 @@ def run(args) -> dict[str, object]:
     biotype_warning_seen = False
 
     for comparison in sorted(grouped):
-        base = _safe_name(comparison)
+        comparison_label = comparison_display_names.get(comparison, comparison)
+        base = _safe_name(comparison_label)
         safe = base
         suffix = 2
         while safe in used_paths:
@@ -66,7 +155,7 @@ def run(args) -> dict[str, object]:
             suffix += 1
         used_paths.add(safe)
 
-        group_dir = out_dir / f"comparison={safe}"
+        group_dir = out_dir / safe
         cfg = DEGWorkflowConfig(
             converter_name="rna_deg_multi",
             out_dir=group_dir,
@@ -74,7 +163,7 @@ def run(args) -> dict[str, object]:
             genome_build=args.genome_build,
             signature_name=signature_name,
             deg_tsv_label=Path(args.deg_tsv).name,
-            comparison_label=comparison,
+            comparison_label=comparison_display_names.get(comparison, comparison),
             gene_id_column=args.gene_id_column,
             gene_symbol_column=args.gene_symbol_column,
             stat_column=args.stat_column,
@@ -111,10 +200,16 @@ def run(args) -> dict[str, object]:
             gmt_topk_list=args.gmt_topk_list,
             gmt_mass_list=args.gmt_mass_list,
             gmt_split_signed=args.gmt_split_signed,
+            gmt_name_separator=args.gmt_name_separator,
+            gmt_signed_labels=args.gmt_signed_labels,
             gmt_emit_abs=args.gmt_emit_abs,
             gmt_source=args.gmt_source,
+            gmt_mode=args.gmt_mode,
+            gmt_top_n_per_direction=args.gmt_top_n_per_direction,
+            gmt_sort_by=args.gmt_sort_by,
             emit_small_gene_sets=args.emit_small_gene_sets,
             warn_biotype_missing=not biotype_warning_seen,
+            upstream_provenance_graph_path=upstream_graph_path,
         )
         try:
             result = run_deg_workflow(
@@ -126,13 +221,17 @@ def run(args) -> dict[str, object]:
         except ValueError as exc:
             if not _should_skip_empty_filtered_comparison(getattr(args, "postprocess_mode", "legacy"), exc):
                 raise
-            if group_dir.exists():
-                try:
-                    group_dir.rmdir()
-                except OSError:
-                    pass
+            manifest_rows.append(
+                _emit_empty_comparison_output(
+                    group_dir=group_dir,
+                    cfg=cfg,
+                    comparison=comparison,
+                    comparison_label=comparison_label,
+                    reason=str(exc),
+                )
+            )
             print(
-                "warning: skipping comparison with no rows remaining after Harmonizome significance filtering: "
+                "warning: emitting empty comparison output after row filters removed all DE rows: "
                 f"{comparison}",
                 file=sys.stderr,
             )
@@ -153,6 +252,7 @@ def run(args) -> dict[str, object]:
             fh,
             delimiter="\t",
             fieldnames=["comparison", "geneset_id", "label", "path", "meta_path", "provenance_path", "focus_node_id"],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(manifest_rows)

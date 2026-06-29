@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from geneset_extractors.core.metadata import invocation_context
+from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
+from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -30,6 +31,17 @@ class _StoreWithExplicitFlag(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):  # type: ignore[override]
         setattr(namespace, self.dest, values)
         setattr(namespace, f"{self.dest}_explicit", True)
+
+
+def _parse_set_kv(value: str) -> tuple[str, str]:
+    raw = str(value)
+    if "=" not in raw:
+        raise argparse.ArgumentTypeError("expected KEY=VALUE")
+    key, val = raw.split("=", 1)
+    key = key.strip()
+    if not key:
+        raise argparse.ArgumentTypeError("expected non-empty KEY in KEY=VALUE")
+    return key, val
 
 
 def _add_linking_flags(parser: argparse.ArgumentParser) -> None:
@@ -143,7 +155,7 @@ def _add_gmt_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gmt_topk_list", default="200")
     parser.add_argument("--gmt_mass_list", default="")
     parser.add_argument("--gmt_split_signed", type=_parse_bool, default=False)
-    parser.add_argument("--gmt_format", choices=["dig2col", "classic"], default="dig2col")
+    parser.add_argument("--gmt_format", choices=["classic"], default="classic")
     parser.add_argument(
         "--emit_small_gene_sets",
         type=_parse_bool,
@@ -156,6 +168,14 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--provenance_overlay_json",
         help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
+    )
+    parser.add_argument(
+        "--provenance_mirror_local_prefix",
+        help="Optional local path prefix to rewrite to a mirrored remote prefix in emitted provenance.",
+    )
+    parser.add_argument(
+        "--provenance_mirror_remote_prefix",
+        help="Optional remote prefix, such as an s3:// URI, used to replace the local mirror prefix in emitted provenance.",
     )
 
 
@@ -200,6 +220,8 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--neglog10p_cap", type=float, default=50.0)
     parser.add_argument("--neglog10p_eps", type=float, default=1e-300)
     parser.add_argument("--exclude_gene_regex", action="append")
+    parser.add_argument("--gmt_name_separator", choices=["__", "_"], default="__")
+    parser.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "Up_Down"], default="pos_neg")
     parser.add_argument("--disable_default_excludes", action="store_true")
     parser.add_argument("--gtf")
     parser.add_argument("--gtf_gene_id_field", default="gene_id")
@@ -225,6 +247,26 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         default="full",
         help="Source table for GMT export: full ranked scores or selected geneset.tsv rows.",
     )
+    parser.add_argument(
+        "--gmt_mode",
+        choices=["standard", "top_per_direction"],
+        default="standard",
+        help=(
+            "GMT emission mode. standard uses the existing score-ranked builder. "
+            "top_per_direction reproduces notebook-style signed top-N selection from raw DEG columns."
+        ),
+    )
+    parser.add_argument(
+        "--gmt_top_n_per_direction",
+        type=int,
+        help="When gmt_mode=top_per_direction, keep this many genes separately for positive and negative logFC sets.",
+    )
+    parser.add_argument(
+        "--gmt_sort_by",
+        choices=["P.Value", "adj.P.Val", "t", "logFC_abs"],
+        default="adj.P.Val",
+        help="When gmt_mode=top_per_direction, ranking column used within each logFC direction.",
+    )
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=True,
@@ -232,6 +274,196 @@ def _add_rna_deg_flags(parser: argparse.ArgumentParser) -> None:
         gmt_min_genes=100,
         gmt_max_genes=500,
     )
+
+
+def _add_gtex_aging_signatures_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True, help="GTEx raw reads GCT file.")
+    parser.add_argument("--sample_attributes_tsv", required=True, help="GTEx sample attributes TSV.")
+    parser.add_argument("--subject_phenotypes_tsv", required=True, help="GTEx subject phenotypes TSV.")
+    parser.add_argument("--human_gene_info", required=True, help="NCBI human_gene_info file used for Ensembl-to-symbol mapping.")
+    parser.add_argument("--out_dir", required=True, help="Workflow output directory.")
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--tissue_column", default="SMTS", help="Metadata tissue-grouping column used to select samples.")
+    parser.add_argument("--tissue_value", required=True, help="Metadata value in tissue_column defining the broad tissue cohort.")
+    parser.add_argument("--tissue_label", help="Optional human-readable tissue label used in summaries and signature names.")
+    parser.add_argument("--tissue_id", help="Optional stable tissue identifier used in summaries.")
+    parser.add_argument("--reference_age_group", default="20-29")
+    parser.add_argument(
+        "--comparison_age_groups",
+        default="30-39,40-49,50-59,60-69,70-79",
+        help="Comma-separated age groups to compare against the reference age group.",
+    )
+    parser.add_argument("--random_state", type=int, default=1, help="Deterministic balancing seed.")
+    parser.add_argument("--min_samples_per_group", type=int, default=3)
+    parser.add_argument("--filter_mode", choices=["none", "tissue"], default="none")
+    parser.add_argument("--chunksize", type=int, default=1000)
+    _add_provenance_flags(parser)
+
+
+def _add_gtex_age_binned_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True)
+    parser.add_argument("--sample_attributes_tsv", required=True)
+    parser.add_argument("--subject_phenotypes_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--tissue_label", required=True)
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--tissue_column", help="Optional metadata tissue-grouping column.")
+    parser.add_argument("--tissue_value", help="Optional metadata value in tissue_column defining the cohort.")
+    parser.add_argument("--reference_age_bin", default="20-29")
+    parser.add_argument("--age_bins", default="20-29,30-39,40-49,50-59,60-69,70-79")
+    parser.add_argument("--min_samples_per_group", type=int, default=2)
+    parser.add_argument("--de_mode", choices=["modern", "harmonizome"], default="modern")
+    parser.add_argument("--balance_groups", type=_parse_bool, default=False)
+    parser.add_argument("--balance_seed", type=int, default=0)
+    parser.add_argument("--gene_filter_scope", choices=["contrast", "stratum"], default="contrast")
+    parser.add_argument("--backend", default="auto")
+    parser.add_argument("--covariates", default="SEX")
+    _add_provenance_flags(parser)
+
+
+def _add_gtex_continuous_age_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True)
+    parser.add_argument("--sample_attributes_tsv", required=True)
+    parser.add_argument("--subject_phenotypes_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--tissue_label", required=True)
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--tissue_column", help="Optional metadata tissue-grouping column.")
+    parser.add_argument("--tissue_value", help="Optional metadata value in tissue_column defining the cohort.")
+    parser.add_argument("--covariates", default="SEX")
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_timewise_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--min_samples_per_group", type=int, default=5)
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_released_dea_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--feature_annot", required=True)
+    parser.add_argument("--dea_dir", required=True)
+    parser.add_argument("--mapping_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--padj_max", type=float, default=0.05)
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_training_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--covariates", default="sex")
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_timepoint_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_tsv", required=True)
+    parser.add_argument("--sample_metadata_tsv")
+    parser.add_argument("--raw_counts_tsv")
+    parser.add_argument("--transcript_metadata_tsv")
+    parser.add_argument("--phenotype_metadata_tsv")
+    parser.add_argument("--feature_to_gene_tsv")
+    parser.add_argument("--rat_to_human_tsv")
+    parser.add_argument("--tissue_label")
+    parser.add_argument("--transcript_tissue_label")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--tissue_id", required=True)
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--min_samples_per_group", type=int, default=5)
+    _add_provenance_flags(parser)
+
+
+def _add_motrpac_raw_aggregated_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--raw_counts_dir", required=True)
+    parser.add_argument("--transcript_metadata_tsv", required=True)
+    parser.add_argument("--phenotype_metadata_tsv", required=True)
+    parser.add_argument("--feature_to_gene_tsv", required=True)
+    parser.add_argument("--rat_to_human_tsv", required=True)
+    parser.add_argument("--tissue_list_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--workflow_mode", choices=["pooled", "stratified_sex_timepoint", "stratified_timepoint"], required=True)
+    parser.add_argument("--rscript_bin", default="Rscript")
+    parser.add_argument("--covariates", default="sex")
+    parser.add_argument("--min_samples_per_group", type=int, default=5)
+    parser.add_argument("--padj_max", type=float, default=0.05)
+
+
+def _add_hubmap_asctb_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--human_gene_info", required=True)
+    parser.add_argument("--raw_asctb_dir")
+    parser.add_argument("--asctb_dir")
+    parser.add_argument("--out_dir", required=True)
+    _add_provenance_flags(parser)
+
+
+def _add_hubmap_asctb_augmented_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--input_matrix", required=True)
+    parser.add_argument("--human_gene_info", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--augmentation_threshold", type=float, default=0.67)
+    parser.add_argument("--cap_multiplier", type=int, default=4)
+    parser.add_argument("--geneshot_url", default="https://maayanlab.cloud/geneshot/api/associate")
+    parser.add_argument("--request_timeout", type=int, default=120)
+    parser.add_argument("--request_retries", type=int, default=2)
+    parser.add_argument("--pause_seconds", type=float, default=0.1)
+    parser.add_argument("--limit_terms", type=int)
+    _add_provenance_flags(parser)
+
+
+def _add_lincs_l1000_chempert_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--mapping_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--z_threshold", type=float, default=3.0)
+    parser.add_argument("--min_gmt_size", type=int, default=5)
+
+
+def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--mapping_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--top_n", type=int, default=250)
+    parser.add_argument("--min_gmt_size", type=int, default=5)
+    _add_provenance_flags(parser)
 
 
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
@@ -1425,6 +1657,60 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = sub.add_parser("validate")
     p_val.add_argument("output_dir")
 
+    p_provenance = sub.add_parser("provenance")
+    prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
+    p_prov_build = prov_sub.add_parser("build")
+    p_prov_build.add_argument("metadata_json", help="Path to an existing geneset.meta.json file.")
+    p_prov_build.add_argument(
+        "--out",
+        dest="provenance_out",
+        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json.",
+    )
+    _add_provenance_flags(p_prov_build)
+    p_prov_build.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
+    )
+
+    p_metadata = sub.add_parser("metadata")
+    metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
+    p_meta_patch = metadata_sub.add_parser("patch")
+    p_meta_patch.add_argument("metadata_json", help="Path to an existing geneset.meta.json file.")
+    p_meta_patch.add_argument(
+        "--meta_out",
+        help="Optional output path for patched metadata. Defaults to in-place rewrite of metadata_json.",
+    )
+    p_meta_patch.add_argument(
+        "--provenance_out",
+        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json next to meta_out.",
+    )
+    p_meta_patch.add_argument(
+        "--gene_set_description",
+        help="Direct replacement for gene_set.description in metadata.",
+    )
+    p_meta_patch.add_argument(
+        "--description_template",
+        help="Template for gene_set.description using metadata variables like {signature_name} or {comparison_label}.",
+    )
+    p_meta_patch.add_argument(
+        "--set",
+        dest="set_values",
+        action="append",
+        type=_parse_set_kv,
+        default=[],
+        help="Set a dotted metadata field using KEY=VALUE, for example gene_set.description=New text.",
+    )
+    p_meta_patch.add_argument(
+        "--show_template_vars",
+        action="store_true",
+        help="Print available template variables derived from metadata and exit.",
+    )
+    _add_provenance_flags(p_meta_patch)
+    p_meta_patch.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
+    )
+
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
 
@@ -1436,6 +1722,31 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cnmf_select_k_flags(p_cnmf_select_k)
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
+    _add_provenance_flags(p_rna_de_prepare)
+    p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
+    _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
+    p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
+    _add_gtex_age_binned_flags(p_gtex_age_binned)
+    p_gtex_continuous_age = wf_sub.add_parser("gtex_continuous_age")
+    _add_gtex_continuous_age_flags(p_gtex_continuous_age)
+    p_motrpac_timewise = wf_sub.add_parser("motrpac_timewise")
+    _add_motrpac_timewise_flags(p_motrpac_timewise)
+    p_motrpac_training = wf_sub.add_parser("motrpac_training")
+    _add_motrpac_training_flags(p_motrpac_training)
+    p_motrpac_timepoint = wf_sub.add_parser("motrpac_timepoint")
+    _add_motrpac_timepoint_flags(p_motrpac_timepoint)
+    p_motrpac_released_dea = wf_sub.add_parser("motrpac_released_dea")
+    _add_motrpac_released_dea_flags(p_motrpac_released_dea)
+    p_motrpac_raw_aggregated = wf_sub.add_parser("motrpac_raw_aggregated")
+    _add_motrpac_raw_aggregated_flags(p_motrpac_raw_aggregated)
+    p_hubmap_asctb = wf_sub.add_parser("hubmap_asctb")
+    _add_hubmap_asctb_flags(p_hubmap_asctb)
+    p_hubmap_asctb_augmented = wf_sub.add_parser("hubmap_asctb_augmented")
+    _add_hubmap_asctb_augmented_flags(p_hubmap_asctb_augmented)
+    p_lincs_l1000_chempert = wf_sub.add_parser("lincs_l1000_chempert")
+    _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
+    p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
+    _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -1617,6 +1928,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_multi = conv.add_parser("rna_deg_multi")
     p_rna_multi.add_argument("--deg_tsv", required=True)
     p_rna_multi.add_argument("--comparison_column", required=True)
+    p_rna_multi.add_argument("--comparison_name_column")
     p_rna_multi.add_argument("--out_dir", required=True)
     p_rna_multi.add_argument("--organism", choices=["human", "mouse"], required=True)
     p_rna_multi.add_argument("--genome_build", required=True)
@@ -1895,6 +2207,58 @@ def build_parser() -> argparse.ArgumentParser:
     p_scrna.add_argument("--normalize", choices=["l1", "none"], default="l1")
     _add_provenance_flags(p_scrna)
 
+    p_signed_term = conv.add_parser("signed_term_gene")
+    p_signed_term.add_argument("--table_tsv", required=True)
+    p_signed_term.add_argument("--out_dir", required=True)
+    p_signed_term.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_signed_term.add_argument("--genome_build", required=True)
+    p_signed_term.add_argument("--term_column", default="term")
+    p_signed_term.add_argument("--term_prefix", default="")
+    p_signed_term.add_argument("--gene_id_column", default="gene_id")
+    p_signed_term.add_argument("--gene_symbol_column", default="gene_symbol")
+    p_signed_term.add_argument("--score_column", default="score")
+    p_signed_term.add_argument("--sign_column", default="sign")
+    p_signed_term.add_argument(
+        "--emit_mode",
+        choices=["grouped_rows", "ternary_matrix_notebook"],
+        default="grouped_rows",
+    )
+    p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_"], default="_")
+    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "Up_Down"], default="up_dn")
+    _add_gmt_flags(p_signed_term)
+    _add_provenance_flags(p_signed_term)
+    p_signed_term.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=True,
+        gmt_prefer_symbol=True,
+        gmt_require_symbol=True,
+        gmt_min_genes=5,
+        gmt_max_genes=50000,
+        emit_small_gene_sets=False,
+    )
+
+    p_unsigned_term = conv.add_parser("unsigned_term_gene")
+    p_unsigned_term.add_argument("--table_tsv", required=True)
+    p_unsigned_term.add_argument("--out_dir", required=True)
+    p_unsigned_term.add_argument("--organism", choices=["human", "mouse"], required=True)
+    p_unsigned_term.add_argument("--genome_build", required=True)
+    p_unsigned_term.add_argument("--term_column", default="term")
+    p_unsigned_term.add_argument("--term_prefix", default="")
+    p_unsigned_term.add_argument("--gene_id_column", default="gene_id")
+    p_unsigned_term.add_argument("--gene_symbol_column", default="gene_symbol")
+    p_unsigned_term.add_argument("--score_column", default="score")
+    _add_gmt_flags(p_unsigned_term)
+    _add_provenance_flags(p_unsigned_term)
+    p_unsigned_term.set_defaults(
+        emit_gmt=True,
+        gmt_split_signed=False,
+        gmt_prefer_symbol=True,
+        gmt_require_symbol=True,
+        gmt_min_genes=5,
+        gmt_max_genes=50000,
+        emit_small_gene_sets=False,
+    )
+
     return parser
 
 
@@ -1941,6 +2305,41 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("ok")
             return 0
+
+        if args.command == "provenance":
+            if args.provenance_command == "build":
+                out_path = write_provenance_from_metadata(
+                    args.metadata_json,
+                    provenance_path=args.provenance_out,
+                    provenance_overlay_json=getattr(args, "provenance_overlay_json", None),
+                    upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
+                    provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+                    provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
+                )
+                print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
+                return 0
+
+        if args.command == "metadata":
+            if args.metadata_command == "patch":
+                if args.show_template_vars:
+                    context = build_template_context(args.metadata_json)
+                    for key in sorted(context):
+                        print("{0}\t{1}".format(key, context[key]))
+                    return 0
+                result = apply_metadata_patch(
+                    metadata_path=args.metadata_json,
+                    meta_out=args.meta_out,
+                    provenance_out=args.provenance_out,
+                    description_template=args.description_template,
+                    gene_set_description=args.gene_set_description,
+                    set_values=list(args.set_values or []),
+                    provenance_overlay_json=getattr(args, "provenance_overlay_json", None),
+                    upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
+                    provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+                    provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
+                )
+                print(json.dumps({"status": "ok", **result}))
+                return 0
 
         if args.command == "resources":
             merge_with_bundled = bool(getattr(args, "manifest_mode", "overlay") == "overlay")
@@ -2074,6 +2473,137 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_aging_signatures":
+                from geneset_extractors.workflows.gtex_aging_signatures import run as run_gtex_aging_signatures
+
+                result = run_gtex_aging_signatures(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_aging_signatures n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_age_binned":
+                from geneset_extractors.workflows.gtex_age_binned import run as run_gtex_age_binned
+
+                result = run_gtex_age_binned(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_age_binned n_comparisons={result.get('n_comparisons')} "
+                    f"out={args.out_dir}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_continuous_age":
+                from geneset_extractors.workflows.gtex_continuous_age import run as run_gtex_continuous_age
+
+                result = run_gtex_continuous_age(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_continuous_age n_samples={result.get('n_samples')} "
+                    f"out={args.out_dir}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_timewise":
+                from geneset_extractors.workflows.motrpac_timewise import run as run_motrpac_timewise
+
+                result = run_motrpac_timewise(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_timewise n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_training":
+                from geneset_extractors.workflows.motrpac_training import run as run_motrpac_training
+
+                result = run_motrpac_training(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_training out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_timepoint":
+                from geneset_extractors.workflows.motrpac_timepoint import run as run_motrpac_timepoint
+
+                result = run_motrpac_timepoint(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_timepoint n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_released_dea":
+                from geneset_extractors.workflows.motrpac_released_dea import run as run_motrpac_released_dea
+
+                result = run_motrpac_released_dea(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_released_dea n_terms={result.get('n_terms')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "motrpac_raw_aggregated":
+                from geneset_extractors.workflows.motrpac_raw_aggregated import run as run_motrpac_raw_aggregated
+
+                result = run_motrpac_raw_aggregated(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=motrpac_raw_aggregated n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_chempert":
+                from geneset_extractors.workflows.lincs_l1000_chempert import run as run_lincs_l1000_chempert
+
+                result = run_lincs_l1000_chempert(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_chempert n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_crisprko":
+                from geneset_extractors.workflows.lincs_l1000_crisprko import run as run_lincs_l1000_crisprko
+
+                result = run_lincs_l1000_crisprko(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "hubmap_asctb":
+                from geneset_extractors.workflows.hubmap_asctb import run as run_hubmap_asctb
+
+                result = run_hubmap_asctb(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=hubmap_asctb n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "hubmap_asctb_augmented":
+                from geneset_extractors.workflows.hubmap_asctb_augmented import run as run_hubmap_asctb_augmented
+
+                result = run_hubmap_asctb_augmented(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=hubmap_asctb_augmented n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

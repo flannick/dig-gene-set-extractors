@@ -658,6 +658,20 @@ def test_rna_de_prepare_can_call_internal_extractor(tmp_path: Path):
     extractor_out = Path(result["extractor_out_dir"])
     assert (extractor_out / "manifest.tsv").exists()
     assert (extractor_out / "genesets.gmt").exists()
+    workflow_graph = Path(args.out_dir) / "deg_long.provenance_graph.json"
+    assert workflow_graph.exists()
+
+    with (extractor_out / "manifest.tsv").open("r", encoding="utf-8") as fh:
+        first_row = next(csv.DictReader(fh, delimiter="\t"))
+    provenance = json.loads((extractor_out / str(first_row["path"]) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    graph = next(iter(provenance.values()))
+    analysis_nodes = [node for node in graph["nodes"] if node.get("type") == "AnalysisType"]
+    assert {node["id"].split(":")[1] for node in analysis_nodes} >= {"rna_de_prepare", "rna_deg_multi"}
+    deg_long_nodes = [node for node in graph["nodes"] if node.get("type") == "File" and node.get("name") == "deg_long.tsv"]
+    assert deg_long_nodes
+    deg_long_id = deg_long_nodes[0]["id"]
+    assert any(edge["source"].startswith("analysis:rna_de_prepare:") and edge["target"] == deg_long_id for edge in graph["edges"])
+    assert any(edge["source"] == deg_long_id and edge["target"].startswith("analysis:rna_deg_multi:") for edge in graph["edges"])
 
 
 

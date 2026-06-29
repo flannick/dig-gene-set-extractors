@@ -21,6 +21,32 @@ def _validate_required_fallback(payload: object, schema: dict[str, object], path
             _validate_required_fallback(payload[key], sub_schema, f"{path}.{key}")
 
 
+def _validate_provenance_graph_fallback(payload: object, path: str = "$") -> None:
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path}: expected top-level provenance object")
+    for graph_key, graph in payload.items():
+        if not isinstance(graph, dict):
+            raise ValueError(f"{path}.{graph_key}: expected provenance graph object")
+        nodes = graph.get("nodes")
+        edges = graph.get("edges")
+        if not isinstance(nodes, list) or not nodes:
+            raise ValueError(f"{path}.{graph_key}.nodes: expected non-empty array")
+        if not isinstance(edges, list) or not edges:
+            raise ValueError(f"{path}.{graph_key}.edges: expected non-empty array")
+        for index, node in enumerate(nodes):
+            if not isinstance(node, dict):
+                raise ValueError(f"{path}.{graph_key}.nodes[{index}]: expected object")
+            for required_key in ("id", "type", "name", "description", "dcc_url", "drc_url"):
+                if required_key not in node:
+                    raise ValueError(f"{path}.{graph_key}.nodes[{index}]: missing required key '{required_key}'")
+        for index, edge in enumerate(edges):
+            if not isinstance(edge, dict):
+                raise ValueError(f"{path}.{graph_key}.edges[{index}]: expected object")
+            for required_key in ("id", "source", "target", "label", "description"):
+                if required_key not in edge:
+                    raise ValueError(f"{path}.{graph_key}.edges[{index}]: missing required key '{required_key}'")
+
+
 def validate_metadata_schema(meta_path: Path, schema_path: Path) -> None:
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -39,7 +65,10 @@ def validate_provenance_schema(provenance_path: Path, schema_path: Path) -> None
     try:
         import jsonschema  # type: ignore
     except ModuleNotFoundError:
-        _validate_required_fallback(payload, schema)
+        if "$defs" in schema and isinstance(schema.get("additionalProperties"), dict):
+            _validate_provenance_graph_fallback(payload)
+        else:
+            _validate_required_fallback(payload, schema)
     else:
         jsonschema.validate(payload, schema)
 

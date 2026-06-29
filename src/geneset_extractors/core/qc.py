@@ -430,6 +430,6 @@ def write_run_summary_files(out_dir: Path, payload: dict[str, object]) -> tuple[
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "run_summary.json"
     txt_path = out_dir / "run_summary.txt"
-    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    txt_path.write_text(render_run_summary_text(payload), encoding="utf-8")
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    txt_path.write_text(render_run_summary_text(payload), encoding="utf-8", newline="\n")
     return json_path, txt_path

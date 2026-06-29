@@ -90,7 +90,16 @@ for (i in seq_len(nrow(comps))) {{
   }}
   y <- y[keep_genes, , keep.lib.sizes=FALSE]
   y <- calcNormFactors(y)
-  formula_terms <- c(".__group", extra_cols[extra_cols %in% colnames(sub_meta)])
+  present_extra_cols <- extra_cols[extra_cols %in% colnames(sub_meta)]
+  variable_extra_cols <- c()
+  for (col_name in present_extra_cols) {{
+    values <- sub_meta[[col_name]]
+    values <- values[!is.na(values) & nzchar(as.character(values))]
+    if (length(unique(as.character(values))) >= 2) {{
+      variable_extra_cols <- c(variable_extra_cols, col_name)
+    }}
+  }}
+  formula_terms <- c(".__group", variable_extra_cols)
   design <- model.matrix(as.formula(paste("~", paste(formula_terms, collapse=" + "))), data=sub_meta)
   v <- voom(y, design, plot=FALSE)
   fit <- lmFit(v, design)

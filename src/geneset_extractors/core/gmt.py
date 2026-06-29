@@ -49,20 +49,17 @@ def write_gmt(
     gene_sets: list[tuple[str, list[str]]],
     out_path: str | Path,
     *,
-    gmt_format: str = "dig2col",
+    gmt_format: str = "classic",
 ) -> None:
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    fmt = str(gmt_format).strip().lower() or "dig2col"
-    if fmt not in {"dig2col", "classic"}:
+    fmt = str(gmt_format).strip().lower() or "classic"
+    if fmt != "classic":
         raise ValueError(f"Unsupported gmt_format: {gmt_format}")
-    with p.open("w", encoding="utf-8", newline="") as fh:
+    with p.open("w", encoding="utf-8", newline="\n") as fh:
         for name, genes in gene_sets:
             sanitized = sanitize_gmt_name(name)
-            if fmt == "classic":
-                fh.write("\t".join([sanitized, "na", *genes]) + "\n")
-            else:
-                fh.write(f"{sanitized}\t{' '.join(genes)}\n")
+            fh.write("\t".join([sanitized, "", *genes]) + "\n")
 
 
 def parse_int_list_csv(value: str) -> list[int]:
@@ -182,6 +179,9 @@ def build_gmt_sets_from_rows(
     emit_small_gene_sets: bool = False,
     diagnostics: list[dict[str, object]] | None = None,
     context: dict[str, object] | None = None,
+    name_separator: str = "__",
+    positive_label: str = "pos",
+    negative_label: str = "neg",
 ) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
     if min_genes <= 0 or max_genes <= 0:
         raise ValueError("gmt_min_genes and gmt_max_genes must be positive")
@@ -199,7 +199,10 @@ def build_gmt_sets_from_rows(
         neg_rows = _rows_sorted_by_score(
             [{**r, "score": max(-float(r.get("score", 0.0)), 0.0)} for r in ranked]
         )
-        variants = [("__pos", pos_rows), ("__neg", neg_rows)]
+        variants = [
+            (f"{name_separator}{positive_label}", pos_rows),
+            (f"{name_separator}{negative_label}", neg_rows),
+        ]
     else:
         variants = [("", ranked)]
 
@@ -214,6 +217,7 @@ def build_gmt_sets_from_rows(
         diagnostics.append({**context_payload, **event})
 
     for sign_suffix, variant_rows in variants:
+        use_plain_name = (len(topk_list) == 1 and not mass_list) or (len(mass_list) == 1 and not topk_list)
         positive_rows = [r for r in variant_rows if float(r.get("score", 0.0)) > 0.0]
         if require_symbol and positive_rows:
             total_rows = len(positive_rows)
@@ -299,7 +303,10 @@ def build_gmt_sets_from_rows(
             k = _clamp_k(int(requested_k), min_genes, max_genes)
             selected_rows = _topk_plan_rows(positive_rows, k)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
-            set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__topk={k}")
+            if use_plain_name:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
+            else:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}{name_separator}topk={k}")
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:
@@ -345,7 +352,12 @@ def build_gmt_sets_from_rows(
             selected_rows, k = _mass_plan_rows(positive_rows, float(tau), min_genes, max_genes)
             genes = choose_gene_tokens(selected_rows, prefer_symbol, require_symbol=require_symbol)
             tau_str = format(float(tau), ".6g")
-            set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}__hpd_mass={tau_str}__k={k}")
+            if use_plain_name:
+                set_name = sanitize_gmt_name(f"{base_name}{sign_suffix}")
+            else:
+                set_name = sanitize_gmt_name(
+                    f"{base_name}{sign_suffix}{name_separator}hpd_mass={tau_str}{name_separator}k={k}"
+                )
             if set_name in seen_names or not genes:
                 continue
             if len(genes) < min_genes:

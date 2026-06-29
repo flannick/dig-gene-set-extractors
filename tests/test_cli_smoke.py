@@ -371,6 +371,39 @@ def test_cli_validate_grouped_root(tmp_path: Path):
     assert "n_groups=" in validate.stdout
 
 
+def test_cli_provenance_build_from_existing_metadata(tmp_path: Path):
+    out = tmp_path / "rna_cli"
+    convert = _run(
+        "convert",
+        "rna_deg",
+        "--deg_tsv",
+        "tests/data/toy_deg.tsv",
+        "--out_dir",
+        str(out),
+        "--organism",
+        "human",
+        "--genome_build",
+        "hg38",
+        "--signature_name",
+        "toy",
+        "--emit_gmt",
+        "false",
+    )
+    assert convert.returncode == 0
+    provenance = out / "geneset.provenance.json"
+    original = json.loads(provenance.read_text(encoding="utf-8"))
+    provenance.unlink()
+
+    rebuilt = _run("provenance", "build", str(out / "geneset.meta.json"))
+    assert rebuilt.returncode == 0
+    payload = json.loads(rebuilt.stdout)
+    assert payload["status"] == "ok"
+    assert Path(payload["provenance_path"]) == provenance
+    assert provenance.exists()
+    regenerated = json.loads(provenance.read_text(encoding="utf-8"))
+    assert regenerated == original
+
+
 def test_cli_convert_rna_deg(tmp_path: Path):
     out = tmp_path / "rna_deg_cli"
     convert = _run(

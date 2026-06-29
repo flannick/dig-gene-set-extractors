@@ -7,6 +7,7 @@ import pytest
 
 from geneset_extractors.converters import rna_deg
 from geneset_extractors.core.validate import validate_output_dir
+from tests.provenance_helpers import file_node_for_role, load_provenance, load_provenance_payload
 
 
 class Args:
@@ -50,6 +51,8 @@ class Args:
     gmt_topk_list = "3"
     gmt_mass_list = ""
     gmt_split_signed = True
+    gmt_name_separator = "__"
+    gmt_signed_labels = "pos_neg"
     gmt_emit_abs = False
     gmt_source = "full"
     emit_small_gene_sets = True
@@ -71,17 +74,19 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     assert abs(sum(float(r["weight"]) for r in rows) - 1.0) < 1e-9
 
     gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__pos__" in line for line in gmt_lines)
-    assert any("__neg__" in line for line in gmt_lines)
+    assert any("__pos" in line for line in gmt_lines)
+    assert any("__neg" in line for line in gmt_lines)
 
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    provenance_payload = load_provenance_payload(args.out_dir)
+    provenance = load_provenance(args.out_dir)
     assert meta["converter"]["parameters"]["signature_name"] == "toy"
     assert meta["converter"]["parameters"]["score_mode"] == "stat"
     assert meta["provenance"]["path"] == "geneset.provenance.json"
-    assert provenance["file_type"] == "provenance"
-    assert provenance["focus_node_id"] == meta["provenance"]["focus_node_id"]
-    assert any(node["kind"] == "geneset" for node in provenance["nodes"])
+    assert meta["geneset_id"] in provenance_payload
+    geneset_nodes = [node for node in provenance["nodes"] if node["id"] == meta["provenance"]["focus_node_id"] and node["type"] == "GeneSet"]
+    assert geneset_nodes
+    assert geneset_nodes[0]["c2m2_properties"]["description"] == "Bulk RNA-seq gene set for signature 'toy' derived from differential expression results and ranked by stat."
     lineage = meta["lineage"]
     assert lineage["graph_version"] == "1.0.0"
     assert lineage["nodes"]
@@ -111,10 +116,10 @@ def test_rna_deg_with_gtf_emits_provenance_and_focus_node(tmp_path: Path):
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
-    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    provenance = load_provenance(args.out_dir)
     assert meta["provenance"]["focus_node_id"]
-    assert provenance["focus_node_id"] == meta["provenance"]["focus_node_id"]
-    assert any(node.get("role") == "gtf" for node in provenance["nodes"])
+    assert any(node["id"] == meta["provenance"]["focus_node_id"] for node in provenance["nodes"])
+    assert file_node_for_role(provenance, "gtf")
 
 
 def test_rna_deg_provenance_overlay_injects_public_links(tmp_path: Path):
@@ -144,13 +149,14 @@ def test_rna_deg_provenance_overlay_injects_public_links(tmp_path: Path):
     args.provenance_overlay_json = str(overlay_path)
     rna_deg.run(args)
 
-    provenance = json.loads((Path(args.out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
-    deg_nodes = [node for node in provenance["nodes"] if node.get("role") == "deg_tsv"]
-    assert deg_nodes
-    assert deg_nodes[0]["access"]["canonical_uri"] == "gs://dig/example/toy_deg.tsv"
-    assert deg_nodes[0]["access"]["download_url"] == "https://example.org/toy_deg.tsv"
-    assert provenance["operations"][0]["code"]["script_url"] == "https://example.org/notebooks/rna_deg.py"
-    assert provenance["operations"][0]["replay"]["container_image"] == "ghcr.io/example/dig:latest"
+    provenance = load_provenance(args.out_dir)
+    deg_node = file_node_for_role(provenance, "deg_tsv")
+    assert deg_node["dcc_url"] == "https://example.org/study"
+    assert deg_node["drc_url"] == "gs://dig/example/toy_deg.tsv"
+    analysis_nodes = [node for node in provenance["nodes"] if node.get("type") == "AnalysisType"]
+    assert analysis_nodes
+    assert analysis_nodes[0]["analysis"]["script_url"] == "https://example.org/notebooks/rna_deg.py"
+    assert analysis_nodes[0]["analysis"]["environment"]["container_image"] == "ghcr.io/example/dig:latest"
 
 
 def test_rna_deg_selection_uses_abs_score(tmp_path: Path):
@@ -188,6 +194,23 @@ def test_rna_deg_default_symbol_filters_can_be_disabled(tmp_path: Path):
         rows_disabled = list(csv.DictReader(fh, delimiter="\t"))
     assert "GENE_MITO" in {r["gene_id"] for r in rows_disabled}
     assert "GENE_RIBO" in {r["gene_id"] for r in rows_disabled}
+
+
+def test_rna_deg_can_emit_custom_gtex_style_gmt_names(tmp_path: Path):
+    args = Args()
+    args.out_dir = str(tmp_path / "rna_deg_gtex_style")
+    args.signature_name = "GTEx_tissue_adipose_subcutaneous"
+    args.gmt_name_separator = "_"
+    args.gmt_signed_labels = "up_dn"
+    args.gmt_min_genes = 1
+    args.gmt_max_genes = 10
+    args.gmt_topk_list = "3"
+    args.emit_small_gene_sets = True
+    rna_deg.run(args)
+
+    gmt_lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
+    assert any(line.startswith("GTEx_tissue_adipose_subcutaneous_up\t") for line in gmt_lines)
+    assert any(line.startswith("GTEx_tissue_adipose_subcutaneous_dn\t") for line in gmt_lines)
 
 
 def test_rna_deg_auto_mode_errors_on_missing_columns(tmp_path: Path):
@@ -338,7 +361,7 @@ def test_rna_deg_default_signature_name_uses_deg_tsv_stem(tmp_path: Path):
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["converter"]["parameters"]["signature_name"] == "airway_conditionA_vs_B"
     gmt_text = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8")
-    assert "__signature=airway_conditionA_vs_B__" in gmt_text
+    assert "airway_conditionA_vs_B__pos" in gmt_text
 
 
 def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
@@ -358,9 +381,10 @@ def test_rna_deg_gmt_emit_abs_adds_abs_ranked_sets(tmp_path: Path):
     rna_deg.run(args)
 
     lines = (Path(args.out_dir) / "genesets.gmt").read_text(encoding="utf-8").strip().splitlines()
-    assert any("__abs__topk=1" in line for line in lines)
-    abs_line = next(line for line in lines if "__abs__topk=1" in line)
-    abs_gene = abs_line.split("\t", 1)[1]
+    assert any("__abs" in line for line in lines)
+    abs_line = next(line for line in lines if "__abs" in line)
+    _name, description, abs_gene = abs_line.split("\t")
+    assert description == "na"
     assert abs_gene == "B"
 
 

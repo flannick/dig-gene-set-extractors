@@ -72,7 +72,7 @@ class DiffArgs:
     gmt_topk_list = "2"
     gmt_mass_list = ""
     gmt_split_signed = True
-    gmt_format = "dig2col"
+    gmt_format = "classic"
     emit_small_gene_sets = True
     delta_psi_soft_floor = 0.05
     delta_psi_soft_floor_mode = "auto"
