@@ -13,7 +13,7 @@ from geneset_extractors.extractors.rnaseq.deg_scoring import sanitize_name_compo
 from geneset_extractors.hashing import sha256_file
 
 
-SITE_TOKEN_RE = re.compile(r"([A-Z])\s*([0-9]+)")
+SITE_TOKEN_RE = re.compile(r"([A-Za-z])\s*([0-9]+)")
 
 
 def _clean(value: object) -> str:
@@ -156,7 +156,7 @@ def _parse_site_label(raw_site_label: str, ptm_type: str) -> dict[str, object]:
     if match:
         accession = match.group(1)
         suffix = match.group(2)
-    tokens = [(residue, int(position)) for residue, position in SITE_TOKEN_RE.findall(suffix)]
+    tokens = [(residue.upper(), int(position)) for residue, position in SITE_TOKEN_RE.findall(suffix)]
     if tokens:
         tokens = sorted(set(tokens), key=lambda item: (item[1], item[0]))
     if accession and len(tokens) == 1:
@@ -206,7 +206,8 @@ def _assay_type_qc(
     for row in site_id_map_rows:
         raw_site_label = _clean(row.get("raw_site_label"))
         for residue, _position in SITE_TOKEN_RE.findall(raw_site_label):
-            residue_counts[residue] = int(residue_counts.get(residue, 0)) + 1
+            res = residue.upper()
+            residue_counts[res] = int(residue_counts.get(res, 0)) + 1
 
     total_tokens = int(sum(residue_counts.values()))
     phospho_like_count = int(residue_counts.get("S", 0) + residue_counts.get("T", 0) + residue_counts.get("Y", 0))
