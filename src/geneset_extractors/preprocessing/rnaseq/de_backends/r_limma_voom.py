@@ -76,6 +76,7 @@ for (i in seq_len(nrow(comps))) {{
   if (sum(sub_meta$.__group == ga) < 2 || sum(sub_meta$.__group == gb) < 2) next
   sub_counts <- count_mat[, sub_meta$sample_id, drop=FALSE]
   y <- DGEList(counts=sub_counts)
+  y$genes <- data.frame(gene_id=feature_ids, gene_symbol=gene_symbols, stringsAsFactors=FALSE)
   if ("{gene_filter_scope}" == "stratum") {{
     strata_cols <- setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b"))
     scope_meta <- meta
@@ -107,8 +108,6 @@ for (i in seq_len(nrow(comps))) {{
   fit <- eBayes(fit)
   tt <- topTable(fit, coef=coef_name, number=Inf, sort.by="none")
   tt$comparison_id <- as.character(comp$comparison_id[1])
-  tt$gene_id <- rownames(tt)
-  tt$gene_symbol <- gene_symbols[match(rownames(tt), feature_ids)]
   tt$group_a <- ga
   tt$group_b <- gb
   tt$stratum <- paste(paste(setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b")), as.character(comp[1, setdiff(colnames(comp), c("comparison_id", "comparison_kind", "group_column", "group_a", "group_b"))]), sep="="), collapse="|")
