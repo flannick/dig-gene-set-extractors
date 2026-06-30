@@ -109,6 +109,15 @@
             "source": {"type": "string"},
             "gene_id_field": {"type": "string"}
           }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "source", "gene_id_field"],
+          "properties": {
+            "mode": {"const": "provided"},
+            "source": {"type": "string"},
+            "gene_id_field": {"type": "string"}
+          }
         }
       ]
     },
