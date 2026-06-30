@@ -22,6 +22,15 @@ def _clean(value: object) -> str:
     return str(value).strip()
 
 
+_CDAP_QUANT_SUFFIX_RE = re.compile(r"\s+(?:unshared\s+)?log\s*ratio\s*$", re.IGNORECASE)
+
+
+def _cdap_aliquot_key(column_name: str) -> str:
+    """Strip a trailing CDAP quant-column suffix (' Log Ratio' / ' Unshared Log Ratio')
+    so a report sample column maps to its bare aliquot_submitter_id for metadata joins."""
+    return _CDAP_QUANT_SUFFIX_RE.sub("", _clean(column_name)).strip()
+
+
 def _read_tsv(path: str | Path) -> tuple[list[str], list[dict[str, str]]]:
     p = Path(path)
     with p.open("r", encoding="utf-8", newline="") as fh:
@@ -395,7 +404,12 @@ def normalize_sample_ids(
         mapping[raw_name] = candidate
 
         design = sample_design.get(raw_name, {})
-        anno = sample_annotations.get(raw_name, sample_annotations.get(candidate, {}))
+        anno = (
+            sample_annotations.get(raw_name)
+            or sample_annotations.get(_cdap_aliquot_key(raw_name))
+            or sample_annotations.get(candidate)
+            or {}
+        )
         sample_type = _clean(anno.get("sample_type"))
         condition = _clean(anno.get("condition")) or _derive_condition(sample_type)
         group = _clean(anno.get("group")) or study_id
