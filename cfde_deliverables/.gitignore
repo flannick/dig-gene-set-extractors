@@ -1,0 +1,20 @@
+# Data + outputs are NOT committed (code only). Regenerate by running the scripts.
+output/
+output*/
+*/output/
+**/output/
+catlas_work/
+partials/
+*.tar
+*.zip
+*.bed
+*.bed.gz
+*.txt.gz
+*.tsv.gz
+*.mtx
+*.h5ad
+*.part
+__pycache__/
+*.pyc
+.DS_Store
+logs/
