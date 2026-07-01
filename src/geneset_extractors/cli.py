@@ -918,6 +918,30 @@ def _add_rna_de_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--extractor_gmt_topk_list", default="200")
     parser.add_argument("--extractor_gmt_min_genes", type=int, default=100)
     parser.add_argument("--extractor_gmt_max_genes", type=int, default=500)
+    parser.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream preparation provenance graph to merge into the DE lineage.",
+    )
+
+
+def _add_geo_bulk_prepare_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--counts_file", required=True)
+    parser.add_argument("--miniml_file", required=True)
+    parser.add_argument("--annotation_file", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--study_id", required=True)
+    parser.add_argument("--sample_id_field", choices=["title", "accession"], default="title")
+    parser.add_argument("--group_characteristic", required=True)
+    parser.add_argument("--condition_a_values", required=True)
+    parser.add_argument("--condition_b_values", required=True)
+    parser.add_argument("--condition_a_label", default="case")
+    parser.add_argument("--condition_b_label", default="control")
+    parser.add_argument("--annotation_source_column", default="EnsemblGeneID")
+    parser.add_argument("--annotation_target_column", default="Symbol")
+    parser.add_argument("--counts_source_url")
+    parser.add_argument("--miniml_source_url")
+    parser.add_argument("--annotation_source_url")
+    parser.add_argument("--landing_page_url")
 
 
 def _add_prism_prepare_flags(parser: argparse.ArgumentParser) -> None:
@@ -1723,6 +1747,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     _add_provenance_flags(p_rna_de_prepare)
+    p_geo_bulk_prepare = wf_sub.add_parser("geo_bulk_prepare")
+    _add_geo_bulk_prepare_flags(p_geo_bulk_prepare)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2474,6 +2500,17 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "geo_bulk_prepare":
+                from geneset_extractors.workflows.geo_bulk_prepare import run as run_geo_bulk_prepare
+
+                result = run_geo_bulk_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=geo_bulk_prepare study={result.get('study_id')} "
+                    f"n_samples={result.get('n_samples')} out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
                 return 0
