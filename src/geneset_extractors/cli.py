@@ -466,6 +466,27 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_psychencode_dex_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dex_csv", required=True, help="PsychENCODE DER-13 Disorder DEX genes CSV.")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg19")
+    _add_provenance_flags(parser)
+
+
+def _add_psychencode_modules_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--modules_csv", required=True, help="PsychENCODE DER-16 gene co-expression modules CSV.")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human"], default="human")
+    parser.add_argument("--genome_build", default="hg19")
+    parser.add_argument(
+        "--exclude_modules",
+        default="geneM0",
+        help="Comma-separated module labels to drop (default geneM0, the WGCNA grey/unassigned bucket).",
+    )
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1745,6 +1766,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_hubmap_asctb_augmented_flags(p_hubmap_asctb_augmented)
     p_lincs_l1000_chempert = wf_sub.add_parser("lincs_l1000_chempert")
     _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
+    p_psychencode_dex = wf_sub.add_parser("psychencode_dex")
+    _add_psychencode_dex_flags(p_psychencode_dex)
+    p_psychencode_modules = wf_sub.add_parser("psychencode_modules")
+    _add_psychencode_modules_flags(p_psychencode_modules)
     p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
     _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
@@ -2604,6 +2629,28 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=hubmap_asctb_augmented n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "psychencode_dex":
+                from geneset_extractors.workflows.psychencode_dex import run as run_psychencode_dex
+
+                result = run_psychencode_dex(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=psychencode_dex n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "psychencode_modules":
+                from geneset_extractors.workflows.psychencode_modules import run as run_psychencode_modules
+
+                result = run_psychencode_modules(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=psychencode_modules n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
