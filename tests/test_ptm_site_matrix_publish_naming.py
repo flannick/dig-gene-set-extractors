@@ -40,3 +40,28 @@ def test_verbose_naming_unchanged_by_default(tmp_path):
     _run_convert(tmp_path, ["--signature_name", "ptm_matrix"])
     names = _gmt_names(tmp_path)
     assert any(n.startswith("ptm_site_matrix__signature=") for n in names), sorted(names)
+
+def test_publish_naming_disambiguates_topk_site_comparison_variants(tmp_path):
+    _run_convert(tmp_path, ["--signature_name", "CPTAC_Test",
+                            "--gmt_name_style", "publish", "--gmt_signed_labels", "up,dn",
+                            "--emit_gene_topk_site_comparison", "true",
+                            "--gene_topk_site_compare_to", "1"])
+    names = _gmt_names(tmp_path)
+    expected = {
+        "CPTAC_Test_ProteinAdjusted_sites1_up", "CPTAC_Test_ProteinAdjusted_sites1_dn",
+        "CPTAC_Test_ProteinAdjusted_sites3_up", "CPTAC_Test_ProteinAdjusted_sites3_dn",
+        "CPTAC_Test_Unadjusted_sites1_up", "CPTAC_Test_Unadjusted_sites1_dn",
+        "CPTAC_Test_Unadjusted_sites3_up", "CPTAC_Test_Unadjusted_sites3_dn",
+    }
+    assert names == expected, f"expected 4 distinct sites-disambiguated publish names (x2 signed); got {sorted(names)}"
+
+def test_publish_naming_single_site_cap_has_no_sites_suffix(tmp_path):
+    _run_convert(tmp_path, ["--signature_name", "CPTAC_Test",
+                            "--gmt_name_style", "publish", "--gmt_signed_labels", "up,dn"])
+    names = _gmt_names(tmp_path)
+    expected = {
+        "CPTAC_Test_ProteinAdjusted_up", "CPTAC_Test_ProteinAdjusted_dn",
+        "CPTAC_Test_Unadjusted_up", "CPTAC_Test_Unadjusted_dn",
+    }
+    assert names == expected, f"single-site-cap publish names must stay unchanged (no _sites token); got {sorted(names)}"
+    assert not any("_sites" in n for n in names)

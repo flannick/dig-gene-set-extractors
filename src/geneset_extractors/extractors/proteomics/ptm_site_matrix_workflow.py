@@ -567,7 +567,14 @@ def _make_child_cfg_for_variant(
         signature_bits.append(f"group={contrast.group_label}")
     signature_name = "__".join(signature_bits)
     if str(cfg.gmt_name_style) == "publish":
-        signature_name = f"{cfg.signature_name}_{_publish_variant_label(variant.protein_adjustment)}"
+        publish_label = _publish_variant_label(variant.protein_adjustment)
+        distinct_site_caps = {v.gene_topk_sites for v in _variant_specs(cfg)}
+        if len(distinct_site_caps) > 1:
+            # Multiple gene_topk_sites caps are being emitted for the same protein_adjustment
+            # (the top-k site-count comparison mode is active): disambiguate the published
+            # name per site cap so runs don't silently collide on an identical GMT set name.
+            publish_label = f"{publish_label}_sites{variant.gene_topk_sites}"
+        signature_name = f"{cfg.signature_name}_{publish_label}"
     dataset_label = f"{cfg.dataset_label}::{contrast.contrast_label}::{variant.variant_id}"
     return PTMWorkflowConfig(
         converter_name=cfg.converter_name,
