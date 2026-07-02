@@ -1683,6 +1683,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
     )
 
+    p_prov_overlay = prov_sub.add_parser("overlay")
+    p_prov_overlay.add_argument("--pdc_file_manifest_tsv", required=True)
+    p_prov_overlay.add_argument("--prepared_dir", required=True)
+    p_prov_overlay.add_argument("--out_dir", required=True)
+    p_prov_overlay.add_argument("--operation_script_url")
+    p_prov_overlay.add_argument("--operation_description")
+
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
     p_meta_patch = metadata_sub.add_parser("patch")
@@ -2328,6 +2335,24 @@ def main(argv: list[str] | None = None) -> int:
                     provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
                 )
                 print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
+                return 0
+
+            if args.provenance_command == "overlay":
+                from geneset_extractors.extractors.proteomics import pdc_provenance as _pdc
+
+                rows = _pdc.read_manifest_tsv(args.pdc_file_manifest_tsv)
+                op = {}
+                if args.operation_script_url:
+                    op["script_url"] = args.operation_script_url
+                if args.operation_description:
+                    op["description"] = args.operation_description
+                result = _pdc.write_overlay(
+                    manifest_rows=rows,
+                    prepared_dir=args.prepared_dir,
+                    operation_meta=op,
+                    out_dir=args.out_dir,
+                )
+                print(json.dumps({"status": "ok", **{k: str(v) for k, v in result.items()}}))
                 return 0
 
         if args.command == "metadata":
