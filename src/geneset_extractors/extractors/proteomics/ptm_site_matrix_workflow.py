@@ -116,6 +116,17 @@ class PTMMatrixWorkflowConfig:
     emit_small_gene_sets: bool
     neglog10p_cap: float
     neglog10p_eps: float
+    gmt_name_style: str = "verbose"
+    gmt_positive_label: str = "pos"
+    gmt_negative_label: str = "neg"
+
+
+_PUBLISH_VARIANT_LABELS = {"none": "Unadjusted", "subtract": "ProteinAdjusted"}
+
+
+def _publish_variant_label(protein_adjustment: str) -> str:
+    token = str(protein_adjustment)
+    return _PUBLISH_VARIANT_LABELS.get(token, token.capitalize() or token)
 
 
 def _clean(value: object) -> str:
@@ -555,6 +566,8 @@ def _make_child_cfg_for_variant(
     if contrast.group_label:
         signature_bits.append(f"group={contrast.group_label}")
     signature_name = "__".join(signature_bits)
+    if str(cfg.gmt_name_style) == "publish":
+        signature_name = f"{cfg.signature_name}_{_publish_variant_label(variant.protein_adjustment)}"
     dataset_label = f"{cfg.dataset_label}::{contrast.contrast_label}::{variant.variant_id}"
     return PTMWorkflowConfig(
         converter_name=cfg.converter_name,
@@ -609,6 +622,9 @@ def _make_child_cfg_for_variant(
         emit_small_gene_sets=cfg.emit_small_gene_sets,
         neglog10p_cap=cfg.neglog10p_cap,
         neglog10p_eps=cfg.neglog10p_eps,
+        gmt_name_style=cfg.gmt_name_style,
+        gmt_positive_label=cfg.gmt_positive_label,
+        gmt_negative_label=cfg.gmt_negative_label,
     )
 
 

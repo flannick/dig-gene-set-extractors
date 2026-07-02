@@ -621,6 +621,17 @@ def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
     _add_gmt_flags(parser)
+    parser.add_argument(
+        "--gmt_name_style",
+        choices=["verbose", "publish"],
+        default="verbose",
+        help="publish = clean '<signature>_<Variant>_<signed>' GMT names; verbose = legacy scaffold",
+    )
+    parser.add_argument(
+        "--gmt_signed_labels",
+        default="pos,neg",
+        help="comma pair for signed split suffixes, e.g. 'up,dn'",
+    )
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=True,
