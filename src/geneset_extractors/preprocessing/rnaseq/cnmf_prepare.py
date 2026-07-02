@@ -558,7 +558,7 @@ def _write_geneset_extractors_from_cnmf_script(
         "fi",
         "",
         "shopt -s nullglob",
-        'MATCHES=( "$OUTDIR/$NAME.gene_spectra_${EXPORT_KIND}.k_${K}.dt_"*.txt )',
+        'MATCHES=( "$OUTDIR/$NAME/$NAME.gene_spectra_${EXPORT_KIND}.k_${K}.dt_"*.txt )',
         "shopt -u nullglob",
         'if [[ ${#MATCHES[@]} -eq 0 ]]; then',
         '  echo "error: no gene spectra file matched kind=${EXPORT_KIND}, k=${K}. Run consensus first." >&2',
