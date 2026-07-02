@@ -8,7 +8,7 @@ from pathlib import Path
 CRDC_DRC_URL = "https://datacommons.cancer.gov/repository/proteomic-data-commons"
 
 
-def PDC_STUDY_URL(pdc_study_id: str) -> str:
+def pdc_study_url(pdc_study_id: str) -> str:
     return f"https://pdc.cancer.gov/pdc/study/{pdc_study_id}"
 
 
@@ -25,7 +25,7 @@ def _file_overlay(rec: dict, *, provider_suffix: str) -> dict:
     return {
         "persistent_id": rec["file_id"],
         "local_id": rec["drs_uri"],
-        "dcc_url": PDC_STUDY_URL(rec["pdc_study_id"]),
+        "dcc_url": pdc_study_url(rec["pdc_study_id"]),
         "drc_url": CRDC_DRC_URL,
         "provider": f"NCI Proteomic Data Commons (CPTAC) — {provider_suffix}",
         "version": rec["pdc_study_id"],
@@ -49,7 +49,7 @@ def build_overlay(*, manifest_rows: list[dict], prepared_dir: str, operation_met
     meta_overlay = _file_overlay(phospho, provider_suffix="biospecimen-derived sample metadata")
     inputs[str(prepared / "sample_metadata.tsv")] = meta_overlay
 
-    study_url = PDC_STUDY_URL(phospho["pdc_study_id"])
+    study_url = pdc_study_url(phospho["pdc_study_id"])
     operation = dict(operation_meta)
     operation.setdefault("dcc_url", study_url)
     operation.setdefault("drc_url", CRDC_DRC_URL)
