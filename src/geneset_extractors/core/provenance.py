@@ -249,6 +249,11 @@ def _normalize_md5(value: object, resolved: Path | None, *, local_path: str, rol
         return base64.b64encode(digest).decode("ascii")
     if resolved is not None and resolved.exists() and resolved.is_file():
         return _file_md5_base64(resolved)
+    raw_path = str(local_path).strip()
+    if raw_path and "://" in raw_path:
+        parsed = urlparse(raw_path)
+        if parsed.scheme and parsed.scheme != "file":
+            return ""
     raise ValueError(f"Unable to compute MD5 for provenance file node role={role} path={local_path}")
 
 
