@@ -349,3 +349,48 @@ def test_ptm_prepare_public_emits_workflow_provenance_graph(tmp_path: Path):
     assert "toy_cdap_phosphosite.tmt11.tsv" in file_names
     assert "ptm_matrix.tsv" in file_names
     assert "sample_metadata.tsv" in file_names
+
+
+def test_merged_provenance_has_connected_workflow_and_convert_steps(tmp_path: Path):
+    from geneset_extractors.workflows import ptm_prepare_public
+    from geneset_extractors.core.metadata import write_provenance_from_metadata
+
+    prepared = tmp_path / "prepared_public"
+    args = _PrepArgs()
+    args.out_dir = str(prepared)
+    ptm_prepare_public.run(args)
+    graph_path = prepared / "ptm_matrix.provenance_graph.json"
+    assert graph_path.exists()
+
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+    matrix_args = MatrixArgs()
+    matrix_args.ptm_matrix_tsv = str(prepared / "ptm_matrix.tsv")
+    matrix_args.sample_metadata_tsv = str(prepared / "sample_metadata.tsv")
+    matrix_args.protein_matrix_tsv = str(prepared / "protein_matrix.tsv")
+    matrix_args.out_dir = str(tmp_path / "extractor")
+    matrix_args.resources_dir = str(resources_dir)
+    matrix_args.use_reference_bundle = True
+    ptm_site_matrix.run(matrix_args)
+
+    manifest_rows = _read_rows(Path(matrix_args.out_dir) / "manifest.tsv")
+    row = manifest_rows[0]
+    variant_dir = Path(matrix_args.out_dir) / row["path"]
+    prov_path = write_provenance_from_metadata(
+        variant_dir / "geneset.meta.json",
+        upstream_provenance_graph_path=str(graph_path),
+    )
+    graph = list(json.loads(prov_path.read_text(encoding="utf-8")).values())[0]
+
+    methods = sorted(n["id"].split(":")[1] for n in graph["nodes"] if n["type"] == "AnalysisType")
+    assert methods == ["ptm_prepare_public", "ptm_site_matrix"]
+
+    ptm_nodes = [n for n in graph["nodes"] if n["type"] == "File" and n["name"] == "ptm_matrix.tsv"]
+    assert len(ptm_nodes) == 1, "prepared ptm_matrix.tsv must coalesce to a single bridging node"
+    bridge_id = ptm_nodes[0]["id"]
+
+    prepare_op = next(n for n in graph["nodes"] if n["id"].split(":")[1] == "ptm_prepare_public")
+    convert_op = next(n for n in graph["nodes"] if n["id"].split(":")[1] == "ptm_site_matrix")
+    edge_pairs = {(e["source"], e["target"]) for e in graph["edges"]}
+    assert (prepare_op["id"], bridge_id) in edge_pairs      # prepare -> ptm_matrix
+    assert (bridge_id, convert_op["id"]) in edge_pairs      # ptm_matrix -> convert
