@@ -127,6 +127,9 @@ class PTMWorkflowConfig:
     emit_small_gene_sets: bool
     neglog10p_cap: float
     neglog10p_eps: float
+    gmt_name_style: str = "verbose"
+    gmt_positive_label: str = "pos"
+    gmt_negative_label: str = "neg"
 
 
 @dataclass
@@ -941,9 +944,13 @@ def run_ptm_site_diff_workflow(
     gmt_plans: list[dict[str, object]] = []
     if cfg.emit_gmt:
         gmt_source_rows = full_rows
-        base_name = sanitize_name_component(
-            f"{cfg.converter_name}__signature={cfg.signature_name}__ptm_type={cfg.ptm_type}__score_mode={resolved_score_mode}"
-        )
+        publish_naming = str(cfg.gmt_name_style) == "publish"
+        if publish_naming:
+            base_name = sanitize_name_component(cfg.signature_name)
+        else:
+            base_name = sanitize_name_component(
+                f"{cfg.converter_name}__signature={cfg.signature_name}__ptm_type={cfg.ptm_type}__score_mode={resolved_score_mode}"
+            )
         gmt_sets, gmt_plans = build_gmt_sets_from_rows(
             gmt_source_rows,
             base_name=base_name,
@@ -958,6 +965,9 @@ def run_ptm_site_diff_workflow(
             emit_small_gene_sets=bool(cfg.emit_small_gene_sets),
             diagnostics=gmt_diagnostics,
             context={"program_method": "ptm_site", "contrast_method": "input_table", "link_method": "gene_assignment"},
+            name_separator="_" if publish_naming else "__",
+            positive_label=cfg.gmt_positive_label if publish_naming else "pos",
+            negative_label=cfg.gmt_negative_label if publish_naming else "neg",
         )
         if gmt_sets:
             gmt_path = resolve_gmt_out_path(out_dir, cfg.gmt_out)

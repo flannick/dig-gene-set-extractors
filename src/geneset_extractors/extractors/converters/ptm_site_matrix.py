@@ -107,6 +107,11 @@ def run(args) -> dict[str, object]:
 
     dataset_label = str(args.dataset_label or "").strip() or Path(args.ptm_matrix_tsv).name
     signature_name = str(args.signature_name or "").strip() or Path(args.ptm_matrix_tsv).stem
+    gmt_name_style = str(getattr(args, "gmt_name_style", "verbose") or "verbose")
+    signed_labels_raw = str(getattr(args, "gmt_signed_labels", "pos,neg") or "pos,neg")
+    signed_label_parts = [part.strip() for part in signed_labels_raw.split(",")]
+    gmt_positive_label = signed_label_parts[0] if signed_label_parts and signed_label_parts[0] else "pos"
+    gmt_negative_label = signed_label_parts[1] if len(signed_label_parts) > 1 and signed_label_parts[1] else "neg"
     cfg = PTMMatrixWorkflowConfig(
         converter_name="ptm_site_matrix",
         out_dir=out_dir,
@@ -177,6 +182,9 @@ def run(args) -> dict[str, object]:
         emit_small_gene_sets=bool(args.emit_small_gene_sets),
         neglog10p_cap=float(args.neglog10p_cap),
         neglog10p_eps=float(args.neglog10p_eps),
+        gmt_name_style=gmt_name_style,
+        gmt_positive_label=gmt_positive_label,
+        gmt_negative_label=gmt_negative_label,
     )
     resources_info = build_resources_info(ctx) if ctx is not None else None
     return run_ptm_site_matrix_workflow(
