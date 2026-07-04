@@ -21,33 +21,9 @@ def _by_role(manifest_rows: list[dict]) -> dict[str, dict]:
     return out
 
 
-def _file_overlay(rec: dict, *, provider_suffix: str) -> dict:
-    return {
-        "persistent_id": rec["file_id"],
-        "local_id": rec["drs_uri"],
-        "dcc_url": pdc_study_url(rec["pdc_study_id"]),
-        "drc_url": CRDC_DRC_URL,
-        "provider": f"NCI Proteomic Data Commons (CPTAC) — {provider_suffix}",
-        "version": rec["pdc_study_id"],
-        "source": Path(rec["local_path"]).name,
-    }
-
-
 def build_overlay(*, manifest_rows: list[dict], prepared_dir: str, operation_meta: dict) -> dict:
     roles = _by_role(manifest_rows)
     phospho = roles["phospho"]
-    prepared = Path(prepared_dir)
-
-    inputs: dict[str, dict] = {
-        str(prepared / "ptm_matrix.tsv"): _file_overlay(phospho, provider_suffix="derived from phosphosite report"),
-    }
-    if "proteome" in roles:
-        inputs[str(prepared / "protein_matrix.tsv")] = _file_overlay(
-            roles["proteome"], provider_suffix="derived from proteome report"
-        )
-    # sample_metadata derives from the phospho study's biospecimen records.
-    meta_overlay = _file_overlay(phospho, provider_suffix="biospecimen-derived sample metadata")
-    inputs[str(prepared / "sample_metadata.tsv")] = meta_overlay
 
     study_url = pdc_study_url(phospho["pdc_study_id"])
     operation = dict(operation_meta)
@@ -55,8 +31,12 @@ def build_overlay(*, manifest_rows: list[dict], prepared_dir: str, operation_met
     operation.setdefault("drc_url", CRDC_DRC_URL)
     operation.setdefault("description", "CPTAC tumor-vs-normal phosphoregulation extraction via ptm_site_matrix")
 
+    # Prepared matrices are plain intermediate file nodes so the prepare-step output node
+    # and the convert-step input node coalesce (shared local_id) and bridge the two analysis
+    # steps. PDC/DRS identifiers for the raw reports are applied at refresh via
+    # local_input_source_map.tsv; study-level identity rides on operation + gene_set.
     return {
-        "inputs": inputs,
+        "inputs": {},
         "operation": operation,
         "gene_set": {"dcc_url": study_url, "drc_url": CRDC_DRC_URL},
     }
