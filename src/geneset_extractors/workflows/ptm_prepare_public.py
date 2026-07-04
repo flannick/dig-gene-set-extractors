@@ -36,6 +36,11 @@ def _emit_prepare_provenance_graph(summary: dict[str, object], args) -> Path | N
         for key, role in _OUTPUT_ROLES
         if outputs.get(key)
     ]
+    sample_annotations = getattr(args, "sample_annotations_tsv", None)
+    if sample_annotations:
+        sa_path = Path(str(sample_annotations))
+        if all(existing != sa_path for existing, _role in input_paths):
+            input_paths.append((sa_path, "sample_annotations"))
     focus = out_dir / "ptm_matrix.tsv"
     return write_workflow_provenance_graph(
         workflow_name="ptm_prepare_public",
