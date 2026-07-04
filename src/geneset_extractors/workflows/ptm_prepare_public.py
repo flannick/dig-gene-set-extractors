@@ -1,10 +1,61 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from geneset_extractors.extractors.proteomics.public_prepare import run_public_prepare
+from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
+
+_OUTPUT_ROLES = [
+    ("ptm_matrix_tsv", "ptm_matrix"),
+    ("protein_matrix_tsv", "protein_matrix"),
+    ("sample_metadata_tsv", "sample_metadata"),
+    ("sample_id_map_tsv", "sample_id_map"),
+    ("site_id_map_tsv", "site_id_map"),
+    ("bundle_source_row_tsv", "bundle_source_row"),
+]
+
+_DESCRIPTION = (
+    "Analysis step that standardizes CPTAC/CDAP phosphoproteome and proteome reports into "
+    "PTM site and protein matrices with harmonized sample ids and emits ptm_matrix.tsv."
+)
+
+
+def _emit_prepare_provenance_graph(summary: dict[str, object], args) -> Path | None:
+    out_dir = Path(str(summary["out_dir"]))
+    outputs = summary.get("outputs", {})
+    if not isinstance(outputs, dict) or not outputs.get("ptm_matrix_tsv"):
+        return None
+
+    input_paths = [
+        (Path(str(rec["path"])), role)
+        for role, rec in sorted((summary.get("source_files") or {}).items())
+        if isinstance(rec, dict) and rec.get("path")
+    ]
+    output_paths = [
+        (Path(str(outputs[key])), role)
+        for key, role in _OUTPUT_ROLES
+        if outputs.get(key)
+    ]
+    focus = out_dir / "ptm_matrix.tsv"
+    return write_workflow_provenance_graph(
+        workflow_name="ptm_prepare_public",
+        module_name="geneset_extractors.workflows.ptm_prepare_public",
+        output_dir=out_dir,
+        focus_output_path=focus,
+        output_paths=output_paths,
+        input_paths=input_paths,
+        parameters={
+            "ptm_type": args.ptm_type,
+            "organism": args.organism,
+            "study_id": summary.get("study_id"),
+            "parser_profile": summary.get("parser_profile"),
+        },
+        description=_DESCRIPTION,
+    )
 
 
 def run(args) -> dict[str, object]:
-    return run_public_prepare(
+    summary = run_public_prepare(
         input_mode=args.input_mode,
         ptm_report_tsv=args.ptm_report_tsv,
         protein_report_tsv=args.protein_report_tsv,
@@ -21,3 +72,5 @@ def run(args) -> dict[str, object]:
         min_phospho_like_fraction=args.min_phospho_like_fraction,
         max_k_fraction=args.max_k_fraction,
     )
+    _emit_prepare_provenance_graph(summary, args)
+    return summary
