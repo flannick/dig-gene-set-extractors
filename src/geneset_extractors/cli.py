@@ -1723,6 +1723,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     _add_provenance_flags(p_rna_de_prepare)
+    p_kidsfirst_prepare = wf_sub.add_parser("kidsfirst_prepare")
+    from geneset_extractors.workflows.kidsfirst_prepare import add_flags as _add_kidsfirst_prepare_flags
+    _add_kidsfirst_prepare_flags(p_kidsfirst_prepare)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2474,6 +2477,17 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "kidsfirst_prepare":
+                from geneset_extractors.workflows.kidsfirst_prepare import run as run_kidsfirst_prepare
+
+                result = run_kidsfirst_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=kidsfirst_prepare n_tumor={result.get('n_tumor')} "
+                    f"n_normal={result.get('n_normal')} out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
                 return 0
