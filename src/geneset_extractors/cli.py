@@ -1726,6 +1726,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_kidsfirst_prepare = wf_sub.add_parser("kidsfirst_prepare")
     from geneset_extractors.workflows.kidsfirst_prepare import add_flags as _add_kidsfirst_prepare_flags
     _add_kidsfirst_prepare_flags(p_kidsfirst_prepare)
+    p_kidsfirst_curate = wf_sub.add_parser("kidsfirst_curate")
+    from geneset_extractors.workflows.kidsfirst_curate import add_flags as _add_kidsfirst_curate_flags
+    _add_kidsfirst_curate_flags(p_kidsfirst_curate)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2488,6 +2491,17 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=kidsfirst_prepare n_tumor={result.get('n_tumor')} "
                     f"n_normal={result.get('n_normal')} out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "kidsfirst_curate":
+                from geneset_extractors.workflows.kidsfirst_curate import run as run_kidsfirst_curate
+
+                result = run_kidsfirst_curate(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=kidsfirst_curate n_ok={result.get('n_ok')} "
+                    f"n_skipped={result.get('n_skipped')} out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
                 return 0
