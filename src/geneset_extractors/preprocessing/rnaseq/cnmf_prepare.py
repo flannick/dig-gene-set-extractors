@@ -755,9 +755,43 @@ def run(args) -> dict[str, object]:
     subsets_root = out_dir / "subsets"
     subsets_root.mkdir(parents=True, exist_ok=True)
 
-    matrix_path = Path(args.matrix_tsv)
-    meta_path = Path(args.meta_tsv)
+    matrix_url = getattr(args, "matrix_url", None) or ""
+    meta_url = getattr(args, "meta_url", None) or ""
+    matrix_tsv = getattr(args, "matrix_tsv", None) or ""
+    meta_tsv = getattr(args, "meta_tsv", None) or ""
+
+    if matrix_url and matrix_tsv:
+        raise ValueError("Provide --matrix_url or --matrix_tsv, not both.")
+    if meta_url and meta_tsv:
+        raise ValueError("Provide --meta_url or --meta_tsv, not both.")
+    if not matrix_url and not matrix_tsv:
+        raise ValueError("One of --matrix_url or --matrix_tsv is required.")
+    if not meta_url and not meta_tsv:
+        raise ValueError("One of --meta_url or --meta_tsv is required.")
+
+    if matrix_url:
+        import urllib.request
+        dl_dir = out_dir / "downloads"
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".csv" if matrix_url.lower().endswith(".csv") else ".tsv"
+        matrix_path = dl_dir / f"matrix{suffix}"
+        urllib.request.urlretrieve(matrix_url, matrix_path)
+    else:
+        matrix_path = Path(matrix_tsv)
+
+    if meta_url:
+        import urllib.request
+        dl_dir = out_dir / "downloads"
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".csv" if meta_url.lower().endswith(".csv") else ".tsv"
+        meta_path = dl_dir / f"meta{suffix}"
+        urllib.request.urlretrieve(meta_url, meta_path)
+    else:
+        meta_path = Path(meta_tsv)
+
     matrix_delim = str(args.matrix_delim)
+    if matrix_delim == "\t" and str(matrix_path).endswith(".csv"):
+        matrix_delim = ","
     if len(matrix_delim) != 1:
         raise ValueError("--matrix_delim must be a single character delimiter")
 

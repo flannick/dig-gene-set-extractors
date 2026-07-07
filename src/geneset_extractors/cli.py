@@ -692,7 +692,15 @@ def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--matrix_tsv", required=True, help="Cell x gene dense TSV (header required).")
+    parser.add_argument(
+        "--matrix_tsv",
+        required=False,
+        help="Cell x gene dense TSV/CSV (header required). Mutually exclusive with --matrix_url.",
+    )
+    parser.add_argument(
+        "--matrix_url",
+        help="URL to download cell x gene matrix (CSV or TSV). Downloaded to out_dir/downloads/ before processing. Mutually exclusive with --matrix_tsv.",
+    )
     parser.add_argument(
         "--matrix_orientation",
         choices=["auto", "cell_by_gene", "gene_by_cell"],
@@ -708,7 +716,15 @@ def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
         help="Gene ID column for gene_by_cell orientation (default: first column).",
     )
     parser.add_argument("--matrix_delim", default="\t", help="Matrix delimiter (default: tab).")
-    parser.add_argument("--meta_tsv", required=True, help="Cell metadata TSV.")
+    parser.add_argument(
+        "--meta_tsv",
+        required=False,
+        help="Cell metadata TSV/CSV. Mutually exclusive with --meta_url.",
+    )
+    parser.add_argument(
+        "--meta_url",
+        help="URL to download cell metadata (CSV or TSV). Downloaded to out_dir/downloads/ before processing. Mutually exclusive with --meta_tsv.",
+    )
     parser.add_argument("--meta_cell_id_column", default="cell_id")
     parser.add_argument(
         "--donor_column",
