@@ -170,6 +170,10 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
         help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
     )
     parser.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into emitted provenance (e.g. scrna_cnmf_prepare.provenance_graph.json).",
+    )
+    parser.add_argument(
         "--provenance_mirror_local_prefix",
         help="Optional local path prefix to rewrite to a mirrored remote prefix in emitted provenance.",
     )
@@ -2453,7 +2457,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.workflow_command == "scrna_cnmf_prepare":
                 from geneset_extractors.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_prepare
 
-                result = run_scrna_cnmf_prepare(args)
+                command_argv = [sys.executable, "-m", "geneset_extractors.cli", *raw_argv]
+                with invocation_context(command_argv=command_argv, cwd=Path.cwd()):
+                    result = run_scrna_cnmf_prepare(args)
                 print(
                     "workflow_completed "
                     f"workflow=scrna_cnmf_prepare n_subsets={result.get('n_subsets')} "

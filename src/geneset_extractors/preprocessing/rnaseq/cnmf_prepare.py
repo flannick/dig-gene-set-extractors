@@ -15,6 +15,18 @@ from typing import TextIO
 
 import numpy as np
 
+from geneset_extractors.core.metadata import current_invocation_context, _resolve_git_commit
+from geneset_extractors.core.provenance import (
+    REPO_URL,
+    build_analysis_node,
+    build_edges,
+    build_file_node,
+    mirror_graph_payload,
+    stable_operation_id,
+    write_canonical_json,
+)
+from geneset_extractors.core.metadata import input_file_record
+
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._=-]+")
 GENE_BY_CELL_MAX_INMEMORY_VALUES = 80_000_000
@@ -526,6 +538,7 @@ def _write_geneset_extractors_from_cnmf_script(
     subset_dir: Path,
     subset_id: str,
     args,
+    upstream_graph_path: Path | None = None,
 ) -> Path:
     script_path = subset_dir / "run_geneset_extractors_from_cnmf.sh"
     safe_subset = _safe_component(subset_id, "subset")
@@ -576,7 +589,16 @@ def _write_geneset_extractors_from_cnmf_script(
         "geneset-extractors convert rna_sc_programs \\",
         '  --cnmf_gene_spectra_tsv "$SPECTRA" \\',
         '  --out_dir "$OUT_GENESETS" \\',
-        f'  --organism {args.organism} --genome_build {args.genome_build}' + (f" {extra_flags}" if extra_flags else ""),
+        (
+            f'  --organism {args.organism} --genome_build {args.genome_build}'
+            + (f" {extra_flags}" if extra_flags else "")
+            + (" \\" if upstream_graph_path is not None else "")
+        ),
+        *(
+            [f'  --upstream_provenance_graph_json "{upstream_graph_path}"']
+            if upstream_graph_path is not None
+            else []
+        ),
     ]
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     script_path.chmod(0o755)
@@ -659,6 +681,72 @@ def _write_tmp_subset_from_gene_by_cell(
         "n_genes_input": len(gene_ids),
         "n_non_numeric_values": n_non_numeric,
     }
+
+
+def _write_scrna_cnmf_prepare_provenance_graph(
+    *,
+    out_dir: Path,
+    matrix_path: Path,
+    meta_path: Path,
+    args,
+    mirror_local_prefix: str | None = None,
+    mirror_remote_prefix: str | None = None,
+) -> Path:
+    invocation = current_invocation_context()
+    command = invocation.get("argv") if invocation else list(sys.argv)
+    entrypoint = "geneset-extractors workflows scrna_cnmf_prepare"
+    matrix_record = input_file_record(str(matrix_path), "matrix_tsv")
+    meta_record = input_file_record(str(meta_path), "meta_tsv")
+    input_nodes = [
+        build_file_node(r, {}, mirror_local_prefix=mirror_local_prefix, mirror_remote_prefix=mirror_remote_prefix)
+        for r in [matrix_record, meta_record]
+    ]
+    operation_id = stable_operation_id(
+        "scrna_cnmf_prepare",
+        str(out_dir),
+        [str(node["id"]) for node in input_nodes],
+    )
+    operation = build_analysis_node(
+        analysis_id=operation_id,
+        method="scrna_cnmf_prepare",
+        name="scrna_cnmf_prepare",
+        description=(
+            "DIG scrna_cnmf_prepare workflow: cell filtering, overdispersed gene selection, "
+            "cNMF factorization across K values, and consensus K selection by stability."
+        ),
+        parameters={
+            "cnmf_n_iter": getattr(args, "cnmf_n_iter", None),
+            "cnmf_numgenes": getattr(args, "cnmf_numgenes", None),
+            "cnmf_export_kind": getattr(args, "cnmf_export_kind", None),
+            "cnmf_k": getattr(args, "cnmf_k", None),
+            "cnmf_select_strategy": getattr(args, "cnmf_select_strategy", None),
+            "max_cells_total": getattr(args, "max_cells_total", None),
+            "seed": getattr(args, "seed", None),
+            "organism": getattr(args, "organism", None),
+        },
+        command=command,
+        entrypoint=entrypoint,
+        repo_url=REPO_URL,
+        module="geneset_extractors.workflows.scrna_cnmf_prepare",
+        script_url=REPO_URL,
+        version=_resolve_git_commit(),
+        dcc_url=REPO_URL,
+        drc_url=REPO_URL,
+    )
+    edges = build_edges(input_nodes, str(operation["id"]), str(operation["id"]), [])
+    payload = mirror_graph_payload(
+        {
+            "scrna_cnmf_prepare": {
+                "nodes": input_nodes + [operation],
+                "edges": edges,
+            }
+        },
+        mirror_local_prefix,
+        mirror_remote_prefix,
+    )
+    graph_path = out_dir / "scrna_cnmf_prepare.provenance_graph.json"
+    write_canonical_json(graph_path, payload)
+    return graph_path
 
 
 def run(args) -> dict[str, object]:
@@ -957,6 +1045,15 @@ def run(args) -> dict[str, object]:
             plan.n_cells_written_tmp = int(tmp_summary.get("n_cells_written_tmp", 0))
             plan.n_non_numeric_values += int(tmp_summary.get("n_non_numeric_values", 0))
 
+    _upstream_graph_path = _write_scrna_cnmf_prepare_provenance_graph(
+        out_dir=out_dir,
+        matrix_path=matrix_path,
+        meta_path=meta_path,
+        args=args,
+        mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+        mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
+    )
+
     for subset_id in retained_subset_ids:
         plan = plans[subset_id]
         tmp_path = tmp_paths[subset_id]
@@ -1017,6 +1114,7 @@ def run(args) -> dict[str, object]:
             subset_dir=plan.subset_dir,
             subset_id=subset_id,
             args=args,
+            upstream_graph_path=_upstream_graph_path,
         )
         _execute_script_if_requested(plan.run_cnmf_script_path, bool(args.execute))
 

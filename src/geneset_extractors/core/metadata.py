@@ -51,6 +51,8 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
         overlay_path = payload.get("_provenance_overlay_json")
         upstream_graph_path = payload.get("_upstream_provenance_graph_path")
         runtime_ctx = get_runtime_context()
+        if not isinstance(upstream_graph_path, str) and runtime_ctx is not None:
+            upstream_graph_path = runtime_ctx.upstream_provenance_graph_path
         mirror_local_prefix = payload.get("_provenance_mirror_local_prefix")
         if not isinstance(mirror_local_prefix, str) and runtime_ctx is not None:
             mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix
