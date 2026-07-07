@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 
@@ -183,3 +184,169 @@ def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> dict[st
         _validate_single_output_dir(out, schema)
         return {"mode": "single", "n_groups": 1}
     return _validate_grouped_output_dir(out, schema)
+
+
+# ---------------------------------------------------------------------------
+# Submission-level gate: cross-file invariants over a <library>_all_models tree.
+#
+# Complements per-output validate_output_dir with the invariants that distinguish
+# an accepted submission from a rejected one (calibrated against an accepted
+# reference package): clean single-token source URIs, integrity fields on every
+# file node, rerunnable commands carrying real version SHAs, meta<->gmt name
+# parity, and uniform .orig snapshots. Library-specific coverage rules stay with
+# the caller; these checks are framework-generic.
+# ---------------------------------------------------------------------------
+
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_INTERNAL_NAME_TOKENS = ("deg_long__", "condition=")
+
+
+def _provenance_graph(prov_payload: object) -> dict:
+    if not isinstance(prov_payload, dict) or not prov_payload:
+        return {"nodes": [], "edges": []}
+    graph = prov_payload[next(iter(prov_payload))]
+    return graph if isinstance(graph, dict) else {"nodes": [], "edges": []}
+
+
+def _gmt_first_column(gmt_path: Path) -> list[str]:
+    names: list[str] = []
+    if not gmt_path.exists():
+        return names
+    with gmt_path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                names.append(line.rstrip("\n").split("\t")[0])
+    return names
+
+
+def _is_unclean_identifier(value: object) -> bool:
+    # A clean source identifier is a single whitespace-free token (URI / path /
+    # filename). Prose descriptions contain whitespace; an accepted reference
+    # submission has zero file nodes whose dcc_url/drc_url contains whitespace.
+    return isinstance(value, str) and bool(value.strip()) and " " in value.strip()
+
+
+def validate_submission_tree(
+    root: str | Path,
+    *,
+    require_md5: bool = True,
+    require_version_sha: bool = True,
+    require_uniform_orig: bool = True,
+) -> dict[str, object]:
+    """Check submission invariants across a <library>_all_models output tree.
+
+    Returns ``{"failures": [str, ...], "counts": {...}, "models": [...]}``.
+    An empty ``failures`` list means the tree passes; callers decide whether a
+    non-empty list should block bundling.
+    """
+    root = Path(root)
+    prov_files = sorted(root.glob("genesets/**/geneset.provenance.json"))
+    counts = {
+        "file_nodes": 0,
+        "prose_dcc_url": 0,
+        "missing_md5": 0,
+        "prose_commands": 0,
+        "nonsha_versions": 0,
+        "name_mismatch": 0,
+        "dup_row_files": 0,
+        "provenance_files": len(prov_files),
+    }
+    examples: dict[str, str] = {}
+    orig_by_model: dict[str, int] = {}
+    models: set[str] = set()
+
+    for prov_path in prov_files:
+        out_dir = prov_path.parent
+        rel = prov_path.relative_to(root).as_posix()
+        parts = rel.split("/")
+        model = parts[3] if len(parts) > 3 else "?"
+        models.add(model)
+        graph = _provenance_graph(json.loads(prov_path.read_text(encoding="utf-8")))
+        for node in graph.get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            if node.get("type") == "File":
+                counts["file_nodes"] += 1
+                if _is_unclean_identifier(node.get("dcc_url")) or _is_unclean_identifier(node.get("drc_url")):
+                    counts["prose_dcc_url"] += 1
+                    examples.setdefault("inv1", f"{rel}: {str(node.get('dcc_url'))[:70]}")
+                c2m2 = node.get("c2m2_properties")
+                has_integrity = (
+                    isinstance(c2m2, dict)
+                    and c2m2.get("md5")
+                    and c2m2.get("size_in_bytes") is not None
+                )
+                if require_md5 and not has_integrity:
+                    counts["missing_md5"] += 1
+            analysis = node.get("analysis") if isinstance(node.get("analysis"), dict) else None
+            if analysis is not None:
+                command = analysis.get("command")
+                if isinstance(command, str) and "(inputs:" in command:
+                    counts["prose_commands"] += 1
+                    examples.setdefault("inv3", f"{rel}: {command[:70]}")
+                version = analysis.get("version")
+                if require_version_sha and isinstance(version, str) and not _SHA40.match(version):
+                    counts["nonsha_versions"] += 1
+                    examples.setdefault("inv3v", f"{rel}: version={version!r}")
+
+        gmt_names = _gmt_first_column(out_dir / "genesets.gmt")
+        if gmt_names and len(gmt_names) != len(set(gmt_names)):
+            counts["dup_row_files"] += 1
+        meta_path = out_dir / "geneset.meta.json"
+        if meta_path.exists() and gmt_names:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            gmt_meta = meta.get("gmt", {}) if isinstance(meta, dict) else {}
+            mismatch = False
+            for field in ("emitted_outputs", "requested_outputs", "plans"):
+                names = [o.get("name") for o in gmt_meta.get(field, []) if isinstance(o, dict)]
+                names = [n for n in names if n]
+                if names and sorted(names) != sorted(gmt_names):
+                    mismatch = True
+                    examples.setdefault("inv4", f"{rel}: {field}={names} vs gmt={gmt_names}")
+                    break
+            emitted = [o.get("name", "") for o in gmt_meta.get("emitted_outputs", []) if isinstance(o, dict)]
+            if any(any(tok in (n or "") for tok in _INTERNAL_NAME_TOKENS) for n in emitted):
+                mismatch = True
+                examples.setdefault("inv4", f"{rel}: internal token in emitted_outputs {emitted}")
+            if mismatch:
+                counts["name_mismatch"] += 1
+
+    for orig in root.glob("genesets/*/models/*/extractor/**/*.orig"):
+        mdl = orig.relative_to(root).as_posix().split("/")[3]
+        orig_by_model[mdl] = orig_by_model.get(mdl, 0) + 1
+    models_with_orig = {m for m, n in orig_by_model.items() if n}
+    orig_uniform = (not models_with_orig) or (models_with_orig == models)
+
+    failures: list[str] = []
+    if counts["prose_dcc_url"]:
+        failures.append(
+            f"INV-1 source identifiers: {counts['prose_dcc_url']}/{counts['file_nodes']} "
+            f"file nodes carry prose/whitespace dcc_url (e.g. {examples.get('inv1', '')})"
+        )
+    if require_md5 and counts["missing_md5"]:
+        failures.append(
+            f"INV-2 integrity: {counts['missing_md5']}/{counts['file_nodes']} file nodes missing md5/size_in_bytes"
+        )
+    if counts["prose_commands"]:
+        failures.append(
+            f"INV-3 command fidelity: {counts['prose_commands']} analysis nodes with prose '(inputs:' "
+            f"command (e.g. {examples.get('inv3', '')})"
+        )
+    if require_version_sha and counts["nonsha_versions"]:
+        failures.append(
+            f"INV-3 version: {counts['nonsha_versions']} analysis nodes with non-SHA version "
+            f"(e.g. {examples.get('inv3v', '')})"
+        )
+    if counts["name_mismatch"]:
+        failures.append(
+            f"INV-4 name parity: {counts['name_mismatch']} outputs where meta names != gmt col1 "
+            f"(e.g. {examples.get('inv4', '')})"
+        )
+    if counts["dup_row_files"]:
+        failures.append(f"INV-5 gmt: {counts['dup_row_files']} gmt files with duplicate row names")
+    if require_uniform_orig and not orig_uniform:
+        failures.append(
+            f"INV-7 .orig not uniform: present for {sorted(models_with_orig)} of models {sorted(models)}"
+        )
+
+    return {"failures": failures, "counts": counts, "models": sorted(models)}

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
 from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
-from geneset_extractors.core.validate import validate_output_dir
+from geneset_extractors.core.validate import validate_output_dir, validate_submission_tree
 from geneset_extractors.resource_manager import (
     describe_resource,
     fetch_resources,
@@ -1657,6 +1657,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = sub.add_parser("validate")
     p_val.add_argument("output_dir")
 
+    p_val_sub = sub.add_parser("validate-submission")
+    p_val_sub.add_argument("tree_root", help="Path to a <library>_all_models output tree.")
+    p_val_sub.add_argument(
+        "--allow-missing-md5", action="store_true",
+        help="Do not require md5/size_in_bytes on every file node.",
+    )
+    p_val_sub.add_argument(
+        "--allow-nonuniform-orig", action="store_true",
+        help="Do not require uniform .orig snapshots across models.",
+    )
+
     p_provenance = sub.add_parser("provenance")
     prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
     p_prov_build = prov_sub.add_parser("build")
@@ -1723,6 +1734,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_rna_de_prepare = wf_sub.add_parser("rna_de_prepare")
     _add_rna_de_prepare_flags(p_rna_de_prepare)
     _add_provenance_flags(p_rna_de_prepare)
+    p_kidsfirst_prepare = wf_sub.add_parser("kidsfirst_prepare")
+    from geneset_extractors.workflows.kidsfirst_prepare import add_flags as _add_kidsfirst_prepare_flags
+    _add_kidsfirst_prepare_flags(p_kidsfirst_prepare)
+    p_kidsfirst_curate = wf_sub.add_parser("kidsfirst_curate")
+    from geneset_extractors.workflows.kidsfirst_curate import add_flags as _add_kidsfirst_curate_flags
+    _add_kidsfirst_curate_flags(p_kidsfirst_curate)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
@@ -2306,6 +2323,20 @@ def main(argv: list[str] | None = None) -> int:
                 print("ok")
             return 0
 
+        if args.command == "validate-submission":
+            report = validate_submission_tree(
+                args.tree_root,
+                require_md5=not args.allow_missing_md5,
+                require_uniform_orig=not args.allow_nonuniform_orig,
+            )
+            for line in report["failures"]:
+                print(f"FAIL {line}")
+            if report["failures"]:
+                print(f"submission gate: FAIL ({len(report['failures'])} invariants); counts={report['counts']}")
+                return 1
+            print(f"submission gate: PASS; counts={report['counts']}")
+            return 0
+
         if args.command == "provenance":
             if args.provenance_command == "build":
                 out_path = write_provenance_from_metadata(
@@ -2474,6 +2505,28 @@ def main(argv: list[str] | None = None) -> int:
                     "workflow_completed "
                     f"workflow=rna_de_prepare n_comparisons={result.get('n_comparisons')} "
                     f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "kidsfirst_prepare":
+                from geneset_extractors.workflows.kidsfirst_prepare import run as run_kidsfirst_prepare
+
+                result = run_kidsfirst_prepare(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=kidsfirst_prepare n_tumor={result.get('n_tumor')} "
+                    f"n_normal={result.get('n_normal')} out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "kidsfirst_curate":
+                from geneset_extractors.workflows.kidsfirst_curate import run as run_kidsfirst_curate
+
+                result = run_kidsfirst_curate(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=kidsfirst_curate n_ok={result.get('n_ok')} "
+                    f"n_skipped={result.get('n_skipped')} out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
                 return 0
