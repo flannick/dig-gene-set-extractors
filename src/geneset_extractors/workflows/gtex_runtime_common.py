@@ -244,15 +244,21 @@ def write_workflow_provenance_graph(
     output_paths: list[tuple[Path, str]],
     input_paths: list[tuple[Path, str]],
     parameters: dict[str, Any],
+    analysis_description: str | None = None,
+    input_overlays: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     runtime_ctx = get_runtime_context()
     mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
     mirror_remote_prefix = runtime_ctx.provenance_mirror_remote_prefix if runtime_ctx is not None else None
+    # Wrap the caller's {role: overlay} map into the {"inputs": {"role:<role>": ...}}
+    # shape that build_file_node / _overlay_for_file expects, so per-input source
+    # identifiers (canonical_uri, provider, source) land on the file nodes.
+    overlay_arg = {"inputs": {f"role:{role}": ov for role, ov in (input_overlays or {}).items()}}
     input_records = [{"path": str(path), "role": role} for path, role in input_paths]
     input_nodes = [
         build_file_node(
             record,
-            {},
+            overlay_arg,
             mirror_local_prefix=mirror_local_prefix,
             mirror_remote_prefix=mirror_remote_prefix,
         )
@@ -285,7 +291,8 @@ def write_workflow_provenance_graph(
         analysis_id=operation_id,
         method=workflow_name,
         name=f"prepare_{focus_output_path.stem}",
-        description=f"Analysis step that prepares GTEx differential expression results and emits {focus_output_path.name}.",
+        description=analysis_description
+        or f"Analysis step that prepares GTEx differential expression results and emits {focus_output_path.name}.",
         parameters=parameters,
         command=command,
         entrypoint=entrypoint,

@@ -28,6 +28,8 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
+
 
 # ---------------------------------------------------------------------------
 # Tumor RSEM count matrix  (from build_rsem_matrix.py)
@@ -316,10 +318,76 @@ def run(args: argparse.Namespace) -> dict:
         normal_source=(args.normal_source or "GTEx"),
         gene_map_path=Path(args.gene_map_tsv) if args.gene_map_tsv else None,
     )
+
+    combined = out_dir / "combined_counts.tsv"
+    sample_meta = out_dir / "sample_metadata.tsv"
+    # Emit a workflow provenance graph natively — real md5/size on every file node,
+    # the real invocation as the command, and a git-SHA version — the same mechanism
+    # the accepted GTEx/MoTrPAC workflows use. Downstream steps merge this clean
+    # upstream graph (via --upstream_provenance_graph_json) instead of a
+    # hand-synthesized prose node.
+    normal_source = args.normal_source or "GTEx"
+    prov_inputs: list[tuple[Path, str]] = []
+    if getattr(args, "tumor_counts", None):
+        prov_inputs.append((Path(args.tumor_counts), "tumor_counts"))
+    elif getattr(args, "manifest_tsv", None):
+        prov_inputs.append((Path(args.manifest_tsv), "rsem_tumor_manifest"))
+    if getattr(args, "normal_counts", None):
+        prov_inputs.append((Path(args.normal_counts), "normal_counts"))
+    elif getattr(args, "gtex_gct", None):
+        prov_inputs.append((Path(args.gtex_gct), "gtex_gct"))
+        if getattr(args, "gtex_sample_attrs", None):
+            prov_inputs.append((Path(args.gtex_sample_attrs), "gtex_sample_attrs"))
+    if getattr(args, "tumor_metadata", None):
+        prov_inputs.append((Path(args.tumor_metadata), "tumor_metadata"))
+    prov_inputs = [(p.resolve(), role) for p, role in prov_inputs if p.exists()]
+
+    # Stamp clean, single-token public URIs onto the source input nodes at emission
+    # time (dcc_url/drc_url/local_id), so the shipped provenance carries a resolvable
+    # identifier rather than prose. Refresh can still mirror local intermediates.
+    src_overlays: dict[str, dict] = {}
+    if getattr(args, "tumor_source_uri", None):
+        ov = {"canonical_uri": args.tumor_source_uri, "provider": "Kids First DRC", "source": args.study_id}
+        src_overlays["tumor_counts"] = ov
+        src_overlays["rsem_tumor_manifest"] = ov
+    if getattr(args, "normal_source_uri", None):
+        ov = {"canonical_uri": args.normal_source_uri, "provider": normal_source, "source": normal_source}
+        src_overlays["normal_counts"] = ov
+        src_overlays["gtex_gct"] = ov
+        src_overlays["gtex_sample_attrs"] = ov
+    if getattr(args, "tumor_metadata_source_uri", None):
+        src_overlays["tumor_metadata"] = {
+            "canonical_uri": args.tumor_metadata_source_uri,
+            "provider": "Kids First DRC",
+            "source": "clinical/biospecimen metadata",
+        }
+
+    write_workflow_provenance_graph(
+        workflow_name="kidsfirst_prepare",
+        module_name="geneset_extractors.workflows.kidsfirst_prepare",
+        output_dir=out_dir,
+        focus_output_path=combined,
+        output_paths=[(combined, "combined_counts"), (sample_meta, "sample_metadata")],
+        input_paths=prov_inputs,
+        parameters={
+            "study_id": args.study_id,
+            "normal_source": normal_source,
+            "matrix_orientation": "gene_by_sample",
+            "gene_id_alignment": "strip_ensembl_version",
+            "merge": "gene_intersection",
+        },
+        analysis_description=(
+            f"Analysis step that prepares the tumor+normal count matrix and sample metadata "
+            f"for {args.study_id} (kidsfirst_prepare; normal source: {normal_source}) and "
+            f"emits combined_counts.tsv + sample_metadata.tsv."
+        ),
+        input_overlays=src_overlays,
+    )
     return {
         "out_dir": str(out_dir), "study_id": args.study_id,
-        "combined_counts": str(out_dir / "combined_counts.tsv"),
-        "sample_metadata": str(out_dir / "sample_metadata.tsv"),
+        "combined_counts": str(combined),
+        "sample_metadata": str(sample_meta),
+        "provenance_graph": str(out_dir / "combined_counts.provenance_graph.json"),
         **stats,
     }
 
@@ -343,6 +411,13 @@ def add_flags(parser: argparse.ArgumentParser) -> None:
     # shared
     parser.add_argument("--tumor_metadata", default=None, help="Tumor sample metadata (Sample ID, Diagnosis)")
     parser.add_argument("--gene_map_tsv", default=None, help="TSV with gene_id, gene_symbol columns")
+    # public source identifiers stamped onto the provenance input nodes (clean, single-token URIs)
+    parser.add_argument("--tumor_source_uri", default=None,
+                        help="Public URI for the tumor RSEM source (e.g. drs://nci-crdc.datacommons.io/dg.4DFC/<id>)")
+    parser.add_argument("--normal_source_uri", default=None,
+                        help="Public URI for the normal reference source (e.g. GTEx v10 download URL)")
+    parser.add_argument("--tumor_metadata_source_uri", default=None,
+                        help="Public URI for the clinical/biospecimen metadata source")
 
 
 def main() -> int:

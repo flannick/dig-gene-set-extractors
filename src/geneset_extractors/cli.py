@@ -7,7 +7,7 @@ from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
 from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
-from geneset_extractors.core.validate import validate_output_dir
+from geneset_extractors.core.validate import validate_output_dir, validate_submission_tree
 from geneset_extractors.resource_manager import (
     describe_resource,
     fetch_resources,
@@ -1657,6 +1657,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = sub.add_parser("validate")
     p_val.add_argument("output_dir")
 
+    p_val_sub = sub.add_parser("validate-submission")
+    p_val_sub.add_argument("tree_root", help="Path to a <library>_all_models output tree.")
+    p_val_sub.add_argument(
+        "--allow-missing-md5", action="store_true",
+        help="Do not require md5/size_in_bytes on every file node.",
+    )
+    p_val_sub.add_argument(
+        "--allow-nonuniform-orig", action="store_true",
+        help="Do not require uniform .orig snapshots across models.",
+    )
+
     p_provenance = sub.add_parser("provenance")
     prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
     p_prov_build = prov_sub.add_parser("build")
@@ -2310,6 +2321,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ok: validated grouped output with n_groups={result.get('n_groups')}")
             else:
                 print("ok")
+            return 0
+
+        if args.command == "validate-submission":
+            report = validate_submission_tree(
+                args.tree_root,
+                require_md5=not args.allow_missing_md5,
+                require_uniform_orig=not args.allow_nonuniform_orig,
+            )
+            for line in report["failures"]:
+                print(f"FAIL {line}")
+            if report["failures"]:
+                print(f"submission gate: FAIL ({len(report['failures'])} invariants); counts={report['counts']}")
+                return 1
+            print(f"submission gate: PASS; counts={report['counts']}")
             return 0
 
         if args.command == "provenance":

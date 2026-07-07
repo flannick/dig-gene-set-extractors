@@ -29,6 +29,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
+
 
 # ── Thresholds ───────────────────────────────────────────────────────────────
 PADJ_MAX_DEFAULT = 0.05
@@ -479,12 +481,52 @@ def run(args: argparse.Namespace) -> dict:
     print(f"    subtype_markers_dn.gmt auxiliary (subtype contrast down, if any)", file=sys.stderr)
     print(f"    manifest.tsv           audit trail", file=sys.stderr)
 
+    # Emit a native provenance graph for the curation step — real command, git-SHA
+    # version, and md5/size on every deg_long input + curated output — so the shipped
+    # HZ2 provenance is born clean (same mechanism as kidsfirst_prepare / the accepted
+    # reference), instead of being hand-synthesized after the fact.
+    deg_inputs: list[tuple[Path, str]] = []
+    seen_paths: set[str] = set()
+    for disease in DISEASE_CONFIG:
+        for comp in disease["comparisons"]:
+            p = (analysis_dir / comp / "de_results" / "deg_long.tsv").resolve()
+            if p.exists() and str(p) not in seen_paths:
+                seen_paths.add(str(p))
+                deg_inputs.append((p, f"deg_long:{comp}"))
+    curated_outputs = [
+        (up_gmt, "disease_up_gmt"),
+        (tvn_dn, "tissue_markers_dn_gmt"),
+        (sub_dn, "subtype_markers_dn_gmt"),
+        (out_dir / "manifest.tsv", "curation_manifest"),
+    ]
+    curated_outputs = [(p, role) for p, role in curated_outputs if p.exists()]
+    write_workflow_provenance_graph(
+        workflow_name="kidsfirst_curate",
+        module_name="geneset_extractors.workflows.kidsfirst_curate",
+        output_dir=out_dir,
+        focus_output_path=up_gmt,
+        output_paths=curated_outputs,
+        input_paths=deg_inputs,
+        parameters={
+            "score_threshold": args.score_threshold,
+            "safety_cap": args.safety_cap,
+            "padj_max": args.padj_max,
+            "min_logfc": args.min_logfc,
+            "min_genes": args.min_genes,
+            "concordance": "per_disease",
+        },
+        analysis_description=(
+            "Analysis step that curates concordant disease-up gene sets from per-comparison "
+            "DE results (kidsfirst_curate) and emits disease_up.gmt."
+        ),
+    )
     return {
         "out_dir": str(out_dir),
         "n_ok": len(ok),
         "n_skipped": len(skip),
         "n_warn_small": len(warn),
         "diseases": [r["label"] for r in ok],
+        "provenance_graph": str(out_dir / "disease_up.provenance_graph.json"),
     }
 
 
