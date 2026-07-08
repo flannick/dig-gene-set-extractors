@@ -2563,6 +2563,57 @@ def build_parser() -> argparse.ArgumentParser:
     p_regulon_contrast.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_regulon_contrast)
 
+    p_kd = conv.add_parser(
+        "encode_kd_regulon",
+        help=(
+            "ENCODE shRNA/CRISPR knockdown RNA-seq functional regulon sets: "
+            "KD vs matched-control mean-TPM log2FC per factor, split into up/down/regulated. "
+            "Queries the ENCODE portal live or uses a pre-built manifest TSV."
+        ),
+    )
+    p_kd.add_argument(
+        "--encode_kd_manifest_tsv",
+        help=(
+            "Pre-built manifest TSV (columns: target, role, file_accession, href, "
+            "experiment_accession). If not provided, the ENCODE portal API is queried live at "
+            "https://www.encodeproject.org/search/."
+        ),
+    )
+    p_kd.add_argument(
+        "--ncbi_gene_info_gz",
+        help=(
+            "Path to NCBI Homo_sapiens.gene_info.gz for ENSG-to-symbol mapping. "
+            "If not provided, auto-downloaded from "
+            "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz "
+            "and cached under out_dir/references/."
+        ),
+    )
+    p_kd.add_argument(
+        "--assay", default="shRNA RNA-seq",
+        help=(
+            "ENCODE assay title(s) to query. Default 'shRNA RNA-seq'. "
+            "Use pipe-separated list for multiple assays, e.g. 'shRNA RNA-seq|CRISPR RNA-seq'."
+        ),
+    )
+    p_kd.add_argument(
+        "--perturbation", default="shRNA knockdown",
+        help="Perturbation label for set descriptions and provenance (default: 'shRNA knockdown').",
+    )
+    p_kd.add_argument(
+        "--lib_prefix",
+        help="Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_regulon'.",
+    )
+    p_kd.add_argument(
+        "--lfc_threshold", type=float, default=1.0,
+        help="log2 fold-change threshold for DE calling (default: 1.0; |log2FC| >= threshold).",
+    )
+    p_kd.add_argument(
+        "--expr_threshold", type=float, default=1.0,
+        help="Minimum TPM expression threshold; genes where max(KD,ctrl) < threshold are filtered (default: 1.0).",
+    )
+    p_kd.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_kd)
+
     return parser
 
 
