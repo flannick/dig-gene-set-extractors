@@ -1687,10 +1687,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json.",
     )
     _add_provenance_flags(p_prov_build)
-    p_prov_build.add_argument(
-        "--upstream_provenance_graph_json",
-        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
-    )
 
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
@@ -1726,10 +1722,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print available template variables derived from metadata and exit.",
     )
     _add_provenance_flags(p_meta_patch)
-    p_meta_patch.add_argument(
-        "--upstream_provenance_graph_json",
-        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
-    )
 
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
