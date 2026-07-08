@@ -363,12 +363,6 @@ def run(args) -> dict[str, object]:
         finally:
             pass
 
-        # Delete the downloaded BED to stay lean
-        try:
-            peak_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
         description = (
             f"Genes with promoter-proximal (TSS±{window}bp, {bin_size}bp bins, GRCh38 refGene) "
             f"ENCODE {assay} accessibility in biosample '{biosample}'. "
@@ -393,6 +387,12 @@ def run(args) -> dict[str, object]:
             peak_file_rec=peak_file_rec,
             refgene_file_rec=refgene_file_rec,
         )
+        # Delete the downloaded BED after provenance is written
+        try:
+            peak_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
         gene_counts.append(len(genes))
         n_done += 1
 

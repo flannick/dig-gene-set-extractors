@@ -37,7 +37,7 @@ def build_geneset_id(converter_name: str, file_hashes: list[str], params: dict[s
     return stable_hash_object(
         {
             "converter": converter_name,
-            "file_hashes": sorted(file_hashes),
+            "file_hashes": sorted(file_hashes, key=lambda h: h or ""),
             "params_hash": stable_hash_object(params),
         }
     )[:24]

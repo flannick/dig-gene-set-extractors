@@ -152,7 +152,7 @@ def _write_interop_set(
     target: str | None,
     n_regulon_factors: int,
     n_clinvar_genes: int,
-    regulon_file_rec: dict,
+    regulon_dir: str,
     clinvar_file_rec: dict,
 ) -> None:
     set_dir.mkdir(parents=True, exist_ok=True)
@@ -169,6 +169,7 @@ def _write_interop_set(
             "target": target,
             "n_regulon_factors": n_regulon_factors,
             "n_clinvar_pathogenic_genes": n_clinvar_genes,
+            "regulon_dir": regulon_dir,
             "operation": "regulon_x_clinvar_pathogenic",
             "encode_citation": ENCODE_CITATION,
             "clinvar_citation": CLINVAR_CITATION,
@@ -182,7 +183,7 @@ def _write_interop_set(
         assay=assay,
         organism="human",
         genome_build="GRCh38",
-        files=[regulon_file_rec, clinvar_file_rec],
+        files=[clinvar_file_rec],
         gene_annotation={
             "mode": "intersection",
             "source": "regulon_x_clinvar",
@@ -271,7 +272,6 @@ def run(args) -> dict[str, object]:
         if not rp.is_dir():
             raise NotADirectoryError(f"regulon_dir not found: {rp}")
         recs = _load_records_from_dir(rp)
-        regulon_file_rec = input_file_record(str(rp), "regulon_dir")
     else:
         raise ValueError("Provide --regulon_dir or --regulon_zip")
 
@@ -309,7 +309,7 @@ def run(args) -> dict[str, object]:
             target=target,
             n_regulon_factors=n_factors,
             n_clinvar_genes=n_clinvar,
-            regulon_file_rec=regulon_file_rec,
+            regulon_dir=str(rp),
             clinvar_file_rec=clinvar_file_rec,
         )
         gene_counts.append(len(inter))
@@ -336,7 +336,7 @@ def run(args) -> dict[str, object]:
             target=None,
             n_regulon_factors=n_factors,
             n_clinvar_genes=n_clinvar,
-            regulon_file_rec=regulon_file_rec,
+            regulon_dir=str(rp),
             clinvar_file_rec=clinvar_file_rec,
         )
         n_union = 1
