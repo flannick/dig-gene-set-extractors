@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import math
 import urllib.request
 from pathlib import Path
 
@@ -71,6 +72,26 @@ def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list
     return tissues, genes, gene_tstat
 
 
+def _log2_zscore(gene_tstat: dict[str, list[float]]) -> dict[str, list[float]]:
+    """Convert raw TPM values to per-gene log2-TPM z-scores across tissues.
+
+    Positive z-scores = enriched relative to cross-tissue mean.
+    Negative z-scores = depleted relative to cross-tissue mean.
+    """
+    result: dict[str, list[float]] = {}
+    for gene, vals in gene_tstat.items():
+        log_vals = [math.log2(v + 1.0) for v in vals]
+        n = len(log_vals)
+        if n == 0:
+            result[gene] = vals
+            continue
+        mean = sum(log_vals) / n
+        variance = sum((x - mean) ** 2 for x in log_vals) / n
+        std = math.sqrt(variance) if variance > 0 else 1e-8
+        result[gene] = [(x - mean) / std for x in log_vals]
+    return result
+
+
 def run(args) -> dict[str, object]:
     activate_runtime_context("gtex_tissue_depleted", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
@@ -78,6 +99,7 @@ def run(args) -> dict[str, object]:
 
     tstat_path = _maybe_download(args.gtex_tstat_tsv, out_dir)
     tissues, genes, gene_tstat = _load_tstat_matrix(tstat_path)
+    gene_tstat = _log2_zscore(gene_tstat)
     threshold = float(args.tstat_threshold)
 
     file_rec = input_file_record(str(tstat_path), "gtex_tstat_tsv")
@@ -95,8 +117,8 @@ def run(args) -> dict[str, object]:
         gene_symbols = [g for g, _ in depleted]
         set_name = f"GTEx_tissue_depleted_{_safe_name(tissue)}"
         description = (
-            f"Genes relatively depleted (GTEx t-stat<=-{threshold}; relative tissue specificity, "
-            f"NOT absolute expression) in {tissue}. "
+            f"Genes relatively depleted (log2-TPM z-score<=-{threshold} across tissues; relative "
+            f"tissue specificity, NOT absolute expression) in {tissue}. "
             f"Derived from GTEx V8 median TPM (NIH Common Fund; public aggregate)."
         )
 
