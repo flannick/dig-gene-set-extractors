@@ -32,7 +32,7 @@ def _load_genes_from_tsv(path: Path) -> set[str]:
     with path.open("r", encoding="utf-8") as fh:
         next(fh, None)  # skip header
         for line in fh:
-            g = line.strip()
+            g = line.strip().split("\t")[0]
             if g:
                 genes.add(g)
     return genes
@@ -146,8 +146,8 @@ def _write_concordance_set(
     consensus_fraction: float,
     n_accessible_biosamples: int,
     n_tissue_enriched: int,
-    accessible_file_rec: dict,
-    gtex_file_rec: dict,
+    accessible_genes_dir: str,
+    gtex_enriched_dir: str,
 ) -> None:
     set_dir.mkdir(parents=True, exist_ok=True)
     with (set_dir / "geneset.tsv").open("w", encoding="utf-8", newline="\n") as fh:
@@ -164,6 +164,8 @@ def _write_concordance_set(
             "consensus_fraction": consensus_fraction,
             "n_accessible_biosamples": n_accessible_biosamples,
             "n_tissue_enriched_genes": n_tissue_enriched,
+            "accessible_genes_dir": accessible_genes_dir,
+            "gtex_enriched_dir": gtex_enriched_dir,
             "encode_citation": ENCODE_CITATION,
             "gtex_citation": GTEX_CITATION,
         },
@@ -171,7 +173,7 @@ def _write_concordance_set(
         assay=assay,
         organism="human",
         genome_build="GRCh38",
-        files=[accessible_file_rec, gtex_file_rec],
+        files=[],
         gene_annotation={
             "mode": "inherited",
             "source": "encode_accessible_genes_output_and_gtex_tstat",
@@ -219,13 +221,11 @@ def run(args) -> dict[str, object]:
         if not src_path.is_file():
             raise FileNotFoundError(f"accessible_genes_zip not found: {src_path}")
         per_biosample, _ = _load_accessible_from_zip(src_path)
-        accessible_file_rec = input_file_record(str(src_path), "accessible_genes_zip")
     elif accessible_dir:
         src_path = Path(accessible_dir)
         if not src_path.is_dir():
             raise NotADirectoryError(f"accessible_genes_dir not found: {src_path}")
         per_biosample, _ = _load_accessible_from_dir(src_path)
-        accessible_file_rec = {"path": str(src_path), "local_path": str(src_path), "role": "accessible_genes_dir", "sha256": None, "size_bytes": None, "access_level": "local_only"}
     else:
         raise ValueError("Provide --accessible_genes_dir or --accessible_genes_zip")
 
@@ -250,7 +250,6 @@ def run(args) -> dict[str, object]:
         if not enriched_path.is_dir():
             raise NotADirectoryError(f"gtex_enriched_dir not found: {enriched_path}")
         tissues, gtex_src = _load_gtex_from_enriched_dir(enriched_path)
-        gtex_file_rec = {"path": str(enriched_path), "local_path": str(enriched_path), "role": "gtex_enriched_dir", "sha256": None, "size_bytes": None, "access_level": "local_only"}
     elif gtex_tstat_tsv:
         tstat_path = Path(gtex_tstat_tsv)
         if not tstat_path.is_file():
@@ -286,8 +285,8 @@ def run(args) -> dict[str, object]:
             consensus_fraction=consensus_fraction,
             n_accessible_biosamples=n,
             n_tissue_enriched=len(enriched),
-            accessible_file_rec=accessible_file_rec,
-            gtex_file_rec=gtex_file_rec,
+            accessible_genes_dir=str(src_path),
+            gtex_enriched_dir=str(enriched_path),
         )
         gene_counts.append(len(inter))
         n_sets += 1
