@@ -229,9 +229,13 @@ def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list
             header = row
             break
 
-        # Detect GCT format: second column is 'Description' or 'description'
+        # Detect GCT format: second column is 'Description'/'description'.
+        # In GTEx GCT files the Description column holds the gene symbol
+        # (e.g. WASH7P), while the Name column holds the ENSG ID.
+        # Use the Description value as the gene key so GlyGen symbol lookups work.
         gct = len(header) > 1 and header[1].lower() in ("description", "name", "id")
         val_start = 2 if gct else 1
+        gene_col = 1 if gct else 0  # symbol is in Description for GCT
         tissues = header[val_start:]
 
         genes: list[str] = []
@@ -239,7 +243,10 @@ def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list
         for row in reader:
             if not row or not row[0]:
                 continue
-            gene = row[0]
+            gene = row[gene_col] if len(row) > gene_col else row[0]
+            gene = gene.strip()
+            if not gene or gene in ("", "NA"):
+                continue
             try:
                 values = [float(x) for x in row[val_start:]]
             except ValueError:
