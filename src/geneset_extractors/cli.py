@@ -2469,6 +2469,52 @@ def build_parser() -> argparse.ArgumentParser:
     p_gtex_depleted.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_gtex_depleted)
 
+    p_encode_gtex = conv.add_parser(
+        "encode_gtex_concordance",
+        help=(
+            "Intersect ENCODE accessibility consensus (>= fraction of biosamples) with "
+            "GTEx tissue-enriched genes, producing per-tissue concordance sets."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--accessible_genes_dir",
+        help="Directory of per-biosample accessible-gene set subdirs (from encode_accessible_genes).",
+    )
+    p_encode_gtex.add_argument(
+        "--accessible_genes_zip",
+        help="Zip of per-biosample accessible-gene set subdirs (alternative to --accessible_genes_dir).",
+    )
+    p_encode_gtex.add_argument(
+        "--gtex_enriched_dir",
+        help=(
+            "Directory of gtex_tissue_enriched output subdirs (from gtex_tissue_enriched). "
+            "Preferred when pre-computed; mutually exclusive with --gtex_tstat_tsv."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--gtex_tstat_tsv",
+        help=(
+            "Path to GTEx t-stat TSV (genes x tissues). Used when --gtex_enriched_dir is not provided. "
+            "Derived from GTEx V8 median TPM "
+            "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+            "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz)."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--assay", default="ATAC-seq",
+        help="Assay label for set names and provenance (default: 'ATAC-seq').",
+    )
+    p_encode_gtex.add_argument(
+        "--consensus_fraction", type=float, default=0.25,
+        help="Minimum fraction of biosamples in which a gene must be accessible for consensus (default: 0.25).",
+    )
+    p_encode_gtex.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="GTEx t-stat threshold for enrichment when loading from --gtex_tstat_tsv (default: 4.0).",
+    )
+    p_encode_gtex.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_encode_gtex)
+
     return parser
 
 
