@@ -2271,6 +2271,29 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_glygen = conv.add_parser(
+        "glygen_gtex",
+        help=(
+            "Derive GlyGen glyco gene sets (glycosyltransferases, glycohydrolases, glycogenes, "
+            "glycosylation motif proteins) as standalone catalog sets and as tissue-enriched "
+            "x GTEx subsets. Downloads directly from data.glygen.org."
+        ),
+    )
+    p_glygen.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_glygen.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum GTEx t-statistic for a GlyGen gene to appear in a tissue-enriched "
+             "x_gtex set (default: 4.0). Does not affect standalone catalog sets.",
+    )
+    p_glygen.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_glygen)
+
     p_glycomaturity = conv.add_parser(
         "glycomaturity_gtex",
         help=(
