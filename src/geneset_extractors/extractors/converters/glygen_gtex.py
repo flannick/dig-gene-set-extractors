@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import urllib.request
 from pathlib import Path
@@ -202,10 +203,37 @@ def _fetch_oglcnac_genes(out_dir: Path) -> tuple[list[str], Path]:
 
 
 def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list[float]]]:
-    with path.open("r", encoding="utf-8", newline="") as fh:
+    """Load a gene × tissue numeric matrix (t-stats or median TPM).
+
+    Accepts:
+    - Plain TSV: gene<TAB>tissue1<TAB>tissue2...
+    - GCT v1.2 (gzip or plain): Name<TAB>Description<TAB>tissue1... with two
+      preamble lines (#1.2 and dimensions). The Description column is skipped
+      and gene names are taken from the Name/first column.
+    """
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh, delimiter="\t")
-        header = next(reader)
-        tissues = header[1:]
+        header: list[str] = []
+        for row in reader:
+            if not row or not row[0]:
+                continue
+            # Skip GCT preamble: '#1.2' line and integer dimension line
+            if row[0].startswith("#"):
+                continue
+            try:
+                int(row[0])
+                continue  # dimension line (e.g. "56200\t54")
+            except ValueError:
+                pass
+            header = row
+            break
+
+        # Detect GCT format: second column is 'Description' or 'description'
+        gct = len(header) > 1 and header[1].lower() in ("description", "name", "id")
+        val_start = 2 if gct else 1
+        tissues = header[val_start:]
+
         genes: list[str] = []
         gene_tstat: dict[str, list[float]] = {}
         for row in reader:
@@ -213,8 +241,10 @@ def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list
                 continue
             gene = row[0]
             try:
-                values = [float(x) for x in row[1:]]
+                values = [float(x) for x in row[val_start:]]
             except ValueError:
+                continue
+            if len(values) != len(tissues):
                 continue
             genes.append(gene)
             gene_tstat[gene] = values
