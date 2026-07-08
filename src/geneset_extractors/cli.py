@@ -2271,6 +2271,39 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_catlas = conv.add_parser(
+        "catlas_accessible_genes",
+        help=(
+            "Derive cell-type accessible gene sets from CATlas scATAC-seq by mapping "
+            "background-controlled specifically-accessible regions (*_Up.bed.gz) to genes "
+            "via promoter TSS+/-window overlap (UCSC refGene hg38)."
+        ),
+    )
+    p_catlas.add_argument(
+        "--bed_dir", required=True,
+        help="Directory containing background-controlled *_Up.bed.gz files (one per cell type). "
+             "Input BED files must already have the LOO prevalence background control applied "
+             "(specifically-accessible Up regions only).",
+    )
+    p_catlas.add_argument(
+        "--refgene_gz",
+        help="Path to UCSC refGene.txt.gz for GRCh38/hg38. "
+             "If not provided, auto-downloaded from "
+             "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz "
+             "and cached under out_dir/references/.",
+    )
+    p_catlas.add_argument(
+        "--promoter_window", type=int, default=1000,
+        help="Half-width of promoter window around TSS in bp (default: 1000; promoter = TSS +/- 1000).",
+    )
+    p_catlas.add_argument(
+        "--bin_size", type=int, default=1000,
+        help="Genome bin size in bp for region-to-promoter overlap (default: 1000). "
+             "Must match the bin size used to produce the input BED files.",
+    )
+    p_catlas.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_catlas)
+
     p_glygen = conv.add_parser(
         "glygen_gtex",
         help=(
