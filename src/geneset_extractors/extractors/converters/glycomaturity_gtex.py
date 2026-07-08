@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import urllib.request
 from pathlib import Path
 
@@ -250,16 +251,35 @@ def _maybe_download(path_or_url: str, out_dir: Path) -> Path:
 
 
 def _load_tstat_matrix(path: Path) -> tuple[list[str], dict[str, list[float]]]:
-    with path.open("r", encoding="utf-8", newline="") as fh:
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh, delimiter="\t")
-        header = next(reader)
-        tissues = header[1:]
+        header: list[str] = []
+        for row in reader:
+            if not row or not row[0]:
+                continue
+            if row[0].startswith("#"):
+                continue
+            try:
+                int(row[0])
+                continue  # GCT dimension line
+            except ValueError:
+                pass
+            header = row
+            break
+        gct = len(header) > 1 and header[1].lower() in ("description", "name", "id")
+        val_start = 2 if gct else 1
+        gene_col = 1 if gct else 0  # Description = gene symbol in GTEx GCT
+        tissues = header[val_start:]
         gene_tstat: dict[str, list[float]] = {}
         for row in reader:
             if not row or not row[0]:
                 continue
+            gene = (row[gene_col] if len(row) > gene_col else row[0]).strip()
+            if not gene or gene in ("", "NA"):
+                continue
             try:
-                gene_tstat[row[0]] = [float(x) for x in row[1:]]
+                gene_tstat[gene] = [float(x) for x in row[val_start:]]
             except ValueError:
                 continue
     return tissues, gene_tstat
