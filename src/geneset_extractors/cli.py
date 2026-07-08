@@ -2304,6 +2304,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_catlas.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_catlas)
 
+    p_encode_acc = conv.add_parser(
+        "encode_accessible_genes",
+        help=(
+            "Derive per-biosample accessible gene sets from ENCODE ATAC-seq or DNase-seq "
+            "peaks via promoter TSS overlap (UCSC refGene hg38). Queries the ENCODE portal "
+            "API live or accepts a pre-downloaded manifest TSV."
+        ),
+    )
+    p_encode_acc.add_argument(
+        "--encode_manifest_tsv",
+        help="Optional pre-downloaded manifest TSV (columns: file_accession, "
+             "experiment_accession, biosample, href, output_type). "
+             "If omitted, the ENCODE portal API is queried live.",
+    )
+    p_encode_acc.add_argument(
+        "--refgene_gz",
+        help="Path to UCSC refGene.txt.gz for GRCh38/hg38. "
+             "Auto-downloaded from UCSC if not provided.",
+    )
+    p_encode_acc.add_argument(
+        "--assay", default="ATAC-seq",
+        help="ENCODE assay title: 'ATAC-seq' (default) or 'DNase-seq'.",
+    )
+    p_encode_acc.add_argument(
+        "--output_type", default="IDR thresholded peaks",
+        help="ENCODE file output_type filter (default: 'IDR thresholded peaks'). "
+             "For DNase use 'peaks'.",
+    )
+    p_encode_acc.add_argument(
+        "--promoter_window", type=int, default=1000,
+        help="Half-width of promoter window around TSS in bp (default: 1000).",
+    )
+    p_encode_acc.add_argument(
+        "--bin_size", type=int, default=1000,
+        help="Genome bin size in bp for region-to-promoter overlap (default: 1000).",
+    )
+    p_encode_acc.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_encode_acc)
+
     p_glygen = conv.add_parser(
         "glygen_gtex",
         help=(
