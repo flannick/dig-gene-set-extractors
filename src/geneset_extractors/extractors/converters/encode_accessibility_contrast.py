@@ -126,7 +126,8 @@ def _write_contrast_set(
     low_threshold: float,
     high_threshold: float,
     n_background: int,
-    input_file_rec: dict,
+    input_file_rec: dict | None,
+    accessible_src_dir: str | None = None,
 ) -> None:
     set_dir.mkdir(parents=True, exist_ok=True)
     with (set_dir / "geneset.tsv").open("w", encoding="utf-8", newline="\n") as fh:
@@ -135,28 +136,31 @@ def _write_contrast_set(
             fh.write(f"{g}\n")
     write_gmt([(set_name, genes)], set_dir / "genesets.gmt")
 
+    params: dict = {
+        "assay": assay,
+        "biosample": biosample,
+        "group": group,
+        "direction": direction,
+        "low_prevalence_threshold": low_threshold,
+        "high_prevalence_threshold": high_threshold,
+        "background_method": "leave_one_out_prevalence",
+        "background_n_experiments": n_background,
+        "encode_citation": ENCODE_CITATION,
+        "caveat": (
+            "Peak-call prevalence background (relative accessibility specificity); "
+            "not a GC/library-normalized read-count differential (no DESeq2/edgeR)."
+        ),
+    }
+    if accessible_src_dir is not None:
+        params["accessible_src_dir"] = accessible_src_dir
     meta = make_metadata(
         converter_name="encode_accessibility_contrast",
-        parameters={
-            "assay": assay,
-            "biosample": biosample,
-            "group": group,
-            "direction": direction,
-            "low_prevalence_threshold": low_threshold,
-            "high_prevalence_threshold": high_threshold,
-            "background_method": "leave_one_out_prevalence",
-            "background_n_experiments": n_background,
-            "encode_citation": ENCODE_CITATION,
-            "caveat": (
-                "Peak-call prevalence background (relative accessibility specificity); "
-                "not a GC/library-normalized read-count differential (no DESeq2/edgeR)."
-            ),
-        },
+        parameters=params,
         data_type="chromatin_accessibility",
         assay=assay,
         organism="human",
         genome_build="GRCh38",
-        files=[input_file_rec],
+        files=[input_file_rec] if input_file_rec is not None else [],
         gene_annotation={
             "mode": "inherited",
             "source": "encode_accessible_genes_output",
@@ -207,6 +211,7 @@ def run(args) -> dict[str, object]:
     accessible_zip = getattr(args, "accessible_genes_zip", None)
     accessible_dir = getattr(args, "accessible_genes_dir", None)
 
+    accessible_src_dir: str | None = None
     if accessible_zip:
         src_path = Path(accessible_zip)
         if not src_path.is_file():
@@ -218,7 +223,8 @@ def run(args) -> dict[str, object]:
         if not src_path.is_dir():
             raise NotADirectoryError(f"accessible_genes_dir not found: {src_path}")
         recs = _load_records_from_dir(src_path, group_key, lib_filter, valid)
-        input_file_rec = input_file_record(str(src_path), "accessible_genes_dir")
+        input_file_rec = None
+        accessible_src_dir = str(src_path)
     else:
         raise ValueError("Provide --accessible_genes_dir or --accessible_genes_zip")
 
@@ -288,6 +294,7 @@ def run(args) -> dict[str, object]:
                     high_threshold=high,
                     n_background=n,
                     input_file_rec=input_file_rec,
+                    accessible_src_dir=accessible_src_dir,
                 )
                 up_counts.append(len(up))
                 n_up += 1
@@ -313,6 +320,7 @@ def run(args) -> dict[str, object]:
                     high_threshold=high,
                     n_background=n,
                     input_file_rec=input_file_rec,
+                    accessible_src_dir=accessible_src_dir,
                 )
                 down_counts.append(len(down))
                 n_down += 1
