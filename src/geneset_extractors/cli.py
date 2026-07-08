@@ -2614,6 +2614,60 @@ def build_parser() -> argparse.ArgumentParser:
     p_kd.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_kd)
 
+    p_interop = conv.add_parser(
+        "interop_regulon_clinvar",
+        help=(
+            "Cross-NIH interoperability: per-factor regulon sets intersected with "
+            "ClinVar Pathogenic/Likely-pathogenic disease genes. Produces per-factor "
+            "disease-target sets and a union set. Recommended input: background-corrected "
+            "_specific_Up sets from encode_regulon_contrast."
+        ),
+    )
+    p_interop.add_argument(
+        "--regulon_dir",
+        help=(
+            "Directory of per-factor regulon set subdirs (each with geneset.tsv and optionally "
+            "geneset.meta.json containing 'target' field). "
+            "Recommended: encode_regulon_contrast _specific_Up output."
+        ),
+    )
+    p_interop.add_argument(
+        "--regulon_zip",
+        help="Zip archive of per-factor regulon set subdirs. Alternative to --regulon_dir.",
+    )
+    p_interop.add_argument(
+        "--clinvar_genes_tsv",
+        help=(
+            "Pre-computed ClinVar pathogenic gene TSV (header: gene), e.g. "
+            "ClinVar_pathogenic_genes_all/geneset.tsv. Preferred for reproducibility. "
+            "If absent, variant_summary_gz is used (or auto-downloaded from NCBI)."
+        ),
+    )
+    p_interop.add_argument(
+        "--variant_summary_gz",
+        help=(
+            "Path to ClinVar variant_summary.txt.gz. Used to derive the pathogenic gene set "
+            "when --clinvar_genes_tsv is not provided. "
+            "Auto-downloaded from "
+            "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz "
+            "if neither this nor --clinvar_genes_tsv is provided."
+        ),
+    )
+    p_interop.add_argument(
+        "--assay", default="TF ChIP-seq",
+        help="Assay label for set names and provenance (default: 'TF ChIP-seq').",
+    )
+    p_interop.add_argument(
+        "--lib_prefix",
+        help="Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_x_ClinVar'.",
+    )
+    p_interop.add_argument(
+        "--min_genes", type=int, default=1,
+        help="Minimum intersection size to emit a per-factor set (default: 1).",
+    )
+    p_interop.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_interop)
+
     return parser
 
 
