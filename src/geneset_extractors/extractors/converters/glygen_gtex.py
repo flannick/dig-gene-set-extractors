@@ -68,6 +68,38 @@ GLYGEN_CATALOGS = [
     ),
 ]
 
+# O-linked glycan catalogs derived from GlyGen annotation/xref files.
+# Each entry: (set_name, description, fetch_fn_key)
+# fetch_fn_key is used in run() to dispatch to the right specialized loader.
+_O_LINKED_CATALOGS = [
+    (
+        "GlyGen_O_linked_glycoproteins",
+        "o_linked_site_annotation",
+        (
+            "Human O-linked glycoprotein substrate genes from GlyGen reviewed data "
+            "(NIH/NIGMS Common Fund Glycoscience Program; public). "
+            "Proteins carrying experimentally confirmed O-linked glycans (GalNAc, GlcNAc, "
+            "Fuc, Man, Xyl, Glc, or glycosaminoglycan chains) based on UniProtKB site "
+            "annotations; excludes microbial-infection-mediated modifications. "
+            "Source: https://data.glygen.org/ln2data/releases/data/current/reviewed/"
+            "human_protein_site_annotation_uniprotkb.csv"
+        ),
+    ),
+    (
+        "GlyGen_O_GlcNAc_proteins",
+        "oglcnac_atlas",
+        (
+            "Human O-GlcNAc-modified proteins from the O-GlcNAc Atlas "
+            "(cross-referenced in GlyGen reviewed data; NIH/NIGMS Common Fund "
+            "Glycoscience Program; public). "
+            "Proteins with experimentally confirmed O-GlcNAc modification (O-linked "
+            "N-acetylglucosamine on Ser/Thr residues). "
+            "Source: https://data.glygen.org/ln2data/releases/data/current/reviewed/"
+            "human_protein_xref_oglcnac_atlas.csv"
+        ),
+    ),
+]
+
 # Gene symbol column candidates, in priority order
 _GENE_COL_CANDIDATES = ("gene_symbol", "gene_name", "gene", "hgnc_symbol")
 
@@ -114,6 +146,59 @@ def _fetch_glygen_genes(fname: str, out_dir: Path) -> tuple[list[str], Path]:
         if row.get(gene_col) and row[gene_col].strip() not in ("", "NA")
     })
     return genes, local
+
+
+def _fetch_o_linked_glycoprotein_genes(out_dir: Path) -> tuple[list[str], Path]:
+    """Genes carrying confirmed O-linked glycans from GlyGen site annotations.
+
+    Filters human_protein_site_annotation_uniprotkb.csv for rows where
+    annotation starts with "O-linked" (excludes microbial-infection prefix).
+    """
+    fname = "human_protein_site_annotation_uniprotkb.csv"
+    url = GLYGEN_BASE_URL + fname
+    local = _maybe_download(url, out_dir)
+    data = local.read_text(encoding="utf-8", errors="replace")
+    reader = csv.DictReader(io.StringIO(data))
+    genes: set[str] = set()
+    for row in reader:
+        ann = (row.get("annotation") or "").strip()
+        if not ann.startswith("O-linked"):
+            continue
+        gene = (row.get("gene_symbol") or "").strip()
+        if gene and gene not in ("", "NA"):
+            genes.add(gene)
+    return sorted(genes), local
+
+
+def _fetch_oglcnac_genes(out_dir: Path) -> tuple[list[str], Path]:
+    """Genes with O-GlcNAc modification from the O-GlcNAc Atlas via GlyGen xref.
+
+    Joins human_protein_xref_oglcnac_atlas.csv with
+    human_protein_genenames_uniprotkb.csv on uniprotkb_canonical_ac to get
+    gene symbols.
+    """
+    xref_fname = "human_protein_xref_oglcnac_atlas.csv"
+    names_fname = "human_protein_genenames_uniprotkb.csv"
+    xref_local = _maybe_download(GLYGEN_BASE_URL + xref_fname, out_dir)
+    names_local = _maybe_download(GLYGEN_BASE_URL + names_fname, out_dir)
+
+    # Build AC → gene symbol map from the gene names file
+    ac_to_gene: dict[str, str] = {}
+    names_data = names_local.read_text(encoding="utf-8", errors="replace")
+    for row in csv.DictReader(io.StringIO(names_data)):
+        ac = (row.get("uniprotkb_canonical_ac") or "").strip()
+        sym = (row.get("gene_symbol_recommended") or "").strip()
+        if ac and sym and sym not in ("", "NA"):
+            ac_to_gene.setdefault(ac, sym)
+
+    xref_data = xref_local.read_text(encoding="utf-8", errors="replace")
+    genes: set[str] = set()
+    for row in csv.DictReader(io.StringIO(xref_data)):
+        ac = (row.get("uniprotkb_canonical_ac") or "").strip()
+        sym = ac_to_gene.get(ac)
+        if sym:
+            genes.add(sym)
+    return sorted(genes), xref_local
 
 
 def _load_tstat_matrix(path: Path) -> tuple[list[str], list[str], dict[str, list[float]]]:
@@ -249,6 +334,86 @@ def run(args) -> dict[str, object]:
                 f"intersected with GTEx V8 tissue specificity. "
                 f"Absence from this set means t-stat < {threshold} in this tissue, "
                 f"not that the gene is absent from the organism."
+            )
+            x_dir = out_dir / "x_gtex" / x_name
+            _write_set(
+                set_dir=x_dir,
+                set_name=x_name,
+                description=x_desc,
+                genes=enriched,
+                converter_name="glygen_gtex",
+                parameters={
+                    "set_name": set_name,
+                    "glygen_file": fname,
+                    "glygen_base_url": GLYGEN_BASE_URL,
+                    "glygen_file_url": glygen_url,
+                    "tissue": tissue,
+                    "tstat_threshold": threshold,
+                    "gtex_version": "v8",
+                    "gtex_source_url": GTEX_V8_MEDIAN_TPM_URL,
+                    "set_subtype": "x_gtex_tissue_enriched",
+                    "funding": (
+                        "NIH/NIGMS Common Fund Glycoscience Program (GlyGen) + "
+                        "NIH Common Fund (GTEx)"
+                    ),
+                },
+                files=[glygen_file_rec, gtex_file_rec],
+                set_subtype="x_gtex_tissue_enriched",
+            )
+            x_gtex_counts.append(len(enriched))
+            n_x_gtex += 1
+
+    # O-linked glycan catalogs (specialized loaders)
+    _o_linked_fetchers = {
+        "o_linked_site_annotation": _fetch_o_linked_glycoprotein_genes,
+        "oglcnac_atlas": _fetch_oglcnac_genes,
+    }
+    for set_name, fetch_key, standalone_desc in _O_LINKED_CATALOGS:
+        fetch_fn = _o_linked_fetchers[fetch_key]
+        genes, glygen_local = fetch_fn(out_dir)
+        if not genes:
+            continue
+        # Derive source filename from the local file for provenance
+        fname = glygen_local.name
+        glygen_url = GLYGEN_BASE_URL + fname
+        glygen_file_rec = input_file_record(str(glygen_local), "glygen_reviewed_csv")
+
+        standalone_dir = out_dir / "standalone" / set_name
+        _write_set(
+            set_dir=standalone_dir,
+            set_name=set_name,
+            description=standalone_desc,
+            genes=genes,
+            converter_name="glygen_gtex",
+            parameters={
+                "set_name": set_name,
+                "glygen_file": fname,
+                "glygen_base_url": GLYGEN_BASE_URL,
+                "glygen_file_url": glygen_url,
+                "set_subtype": "standalone",
+                "funding": "NIH/NIGMS Common Fund Glycoscience Program (GlyGen)",
+            },
+            files=[glygen_file_rec],
+            set_subtype="standalone",
+        )
+        standalone_counts.append(len(genes))
+        n_standalone += 1
+
+        for ti, tissue in enumerate(tissues):
+            enriched = sorted(
+                g for g in genes
+                if g in gene_tstat and gene_tstat[g][ti] >= threshold
+            )
+            if not enriched:
+                continue
+            x_name = f"{set_name}_x_GTEx_enriched_{_safe_name(tissue)}"
+            x_desc = (
+                f"{set_name} genes with GTEx tissue-enrichment (t-stat >= {threshold}) "
+                f"in {tissue} (GTEx V8 median TPM; NIH Common Fund). "
+                f"Derived from GlyGen reviewed file {fname} "
+                f"(NIH/NIGMS Common Fund Glycoscience Program; "
+                f"{glygen_url}) "
+                f"intersected with GTEx V8 tissue specificity."
             )
             x_dir = out_dir / "x_gtex" / x_name
             _write_set(
