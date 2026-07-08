@@ -225,7 +225,7 @@ def run(args) -> dict[str, object]:
         if not src_path.is_dir():
             raise NotADirectoryError(f"accessible_genes_dir not found: {src_path}")
         per_biosample, _ = _load_accessible_from_dir(src_path)
-        accessible_file_rec = input_file_record(str(src_path), "accessible_genes_dir")
+        accessible_file_rec = {"path": str(src_path), "local_path": str(src_path), "role": "accessible_genes_dir", "sha256": None, "size_bytes": None, "access_level": "local_only"}
     else:
         raise ValueError("Provide --accessible_genes_dir or --accessible_genes_zip")
 
@@ -250,7 +250,7 @@ def run(args) -> dict[str, object]:
         if not enriched_path.is_dir():
             raise NotADirectoryError(f"gtex_enriched_dir not found: {enriched_path}")
         tissues, gtex_src = _load_gtex_from_enriched_dir(enriched_path)
-        gtex_file_rec = input_file_record(str(enriched_path), "gtex_enriched_dir")
+        gtex_file_rec = {"path": str(enriched_path), "local_path": str(enriched_path), "role": "gtex_enriched_dir", "sha256": None, "size_bytes": None, "access_level": "local_only"}
     elif gtex_tstat_tsv:
         tstat_path = Path(gtex_tstat_tsv)
         if not tstat_path.is_file():
