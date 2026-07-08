@@ -2271,6 +2271,42 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_gtex_enriched = conv.add_parser(
+        "gtex_tissue_enriched",
+        help="Derive tissue-enriched gene sets from GTEx t-statistic matrix (t >= threshold).",
+    )
+    p_gtex_enriched.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_gtex_enriched.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum t-statistic for a gene to be considered tissue-enriched (default: 4.0).",
+    )
+    p_gtex_enriched.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_gtex_enriched)
+
+    p_gtex_depleted = conv.add_parser(
+        "gtex_tissue_depleted",
+        help="Derive tissue-depleted gene sets from GTEx t-statistic matrix (t <= -threshold).",
+    )
+    p_gtex_depleted.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_gtex_depleted.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum absolute t-statistic magnitude for depletion (default: 4.0).",
+    )
+    p_gtex_depleted.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_gtex_depleted)
+
     return parser
 
 
