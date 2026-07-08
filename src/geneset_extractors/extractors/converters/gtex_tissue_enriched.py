@@ -16,6 +16,7 @@ GTEX_V8_MEDIAN_TPM_URL = (
 
 
 def _safe_name(tissue: str, max_len: int = 60) -> str:
+    tissue = tissue.replace(" - ", "_")
     return "".join(c if c.isalnum() else "_" for c in tissue)[:max_len]
 
 
