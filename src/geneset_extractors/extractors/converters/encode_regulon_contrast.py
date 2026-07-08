@@ -85,7 +85,8 @@ def _write_contrast_set(
     low_threshold: float,
     high_threshold: float,
     n_factors: int,
-    input_file_rec: dict,
+    input_file_rec: dict | None,
+    regulon_src_dir: str | None = None,
 ) -> None:
     set_dir.mkdir(parents=True, exist_ok=True)
     with (set_dir / "geneset.tsv").open("w", encoding="utf-8", newline="\n") as fh:
@@ -94,28 +95,31 @@ def _write_contrast_set(
             fh.write(f"{g}\n")
     write_gmt([(set_name, genes)], set_dir / "genesets.gmt")
 
+    params: dict = {
+        "assay": assay,
+        "target": target,
+        "direction": direction,
+        "low_prevalence_threshold": low_threshold,
+        "high_prevalence_threshold": high_threshold,
+        "background_method": "leave_one_out_binding_prevalence",
+        "background_n_factors": n_factors,
+        "encode_citation": ENCODE_CITATION,
+        "caveat": (
+            "Cross-factor binding-prevalence background (relative binding specificity); "
+            "removes promiscuous / HOT-region genes that are bound by many TFs/RBPs. "
+            "Not a read-count differential (no DESeq2/edgeR)."
+        ),
+    }
+    if regulon_src_dir is not None:
+        params["regulon_src_dir"] = regulon_src_dir
     meta = make_metadata(
         converter_name="encode_regulon_contrast",
-        parameters={
-            "assay": assay,
-            "target": target,
-            "direction": direction,
-            "low_prevalence_threshold": low_threshold,
-            "high_prevalence_threshold": high_threshold,
-            "background_method": "leave_one_out_binding_prevalence",
-            "background_n_factors": n_factors,
-            "encode_citation": ENCODE_CITATION,
-            "caveat": (
-                "Cross-factor binding-prevalence background (relative binding specificity); "
-                "removes promiscuous / HOT-region genes that are bound by many TFs/RBPs. "
-                "Not a read-count differential (no DESeq2/edgeR)."
-            ),
-        },
+        parameters=params,
         data_type="transcription_factor_binding" if "ChIP" in assay else "rna_binding",
         assay=assay,
         organism="human",
         genome_build="GRCh38",
-        files=[input_file_rec],
+        files=[input_file_rec] if input_file_rec is not None else [],
         gene_annotation={
             "mode": "inherited",
             "source": "encode_regulon_output",
@@ -158,6 +162,7 @@ def run(args) -> dict[str, object]:
     regulon_zip = getattr(args, "regulon_zip", None)
     regulon_dir = getattr(args, "regulon_dir", None)
 
+    regulon_src_dir: str | None = None
     if regulon_zip:
         src_path = Path(regulon_zip)
         if not src_path.is_file():
@@ -169,7 +174,8 @@ def run(args) -> dict[str, object]:
         if not src_path.is_dir():
             raise NotADirectoryError(f"regulon_dir not found: {src_path}")
         recs = _load_records_from_dir(src_path)
-        input_file_rec = input_file_record(str(src_path), "regulon_dir")
+        input_file_rec = None
+        regulon_src_dir = str(src_path)
     else:
         raise ValueError("Provide --regulon_dir or --regulon_zip")
 
@@ -227,6 +233,7 @@ def run(args) -> dict[str, object]:
                 high_threshold=high,
                 n_factors=n,
                 input_file_rec=input_file_rec,
+                regulon_src_dir=regulon_src_dir,
             )
             up_counts.append(len(up))
             n_up += 1
@@ -250,6 +257,7 @@ def run(args) -> dict[str, object]:
                 high_threshold=high,
                 n_factors=n,
                 input_file_rec=input_file_rec,
+                regulon_src_dir=regulon_src_dir,
             )
             down_counts.append(len(down))
             n_down += 1
