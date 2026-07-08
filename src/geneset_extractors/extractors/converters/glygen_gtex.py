@@ -130,22 +130,41 @@ def _maybe_download(path_or_url: str, out_dir: Path) -> Path:
     return Path(path_or_url)
 
 
+def _load_ac_to_gene(out_dir: Path) -> dict[str, str]:
+    """Build uniprotkb_canonical_ac → gene_symbol_recommended map from GlyGen."""
+    names_fname = "human_protein_genenames_uniprotkb.csv"
+    local = _maybe_download(GLYGEN_BASE_URL + names_fname, out_dir)
+    data = local.read_text(encoding="utf-8", errors="replace")
+    ac_to_gene: dict[str, str] = {}
+    for row in csv.DictReader(io.StringIO(data)):
+        ac = (row.get("uniprotkb_canonical_ac") or "").strip()
+        sym = (row.get("gene_symbol_recommended") or "").strip()
+        if ac and sym and sym not in ("", "NA"):
+            ac_to_gene.setdefault(ac, sym)
+    return ac_to_gene
+
+
 def _fetch_glygen_genes(fname: str, out_dir: Path) -> tuple[list[str], Path]:
     url = GLYGEN_BASE_URL + fname
     local = _maybe_download(url, out_dir)
     data = local.read_text(encoding="utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(data))
     gene_col = _detect_gene_col(reader.fieldnames)
-    if gene_col is None:
-        raise ValueError(
-            f"Cannot find gene symbol column in {fname}. "
-            f"Columns: {reader.fieldnames}"
-        )
-    genes = sorted({
-        row[gene_col].strip()
-        for row in reader
-        if row.get(gene_col) and row[gene_col].strip() not in ("", "NA")
-    })
+    if gene_col is not None:
+        genes = sorted({
+            row[gene_col].strip()
+            for row in reader
+            if row.get(gene_col) and row[gene_col].strip() not in ("", "NA")
+        })
+    else:
+        # No gene symbol column — join via uniprotkb_canonical_ac
+        ac_to_gene = _load_ac_to_gene(out_dir)
+        genes = sorted({
+            ac_to_gene[row["uniprotkb_canonical_ac"].strip()]
+            for row in reader
+            if row.get("uniprotkb_canonical_ac")
+            and row["uniprotkb_canonical_ac"].strip() in ac_to_gene
+        })
     return genes, local
 
 
