@@ -2515,6 +2515,54 @@ def build_parser() -> argparse.ArgumentParser:
     p_encode_gtex.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_encode_gtex)
 
+    p_regulon_contrast = conv.add_parser(
+        "encode_regulon_contrast",
+        help=(
+            "LOO binding-prevalence background correction for ENCODE TF ChIP-seq / eCLIP regulon sets. "
+            "Produces specific_Up (specifically-bound targets) and promiscuous_Down "
+            "(broadly-bound-elsewhere genes absent from this factor) per factor."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--regulon_dir",
+        help=(
+            "Directory of per-factor regulon set subdirs (each with geneset.tsv and optionally "
+            "geneset.meta.json containing 'target' field). "
+            "Typical source: output of encode_regulons or derive_encode_target_regulons.py."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--regulon_zip",
+        help="Zip archive of per-factor regulon set subdirs. Alternative to --regulon_dir.",
+    )
+    p_regulon_contrast.add_argument(
+        "--assay", default="TF ChIP-seq",
+        help="Assay label for set names and provenance (default: 'TF ChIP-seq'). Use 'eCLIP' for eCLIP.",
+    )
+    p_regulon_contrast.add_argument(
+        "--lib_prefix",
+        help=(
+            "Prefix for output set names. "
+            "Defaults to 'ENCODE_<safe_assay>_regulon_bgcorrected'."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--low_prevalence", type=float, default=0.25,
+        help=(
+            "LOO-prevalence ceiling for specific_Up sets (default: 0.25). "
+            "A gene is Up if bound by this factor AND its cross-factor prevalence < this threshold."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--high_prevalence", type=float, default=0.75,
+        help=(
+            "LOO-prevalence floor for promiscuous_Down sets (default: 0.75). "
+            "A gene is Down if absent here AND its cross-factor prevalence > this threshold."
+        ),
+    )
+    p_regulon_contrast.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_regulon_contrast)
+
     return parser
 
 
