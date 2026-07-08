@@ -2304,6 +2304,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_catlas.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_catlas)
 
+    p_enc_contrast = conv.add_parser(
+        "encode_accessibility_contrast",
+        help=(
+            "Apply LOO prevalence background correction to per-biosample accessible-gene sets "
+            "(output of encode_accessible_genes or catlas_accessible_genes), producing "
+            "specifically-accessible Up sets and specifically-inaccessible Down sets."
+        ),
+    )
+    _g = p_enc_contrast.add_mutually_exclusive_group(required=True)
+    _g.add_argument(
+        "--accessible_genes_dir",
+        help="Directory of per-biosample accessible-gene set subdirs (from encode_accessible_genes).",
+    )
+    _g.add_argument(
+        "--accessible_genes_zip",
+        help="Zip archive of per-biosample accessible-gene set subdirs.",
+    )
+    p_enc_contrast.add_argument(
+        "--symbol_universe_tsv",
+        help="Optional TSV whose first column is valid HGNC symbols (e.g. GTEx t-stat matrix). "
+             "Genes not in this universe are dropped before contrast computation.",
+    )
+    p_enc_contrast.add_argument(
+        "--assay", default="ATAC-seq",
+        help="Assay label for set names and provenance (default: 'ATAC-seq').",
+    )
+    p_enc_contrast.add_argument(
+        "--low_prevalence", type=float, default=0.25,
+        help="LOO-prevalence ceiling for Up sets (default: 0.25).",
+    )
+    p_enc_contrast.add_argument(
+        "--high_prevalence", type=float, default=0.75,
+        help="LOO-prevalence floor for Down sets (default: 0.75).",
+    )
+    p_enc_contrast.add_argument(
+        "--group_by_key",
+        help="Metadata key for within-group background (e.g. 'library' for histone marks).",
+    )
+    p_enc_contrast.add_argument(
+        "--lib_filter",
+        help="Only process sets whose 'library' metadata field contains this substring.",
+    )
+    p_enc_contrast.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_enc_contrast)
+
     p_encode_acc = conv.add_parser(
         "encode_accessible_genes",
         help=(
