@@ -2271,6 +2271,28 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_glycomaturity = conv.add_parser(
+        "glycomaturity_gtex",
+        help=(
+            "Derive per-tissue N-glycosylation enzyme catalog gene sets (A=initiation/immature, "
+            "B=maturation/mature) annotated with GTEx tissue expression."
+        ),
+    )
+    p_glycomaturity.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_glycomaturity.add_argument(
+        "--expression_threshold", type=float, default=2.0,
+        help="GTEx t-stat threshold for 'enriched' annotation (default: 2.0). "
+             "Below this is 'present'; below -2.0 is 'low_null'. Absence=null throughout.",
+    )
+    p_glycomaturity.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_glycomaturity)
+
     p_gtex_enriched = conv.add_parser(
         "gtex_tissue_enriched",
         help="Derive tissue-enriched gene sets from GTEx t-statistic matrix (t >= threshold).",
