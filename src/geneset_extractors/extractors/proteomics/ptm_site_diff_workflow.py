@@ -953,6 +953,7 @@ def run_ptm_site_diff_workflow(
             topk_list=parse_int_list_csv(cfg.gmt_topk_list),
             mass_list=parse_mass_list_csv(cfg.gmt_mass_list),
             split_signed=bool(cfg.gmt_split_signed),
+            include_plan_in_name=True,
             require_symbol=bool(cfg.gmt_require_symbol),
             allowed_biotypes=None,
             emit_small_gene_sets=bool(cfg.emit_small_gene_sets),

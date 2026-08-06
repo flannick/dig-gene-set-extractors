@@ -976,6 +976,7 @@ def run_cnv_workflow(
                         topk_list=gmt_topk_list,
                         mass_list=gmt_mass_list,
                         split_signed=bool(profile_cfg.gmt_split_signed),
+                        include_plan_in_name=True,
                         require_symbol=bool(profile_cfg.gmt_require_symbol),
                         allowed_biotypes=allow_biotypes,
                         emit_small_gene_sets=bool(profile_cfg.emit_small_gene_sets),
