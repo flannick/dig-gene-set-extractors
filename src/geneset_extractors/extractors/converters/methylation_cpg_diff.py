@@ -161,13 +161,23 @@ def run(args) -> dict[str, object]:
         input_file_record(args.gtf, "gtf"),
     ]
     if probe_manifest_path:
-        files.append(input_file_record(probe_manifest_path, "probe_manifest_tsv"))
+        probe_resource = next(
+            (record for record in (ctx.used if ctx is not None else []) if str(record.get("path")) == str(probe_manifest_path)),
+            None,
+        )
+        probe_role = f"resource:{probe_resource['id']}" if probe_resource is not None else "probe_manifest_tsv"
+        files.append(input_file_record(probe_manifest_path, probe_role, resource_record=probe_resource))
     if args.probe_blacklist_tsv:
         files.append(input_file_record(args.probe_blacklist_tsv, "probe_blacklist_tsv"))
     if args.region_gene_links_tsv:
         files.append(input_file_record(args.region_gene_links_tsv, "region_gene_links_tsv"))
     if enhancer_bed:
-        files.append(input_file_record(enhancer_bed, "enhancer_bed"))
+        enhancer_resource = next(
+            (record for record in (ctx.used if ctx is not None else []) if str(record.get("path")) == str(enhancer_bed)),
+            None,
+        )
+        enhancer_role = f"resource:{enhancer_resource['id']}" if enhancer_resource is not None else "enhancer_bed"
+        files.append(input_file_record(enhancer_bed, enhancer_role, resource_record=enhancer_resource))
     if ctx is not None:
         for record in ctx.used:
             files.append(input_file_record(str(record["path"]), f"resource:{record['id']}", resource_record=record))

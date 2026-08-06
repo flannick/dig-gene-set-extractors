@@ -1129,6 +1129,7 @@ def run_methylation_workflow(
                     topk_list=gmt_topk_list,
                     mass_list=gmt_mass_list,
                     split_signed=bool(cfg.gmt_split_signed),
+                    include_plan_in_name=True,
                     require_symbol=bool(cfg.gmt_require_symbol),
                     allowed_biotypes={x.lower() for x in gmt_biotype_allowlist} if gmt_biotype_allowlist else None,
                     emit_small_gene_sets=bool(cfg.emit_small_gene_sets),

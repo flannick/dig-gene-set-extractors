@@ -81,7 +81,7 @@ def test_rna_sc_programs_grouped_output_and_validation(tmp_path: Path, capsys: p
     gmt_lines = [line for line in (out_dir / "genesets.gmt").read_text(encoding="utf-8").splitlines() if line]
     assert gmt_lines
     for line in gmt_lines:
-        name, _genes = line.split("\t")
+        name, _genes = line.split("\t", 1)
         assert " " not in name
         assert "/" not in name
 

@@ -4,6 +4,7 @@
   "inputs": [
     {
       "name": "table_tsv",
+      "type": "tsv",
       "description": "Tab-delimited table with one row per term-gene association"
     }
   ],

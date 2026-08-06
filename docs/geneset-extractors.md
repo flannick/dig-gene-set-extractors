@@ -14,6 +14,10 @@ CLI entrypoint aliases are provided for convenience.
 
 Both CLI names dispatch to the same implementation.
 
+For coordinated new-library contribution contracts, see
+[`docs/submissions/README.md`](submissions/README.md). Existing assay guides
+remain the authoritative assay-specific documentation.
+
 ## Output metadata and provenance
 
 Every emitted gene-set directory now writes:
