@@ -1657,6 +1657,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = sub.add_parser("validate")
     p_val.add_argument("output_dir")
 
+    p_submission = sub.add_parser("submission", help="Inspect reusable DIG workflow/converter submission contracts.")
+    submission_sub = p_submission.add_subparsers(dest="submission_command", required=True)
+    submission_sub.add_parser("list", help="List registered DIG workflow/converter contracts.")
+    p_submission_describe = submission_sub.add_parser("describe", help="Describe one registered workflow or converter.")
+    p_submission_describe.add_argument("identifier")
+    p_submission_validate = submission_sub.add_parser("validate", help="Validate registration, importability, and any declared smoke test.")
+    p_submission_validate.add_argument("identifier")
+
     p_provenance = sub.add_parser("provenance")
     prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
     p_prov_build = prov_sub.add_parser("build")
@@ -2305,6 +2313,20 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("ok")
             return 0
+
+        if args.command == "submission":
+            from geneset_extractors.submission import describe_contract, list_contracts, validate_contract
+
+            if args.submission_command == "list":
+                print(json.dumps(list_contracts(), indent=2, sort_keys=True))
+                return 0
+            if args.submission_command == "describe":
+                print(json.dumps(describe_contract(args.identifier), indent=2, sort_keys=True))
+                return 0
+            if args.submission_command == "validate":
+                result = validate_contract(args.identifier)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result["ok"] else 1
 
         if args.command == "provenance":
             if args.provenance_command == "build":
