@@ -182,7 +182,14 @@ def build_gmt_sets_from_rows(
     name_separator: str = "__",
     positive_label: str = "pos",
     negative_label: str = "neg",
+    include_plan_in_name: bool = False,
 ) -> tuple[list[tuple[str, list[str]]], list[dict[str, object]]]:
+    """Build GMT sets, optionally retaining singleton selection plans in names.
+
+    The default preserves the established compact name for a single top-k or
+    mass plan. Callers with parameterized public output identifiers can opt in
+    to explicit plan suffixes such as ``__topk=3``.
+    """
     if min_genes <= 0 or max_genes <= 0:
         raise ValueError("gmt_min_genes and gmt_max_genes must be positive")
     if min_genes > max_genes:
@@ -217,7 +224,10 @@ def build_gmt_sets_from_rows(
         diagnostics.append({**context_payload, **event})
 
     for sign_suffix, variant_rows in variants:
-        use_plain_name = (len(topk_list) == 1 and not mass_list) or (len(mass_list) == 1 and not topk_list)
+        use_plain_name = not include_plan_in_name and (
+            (len(topk_list) == 1 and not mass_list)
+            or (len(mass_list) == 1 and not topk_list)
+        )
         positive_rows = [r for r in variant_rows if float(r.get("score", 0.0)) > 0.0]
         if require_symbol and positive_rows:
             total_rows = len(positive_rows)

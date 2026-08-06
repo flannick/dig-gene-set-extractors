@@ -61,6 +61,24 @@ def test_build_gmt_sets_filters_by_biotype_allowlist():
     assert genes == ["GENEA", "GENEB"]
 
 
+def test_build_gmt_sets_can_retain_singleton_plan_in_name():
+    rows = [
+        {"gene_id": "GENEA", "gene_symbol": "GENEA", "score": 5.0},
+        {"gene_id": "GENEB", "gene_symbol": "GENEB", "score": 4.0},
+    ]
+    default_sets, _ = build_gmt_sets_from_rows(
+        rows=rows, base_name="demo", prefer_symbol=True, min_genes=1,
+        max_genes=10, topk_list=[3], mass_list=[], split_signed=False,
+    )
+    explicit_sets, _ = build_gmt_sets_from_rows(
+        rows=rows, base_name="demo", prefer_symbol=True, min_genes=1,
+        max_genes=10, topk_list=[3], mass_list=[], split_signed=False,
+        include_plan_in_name=True,
+    )
+    assert default_sets[0][0] == "demo"
+    assert explicit_sets[0][0] == "demo__topk=3"
+
+
 def test_build_gmt_sets_emits_require_symbol_heavy_drop_diagnostic():
     rows = [
         {"gene_id": "ENSG000001.1", "gene_symbol": "", "score": 5.0},
