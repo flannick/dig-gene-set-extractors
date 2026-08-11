@@ -34,6 +34,7 @@ de_tools = [
 [project.scripts]
 geneset-extractors = "geneset_extractors.cli:main"
 geneset_extractors = "geneset_extractors.cli:main"
+omics2geneset = "geneset_extractors.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
