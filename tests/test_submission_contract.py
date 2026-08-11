@@ -65,3 +65,4 @@ def test_existing_cli_and_aliases_remain_available() -> None:
         scripts = tomllib.load(handle)["project"]["scripts"]
     assert scripts["geneset-extractors"] == "geneset_extractors.cli:main"
     assert scripts["geneset_extractors"] == "geneset_extractors.cli:main"
+    assert scripts["omics2geneset"] == "geneset_extractors.cli:main"
