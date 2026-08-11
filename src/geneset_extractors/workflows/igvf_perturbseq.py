@@ -69,7 +69,10 @@ def _load_gene_by_perturbation(
 
 def _threshold_long(gene_by_pert: pd.DataFrame, z_threshold: float) -> pd.DataFrame:
     zmat = gene_by_pert.apply(_zscore, axis=1)
-    long = zmat[abs(zmat) >= z_threshold].stack().sort_values().to_frame().reset_index()
+    # pandas 3's stack implementation retains masked NaNs, unlike the prior
+    # default. Drop them explicitly so only threshold-passing z-scores become
+    # signed records; otherwise NaNs are incorrectly classified as down.
+    long = zmat[abs(zmat) >= z_threshold].stack().dropna().sort_values().to_frame().reset_index()
     long.columns = ["Gene", "Perturbation", "z"]
     long = long[long["Gene"].notna()]
     long["Gene"] = long["Gene"].astype(str).str.upper()
