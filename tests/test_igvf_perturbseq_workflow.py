@@ -2,9 +2,25 @@ from __future__ import annotations
 
 import csv
 import gzip
+import importlib
+import sys
 from pathlib import Path
 
 from geneset_extractors.cli import main
+
+
+def test_igvf_workflow_contract_import_does_not_require_pandas(monkeypatch) -> None:
+    real_import = __import__
+
+    def without_pandas(name, *args, **kwargs):
+        if name == "pandas":
+            raise ModuleNotFoundError("No module named 'pandas'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "geneset_extractors.workflows.igvf_perturbseq", raising=False)
+    monkeypatch.setattr("builtins.__import__", without_pandas)
+    module = importlib.import_module("geneset_extractors.workflows.igvf_perturbseq")
+    assert callable(module.run)
 
 
 def test_igvf_perturbseq_preserves_signed_effect_and_top_k(tmp_path: Path) -> None:

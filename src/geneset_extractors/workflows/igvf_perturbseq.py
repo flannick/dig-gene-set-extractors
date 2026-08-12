@@ -12,9 +12,6 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
 from geneset_extractors.extractors.converters import signed_term_gene
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
 
@@ -38,6 +35,10 @@ def _load_settings(path: Path, analysis_set_id: str) -> dict[str, str]:
 
 
 def _read_table(path: Path, sep: str) -> pd.DataFrame:
+    # pandas is an optional scientific dependency.  Keep it out of module
+    # import so submission-contract inspection works in the minimal runtime.
+    import pandas as pd
+
     resolved_sep = None if sep in {"", "auto"} else sep
     return pd.read_csv(path, sep=resolved_sep, engine="python" if resolved_sep is None else None, dtype=str)
 
@@ -50,6 +51,9 @@ def _number(value: object, label: str) -> float:
 
 
 def _signed_rows(table: pd.DataFrame, settings: dict[str, str]) -> list[dict[str, str]]:
+    import numpy as np
+    import pandas as pd
+
     term_column = _setting(settings, "term_column")
     symbol_column = _setting(settings, "gene_symbol_column")
     gene_id_column = _setting(settings, "gene_id_column")
