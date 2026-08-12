@@ -466,6 +466,17 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_igvf_perturbseq_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--analysis_set_manifest", required=True)
+    parser.add_argument("--analysis_set_id", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--min_gmt_size", type=int, default=5)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1755,6 +1766,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
     p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
     _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
+    p_igvf_perturbseq = wf_sub.add_parser("igvf_perturbseq")
+    _add_igvf_perturbseq_flags(p_igvf_perturbseq)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2604,6 +2617,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "igvf_perturbseq":
+                from geneset_extractors.workflows.igvf_perturbseq import run as run_igvf_perturbseq
+
+                result = run_igvf_perturbseq(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=igvf_perturbseq n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
