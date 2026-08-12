@@ -15,6 +15,18 @@ from typing import TextIO
 
 import numpy as np
 
+from geneset_extractors.core.metadata import current_invocation_context, _resolve_git_commit
+from geneset_extractors.core.provenance import (
+    REPO_URL,
+    build_analysis_node,
+    build_edges,
+    build_file_node,
+    mirror_graph_payload,
+    stable_operation_id,
+    write_canonical_json,
+)
+from geneset_extractors.core.metadata import input_file_record
+
 
 _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._=-]+")
 GENE_BY_CELL_MAX_INMEMORY_VALUES = 80_000_000
@@ -526,6 +538,7 @@ def _write_geneset_extractors_from_cnmf_script(
     subset_dir: Path,
     subset_id: str,
     args,
+    upstream_graph_path: Path | None = None,
 ) -> Path:
     script_path = subset_dir / "run_geneset_extractors_from_cnmf.sh"
     safe_subset = _safe_component(subset_id, "subset")
@@ -558,7 +571,7 @@ def _write_geneset_extractors_from_cnmf_script(
         "fi",
         "",
         "shopt -s nullglob",
-        'MATCHES=( "$OUTDIR/$NAME.gene_spectra_${EXPORT_KIND}.k_${K}.dt_"*.txt )',
+        'MATCHES=( "$OUTDIR/$NAME/$NAME.gene_spectra_${EXPORT_KIND}.k_${K}.dt_"*.txt )',
         "shopt -u nullglob",
         'if [[ ${#MATCHES[@]} -eq 0 ]]; then',
         '  echo "error: no gene spectra file matched kind=${EXPORT_KIND}, k=${K}. Run consensus first." >&2',
@@ -576,7 +589,16 @@ def _write_geneset_extractors_from_cnmf_script(
         "geneset-extractors convert rna_sc_programs \\",
         '  --cnmf_gene_spectra_tsv "$SPECTRA" \\',
         '  --out_dir "$OUT_GENESETS" \\',
-        f'  --organism {args.organism} --genome_build {args.genome_build}' + (f" {extra_flags}" if extra_flags else ""),
+        (
+            f'  --organism {args.organism} --genome_build {args.genome_build}'
+            + (f" {extra_flags}" if extra_flags else "")
+            + (" \\" if upstream_graph_path is not None else "")
+        ),
+        *(
+            [f'  --upstream_provenance_graph_json "{upstream_graph_path}"']
+            if upstream_graph_path is not None
+            else []
+        ),
     ]
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     script_path.chmod(0o755)
@@ -661,15 +683,115 @@ def _write_tmp_subset_from_gene_by_cell(
     }
 
 
+def _write_scrna_cnmf_prepare_provenance_graph(
+    *,
+    out_dir: Path,
+    matrix_path: Path,
+    meta_path: Path,
+    args,
+    mirror_local_prefix: str | None = None,
+    mirror_remote_prefix: str | None = None,
+) -> Path:
+    invocation = current_invocation_context()
+    command = invocation.get("argv") if invocation else list(sys.argv)
+    entrypoint = "geneset-extractors workflows scrna_cnmf_prepare"
+    matrix_record = input_file_record(str(matrix_path), "matrix_tsv")
+    meta_record = input_file_record(str(meta_path), "meta_tsv")
+    input_nodes = [
+        build_file_node(r, {}, mirror_local_prefix=mirror_local_prefix, mirror_remote_prefix=mirror_remote_prefix)
+        for r in [matrix_record, meta_record]
+    ]
+    operation_id = stable_operation_id(
+        "scrna_cnmf_prepare",
+        str(out_dir),
+        [str(node["id"]) for node in input_nodes],
+    )
+    operation = build_analysis_node(
+        analysis_id=operation_id,
+        method="scrna_cnmf_prepare",
+        name="scrna_cnmf_prepare",
+        description=(
+            "DIG scrna_cnmf_prepare workflow: cell filtering, overdispersed gene selection, "
+            "cNMF factorization across K values, and consensus K selection by stability."
+        ),
+        parameters={
+            "cnmf_n_iter": getattr(args, "cnmf_n_iter", None),
+            "cnmf_numgenes": getattr(args, "cnmf_numgenes", None),
+            "cnmf_export_kind": getattr(args, "cnmf_export_kind", None),
+            "cnmf_k": getattr(args, "cnmf_k", None),
+            "cnmf_select_strategy": getattr(args, "cnmf_select_strategy", None),
+            "max_cells_total": getattr(args, "max_cells_total", None),
+            "seed": getattr(args, "seed", None),
+            "organism": getattr(args, "organism", None),
+        },
+        command=command,
+        entrypoint=entrypoint,
+        repo_url=REPO_URL,
+        module="geneset_extractors.workflows.scrna_cnmf_prepare",
+        script_url=REPO_URL,
+        version=_resolve_git_commit(),
+        dcc_url=REPO_URL,
+        drc_url=REPO_URL,
+    )
+    edges = build_edges(input_nodes, str(operation["id"]), str(operation["id"]), [])
+    payload = mirror_graph_payload(
+        {
+            "scrna_cnmf_prepare": {
+                "nodes": input_nodes + [operation],
+                "edges": edges,
+            }
+        },
+        mirror_local_prefix,
+        mirror_remote_prefix,
+    )
+    graph_path = out_dir / "scrna_cnmf_prepare.provenance_graph.json"
+    write_canonical_json(graph_path, payload)
+    return graph_path
+
+
 def run(args) -> dict[str, object]:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     subsets_root = out_dir / "subsets"
     subsets_root.mkdir(parents=True, exist_ok=True)
 
-    matrix_path = Path(args.matrix_tsv)
-    meta_path = Path(args.meta_tsv)
+    matrix_url = getattr(args, "matrix_url", None) or ""
+    meta_url = getattr(args, "meta_url", None) or ""
+    matrix_tsv = getattr(args, "matrix_tsv", None) or ""
+    meta_tsv = getattr(args, "meta_tsv", None) or ""
+
+    if matrix_url and matrix_tsv:
+        raise ValueError("Provide --matrix_url or --matrix_tsv, not both.")
+    if meta_url and meta_tsv:
+        raise ValueError("Provide --meta_url or --meta_tsv, not both.")
+    if not matrix_url and not matrix_tsv:
+        raise ValueError("One of --matrix_url or --matrix_tsv is required.")
+    if not meta_url and not meta_tsv:
+        raise ValueError("One of --meta_url or --meta_tsv is required.")
+
+    if matrix_url:
+        import urllib.request
+        dl_dir = out_dir / "downloads"
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".csv" if matrix_url.lower().endswith(".csv") else ".tsv"
+        matrix_path = dl_dir / f"matrix{suffix}"
+        urllib.request.urlretrieve(matrix_url, matrix_path)
+    else:
+        matrix_path = Path(matrix_tsv)
+
+    if meta_url:
+        import urllib.request
+        dl_dir = out_dir / "downloads"
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".csv" if meta_url.lower().endswith(".csv") else ".tsv"
+        meta_path = dl_dir / f"meta{suffix}"
+        urllib.request.urlretrieve(meta_url, meta_path)
+    else:
+        meta_path = Path(meta_tsv)
+
     matrix_delim = str(args.matrix_delim)
+    if matrix_delim == "\t" and str(matrix_path).endswith(".csv"):
+        matrix_delim = ","
     if len(matrix_delim) != 1:
         raise ValueError("--matrix_delim must be a single character delimiter")
 
@@ -957,6 +1079,15 @@ def run(args) -> dict[str, object]:
             plan.n_cells_written_tmp = int(tmp_summary.get("n_cells_written_tmp", 0))
             plan.n_non_numeric_values += int(tmp_summary.get("n_non_numeric_values", 0))
 
+    _upstream_graph_path = _write_scrna_cnmf_prepare_provenance_graph(
+        out_dir=out_dir,
+        matrix_path=matrix_path,
+        meta_path=meta_path,
+        args=args,
+        mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
+        mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
+    )
+
     for subset_id in retained_subset_ids:
         plan = plans[subset_id]
         tmp_path = tmp_paths[subset_id]
@@ -1017,6 +1148,7 @@ def run(args) -> dict[str, object]:
             subset_dir=plan.subset_dir,
             subset_id=subset_id,
             args=args,
+            upstream_graph_path=_upstream_graph_path,
         )
         _execute_script_if_requested(plan.run_cnmf_script_path, bool(args.execute))
 

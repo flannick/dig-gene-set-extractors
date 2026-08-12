@@ -1,0 +1,28 @@
+{
+  "name": "glygen_gtex",
+  "description": "GlyGen glyco gene sets (standalone and tissue-enriched via GTEx) from NIH/NIGMS Common Fund reviewed data",
+  "inputs": [
+    {
+      "name": "gtex_tstat_tsv",
+      "type": "tsv",
+      "description": "Tab-delimited GTEx t-statistic matrix (genes x tissues), derived from GTEx V8 median TPM. Accepts a local path or the canonical URL: https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz",
+      "required": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "tstat_threshold",
+      "type": "number",
+      "default": 4.0,
+      "help": "Minimum GTEx t-statistic for a GlyGen gene to be included in a tissue-enriched (x_gtex) set. Default 4.0. Standalone sets include all GlyGen catalog members regardless of threshold."
+    }
+  ],
+  "outputs": [
+    {"name": "standalone/<set>/genesets.gmt", "description": "All genes in this GlyGen category (no tissue filter)"},
+    {"name": "standalone/<set>/geneset.tsv", "description": "Gene list for the standalone GlyGen set"},
+    {"name": "standalone/<set>/geneset.meta.json", "description": "Metadata and provenance JSON (standalone)"},
+    {"name": "x_gtex/<set>_x_GTEx_enriched_<tissue>/genesets.gmt", "description": "GlyGen genes tissue-enriched (t >= threshold) in this tissue"},
+    {"name": "x_gtex/<set>_x_GTEx_enriched_<tissue>/geneset.tsv", "description": "Gene list for the tissue-enriched x GTEx set"},
+    {"name": "x_gtex/<set>_x_GTEx_enriched_<tissue>/geneset.meta.json", "description": "Metadata and provenance JSON (x GTEx)"}
+  ]
+}

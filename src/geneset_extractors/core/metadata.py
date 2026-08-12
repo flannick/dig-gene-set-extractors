@@ -37,7 +37,7 @@ def build_geneset_id(converter_name: str, file_hashes: list[str], params: dict[s
     return stable_hash_object(
         {
             "converter": converter_name,
-            "file_hashes": sorted(file_hashes),
+            "file_hashes": sorted(file_hashes, key=lambda h: h or ""),
             "params_hash": stable_hash_object(params),
         }
     )[:24]
@@ -51,6 +51,8 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
         overlay_path = payload.get("_provenance_overlay_json")
         upstream_graph_path = payload.get("_upstream_provenance_graph_path")
         runtime_ctx = get_runtime_context()
+        if not isinstance(upstream_graph_path, str) and runtime_ctx is not None:
+            upstream_graph_path = runtime_ctx.upstream_provenance_graph_path
         mirror_local_prefix = payload.get("_provenance_mirror_local_prefix")
         if not isinstance(mirror_local_prefix, str) and runtime_ctx is not None:
             mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix

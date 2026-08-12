@@ -170,6 +170,10 @@ def _add_provenance_flags(parser: argparse.ArgumentParser) -> None:
         help="Optional JSON overlay that adds canonical URIs, public URLs, and operation replay metadata to emitted provenance.",
     )
     parser.add_argument(
+        "--upstream_provenance_graph_json",
+        help="Optional upstream provenance graph JSON to merge into emitted provenance (e.g. scrna_cnmf_prepare.provenance_graph.json).",
+    )
+    parser.add_argument(
         "--provenance_mirror_local_prefix",
         help="Optional local path prefix to rewrite to a mirrored remote prefix in emitted provenance.",
     )
@@ -688,7 +692,15 @@ def _add_rna_sc_program_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--matrix_tsv", required=True, help="Cell x gene dense TSV (header required).")
+    parser.add_argument(
+        "--matrix_tsv",
+        required=False,
+        help="Cell x gene dense TSV/CSV (header required). Mutually exclusive with --matrix_url.",
+    )
+    parser.add_argument(
+        "--matrix_url",
+        help="URL to download cell x gene matrix (CSV or TSV). Downloaded to out_dir/downloads/ before processing. Mutually exclusive with --matrix_tsv.",
+    )
     parser.add_argument(
         "--matrix_orientation",
         choices=["auto", "cell_by_gene", "gene_by_cell"],
@@ -704,7 +716,15 @@ def _add_scrna_cnmf_prepare_flags(parser: argparse.ArgumentParser) -> None:
         help="Gene ID column for gene_by_cell orientation (default: first column).",
     )
     parser.add_argument("--matrix_delim", default="\t", help="Matrix delimiter (default: tab).")
-    parser.add_argument("--meta_tsv", required=True, help="Cell metadata TSV.")
+    parser.add_argument(
+        "--meta_tsv",
+        required=False,
+        help="Cell metadata TSV/CSV. Mutually exclusive with --meta_url.",
+    )
+    parser.add_argument(
+        "--meta_url",
+        help="URL to download cell metadata (CSV or TSV). Downloaded to out_dir/downloads/ before processing. Mutually exclusive with --meta_tsv.",
+    )
     parser.add_argument("--meta_cell_id_column", default="cell_id")
     parser.add_argument(
         "--donor_column",
@@ -1675,10 +1695,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json.",
     )
     _add_provenance_flags(p_prov_build)
-    p_prov_build.add_argument(
-        "--upstream_provenance_graph_json",
-        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
-    )
 
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
@@ -1714,10 +1730,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print available template variables derived from metadata and exit.",
     )
     _add_provenance_flags(p_meta_patch)
-    p_meta_patch.add_argument(
-        "--upstream_provenance_graph_json",
-        help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
-    )
 
     p_convert = sub.add_parser("convert")
     conv = p_convert.add_subparsers(dest="converter", required=True)
@@ -2267,6 +2279,403 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_catlas = conv.add_parser(
+        "catlas_accessible_genes",
+        help=(
+            "Derive cell-type accessible gene sets from CATlas scATAC-seq by mapping "
+            "background-controlled specifically-accessible regions (*_Up.bed.gz) to genes "
+            "via promoter TSS+/-window overlap (UCSC refGene hg38)."
+        ),
+    )
+    p_catlas.add_argument(
+        "--bed_dir", required=True,
+        help="Directory containing background-controlled *_Up.bed.gz files (one per cell type). "
+             "Input BED files must already have the LOO prevalence background control applied "
+             "(specifically-accessible Up regions only).",
+    )
+    p_catlas.add_argument(
+        "--refgene_gz",
+        help="Path to UCSC refGene.txt.gz for GRCh38/hg38. "
+             "If not provided, auto-downloaded from "
+             "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz "
+             "and cached under out_dir/references/.",
+    )
+    p_catlas.add_argument(
+        "--promoter_window", type=int, default=1000,
+        help="Half-width of promoter window around TSS in bp (default: 1000; promoter = TSS +/- 1000).",
+    )
+    p_catlas.add_argument(
+        "--bin_size", type=int, default=1000,
+        help="Genome bin size in bp for region-to-promoter overlap (default: 1000). "
+             "Must match the bin size used to produce the input BED files.",
+    )
+    p_catlas.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_catlas)
+
+    p_enc_contrast = conv.add_parser(
+        "encode_accessibility_contrast",
+        help=(
+            "Apply LOO prevalence background correction to per-biosample accessible-gene sets "
+            "(output of encode_accessible_genes or catlas_accessible_genes), producing "
+            "specifically-accessible Up sets and specifically-inaccessible Down sets."
+        ),
+    )
+    _g = p_enc_contrast.add_mutually_exclusive_group(required=True)
+    _g.add_argument(
+        "--accessible_genes_dir",
+        help="Directory of per-biosample accessible-gene set subdirs (from encode_accessible_genes).",
+    )
+    _g.add_argument(
+        "--accessible_genes_zip",
+        help="Zip archive of per-biosample accessible-gene set subdirs.",
+    )
+    p_enc_contrast.add_argument(
+        "--symbol_universe_tsv",
+        help="Optional TSV whose first column is valid HGNC symbols (e.g. GTEx t-stat matrix). "
+             "Genes not in this universe are dropped before contrast computation.",
+    )
+    p_enc_contrast.add_argument(
+        "--assay", default="ATAC-seq",
+        help="Assay label for set names and provenance (default: 'ATAC-seq').",
+    )
+    p_enc_contrast.add_argument(
+        "--low_prevalence", type=float, default=0.25,
+        help="LOO-prevalence ceiling for Up sets (default: 0.25).",
+    )
+    p_enc_contrast.add_argument(
+        "--high_prevalence", type=float, default=0.75,
+        help="LOO-prevalence floor for Down sets (default: 0.75).",
+    )
+    p_enc_contrast.add_argument(
+        "--group_by_key",
+        help="Metadata key for within-group background (e.g. 'library' for histone marks).",
+    )
+    p_enc_contrast.add_argument(
+        "--lib_filter",
+        help="Only process sets whose 'library' metadata field contains this substring.",
+    )
+    p_enc_contrast.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_enc_contrast)
+
+    p_encode_acc = conv.add_parser(
+        "encode_accessible_genes",
+        help=(
+            "Derive per-biosample accessible gene sets from ENCODE ATAC-seq or DNase-seq "
+            "peaks via promoter TSS overlap (UCSC refGene hg38). Queries the ENCODE portal "
+            "API live or accepts a pre-downloaded manifest TSV."
+        ),
+    )
+    p_encode_acc.add_argument(
+        "--encode_manifest_tsv",
+        help="Optional pre-downloaded manifest TSV (columns: file_accession, "
+             "experiment_accession, biosample, href, output_type). "
+             "If omitted, the ENCODE portal API is queried live.",
+    )
+    p_encode_acc.add_argument(
+        "--refgene_gz",
+        help="Path to UCSC refGene.txt.gz for GRCh38/hg38. "
+             "Auto-downloaded from UCSC if not provided.",
+    )
+    p_encode_acc.add_argument(
+        "--assay", default="ATAC-seq",
+        help="ENCODE assay title: 'ATAC-seq' (default) or 'DNase-seq'.",
+    )
+    p_encode_acc.add_argument(
+        "--output_type", default="IDR thresholded peaks",
+        help="ENCODE file output_type filter (default: 'IDR thresholded peaks'). "
+             "For DNase use 'peaks'.",
+    )
+    p_encode_acc.add_argument(
+        "--promoter_window", type=int, default=1000,
+        help="Half-width of promoter window around TSS in bp (default: 1000).",
+    )
+    p_encode_acc.add_argument(
+        "--bin_size", type=int, default=1000,
+        help="Genome bin size in bp for region-to-promoter overlap (default: 1000).",
+    )
+    p_encode_acc.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_encode_acc)
+
+    p_glygen = conv.add_parser(
+        "glygen_gtex",
+        help=(
+            "Derive GlyGen glyco gene sets (glycosyltransferases, glycohydrolases, glycogenes, "
+            "glycosylation motif proteins) as standalone catalog sets and as tissue-enriched "
+            "x GTEx subsets. Downloads directly from data.glygen.org."
+        ),
+    )
+    p_glygen.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_glygen.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum GTEx t-statistic for a GlyGen gene to appear in a tissue-enriched "
+             "x_gtex set (default: 4.0). Does not affect standalone catalog sets.",
+    )
+    p_glygen.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_glygen)
+
+    p_glycomaturity = conv.add_parser(
+        "glycomaturity_gtex",
+        help=(
+            "Derive per-tissue N-glycosylation enzyme catalog gene sets (A=initiation/immature, "
+            "B=maturation/mature) annotated with GTEx tissue expression."
+        ),
+    )
+    p_glycomaturity.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_glycomaturity.add_argument(
+        "--expression_threshold", type=float, default=2.0,
+        help="GTEx t-stat threshold for 'enriched' annotation (default: 2.0). "
+             "Below this is 'present'; below -2.0 is 'low_null'. Absence=null throughout.",
+    )
+    p_glycomaturity.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_glycomaturity)
+
+    p_gtex_enriched = conv.add_parser(
+        "gtex_tissue_enriched",
+        help="Derive tissue-enriched gene sets from GTEx t-statistic matrix (t >= threshold).",
+    )
+    p_gtex_enriched.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_gtex_enriched.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum t-statistic for a gene to be considered tissue-enriched (default: 4.0).",
+    )
+    p_gtex_enriched.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_gtex_enriched)
+
+    p_gtex_depleted = conv.add_parser(
+        "gtex_tissue_depleted",
+        help="Derive tissue-depleted gene sets from GTEx t-statistic matrix (t <= -threshold).",
+    )
+    p_gtex_depleted.add_argument(
+        "--gtex_tstat_tsv", required=True,
+        help="Path or URL to GTEx t-statistic TSV (genes x tissues). "
+             "Derived from GTEx V8 median TPM "
+             "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+             "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz).",
+    )
+    p_gtex_depleted.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="Minimum absolute t-statistic magnitude for depletion (default: 4.0).",
+    )
+    p_gtex_depleted.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_gtex_depleted)
+
+    p_encode_gtex = conv.add_parser(
+        "encode_gtex_concordance",
+        help=(
+            "Intersect ENCODE accessibility consensus (>= fraction of biosamples) with "
+            "GTEx tissue-enriched genes, producing per-tissue concordance sets."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--accessible_genes_dir",
+        help="Directory of per-biosample accessible-gene set subdirs (from encode_accessible_genes).",
+    )
+    p_encode_gtex.add_argument(
+        "--accessible_genes_zip",
+        help="Zip of per-biosample accessible-gene set subdirs (alternative to --accessible_genes_dir).",
+    )
+    p_encode_gtex.add_argument(
+        "--gtex_enriched_dir",
+        help=(
+            "Directory of gtex_tissue_enriched output subdirs (from gtex_tissue_enriched). "
+            "Preferred when pre-computed; mutually exclusive with --gtex_tstat_tsv."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--gtex_tstat_tsv",
+        help=(
+            "Path to GTEx t-stat TSV (genes x tissues). Used when --gtex_enriched_dir is not provided. "
+            "Derived from GTEx V8 median TPM "
+            "(https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/"
+            "GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz)."
+        ),
+    )
+    p_encode_gtex.add_argument(
+        "--assay", default="ATAC-seq",
+        help="Assay label for set names and provenance (default: 'ATAC-seq').",
+    )
+    p_encode_gtex.add_argument(
+        "--consensus_fraction", type=float, default=0.25,
+        help="Minimum fraction of biosamples in which a gene must be accessible for consensus (default: 0.25).",
+    )
+    p_encode_gtex.add_argument(
+        "--tstat_threshold", type=float, default=4.0,
+        help="GTEx t-stat threshold for enrichment when loading from --gtex_tstat_tsv (default: 4.0).",
+    )
+    p_encode_gtex.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_encode_gtex)
+
+    p_regulon_contrast = conv.add_parser(
+        "encode_regulon_contrast",
+        help=(
+            "LOO binding-prevalence background correction for ENCODE TF ChIP-seq / eCLIP regulon sets. "
+            "Produces specific_Up (specifically-bound targets) and promiscuous_Down "
+            "(broadly-bound-elsewhere genes absent from this factor) per factor."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--regulon_dir",
+        help=(
+            "Directory of per-factor regulon set subdirs (each with geneset.tsv and optionally "
+            "geneset.meta.json containing 'target' field). "
+            "Typical source: output of encode_regulons or derive_encode_target_regulons.py."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--regulon_zip",
+        help="Zip archive of per-factor regulon set subdirs. Alternative to --regulon_dir.",
+    )
+    p_regulon_contrast.add_argument(
+        "--assay", default="TF ChIP-seq",
+        help="Assay label for set names and provenance (default: 'TF ChIP-seq'). Use 'eCLIP' for eCLIP.",
+    )
+    p_regulon_contrast.add_argument(
+        "--lib_prefix",
+        help=(
+            "Prefix for output set names. "
+            "Defaults to 'ENCODE_<safe_assay>_regulon_bgcorrected'."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--low_prevalence", type=float, default=0.25,
+        help=(
+            "LOO-prevalence ceiling for specific_Up sets (default: 0.25). "
+            "A gene is Up if bound by this factor AND its cross-factor prevalence < this threshold."
+        ),
+    )
+    p_regulon_contrast.add_argument(
+        "--high_prevalence", type=float, default=0.75,
+        help=(
+            "LOO-prevalence floor for promiscuous_Down sets (default: 0.75). "
+            "A gene is Down if absent here AND its cross-factor prevalence > this threshold."
+        ),
+    )
+    p_regulon_contrast.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_regulon_contrast)
+
+    p_kd = conv.add_parser(
+        "encode_kd_regulon",
+        help=(
+            "ENCODE shRNA/CRISPR knockdown RNA-seq functional regulon sets: "
+            "KD vs matched-control mean-TPM log2FC per factor, split into up/down/regulated. "
+            "Queries the ENCODE portal live or uses a pre-built manifest TSV."
+        ),
+    )
+    p_kd.add_argument(
+        "--encode_kd_manifest_tsv",
+        help=(
+            "Pre-built manifest TSV (columns: target, role, file_accession, href, "
+            "experiment_accession). If not provided, the ENCODE portal API is queried live at "
+            "https://www.encodeproject.org/search/."
+        ),
+    )
+    p_kd.add_argument(
+        "--ncbi_gene_info_gz",
+        help=(
+            "Path to NCBI Homo_sapiens.gene_info.gz for ENSG-to-symbol mapping. "
+            "If not provided, auto-downloaded from "
+            "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz "
+            "and cached under out_dir/references/."
+        ),
+    )
+    p_kd.add_argument(
+        "--assay", default="shRNA RNA-seq",
+        help=(
+            "ENCODE assay title(s) to query. Default 'shRNA RNA-seq'. "
+            "Use pipe-separated list for multiple assays, e.g. 'shRNA RNA-seq|CRISPR RNA-seq'."
+        ),
+    )
+    p_kd.add_argument(
+        "--perturbation", default="shRNA knockdown",
+        help="Perturbation label for set descriptions and provenance (default: 'shRNA knockdown').",
+    )
+    p_kd.add_argument(
+        "--lib_prefix",
+        help="Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_regulon'.",
+    )
+    p_kd.add_argument(
+        "--lfc_threshold", type=float, default=1.0,
+        help="log2 fold-change threshold for DE calling (default: 1.0; |log2FC| >= threshold).",
+    )
+    p_kd.add_argument(
+        "--expr_threshold", type=float, default=1.0,
+        help="Minimum TPM expression threshold; genes where max(KD,ctrl) < threshold are filtered (default: 1.0).",
+    )
+    p_kd.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_kd)
+
+    p_interop = conv.add_parser(
+        "interop_regulon_clinvar",
+        help=(
+            "Cross-NIH interoperability: per-factor regulon sets intersected with "
+            "ClinVar Pathogenic/Likely-pathogenic disease genes. Produces per-factor "
+            "disease-target sets and a union set. Recommended input: background-corrected "
+            "_specific_Up sets from encode_regulon_contrast."
+        ),
+    )
+    p_interop.add_argument(
+        "--regulon_dir",
+        help=(
+            "Directory of per-factor regulon set subdirs (each with geneset.tsv and optionally "
+            "geneset.meta.json containing 'target' field). "
+            "Recommended: encode_regulon_contrast _specific_Up output."
+        ),
+    )
+    p_interop.add_argument(
+        "--regulon_zip",
+        help="Zip archive of per-factor regulon set subdirs. Alternative to --regulon_dir.",
+    )
+    p_interop.add_argument(
+        "--clinvar_genes_tsv",
+        help=(
+            "Pre-computed ClinVar pathogenic gene TSV (header: gene), e.g. "
+            "ClinVar_pathogenic_genes_all/geneset.tsv. Preferred for reproducibility. "
+            "If absent, variant_summary_gz is used (or auto-downloaded from NCBI)."
+        ),
+    )
+    p_interop.add_argument(
+        "--variant_summary_gz",
+        help=(
+            "Path to ClinVar variant_summary.txt.gz. Used to derive the pathogenic gene set "
+            "when --clinvar_genes_tsv is not provided. "
+            "Auto-downloaded from "
+            "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz "
+            "if neither this nor --clinvar_genes_tsv is provided."
+        ),
+    )
+    p_interop.add_argument(
+        "--assay", default="TF ChIP-seq",
+        help="Assay label for set names and provenance (default: 'TF ChIP-seq').",
+    )
+    p_interop.add_argument(
+        "--lib_prefix",
+        help="Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_x_ClinVar'.",
+    )
+    p_interop.add_argument(
+        "--min_genes", type=int, default=1,
+        help="Minimum intersection size to emit a per-factor set (default: 1).",
+    )
+    p_interop.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_interop)
+
     return parser
 
 
@@ -2475,7 +2884,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.workflow_command == "scrna_cnmf_prepare":
                 from geneset_extractors.workflows.scrna_cnmf_prepare import run as run_scrna_cnmf_prepare
 
-                result = run_scrna_cnmf_prepare(args)
+                command_argv = [sys.executable, "-m", "geneset_extractors.cli", *raw_argv]
+                with invocation_context(command_argv=command_argv, cwd=Path.cwd()):
+                    result = run_scrna_cnmf_prepare(args)
                 print(
                     "workflow_completed "
                     f"workflow=scrna_cnmf_prepare n_subsets={result.get('n_subsets')} "

@@ -1,0 +1,56 @@
+{
+  "name": "encode_gtex_concordance",
+  "description": "Consensus-accessible gene sets (ENCODE ATAC-seq/DNase-seq) intersected with GTEx tissue-enriched genes per tissue",
+  "inputs": [
+    {
+      "name": "accessible_genes_dir",
+      "type": "directory",
+      "description": "Directory of per-biosample accessible-gene set subdirectories (output of encode_accessible_genes or encode_accessibility_contrast). Each subdir must contain geneset.tsv (header: gene) and optionally geneset.meta.json with 'biosample' field.",
+      "required": false
+    },
+    {
+      "name": "accessible_genes_zip",
+      "type": "zip",
+      "description": "Zip archive of per-biosample accessible-gene set subdirectories. Alternative to accessible_genes_dir.",
+      "required": false
+    },
+    {
+      "name": "gtex_enriched_dir",
+      "type": "directory",
+      "description": "Directory of gtex_tissue_enriched output subdirectories (each subdir named GTEx_tissue_enriched_<tissue> with geneset.tsv). Preferred over gtex_tstat_tsv when pre-computed enriched sets are available.",
+      "required": false
+    },
+    {
+      "name": "gtex_tstat_tsv",
+      "type": "tsv",
+      "description": "GTEx t-statistic matrix TSV (genes x tissues, first column gene symbol, remaining columns tissue t-stats). Derived from GTEx V8 median TPM at https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz. Used when gtex_enriched_dir is not provided.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "ATAC-seq",
+      "help": "Assay label for set names and provenance (e.g. 'ATAC-seq', 'DNase-seq'). Default 'ATAC-seq'."
+    },
+    {
+      "name": "consensus_fraction",
+      "type": "number",
+      "default": 0.25,
+      "help": "Minimum fraction of ENCODE biosamples in which a gene must be accessible to be included in the consensus (default: 0.25). At least 2 biosamples required regardless."
+    },
+    {
+      "name": "tstat_threshold",
+      "type": "number",
+      "default": 4.0,
+      "help": "GTEx t-statistic threshold for tissue enrichment when loading from gtex_tstat_tsv (default: 4.0). Ignored when gtex_enriched_dir is provided."
+    }
+  ],
+  "outputs": [
+    {"name": "ENCODE_<assay>_consensus_x_GTEx_enriched_<tissue>/genesets.gmt", "description": "GMT file with consensus-accessible x GTEx-enriched genes for this tissue"},
+    {"name": "ENCODE_<assay>_consensus_x_GTEx_enriched_<tissue>/geneset.tsv", "description": "Gene list (header: gene)"},
+    {"name": "ENCODE_<assay>_consensus_x_GTEx_enriched_<tissue>/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "ENCODE_<assay>_consensus_x_GTEx_enriched_<tissue>/geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}

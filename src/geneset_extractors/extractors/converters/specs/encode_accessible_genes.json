@@ -1,0 +1,50 @@
+{
+  "name": "encode_accessible_genes",
+  "description": "Per-biosample accessible gene sets from ENCODE ATAC-seq or DNase-seq peaks via promoter TSS overlap with UCSC refGene hg38",
+  "inputs": [
+    {
+      "name": "encode_manifest_tsv",
+      "type": "tsv",
+      "description": "Optional pre-downloaded manifest TSV with columns: file_accession, experiment_accession, biosample, href, output_type. If not provided, the ENCODE portal API is queried live at https://www.encodeproject.org/search/. Providing a manifest makes the run reproducible without network access.",
+      "required": false
+    },
+    {
+      "name": "refgene_gz",
+      "type": "tsv_gz",
+      "description": "UCSC refGene.txt.gz for GRCh38/hg38. If not provided, auto-downloaded from https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz and cached under out_dir/references/.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "ATAC-seq",
+      "help": "ENCODE assay title to query. Use 'ATAC-seq' (default) or 'DNase-seq'."
+    },
+    {
+      "name": "output_type",
+      "type": "string",
+      "default": "IDR thresholded peaks",
+      "help": "ENCODE file output_type filter. Default 'IDR thresholded peaks'. For DNase use 'peaks'."
+    },
+    {
+      "name": "promoter_window",
+      "type": "integer",
+      "default": 1000,
+      "help": "Half-width of promoter window around TSS in bp (default: 1000; promoter = TSS +/- 1000)."
+    },
+    {
+      "name": "bin_size",
+      "type": "integer",
+      "default": 1000,
+      "help": "Genome bin size in bp for region-to-promoter overlap (default: 1000)."
+    }
+  ],
+  "outputs": [
+    {"name": "ENCODE_<assay>_<biosample>_accessible/genesets.gmt", "description": "GMT file with one gene set per biosample"},
+    {"name": "ENCODE_<assay>_<biosample>_accessible/geneset.tsv", "description": "Gene list for this biosample"},
+    {"name": "ENCODE_<assay>_<biosample>_accessible/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "ENCODE_<assay>_<biosample>_accessible/geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}
