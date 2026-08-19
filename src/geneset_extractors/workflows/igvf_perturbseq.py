@@ -13,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from geneset_extractors.extractors.converters import signed_term_gene
+from geneset_extractors.core.provenance import activate_runtime_context
 from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
 
 
@@ -118,6 +119,7 @@ def _write_workflow_gmt(rows: list[dict[str, str]], path: Path, min_size: int) -
 
 
 def run(args) -> dict[str, object]:
+    activate_runtime_context("igvf_perturbseq", getattr(args, "provenance_overlay_json", None))
     expression_tsv = Path(args.expression_tsv).resolve()
     manifest_tsv = Path(args.analysis_set_manifest).resolve()
     out_dir = Path(args.out_dir).resolve()
@@ -140,7 +142,7 @@ def run(args) -> dict[str, object]:
     write_workflow_provenance_graph(
         workflow_name="igvf_perturbseq", module_name=__name__, output_dir=workflow_dir, focus_output_path=signed_path,
         output_paths=[(signed_path, "signed_term_gene_tsv"), (processed_path, "processed_tsv"), (workflow_gmt, "workflow_gmt")],
-        input_paths=[(expression_tsv, "released_igvf_differential_expression_tsv"), (manifest_tsv, "analysis_set_manifest")],
+        input_paths=[(expression_tsv, "source_igvf_differential_expression_tsv"), (manifest_tsv, "analysis_set_manifest")],
         parameters={"analysis_set_id": args.analysis_set_id, "min_gmt_size": int(args.min_gmt_size), "n_rows": len(rows)},
     )
     converter_args = type("SignedTermGeneArgs", (), {
@@ -148,7 +150,8 @@ def run(args) -> dict[str, object]:
         "term_column": "term", "term_prefix": TERM_PREFIX, "gene_id_column": "gene_id", "gene_symbol_column": "gene_symbol",
         "score_column": "score", "sign_column": "sign", "emit_mode": "grouped_rows", "gmt_name_separator": "_",
         "gmt_signed_labels": "up_dn", "gmt_min_genes": int(args.min_gmt_size), "emit_small_gene_sets": False,
-        "emit_gmt": True, "gmt_prefer_symbol": True, "gmt_require_symbol": True, "gmt_format": "classic", "provenance_overlay_json": None,
+        "emit_gmt": True, "gmt_prefer_symbol": True, "gmt_require_symbol": True, "gmt_format": "classic",
+        "provenance_overlay_json": getattr(args, "provenance_overlay_json", None),
     })()
     signed_term_gene.run(converter_args)
     return {"n_rows": len(rows), "out_dir": str(out_dir)}

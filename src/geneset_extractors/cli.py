@@ -475,6 +475,7 @@ def _add_igvf_perturbseq_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--genome_build", default="hg38")
     parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
     parser.add_argument("--min_gmt_size", type=int, default=5)
+    _add_provenance_flags(parser)
 
 
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
