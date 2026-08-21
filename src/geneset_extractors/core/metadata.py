@@ -125,9 +125,9 @@ def _resolve_git_commit() -> str:
 
 
 def _default_gene_set_name(converter_name: str, parameters: dict[str, object], geneset_id: str) -> str:
-    signature = str(parameters.get("signature_name", "")).strip()
-    comparison = str(parameters.get("comparison_label", "")).strip()
-    dataset = str(parameters.get("dataset_label", "")).strip()
+    signature = str(parameters.get("signature_name") or "").strip()
+    comparison = str(parameters.get("comparison_label") or "").strip()
+    dataset = str(parameters.get("dataset_label") or "").strip()
     program = str(parameters.get("program_id") or parameters.get("program") or "").strip()
     sample_id = str(parameters.get("sample_id", "")).strip()
     pieces = [part for part in [dataset, signature or program, comparison or sample_id] if part]

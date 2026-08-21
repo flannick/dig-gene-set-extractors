@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from geneset_extractors.core.metadata import make_metadata
+from geneset_extractors.core.metadata import _default_gene_set_name, make_metadata
 from geneset_extractors.core.provenance import REPO_URL, activate_runtime_context, build_analysis_node, build_file_node, mirror_graph_payload
 from geneset_extractors.hashing import sha256_file
 from geneset_extractors.core.validate import validate_metadata_schema, validate_provenance_schema
@@ -23,6 +23,14 @@ def test_provenance_missing_required_fails(tmp_path: Path):
     provenance.write_text(json.dumps({"graph1": {"nodes": [], "edges": []}}), encoding="utf-8")
     with pytest.raises(Exception):
         validate_provenance_schema(provenance, schema)
+
+
+def test_default_gene_set_name_omits_none_optional_labels():
+    assert _default_gene_set_name(
+        "rna_deg",
+        {"signature_name": "MoTrPAC_T60-Adrenals_TrainingVsControl", "comparison_label": None},
+        "unused",
+    ) == "MoTrPAC_T60-Adrenals_TrainingVsControl"
 
 
 def test_build_file_node_raises_when_md5_cannot_be_computed(tmp_path: Path):
