@@ -125,11 +125,11 @@ def _resolve_git_commit() -> str:
 
 
 def _default_gene_set_name(converter_name: str, parameters: dict[str, object], geneset_id: str) -> str:
-    signature = str(parameters.get("signature_name", "")).strip()
-    comparison = str(parameters.get("comparison_label", "")).strip()
-    dataset = str(parameters.get("dataset_label", "")).strip()
+    signature = str(parameters.get("signature_name") or "").strip()
+    comparison = str(parameters.get("comparison_label") or "").strip()
+    dataset = str(parameters.get("dataset_label") or "").strip()
     program = str(parameters.get("program_id") or parameters.get("program") or "").strip()
-    sample_id = str(parameters.get("sample_id", "")).strip()
+    sample_id = str(parameters.get("sample_id") or "").strip()
     pieces = [part for part in [dataset, signature or program, comparison or sample_id] if part]
     if pieces:
         return " | ".join(pieces)
@@ -144,7 +144,7 @@ def _default_focus_node_id(geneset_id: str) -> str:
 
 def _ensure_output_files(output_files: list[dict[str, object]] | None) -> list[dict[str, object]]:
     out = [dict(item) for item in (output_files or [])]
-    seen = {(str(item.get("path", "")), str(item.get("role", ""))) for item in out}
+    seen = {(str(item.get("path") or ""), str(item.get("role") or "")) for item in out}
     defaults = [
         {"path": "geneset.tsv", "role": "selected_program"},
         {"path": "geneset.meta.json", "role": "metadata_json"},
@@ -160,8 +160,8 @@ def _dedupe_output_files(meta_dir: Path, output_files: list[dict[str, object]]) 
     deduped: list[dict[str, object]] = []
     seen: set[tuple[str, str]] = set()
     for item in output_files:
-        raw_path = str(item.get("path", "")).strip()
-        role = str(item.get("role", "")).strip()
+        raw_path = str(item.get("path") or "").strip()
+        role = str(item.get("role") or "").strip()
         if not raw_path:
             continue
         path_obj = Path(raw_path)
@@ -325,8 +325,8 @@ def _build_lineage_file_node(
     direction: str,
     index: int,
 ) -> dict[str, object]:
-    path = str(record.get("path", ""))
-    role = str(record.get("role", "")) or f"{direction}_{index}"
+    path = str(record.get("path") or "")
+    role = str(record.get("role") or "") or f"{direction}_{index}"
     node: dict[str, object] = {
         "id": f"file:{direction}:{_slug(role)}:{index}",
         "node_type": "file",

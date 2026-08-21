@@ -439,7 +439,7 @@ def merge_graph_components(
 
 
 def build_output_file_record(meta_dir: Path, file_record: dict[str, Any]) -> dict[str, Any]:
-    raw_path = str(file_record.get("path", "")).strip()
+    raw_path = str(file_record.get("path") or "").strip()
     if not raw_path:
         raise ValueError("output file record missing path")
     path_obj = Path(raw_path)
@@ -448,7 +448,7 @@ def build_output_file_record(meta_dir: Path, file_record: dict[str, Any]) -> dic
     size_bytes = resolved.stat().st_size if resolved.exists() and resolved.is_file() else None
     return {
         "path": raw_path,
-        "role": str(file_record.get("role", "output_artifact")),
+        "role": str(file_record.get("role") or "output_artifact"),
         "sha256": sha256,
         "size_bytes": size_bytes,
         "md5": file_record.get("md5"),
@@ -461,10 +461,10 @@ def _overlay_for_file(file_record: dict[str, Any], overlay: dict[str, Any]) -> d
     inputs = overlay.get("inputs", {})
     if not isinstance(inputs, dict):
         return {}
-    role_key = f"role:{str(file_record.get('role', '')).strip()}"
+    role_key = f"role:{str(file_record.get('role') or '').strip()}"
     candidates = [role_key]
-    raw_path = str(file_record.get("path", "")).strip()
-    local_path = str(file_record.get("local_path", "")).strip()
+    raw_path = str(file_record.get("path") or "").strip()
+    local_path = str(file_record.get("local_path") or "").strip()
     if raw_path:
         candidates.insert(0, raw_path)
     if local_path:
@@ -495,7 +495,7 @@ def build_file_node(
     merged = merge_file_overlay(file_record, overlay)
     local_path = str(merged.get("local_path") or merged.get("path") or "")
     resolved = Path(local_path).resolve() if local_path else None
-    role = str(merged.get("role", "input"))
+    role = str(merged.get("role") or "input")
     sha256 = merged.get("sha256")
     mirrored_local_id = mirror_provenance_path(local_path, mirror_local_prefix, mirror_remote_prefix)
     mirrored_explicit_local_id = mirror_provenance_path(
@@ -514,7 +514,7 @@ def build_file_node(
     persistent_id = str(merged.get("persistent_id") or _stable_uuid({"node_id": node_id, "kind": "persistent"}))
     filename = str(
         merged.get("filename")
-        or (Path(local_path).name if local_path else Path(str(merged.get("path", role))).name)
+        or (Path(local_path).name if local_path else Path(str(merged.get("path") or role)).name)
         or role
     )
     local_id = str(

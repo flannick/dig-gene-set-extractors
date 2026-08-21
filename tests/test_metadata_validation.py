@@ -3,10 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from geneset_extractors.core.metadata import make_metadata
-from geneset_extractors.core.provenance import REPO_URL, activate_runtime_context, build_analysis_node, build_file_node, mirror_graph_payload
+from geneset_extractors.core.metadata import _default_gene_set_name, make_metadata
+from geneset_extractors.core.provenance import REPO_URL, activate_runtime_context, build_analysis_node, build_file_node, build_output_file_record, mirror_graph_payload
 from geneset_extractors.hashing import sha256_file
 from geneset_extractors.core.validate import validate_metadata_schema, validate_provenance_schema
+from geneset_extractors.resource_manager import resource_metadata_record
 
 
 def test_metadata_missing_required_fails(tmp_path: Path):
@@ -23,6 +24,48 @@ def test_provenance_missing_required_fails(tmp_path: Path):
     provenance.write_text(json.dumps({"graph1": {"nodes": [], "edges": []}}), encoding="utf-8")
     with pytest.raises(Exception):
         validate_provenance_schema(provenance, schema)
+
+
+def test_default_gene_set_name_omits_none_optional_labels():
+    assert _default_gene_set_name(
+        "rna_deg",
+        {"signature_name": "MoTrPAC_T60-Adrenals_TrainingVsControl", "comparison_label": None},
+        "unused",
+    ) == "MoTrPAC_T60-Adrenals_TrainingVsControl"
+    assert _default_gene_set_name("converter", {"sample_id": None}, "unused") == "converter:unused"
+
+
+def test_resource_metadata_record_normalizes_optional_nulls(tmp_path: Path):
+    record = resource_metadata_record(
+        "toy",
+        {
+            "url": None,
+            "download_url": None,
+            "landing_page_url": None,
+            "persistent_id": None,
+            "canonical_uri": None,
+            "provider": None,
+            "stable_id": None,
+            "version": None,
+            "sha256": None,
+            "license": None,
+        },
+        tmp_path / "toy.tsv",
+        "test",
+    )
+    assert all(value != "None" for value in record.values())
+
+
+def test_file_records_normalize_null_paths_and_roles(tmp_path: Path):
+    input_node = build_file_node({"path": None, "role": None, "md5": "abc"}, {})
+    assert "None" not in input_node["id"]
+    assert "None" not in input_node["description"]
+    assert input_node["c2m2_properties"]["local_id"] == "input"
+
+    output = tmp_path / "output.tsv"
+    output.write_text("x\n", encoding="utf-8")
+    output_record = build_output_file_record(tmp_path, {"path": str(output), "role": None})
+    assert output_record["role"] == "output_artifact"
 
 
 def test_build_file_node_raises_when_md5_cannot_be_computed(tmp_path: Path):
