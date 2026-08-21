@@ -103,7 +103,7 @@ def _merge_manifest_payloads(base: dict[str, object], overlay: dict[str, object]
     for entry in base_resources:
         if not isinstance(entry, dict):
             raise ValueError("resource manifest: each resource entry must be an object")
-        rid = str(entry.get("id", "")).strip()
+        rid = str(entry.get("id") or "").strip()
         if not rid:
             raise ValueError("resource manifest: each resource entry must include non-empty id")
         index_by_id[rid] = len(merged_resources)
@@ -112,7 +112,7 @@ def _merge_manifest_payloads(base: dict[str, object], overlay: dict[str, object]
     for entry in overlay_resources:
         if not isinstance(entry, dict):
             raise ValueError("resource manifest: each resource entry must be an object")
-        rid = str(entry.get("id", "")).strip()
+        rid = str(entry.get("id") or "").strip()
         if not rid:
             raise ValueError("resource manifest: each resource entry must include non-empty id")
         normalized = dict(entry)
@@ -153,37 +153,37 @@ def _extract_manifest_data(
     for entry in resources_raw:
         if not isinstance(entry, dict):
             raise ValueError("resource manifest: each resource entry must be an object")
-        rid = str(entry.get("id", "")).strip()
+        rid = str(entry.get("id") or "").strip()
         if not rid:
             raise ValueError("resource manifest: each resource entry must include non-empty id")
         if rid in resources:
             raise ValueError(f"resource manifest: duplicate resource id: {rid}")
-        filename = str(entry.get("filename", "")).strip()
+        filename = str(entry.get("filename") or "").strip()
         if not filename:
             raise ValueError(f"resource manifest: resource {rid} missing filename")
 
         normalized = dict(entry)
         normalized["id"] = rid
         normalized["filename"] = filename
-        normalized["url"] = str(normalized.get("url", "")).strip()
-        normalized["sha256"] = str(normalized.get("sha256", "")).strip().lower()
-        normalized["stable_id"] = str(normalized.get("stable_id", "")).strip()
-        normalized["version"] = str(normalized.get("version", "")).strip()
-        normalized["license"] = str(normalized.get("license", "")).strip()
-        normalized["provider"] = str(normalized.get("provider", "")).strip()
-        normalized["description"] = str(normalized.get("description", "")).strip()
-        normalized["genome_build"] = str(normalized.get("genome_build", "")).strip()
+        normalized["url"] = str(normalized.get("url") or "").strip()
+        normalized["sha256"] = str(normalized.get("sha256") or "").strip().lower()
+        normalized["stable_id"] = str(normalized.get("stable_id") or "").strip()
+        normalized["version"] = str(normalized.get("version") or "").strip()
+        normalized["license"] = str(normalized.get("license") or "").strip()
+        normalized["provider"] = str(normalized.get("provider") or "").strip()
+        normalized["description"] = str(normalized.get("description") or "").strip()
+        normalized["genome_build"] = str(normalized.get("genome_build") or "").strip()
         resources[rid] = normalized
 
-        url = str(normalized.get("url", "")).strip()
-        sha = str(normalized.get("sha256", "")).strip()
+        url = str(normalized.get("url") or "").strip()
+        sha = str(normalized.get("sha256") or "").strip()
         if sha and not _SHA256_RE.match(sha):
             raise ValueError(f"resource manifest: resource {rid} has invalid sha256 (must be 64 lowercase hex chars)")
         if url and not sha:
             warnings.append(f"resource {rid} has url but no sha256 (download is unverified)")
-        if url and not str(normalized.get("stable_id", "")).strip():
+        if url and not str(normalized.get("stable_id") or "").strip():
             warnings.append(f"resource {rid} has url but no stable_id")
-        if url and not str(normalized.get("version", "")).strip():
+        if url and not str(normalized.get("version") or "").strip():
             warnings.append(f"resource {rid} has url but no version")
 
     presets_raw = payload.get("presets", {})
@@ -505,14 +505,14 @@ def resource_metadata_record(
         "id": resource_id,
         "method": method,
         "path": str(local_path),
-        "url": str(entry.get("url", "")),
-        "download_url": str(entry.get("download_url", entry.get("url", ""))),
-        "landing_page_url": str(entry.get("landing_page_url", "")),
-        "persistent_id": str(entry.get("persistent_id", "")),
-        "canonical_uri": str(entry.get("canonical_uri", entry.get("url", ""))),
-        "provider": str(entry.get("provider", "")),
-        "stable_id": str(entry.get("stable_id", "")),
-        "version": str(entry.get("version", "")),
-        "sha256": str(entry.get("sha256", "")),
-        "license": str(entry.get("license", "")),
+        "url": str(entry.get("url") or ""),
+        "download_url": str(entry.get("download_url") or entry.get("url") or ""),
+        "landing_page_url": str(entry.get("landing_page_url") or ""),
+        "persistent_id": str(entry.get("persistent_id") or ""),
+        "canonical_uri": str(entry.get("canonical_uri") or entry.get("url") or ""),
+        "provider": str(entry.get("provider") or ""),
+        "stable_id": str(entry.get("stable_id") or ""),
+        "version": str(entry.get("version") or ""),
+        "sha256": str(entry.get("sha256") or ""),
+        "license": str(entry.get("license") or ""),
     }
