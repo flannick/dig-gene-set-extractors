@@ -16,12 +16,12 @@ def _graph_from_payload(payload: dict[str, object]) -> dict[str, object]:
 
 
 def load_provenance(out_dir: str | Path) -> dict[str, object]:
-    payload = json.loads((Path(out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    payload = json.loads((Path(out_dir) / "geneset.provenance.legacy.json").read_text(encoding="utf-8"))
     return _graph_from_payload(payload)
 
 
 def load_provenance_payload(out_dir: str | Path) -> dict[str, object]:
-    return json.loads((Path(out_dir) / "geneset.provenance.json").read_text(encoding="utf-8"))
+    return json.loads((Path(out_dir) / "geneset.provenance.legacy.json").read_text(encoding="utf-8"))
 
 
 def file_node_for_role(provenance: dict[str, object], role: str) -> dict[str, object]:

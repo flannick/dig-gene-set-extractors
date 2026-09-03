@@ -1672,7 +1672,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_prov_build.add_argument(
         "--out",
         dest="provenance_out",
-        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json.",
+        help="Optional output path for rebuilt legacy provenance. Defaults to sibling geneset.provenance.legacy.json; also writes geneset.provenance.dapper.yaml.",
     )
     _add_provenance_flags(p_prov_build)
     p_prov_build.add_argument(
@@ -1690,7 +1690,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_meta_patch.add_argument(
         "--provenance_out",
-        help="Optional output path for rebuilt provenance. Defaults to sibling geneset.provenance.json next to meta_out.",
+        help="Optional output path for rebuilt legacy provenance. Defaults to sibling geneset.provenance.legacy.json next to meta_out; also writes geneset.provenance.dapper.yaml.",
     )
     p_meta_patch.add_argument(
         "--gene_set_description",

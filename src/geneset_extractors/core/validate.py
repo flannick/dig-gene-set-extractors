@@ -157,7 +157,7 @@ def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     geneset_full = out / "geneset.full.tsv"
     gmt = out / "genesets.gmt"
     meta = out / "geneset.meta.json"
-    provenance = out / "geneset.provenance.json"
+    provenance = out / "geneset.provenance.legacy.json"
     if not geneset.exists() or not meta.exists():
         raise FileNotFoundError("output dir must contain geneset.tsv and geneset.meta.json")
     validate_geneset_tsv(geneset)
@@ -171,7 +171,12 @@ def _validate_single_output_dir(out: Path, schema_path: Path) -> None:
     if provenance.exists():
         validate_provenance_schema(provenance, provenance_schema)
     elif isinstance(meta_payload.get("provenance"), dict):
-        raise FileNotFoundError("metadata references geneset.provenance.json but file is missing")
+        raise FileNotFoundError("metadata references geneset.provenance.legacy.json but file is missing")
+    dapper_path = (meta_payload.get("provenance") or {}).get("dapper_path")
+    if dapper_path:
+        declared_dapper_path = out / str(dapper_path)
+        if not declared_dapper_path.exists():
+            raise FileNotFoundError(f"metadata references {dapper_path} but file is missing")
 
 
 def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> dict[str, object]:

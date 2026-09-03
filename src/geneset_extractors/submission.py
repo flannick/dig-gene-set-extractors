@@ -114,7 +114,7 @@ def _run_rna_deg_smoke() -> dict[str, Any]:
                 "--top_k", "2", "--emit_gmt", "false", "--emit_full", "false",
             ]
         )
-        required = ["geneset.tsv", "geneset.meta.json", "geneset.provenance.json"]
+        required = ["geneset.tsv", "geneset.meta.json", "geneset.provenance.legacy.json", "geneset.provenance.dapper.yaml"]
         missing = [name for name in required if not (out_dir / name).is_file()]
         if code != 0 or missing:
             return {"ok": False, "message": f"smoke converter failed code={code}; missing={missing}"}

@@ -156,6 +156,7 @@
       "required": ["path", "focus_node_id"],
       "properties": {
         "path": {"type": "string"},
+        "dapper_path": {"type": "string"},
         "focus_node_id": {"type": "string"}
       }
     },

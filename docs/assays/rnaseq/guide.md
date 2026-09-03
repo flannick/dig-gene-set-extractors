@@ -4,7 +4,8 @@
 
 - `geneset.tsv` (selected signed gene program with nonnegative weights)
 - `geneset.meta.json` (summary metadata + provenance pointer)
-- `geneset.provenance.json` (collapsed provenance graph for the emitted gene set)
+- `geneset.provenance.legacy.json` (collapsed DIG provenance graph for the emitted gene set)
+- `geneset.provenance.dapper.yaml` (DAPPER-ID-1 YAML provenance)
 - optional `geneset.full.tsv`
 - optional `genesets.gmt` (directional UP/DOWN sets)
 
@@ -225,7 +226,8 @@ Grouped output layout:
 - `manifest.tsv`
 - `comparison=<NAME>/geneset.tsv`
 - `comparison=<NAME>/geneset.meta.json`
-- `comparison=<NAME>/geneset.provenance.json`
+- `comparison=<NAME>/geneset.provenance.legacy.json`
+- `comparison=<NAME>/geneset.provenance.dapper.yaml`
 - optional per-comparison `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined)
 
@@ -417,7 +419,8 @@ geneset-extractors convert rna_sc_programs \
 - `manifest.tsv`
 - `program=<ID>/geneset.tsv`
 - `program=<ID>/geneset.meta.json`
-- `program=<ID>/geneset.provenance.json`
+- `program=<ID>/geneset.provenance.legacy.json`
+- `program=<ID>/geneset.provenance.dapper.yaml`
 - optional per-program `geneset.full.tsv` and `genesets.gmt`
 - optional root `genesets.gmt` (combined across programs)
 
