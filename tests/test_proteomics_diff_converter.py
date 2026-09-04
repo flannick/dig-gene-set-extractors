@@ -22,6 +22,7 @@ def test_proteomics_diff_converter(tmp_path: Path):
     proteomics_diff.run(args)
     schema = Path("src/geneset_extractors/schemas/geneset_metadata.schema.json")
     validate_output_dir(Path(args.out_dir), schema)
-    assert (Path(args.out_dir) / "geneset.provenance.json").exists()
+    assert (Path(args.out_dir) / "geneset.provenance.legacy.json").exists()
+    assert (Path(args.out_dir) / "geneset.provenance.dapper.yaml").exists()
     meta = json.loads((Path(args.out_dir) / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta["provenance"]["focus_node_id"]

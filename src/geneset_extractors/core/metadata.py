@@ -12,6 +12,7 @@ import threading
 from typing import Any
 
 from geneset_extractors import __version__
+from geneset_extractors.core.dapper_provenance import write_dapper_provenance
 from geneset_extractors.hashing import sha256_file, stable_hash_object
 from geneset_extractors.core.provenance import (
     REPO_URL,
@@ -31,6 +32,10 @@ from geneset_extractors.core.provenance import (
     mirror_graph_payload,
     write_canonical_json,
 )
+
+
+LEGACY_PROVENANCE_FILENAME = "geneset.provenance.legacy.json"
+DAPPER_PROVENANCE_FILENAME = "geneset.provenance.dapper.yaml"
 
 
 def build_geneset_id(converter_name: str, file_hashes: list[str], params: dict[str, object]) -> str:
@@ -65,7 +70,13 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
             mirror_local_prefix if isinstance(mirror_local_prefix, str) else None,
             mirror_remote_prefix if isinstance(mirror_remote_prefix, str) else None,
         )
-        write_canonical_json(p.parent / "geneset.provenance.json", provenance_payload)
+        legacy_path = p.parent / LEGACY_PROVENANCE_FILENAME
+        write_canonical_json(legacy_path, provenance_payload)
+        write_dapper_provenance(
+            p.parent / DAPPER_PROVENANCE_FILENAME,
+            provenance_payload,
+            clean_payload,
+        )
 
 
 def write_provenance_from_metadata(
@@ -81,7 +92,7 @@ def write_provenance_from_metadata(
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("metadata payload must be a JSON object")
-    out_path = Path(provenance_path) if provenance_path is not None else (meta_path.parent / "geneset.provenance.json")
+    out_path = Path(provenance_path) if provenance_path is not None else (meta_path.parent / LEGACY_PROVENANCE_FILENAME)
     provenance_payload = _build_provenance_payload(
         payload,
         meta_path.parent,
@@ -91,6 +102,7 @@ def write_provenance_from_metadata(
         provenance_mirror_remote_prefix,
     )
     write_canonical_json(out_path, provenance_payload)
+    write_dapper_provenance(meta_path.parent / DAPPER_PROVENANCE_FILENAME, provenance_payload, payload)
     return out_path
 
 
@@ -500,7 +512,8 @@ def make_metadata(
         "weights": weights,
         "summary": summary,
         "provenance": {
-            "path": "geneset.provenance.json",
+            "path": LEGACY_PROVENANCE_FILENAME,
+            "dapper_path": DAPPER_PROVENANCE_FILENAME,
             "focus_node_id": focus_node_id,
         },
     }
@@ -575,7 +588,7 @@ def enrich_manifest_row(out_dir: str | Path, group_dir: str | Path, row: dict[st
     enriched.setdefault("meta_path", str(meta_path.relative_to(out_root)))
     enriched.setdefault(
         "provenance_path",
-        str((group_path / str(provenance.get("path", "geneset.provenance.json"))).relative_to(out_root)),
+        str((group_path / str(provenance.get("path", LEGACY_PROVENANCE_FILENAME))).relative_to(out_root)),
     )
     enriched.setdefault("focus_node_id", provenance.get("focus_node_id", ""))
     return enriched

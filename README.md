@@ -228,7 +228,8 @@ Every extractor should write:
 
 1. `geneset.tsv`
 2. `geneset.meta.json`
-3. `geneset.provenance.json`
+3. `geneset.provenance.legacy.json`
+4. `geneset.provenance.dapper.yaml`
 
 Optional artifacts (extractor-specific):
 
@@ -241,9 +242,9 @@ Optional artifacts (extractor-specific):
 
 - `standard_name`, `standard_version`, `file_type`
 - `gene_set` summary metadata for indexing
-- `provenance.path` and `provenance.focus_node_id`
+- `provenance.path`, `provenance.dapper_path`, and `provenance.focus_node_id`
 
-`geneset.provenance.json` contains a compact provenance graph with one collapsed extraction operation per emitted gene set, explicit input file nodes, and replay/code pointers when known.
+`geneset.provenance.legacy.json` preserves the compact DIG provenance graph with one collapsed extraction operation per emitted gene set, explicit input file nodes, and replay/code pointers when known. `geneset.provenance.dapper.yaml` is the corresponding DAPPER-ID-1 YAML graph: its node identifiers are DAPPER content addresses and every edge is rewritten to those identifiers.
 
 Grouped `manifest.tsv` files keep the existing `path` column and now add indexing columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id` when available.
 

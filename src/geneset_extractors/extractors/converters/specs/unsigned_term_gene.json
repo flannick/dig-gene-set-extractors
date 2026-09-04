@@ -24,6 +24,7 @@
     {"name": "geneset.full.tsv", "description": "Full term-gene table"},
     {"name": "signature_summary.tsv", "description": "Per-set counts"},
     {"name": "geneset.meta.json", "description": "Metadata JSON"},
-    {"name": "geneset.provenance.json", "description": "Provenance graph JSON"}
+    {"name": "geneset.provenance.legacy.json", "description": "Legacy provenance graph JSON"},
+    {"name": "geneset.provenance.dapper.yaml", "description": "DAPPER provenance YAML"}
   ]
 }

@@ -82,7 +82,8 @@ def test_rna_deg_converter_end_to_end(tmp_path: Path):
     provenance = load_provenance(args.out_dir)
     assert meta["converter"]["parameters"]["signature_name"] == "toy"
     assert meta["converter"]["parameters"]["score_mode"] == "stat"
-    assert meta["provenance"]["path"] == "geneset.provenance.json"
+    assert meta["provenance"]["path"] == "geneset.provenance.legacy.json"
+    assert meta["provenance"]["dapper_path"] == "geneset.provenance.dapper.yaml"
     assert meta["geneset_id"] in provenance_payload
     geneset_nodes = [node for node in provenance["nodes"] if node["id"] == meta["provenance"]["focus_node_id"] and node["type"] == "GeneSet"]
     assert geneset_nodes

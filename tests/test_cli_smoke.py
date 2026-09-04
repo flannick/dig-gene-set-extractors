@@ -390,7 +390,7 @@ def test_cli_provenance_build_from_existing_metadata(tmp_path: Path):
         "false",
     )
     assert convert.returncode == 0
-    provenance = out / "geneset.provenance.json"
+    provenance = out / "geneset.provenance.legacy.json"
     original = json.loads(provenance.read_text(encoding="utf-8"))
     provenance.unlink()
 
@@ -400,6 +400,7 @@ def test_cli_provenance_build_from_existing_metadata(tmp_path: Path):
     assert payload["status"] == "ok"
     assert Path(payload["provenance_path"]) == provenance
     assert provenance.exists()
+    assert (out / "geneset.provenance.dapper.yaml").exists()
     regenerated = json.loads(provenance.read_text(encoding="utf-8"))
     assert regenerated == original
 

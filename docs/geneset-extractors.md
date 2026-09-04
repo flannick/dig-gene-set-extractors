@@ -24,9 +24,10 @@ Every emitted gene-set directory now writes:
 
 - `geneset.tsv`
 - `geneset.meta.json`
-- `geneset.provenance.json`
+- `geneset.provenance.legacy.json`
+- `geneset.provenance.dapper.yaml`
 
-`geneset.meta.json` is the compact summary/index file. `geneset.provenance.json` is the graph-oriented record with file nodes, a focus gene-set node, and one collapsed `extract_gene_set` operation.
+`geneset.meta.json` is the compact summary/index file. `geneset.provenance.legacy.json` is the graph-oriented DIG record with file nodes, a focus gene-set node, and one collapsed `extract_gene_set` operation. `geneset.provenance.dapper.yaml` is its DAPPER-ID-1 YAML representation, with content-addressed node IDs and rewritten references.
 
 Grouped outputs still use `manifest.tsv`, but manifests now retain `path` and add portal-friendly columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
 
