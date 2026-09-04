@@ -466,6 +466,43 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_igvf_perturbseq_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_tsv", required=True)
+    parser.add_argument("--mapping_file")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument(
+        "--orientation",
+        choices=["perturbation_by_gene", "gene_by_perturbation"],
+        default="perturbation_by_gene",
+        help="Layout of the signature matrix: rows are perturbations (default) or rows are genes.",
+    )
+    parser.add_argument("--gmt_name", default="gene_set_library_crisp.gmt")
+    parser.add_argument("--z_threshold", type=float, default=3.0)
+    parser.add_argument("--min_gmt_size", type=int, default=5)
+    parser.add_argument(
+        "--input_mode",
+        choices=["matrix", "long_de"],
+        default="matrix",
+        help="matrix: wide perturbation/gene matrix, z-scored per gene (default). "
+        "long_de: tidy per-perturbation DE table (one row per perturbation x gene).",
+    )
+    # long_de-mode column mapping (ignored in matrix mode).
+    parser.add_argument("--sep", default="auto", help="Field separator for long_de input ('auto', ',' or tab).")
+    parser.add_argument("--term_column", help="long_de: perturbation/term column.")
+    parser.add_argument("--gene_symbol_column", help="long_de: gene symbol column.")
+    parser.add_argument("--gene_id_column", help="long_de: gene id column (defaults to the symbol column).")
+    parser.add_argument("--effect_column", help="long_de: signed effect column (sign gives up/down).")
+    parser.add_argument("--ratio_column", help="long_de: fold-change ratio column (>1 up, <1 down).")
+    parser.add_argument("--score_column", help="long_de: magnitude column for ranking/thresholding (abs value).")
+    parser.add_argument("--pvalue_column", help="long_de: optional p-value column for filtering.")
+    parser.add_argument("--pvalue_max", type=float, help="long_de: keep rows with pvalue <= this.")
+    parser.add_argument("--score_threshold", type=float, help="long_de: keep rows with |score| >= this.")
+    parser.add_argument("--top_k_per_direction", type=int, help="long_de: cap genes per term per direction.")
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1755,6 +1792,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
     p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
     _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
+    p_igvf_perturbseq = wf_sub.add_parser("igvf_perturbseq")
+    _add_igvf_perturbseq_flags(p_igvf_perturbseq)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2604,6 +2643,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "igvf_perturbseq":
+                from geneset_extractors.workflows.igvf_perturbseq import run as run_igvf_perturbseq
+
+                result = run_igvf_perturbseq(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=igvf_perturbseq n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

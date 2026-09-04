@@ -285,7 +285,7 @@ def write_workflow_provenance_graph(
         analysis_id=operation_id,
         method=workflow_name,
         name=f"prepare_{focus_output_path.stem}",
-        description=f"Analysis step that prepares GTEx differential expression results and emits {focus_output_path.name}.",
+        description=f"Analysis step '{workflow_name}' that prepares differential expression results and emits {focus_output_path.name}.",
         parameters=parameters,
         command=command,
         entrypoint=entrypoint,

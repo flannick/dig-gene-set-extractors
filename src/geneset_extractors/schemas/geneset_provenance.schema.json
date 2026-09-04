@@ -213,6 +213,14 @@
         "md5": {
           "type": "string",
           "description": "Base64-encoded MD5 checksum of the file."
+        },
+        "resource": {
+          "type": "string",
+          "description": "Originating data resource/DCC for this file (e.g. IGVF, ImmPort)."
+        },
+        "study_id": {
+          "type": "string",
+          "description": "Study or analysis-set accession this file belongs to (e.g. SDY1299, IGVFDS6924DJAZ)."
         }
       }
     },
@@ -335,6 +343,29 @@
         "synonyms": {
           "type": "array",
           "description": "Alternative names for this analysis.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resource": {
+          "type": "string",
+          "description": "Originating data resource/DCC (e.g. IGVF, ImmPort)."
+        },
+        "study_id": {
+          "type": "string",
+          "description": "Study or analysis-set accession the gene sets are derived from."
+        },
+        "pipeline": {
+          "type": "string",
+          "description": "End-to-end analysis pipeline (workflow + converter) that produced the gene sets."
+        },
+        "preprocessing": {
+          "type": "string",
+          "description": "Scripting/transformations applied to the immediate input files before the workflow."
+        },
+        "input_files": {
+          "type": "array",
+          "description": "Immediate input file names/accessions consumed by this analysis step.",
           "items": {
             "type": "string"
           }
