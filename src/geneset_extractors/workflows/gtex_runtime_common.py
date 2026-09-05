@@ -14,6 +14,7 @@ from geneset_extractors.core.provenance import (
     build_file_node,
     build_output_file_record,
     get_runtime_context,
+    load_overlay,
     mirror_graph_payload,
     stable_operation_id,
     write_canonical_json,
@@ -246,13 +247,17 @@ def write_workflow_provenance_graph(
     parameters: dict[str, Any],
 ) -> Path:
     runtime_ctx = get_runtime_context()
+    overlay = load_overlay(runtime_ctx.overlay_path if runtime_ctx is not None else None)
     mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
     mirror_remote_prefix = runtime_ctx.provenance_mirror_remote_prefix if runtime_ctx is not None else None
-    input_records = [{"path": str(path), "role": role} for path, role in input_paths]
+    # Mark raw workflow inputs explicitly.  In addition to making the graph
+    # self-describing, this distinguishes true source files from metadata
+    # artifacts when provenance consumers choose traversal starting points.
+    input_records = [{"path": str(path), "role": role, "source": "workflow input"} for path, role in input_paths]
     input_nodes = [
         build_file_node(
             record,
-            {},
+            overlay,
             mirror_local_prefix=mirror_local_prefix,
             mirror_remote_prefix=mirror_remote_prefix,
         )
@@ -265,7 +270,7 @@ def write_workflow_provenance_graph(
     output_nodes = [
         build_file_node(
             record,
-            {},
+            overlay,
             mirror_local_prefix=mirror_local_prefix,
             mirror_remote_prefix=mirror_remote_prefix,
         )
