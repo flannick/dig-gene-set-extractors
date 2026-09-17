@@ -41,6 +41,24 @@ def _assay_type(identifier: str) -> str:
 def list_contracts() -> list[dict[str, Any]]:
     """Return a machine-readable view of current converter/workflow contracts."""
     contracts: list[dict[str, Any]] = []
+    contracts.append(
+        {
+            "identifier": "external_precomputed_import",
+            "kind": "utility",
+            "source_module": "geneset_extractors.external_import",
+            "cli_command": ["external-import"],
+            "supported_assay_type": "multi_assay",
+            "expected_inputs": [{"name": "externally generated GMT", "type": "GMT"}],
+            "expected_outputs": [
+                {"name": "genesets.gmt", "type": "GMT"},
+                {"name": "geneset.meta.json", "type": "metadata"},
+                {"name": "paired provenance sidecars", "type": "legacy JSON plus DAPPER YAML"},
+            ],
+            "test_fixture": "tests/test_external_import.py",
+            "smoke_test_command": "geneset-extractors external-import --help",
+            "public_api_stability": "stable",
+        }
+    )
     for identifier in sorted(CONVERTERS):
         try:
             spec = get_converter_spec(identifier)
@@ -96,6 +114,9 @@ def describe_contract(identifier: str) -> dict[str, Any]:
 def _cli_registration_exists(contract: dict[str, Any]) -> bool:
     if contract["kind"] == "converter":
         return str(contract["identifier"]) in CONVERTERS
+    if contract["kind"] == "utility":
+        from geneset_extractors.cli import build_parser
+        return "external-import" in _subparser_choices(build_parser(), "command")
     return str(contract["identifier"]) in set(_workflow_ids())
 
 
