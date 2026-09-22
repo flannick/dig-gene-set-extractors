@@ -74,7 +74,18 @@ def import_external_gmt(*, gmt: Path, out_dir: Path, source_record: Path, librar
         files=[source_file],
         gene_annotation={"mode": "none", "source": "external precomputed GMT", "gene_id_field": "gene_symbol"},
         weights={"weight_type": "unweighted", "normalization": {}, "aggregation": "external_precomputed"},
-        summary={"n_gene_sets": set_count, "n_genes": gene_count, "generation_status": "external_precomputed_incomplete_code"},
+        # The external artifact is already a set of gene identifiers: every
+        # observed identifier is retained, with no repository-side mapping or
+        # selection. These fields satisfy the standard metadata schema without
+        # implying that DIG performed the original scientific analysis.
+        summary={
+            "n_input_features": gene_count,
+            "n_genes": gene_count,
+            "n_features_assigned": gene_count,
+            "fraction_features_assigned": 1.0,
+            "n_gene_sets": set_count,
+            "generation_status": "external_precomputed_incomplete_code",
+        },
         output_files=[{"path": "genesets.gmt", "role": "gmt"}],
         gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": 0, "max_genes": 0, "plans": []},
         gene_set_description=description,

@@ -23,3 +23,5 @@ def test_external_import_copies_gmt_and_emits_paired_provenance(tmp_path: Path):
     metadata = json.loads((out / "geneset.meta.json").read_text(encoding="utf-8"))
     assert metadata["external_import"]["regeneration_status"] == "incomplete_code"
     assert all(item["path"] != "geneset.tsv" for item in metadata["output"]["files"])
+    assert metadata["summary"]["n_input_features"] == 2
+    assert metadata["summary"]["fraction_features_assigned"] == 1.0
