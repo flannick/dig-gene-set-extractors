@@ -22,3 +22,4 @@ def test_external_import_copies_gmt_and_emits_paired_provenance(tmp_path: Path):
     assert (out / "geneset.provenance.dapper.yaml").exists()
     metadata = json.loads((out / "geneset.meta.json").read_text(encoding="utf-8"))
     assert metadata["external_import"]["regeneration_status"] == "incomplete_code"
+    assert all(item["path"] != "geneset.tsv" for item in metadata["output"]["files"])

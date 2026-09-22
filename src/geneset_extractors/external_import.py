@@ -82,6 +82,14 @@ def import_external_gmt(*, gmt: Path, out_dir: Path, source_record: Path, librar
     )
     metadata["gene_set"]["name"] = display_name  # type: ignore[index]
     metadata["gene_set"]["primary_artifact"] = {"path": "genesets.gmt", "role": "gmt"}  # type: ignore[index]
+    # ``make_metadata`` supplies the normal extracted-program TSV by default.
+    # An external import has no such derived artifact: its verified GMT is the
+    # only data output, so retaining that default would make provenance hash a
+    # nonexistent geneset.tsv.
+    metadata["output"]["files"] = [  # type: ignore[index]
+        item for item in metadata["output"]["files"]  # type: ignore[index]
+        if item.get("path") != "geneset.tsv"
+    ]
     metadata["converter"]["code"].update({  # type: ignore[index]
         "repo_url": str(source["uri_or_identifier"]),
         "module": None,
