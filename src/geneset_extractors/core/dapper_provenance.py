@@ -2,8 +2,9 @@
 
 The structural conversion is adapted from DAPPER's
 ``schema/converter/geneset_to_dapper.py``. The identifier implementation is
-the DAPPER-ID-1 algorithm for the three DAPPER node classes emitted here,
-pinned to DAPPER schema revision ``57331c2877b223a8dd691266c877e173049d65f3``.
+the DAPPER-ID-1 algorithm for the DAPPER node classes emitted here, pinned to
+DAPPER release ``0.2.0-a0`` at revision
+``af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968``.
 """
 from __future__ import annotations
 
@@ -22,18 +23,41 @@ _INPUT_LABELS = {"data input", "metadata input"}
 _EDGE_ROLE = {"data input": "data_input", "metadata input": "metadata_input"}
 _OUTPUT_LABEL = "data output"
 _BUCKETS = (
+    "files",
     "c2m2_files",
     "activities",
     "gene_sets",
     "used_edges",
     "was_generated_by_edges",
 )
-DAPPER_SCHEMA_REVISION = "57331c2877b223a8dd691266c877e173049d65f3"
-_CLASS_BY_BUCKET = {"c2m2_files": "C2M2File", "activities": "Activity", "gene_sets": "GeneSet"}
+DAPPER_RELEASE = "0.2.0-a0"
+DAPPER_SCHEMA_REVISION = "af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968"
+_CLASS_BY_BUCKET = {
+    "files": "File",
+    "c2m2_files": "C2M2File",
+    "activities": "Activity",
+    "gene_sets": "GeneSet",
+}
 _HASHABLE_SLOTS = {
-    "C2M2File": ("c2m2_uuid", "dcc_url", "description", "drc_url", "filename", "local_id", "md5", "name", "persistent_id", "sha256", "size_in_bytes"),
+    "File": ("description", "filename", "md5", "mime_type", "name", "sha256", "size_in_bytes"),
+    "C2M2File": ("c2m2_uuid", "dcc_url", "description", "drc_url", "filename", "local_id", "md5", "mime_type", "name", "persistent_id", "sha256", "size_in_bytes"),
     "Activity": ("activity_type", "code_version", "command", "container_image", "dcc_url", "description", "drc_url", "entrypoint", "has_agentic_workspace", "has_lineage_step", "name", "observed_command", "repo_url", "script_url", "software_name", "software_version"),
     "GeneSet": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
+}
+_RELATIONSHIP_SLOTS = {
+    "Activity": {"has_agentic_workspace", "has_lineage_step"},
+    "GeneSet": {
+        "funded_by",
+        "has_contributor",
+        "has_creator",
+        "has_license",
+        "has_recommended_citation",
+        "is_described_by",
+        "members",
+        "was_attributed_to",
+        "was_derived_from",
+        "was_generated_by",
+    },
 }
 _SELF = URIRef("urn:dapper:self")
 _CLASS_PREDICATE = URIRef("urn:dapper:class")
@@ -53,15 +77,18 @@ def _dapper_digest(value: Any) -> str | None:
     return digest if dot and digest else None
 
 
-def _replace_self(value: Any, identifier: str | None) -> Any:
+def _replace_self(value: Any, identifier: str | None, *, substring: bool) -> Any:
+    """Apply DAPPER 0.2.0-a0's slot-aware self-reference rule."""
     if not identifier:
         return value
     if isinstance(value, str):
-        return value.replace(identifier, _SELF_REFERENCE)
+        return value.replace(identifier, _SELF_REFERENCE) if substring else (
+            _SELF_REFERENCE if value == identifier else value
+        )
     if isinstance(value, list):
-        return [_replace_self(item, identifier) for item in value]
+        return [_replace_self(item, identifier, substring=substring) for item in value]
     if isinstance(value, dict):
-        return {key: _replace_self(item, identifier) for key, item in value.items()}
+        return {key: _replace_self(item, identifier, substring=substring) for key, item in value.items()}
     return value
 
 
@@ -79,7 +106,16 @@ def _compute_id(node: dict[str, Any], class_name: str, identifier: str | None) -
     graph = Graph()
     graph.add((_SELF, _CLASS_PREDICATE, Literal(class_name)))
     for slot in _HASHABLE_SLOTS[class_name]:
-        value = _replace_self(node.get(slot), identifier)
+        raw_value = node.get(slot)
+        if slot in _RELATIONSHIP_SLOTS.get(class_name, set()) or isinstance(raw_value, (list, dict)):
+            value = _replace_self(raw_value, identifier, substring=False)
+        elif isinstance(raw_value, str) and (" " in raw_value or "\n" in raw_value):
+            value = _replace_self(raw_value, identifier, substring=True)
+        else:
+            # DAPPER 0.2.0-a0 deliberately leaves literal scalars alone. A
+            # scalar external identifier must not be mistaken for a reference
+            # merely because it equals the node's pre-mint identifier.
+            value = raw_value
         if value is None:
             continue
         if isinstance(value, list):
@@ -94,26 +130,30 @@ def _compute_id(node: dict[str, Any], class_name: str, identifier: str | None) -
     return f"dapper:{class_name}.{digest}"
 
 
-def _rewrite(value: Any, identifiers: dict[str, str]) -> Any:
+def _rewrite_substrings(value: Any, identifiers: dict[str, str]) -> Any:
     if isinstance(value, str):
         for old, new in sorted(identifiers.items(), key=lambda item: len(item[0]), reverse=True):
             value = value.replace(old, new)
         return value
     if isinstance(value, list):
-        return [_rewrite(item, identifiers) for item in value]
+        return [_rewrite_substrings(item, identifiers) for item in value]
     if isinstance(value, dict):
-        return {key: _rewrite(item, identifiers) for key, item in value.items()}
+        return {key: _rewrite_substrings(item, identifiers) for key, item in value.items()}
     return value
 
 
-def _rewrite_node(node: dict[str, Any], identifiers: dict[str, str]) -> dict[str, Any]:
-    """Mirror DAPPER's rewrite rule for the literal-only emitted node fields."""
+def _rewrite_node(
+    node: dict[str, Any], class_name: str, identifiers: dict[str, str]
+) -> dict[str, Any]:
+    """Mirror DAPPER 0.2.0-a0's slot-aware rewrite rule."""
     rewritten: dict[str, Any] = {}
     for key, value in node.items():
         if key == "id":
             rewritten[key] = identifiers.get(value, value)
+        elif key in _RELATIONSHIP_SLOTS.get(class_name, set()):
+            rewritten[key] = _rewrite_exact(value, identifiers)
         elif isinstance(value, str) and (" " in value or "\n" in value):
-            rewritten[key] = _rewrite(value, identifiers)
+            rewritten[key] = _rewrite_substrings(value, identifiers)
         elif isinstance(value, (list, dict)):
             # DIG's emitted DAPPER node slots are literals, not relationships;
             # list/dict members therefore use exact rather than substring rewrites.
@@ -142,9 +182,14 @@ def _mint_dapper_ids(document: dict[str, list[dict[str, Any]]]) -> None:
             if isinstance(old_id, str):
                 identifiers[old_id] = _compute_id(node, class_name, old_id)
     for bucket in _CLASS_BY_BUCKET:
-        document[bucket] = [_rewrite_node(node, identifiers) for node in document.get(bucket, [])]
+        class_name = _CLASS_BY_BUCKET[bucket]
+        document[bucket] = [
+            _rewrite_node(node, class_name, identifiers) for node in document.get(bucket, [])
+        ]
     for bucket in ("used_edges", "was_generated_by_edges"):
-        document[bucket] = [_rewrite(edge, identifiers) for edge in document.get(bucket, [])]
+        # Edge fields carry whole identifiers. DAPPER 0.2.0-a0 prohibits
+        # context-free substring replacement here.
+        document[bucket] = [_rewrite_exact(edge, identifiers) for edge in document.get(bucket, [])]
 
 
 def _clean(payload: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +208,7 @@ def _sha256_by_local_id(metadata: dict[str, Any]) -> dict[str, str]:
     return checksums
 
 
-def _file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
+def _c2m2_file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
     c2m2 = node.get("c2m2_properties", {}) or {}
     local_id = c2m2.get("local_id")
     return _clean(
@@ -180,6 +225,27 @@ def _file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
             "size_in_bytes": c2m2.get("size_in_bytes"),
             "dcc_url": node.get("dcc_url"),
             "drc_url": node.get("drc_url"),
+        }
+    )
+
+
+def _file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
+    """Map a DIG file node without C2M2 properties to DAPPER's generic File."""
+    location = node.get("location") or node.get("path") or node.get("local_path")
+    return _clean(
+        {
+            "id": node.get("id"),
+            "name": node.get("name"),
+            "description": node.get("description"),
+            "filename": node.get("filename"),
+            "md5": node.get("md5"),
+            "sha256": node.get("sha256") or checksums.get(str(location)),
+            "size_in_bytes": node.get("size_in_bytes") or node.get("size_bytes"),
+            "mime_type": node.get("mime_type"),
+            # Location and DRS registration are intentionally not identity
+            # bearing in DAPPER 0.2.0-a0, but remain useful retrieval metadata.
+            "location": location,
+            "drs_representation": node.get("drs_representation"),
         }
     )
 
@@ -241,7 +307,10 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
             continue
         match node.get("type"):
             case "File":
-                document["c2m2_files"].append(_file(node, checksums))
+                if node.get("c2m2_properties"):
+                    document["c2m2_files"].append(_c2m2_file(node, checksums))
+                else:
+                    document["files"].append(_file(node, checksums))
             case "AnalysisType":
                 document["activities"].append(_activity(node))
             case "GeneSet":
