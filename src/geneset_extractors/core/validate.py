@@ -187,4 +187,17 @@ def validate_output_dir(out_dir: str | Path, schema_path: str | Path) -> dict[st
     if geneset.exists() and meta.exists():
         _validate_single_output_dir(out, schema)
         return {"mode": "single", "n_groups": 1}
+    if meta.exists() and (out / "genesets.gmt").exists():
+        payload = json.loads(meta.read_text(encoding="utf-8"))
+        if isinstance(payload.get("external_import"), dict):
+            validate_gmt(out / "genesets.gmt")
+            validate_metadata_schema(meta, schema)
+            provenance = out / "geneset.provenance.legacy.json"
+            if not provenance.exists():
+                raise FileNotFoundError("external imported output is missing geneset.provenance.legacy.json")
+            validate_provenance_schema(provenance, schema.with_name("geneset_provenance.schema.json"))
+            dapper_path = (payload.get("provenance") or {}).get("dapper_path")
+            if not dapper_path or not (out / str(dapper_path)).exists():
+                raise FileNotFoundError("external imported output is missing declared DAPPER provenance")
+            return {"mode": "external_precomputed_import", "n_groups": 1}
     return _validate_grouped_output_dir(out, schema)

@@ -1665,6 +1665,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_submission_validate = submission_sub.add_parser("validate", help="Validate registration, importability, and any declared smoke test.")
     p_submission_validate.add_argument("identifier")
 
+    p_external_import = sub.add_parser("external-import", help="Import an externally generated GMT unchanged and write metadata/provenance.")
+    p_external_import.add_argument("--gmt", required=True)
+    p_external_import.add_argument("--out-dir", required=True)
+    p_external_import.add_argument("--source-record", required=True, help="JSON record describing the shared external source release.")
+    p_external_import.add_argument("--library-id", required=True)
+    p_external_import.add_argument("--model-id", required=True)
+    p_external_import.add_argument("--display-name", required=True)
+    p_external_import.add_argument("--description", required=True)
+    p_external_import.add_argument("--expected-sha256", help="Expected source GMT SHA-256 from the wrapper model manifest.")
+
     p_provenance = sub.add_parser("provenance")
     prov_sub = p_provenance.add_subparsers(dest="provenance_command", required=True)
     p_prov_build = prov_sub.add_parser("build")
@@ -2327,6 +2337,17 @@ def main(argv: list[str] | None = None) -> int:
                 result = validate_contract(args.identifier)
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 0 if result["ok"] else 1
+
+        if args.command == "external-import":
+            from geneset_extractors.external_import import import_external_gmt
+
+            result = import_external_gmt(
+                gmt=Path(args.gmt), out_dir=Path(args.out_dir), source_record=Path(args.source_record),
+                library_id=args.library_id, model_id=args.model_id,
+                display_name=args.display_name, description=args.description, expected_sha256=args.expected_sha256,
+            )
+            print(json.dumps({"status": "ok", **result}, sort_keys=True))
+            return 0
 
         if args.command == "provenance":
             if args.provenance_command == "build":
