@@ -58,10 +58,16 @@ def test_metadata_write_emits_renamed_legacy_and_dapper_provenance(tmp_path: Pat
         "focus_node_id": meta_payload["gene_set"]["id"],
     }
     dapper_payload = yaml.safe_load(dapper_path.read_text(encoding="utf-8"))
-    assert {"c2m2_files", "activities", "gene_sets", "used_edges", "was_generated_by_edges"}.issubset(dapper_payload)
+    assert {
+        "c2m2_files",
+        "activities",
+        "gene_set_collections",
+        "used_edges",
+        "was_generated_by_edges",
+    }.issubset(dapper_payload)
     all_node_ids = {
         node["id"]
-        for bucket in ("c2m2_files", "activities", "gene_sets")
+        for bucket in ("c2m2_files", "activities", "gene_set_collections")
         for node in dapper_payload[bucket]
     }
     assert all(node_id.startswith("dapper:") for node_id in all_node_ids)
@@ -102,8 +108,8 @@ def test_dapper_0_2_routes_non_c2m2_file_nodes_to_generic_file_bucket():
     }
     payload = build_dapper_provenance(legacy_payload, {})
 
-    assert DAPPER_RELEASE == "0.2.0-a0"
-    assert DAPPER_SCHEMA_REVISION == "af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968"
+    assert DAPPER_RELEASE == "0.2.0-a1"
+    assert DAPPER_SCHEMA_REVISION == "c0cfce549baded068aa9e82f81a1400025614b51"
     assert "files" in payload
     assert "c2m2_files" not in payload
     file_node = payload["files"][0]
@@ -134,3 +140,44 @@ def test_dapper_0_2_file_identity_ignores_location_and_preserves_literal_scalars
     first["id"] = first_id
     assert _compute_id(first, "File", first["id"]) == first_id
     assert _compute_id(second, "File", second["id"]) == first_id
+
+
+def test_dapper_0_2_a1_links_collection_to_its_unique_generated_gmt():
+    """A library becomes a collection and references its unambiguous GMT file."""
+    legacy_payload = {
+        "toy": {
+            "nodes": [
+                {
+                    "id": "source",
+                    "type": "File",
+                    "name": "source.tsv",
+                    "c2m2_properties": {"filename": "source.tsv", "local_id": "source.tsv"},
+                },
+                {
+                    "id": "gmt",
+                    "type": "File",
+                    "name": "genesets.gmt",
+                    "c2m2_properties": {"filename": "genesets.gmt", "local_id": "genesets.gmt"},
+                },
+                {"id": "operation", "type": "AnalysisType", "name": "extract"},
+                {"id": "library", "type": "GeneSet", "name": "toy library"},
+            ],
+            "edges": [
+                {"source": "source", "target": "operation", "label": "data input"},
+                {"source": "operation", "target": "gmt", "label": "data output"},
+                {"source": "operation", "target": "library", "label": "data output"},
+            ],
+        }
+    }
+    payload = build_dapper_provenance(
+        legacy_payload,
+        {"summary": {"n_sets_emitted": 2, "n_genes": 3}},
+    )
+
+    assert "gene_sets" not in payload
+    collection = payload["gene_set_collections"][0]
+    gmt = next(node for node in payload["c2m2_files"] if node["filename"] == "genesets.gmt")
+    assert collection["id"].startswith("dapper:GeneSetCollection.")
+    assert collection["member_type"] == "gene_set"
+    assert collection["has_gmt_file"] == gmt["id"]
+    assert _compute_id(collection, "GeneSetCollection", collection["id"]) == collection["id"]

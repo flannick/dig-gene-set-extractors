@@ -3,8 +3,8 @@
 The structural conversion is adapted from DAPPER's
 ``schema/converter/geneset_to_dapper.py``. The identifier implementation is
 the DAPPER-ID-1 algorithm for the DAPPER node classes emitted here, pinned to
-DAPPER release ``0.2.0-a0`` at revision
-``af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968``.
+DAPPER release ``0.2.0-a1`` at revision
+``c0cfce549baded068aa9e82f81a1400025614b51``.
 """
 from __future__ import annotations
 
@@ -27,22 +27,25 @@ _BUCKETS = (
     "c2m2_files",
     "activities",
     "gene_sets",
+    "gene_set_collections",
     "used_edges",
     "was_generated_by_edges",
 )
-DAPPER_RELEASE = "0.2.0-a0"
-DAPPER_SCHEMA_REVISION = "af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968"
+DAPPER_RELEASE = "0.2.0-a1"
+DAPPER_SCHEMA_REVISION = "c0cfce549baded068aa9e82f81a1400025614b51"
 _CLASS_BY_BUCKET = {
     "files": "File",
     "c2m2_files": "C2M2File",
     "activities": "Activity",
     "gene_sets": "GeneSet",
+    "gene_set_collections": "GeneSetCollection",
 }
 _HASHABLE_SLOTS = {
     "File": ("description", "filename", "md5", "mime_type", "name", "sha256", "size_in_bytes"),
     "C2M2File": ("c2m2_uuid", "dcc_url", "description", "drc_url", "filename", "local_id", "md5", "mime_type", "name", "persistent_id", "sha256", "size_in_bytes"),
     "Activity": ("activity_type", "code_version", "command", "container_image", "dcc_url", "description", "drc_url", "entrypoint", "has_agentic_workspace", "has_lineage_step", "name", "observed_command", "repo_url", "script_url", "software_name", "software_version"),
     "GeneSet": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
+    "GeneSetCollection": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_gmt_file", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
 }
 _RELATIONSHIP_SLOTS = {
     "Activity": {"has_agentic_workspace", "has_lineage_step"},
@@ -50,6 +53,19 @@ _RELATIONSHIP_SLOTS = {
         "funded_by",
         "has_contributor",
         "has_creator",
+        "has_license",
+        "has_recommended_citation",
+        "is_described_by",
+        "members",
+        "was_attributed_to",
+        "was_derived_from",
+        "was_generated_by",
+    },
+    "GeneSetCollection": {
+        "funded_by",
+        "has_contributor",
+        "has_creator",
+        "has_gmt_file",
         "has_license",
         "has_recommended_citation",
         "is_described_by",
@@ -78,7 +94,7 @@ def _dapper_digest(value: Any) -> str | None:
 
 
 def _replace_self(value: Any, identifier: str | None, *, substring: bool) -> Any:
-    """Apply DAPPER 0.2.0-a0's slot-aware self-reference rule."""
+    """Apply DAPPER 0.2.0-a1's slot-aware self-reference rule."""
     if not identifier:
         return value
     if isinstance(value, str):
@@ -112,7 +128,7 @@ def _compute_id(node: dict[str, Any], class_name: str, identifier: str | None) -
         elif isinstance(raw_value, str) and (" " in raw_value or "\n" in raw_value):
             value = _replace_self(raw_value, identifier, substring=True)
         else:
-            # DAPPER 0.2.0-a0 deliberately leaves literal scalars alone. A
+            # DAPPER 0.2.0-a1 deliberately leaves literal scalars alone. A
             # scalar external identifier must not be mistaken for a reference
             # merely because it equals the node's pre-mint identifier.
             value = raw_value
@@ -145,7 +161,7 @@ def _rewrite_substrings(value: Any, identifiers: dict[str, str]) -> Any:
 def _rewrite_node(
     node: dict[str, Any], class_name: str, identifiers: dict[str, str]
 ) -> dict[str, Any]:
-    """Mirror DAPPER 0.2.0-a0's slot-aware rewrite rule."""
+    """Mirror DAPPER 0.2.0-a1's slot-aware rewrite rule."""
     rewritten: dict[str, Any] = {}
     for key, value in node.items():
         if key == "id":
@@ -173,21 +189,59 @@ def _rewrite_exact(value: Any, identifiers: dict[str, str]) -> Any:
     return value
 
 
+def _local_relationship_ids(value: Any, known_ids: set[str]) -> set[str]:
+    """Return local DAPPER-node references carried by a relationship slot."""
+    if isinstance(value, str):
+        return {value} if value in known_ids else set()
+    if isinstance(value, list):
+        return set().union(*(_local_relationship_ids(item, known_ids) for item in value))
+    if isinstance(value, dict):
+        return set().union(*(_local_relationship_ids(item, known_ids) for item in value.values()))
+    return set()
+
+
 def _mint_dapper_ids(document: dict[str, list[dict[str, Any]]]) -> None:
-    """Replace DIG node IDs and every edge reference with DAPPER-ID-1 IDs."""
-    identifiers: dict[str, str] = {}
+    """Replace DIG node IDs and every edge reference with DAPPER-ID-1 IDs.
+
+    DAPPER 0.2.0-a1 makes a collection's ``has_gmt_file`` identity-bearing.
+    Mint dependency nodes first, so the collection digests the minted file ID,
+    exactly as DAPPER-ID-1 specifies.
+    """
+    nodes: dict[str, tuple[str, dict[str, Any]]] = {}
     for bucket, class_name in _CLASS_BY_BUCKET.items():
         for node in document.get(bucket, []):
             old_id = node.get("id")
             if isinstance(old_id, str):
-                identifiers[old_id] = _compute_id(node, class_name, old_id)
+                nodes[old_id] = (class_name, node)
+
+    identifiers: dict[str, str] = {}
+    state: dict[str, int] = {}
+
+    def mint(old_id: str, trail: tuple[str, ...]) -> None:
+        if state.get(old_id) == 2:
+            return
+        if state.get(old_id) == 1:
+            cycle = " -> ".join(trail[trail.index(old_id):] + (old_id,))
+            raise ValueError(f"cycle in DAPPER hashable references: {cycle}")
+        state[old_id] = 1
+        class_name, node = nodes[old_id]
+        for slot in _RELATIONSHIP_SLOTS.get(class_name, set()):
+            for dependency in sorted(_local_relationship_ids(node.get(slot), set(nodes))):
+                if dependency != old_id:
+                    mint(dependency, trail + (old_id,))
+        resolved = _rewrite_node(node, class_name, identifiers)
+        identifiers[old_id] = _compute_id(resolved, class_name, old_id)
+        state[old_id] = 2
+
+    for old_id in sorted(nodes):
+        mint(old_id, ())
     for bucket in _CLASS_BY_BUCKET:
         class_name = _CLASS_BY_BUCKET[bucket]
         document[bucket] = [
             _rewrite_node(node, class_name, identifiers) for node in document.get(bucket, [])
         ]
     for bucket in ("used_edges", "was_generated_by_edges"):
-        # Edge fields carry whole identifiers. DAPPER 0.2.0-a0 prohibits
+        # Edge fields carry whole identifiers. DAPPER 0.2.0-a1 prohibits
         # context-free substring replacement here.
         document[bucket] = [_rewrite_exact(edge, identifiers) for edge in document.get(bucket, [])]
 
@@ -243,7 +297,7 @@ def _file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
             "size_in_bytes": node.get("size_in_bytes") or node.get("size_bytes"),
             "mime_type": node.get("mime_type"),
             # Location and DRS registration are intentionally not identity
-            # bearing in DAPPER 0.2.0-a0, but remain useful retrieval metadata.
+            # bearing in DAPPER 0.2.0-a1, but remain useful retrieval metadata.
             "location": location,
             "drs_representation": node.get("drs_representation"),
         }
@@ -275,27 +329,71 @@ def _activity(node: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _is_gene_set_collection(node: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    summary = metadata.get("summary", {}) or {}
+    return (
+        node.get("type") == "GeneSetCollection"
+        or summary.get("n_sets_emitted") is not None
+        or node.get("n_sets") is not None
+    )
+
+
 def _gene_set(node: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     gene_set = metadata.get("gene_set", {}) or {}
     summary = metadata.get("summary", {}) or {}
     parameters = (metadata.get("converter", {}) or {}).get("parameters", {}) or {}
+    is_collection = _is_gene_set_collection(node, metadata)
     return _clean(
         {
             "id": node.get("id"),
             "name": node.get("name"),
             "description": node.get("description") or gene_set.get("description"),
-            "member_type": "gene",
+            "member_type": "gene_set" if is_collection else "gene",
             "assay": gene_set.get("assay"),
             "data_type": gene_set.get("data_type"),
             "organism": gene_set.get("organism"),
             "genome_build": gene_set.get("genome_build"),
-            "n_genes": gene_set.get("n_genes") or summary.get("n_genes"),
-            "n_sets": summary.get("n_sets_emitted"),
+            "n_genes": (
+                gene_set.get("n_genes")
+                if gene_set.get("n_genes") is not None
+                else summary.get("n_genes")
+            ),
+            "n_sets": summary.get("n_sets_emitted", node.get("n_sets")),
             "term_prefix": parameters.get("term_prefix"),
             "dcc_url": node.get("dcc_url"),
             "drc_url": node.get("drc_url"),
         }
     )
+
+
+def _link_collection_to_unique_gmt(document: dict[str, list[dict[str, Any]]]) -> None:
+    """Link a library to a uniquely identified GMT from its own activity.
+
+    A DAPPER collection may name a physical GMT via ``has_gmt_file``. We only
+    infer that relationship when exactly one generated GMT shares the
+    collection's producing activity; multiple candidates remain intentionally
+    unmapped rather than guessing a filename.
+    """
+    generated = document["was_generated_by_edges"]
+    gmt_ids = {
+        node["id"]
+        for bucket in ("files", "c2m2_files")
+        for node in document[bucket]
+        if str(node.get("filename", "")).lower().endswith(".gmt")
+    }
+    for collection in document["gene_set_collections"]:
+        producers = {
+            edge["object"]
+            for edge in generated
+            if edge.get("subject") == collection.get("id")
+        }
+        candidates = {
+            edge["subject"]
+            for edge in generated
+            if edge.get("object") in producers and edge.get("subject") in gmt_ids
+        }
+        if len(candidates) == 1:
+            collection["has_gmt_file"] = next(iter(candidates))
 
 
 def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -313,8 +411,13 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
                     document["files"].append(_file(node, checksums))
             case "AnalysisType":
                 document["activities"].append(_activity(node))
-            case "GeneSet":
-                document["gene_sets"].append(_gene_set(node, metadata))
+            case "GeneSet" | "GeneSetCollection":
+                bucket = (
+                    "gene_set_collections"
+                    if _is_gene_set_collection(node, metadata)
+                    else "gene_sets"
+                )
+                document[bucket].append(_gene_set(node, metadata))
 
     for edge in graph.get("edges", []):
         if not isinstance(edge, dict):
@@ -341,6 +444,7 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
                     }
                 )
             )
+    _link_collection_to_unique_gmt(document)
     _mint_dapper_ids(document)
     return {key: value for key, value in document.items() if value}
 
