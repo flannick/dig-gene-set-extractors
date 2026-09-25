@@ -181,3 +181,88 @@ def test_dapper_0_2_a1_links_collection_to_its_unique_generated_gmt():
     assert collection["member_type"] == "gene_set"
     assert collection["has_gmt_file"] == gmt["id"]
     assert _compute_id(collection, "GeneSetCollection", collection["id"]) == collection["id"]
+
+
+def test_dapper_row_export_creates_companion_gmt_and_complete_collection(tmp_path: Path):
+    """The opt-in export models each original GMT row without changing it."""
+    source = tmp_path / "source.tsv"
+    source.write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    geneset = tmp_path / "geneset.tsv"
+    geneset.write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    original_gmt = tmp_path / "genesets.gmt"
+    original_bytes = b"original_one\tReadable one\tGENE1\tGENE2\r\noriginal_two\tReadable two\tGENE2\tGENE3\r\n"
+    original_gmt.write_bytes(original_bytes)
+    metadata = make_metadata(
+        converter_name="toy_converter",
+        parameters={"term_prefix": "Toy"},
+        data_type="expression",
+        assay="bulk_rna",
+        organism="human",
+        genome_build="hg38",
+        files=[input_file_record(source, "source_tsv")],
+        gene_annotation={"mode": "none", "source": "toy", "gene_id_field": "symbol"},
+        weights={"weight_type": "score", "normalization": {}, "aggregation": "none"},
+        summary={
+            "n_input_features": 1,
+            "n_genes": 3,
+            "n_features_assigned": 1,
+            "fraction_features_assigned": 1.0,
+            "n_sets_emitted": 2,
+        },
+        output_files=[{"path": "genesets.gmt", "role": "gmt_library"}],
+        dapper={
+            "gene_member_prefix": "HGNC.SYMBOL",
+            "gene_member_prefix_uri": "https://identifiers.org/hgnc.symbol/",
+            "row_display_names": {
+                "original_one": "Human-readable one",
+                "original_two": "Human-readable two",
+            },
+        },
+    )
+
+    write_metadata(tmp_path / "geneset.meta.json", metadata)
+
+    assert original_gmt.read_bytes() == original_bytes
+    companion = tmp_path / "genesets.dapper-ids.gmt"
+    assert companion.exists()
+    original_lines = original_bytes.splitlines(keepends=True)
+    companion_lines = companion.read_bytes().splitlines(keepends=True)
+    assert len(companion_lines) == len(original_lines) == 2
+    assert all(
+        companion_line[companion_line.find(b"\t") :] == original_line[original_line.find(b"\t") :]
+        for companion_line, original_line in zip(companion_lines, original_lines, strict=True)
+    )
+
+    payload = yaml.safe_load((tmp_path / DAPPER_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    collection = payload["gene_set_collections"][0]
+    rows = payload["gene_sets"]
+    assert payload["prefixes"] == {"HGNC.SYMBOL": "https://identifiers.org/hgnc.symbol/"}
+    assert collection["n_sets"] == collection["n_members"] == 2
+    assert collection["n_genes"] == 3
+    assert collection["members"] == [row["id"] for row in rows]
+    assert _compute_id(collection, "GeneSetCollection", collection["id"]) == collection["id"]
+    assert rows[0]["name"] == "Human-readable one"
+    assert rows[0]["alternate_identifier"] == ["original_one"]
+    assert rows[0]["members"] == ["HGNC.SYMBOL:GENE1", "HGNC.SYMBOL:GENE2"]
+    assert rows[0]["n_genes"] == 2
+    companion_file = next(node for node in payload["files"] if node["filename"] == companion.name)
+    assert collection["has_gmt_file"] == companion_file["id"]
+    source_file = next(node for node in payload["c2m2_files"] if node["filename"] == "source.tsv")
+    assert source_file["location"] == str(source)
+    assert "local_id" not in source_file
+    assert "dcc_url" not in source_file
+    assert "drc_url" not in source_file
+    for row, line in zip(rows, companion_lines, strict=True):
+        assert row["gmt_entry"] == row["id"] == line.split(b"\t", 1)[0].decode("utf-8")
+        assert row["in_gene_set_collection"] == [collection["id"]]
+        assert row["in_gmt_file"] == companion_file["id"]
+        assert row["was_generated_by"].startswith("dapper:Activity.")
+    export_activity = next(
+        node
+        for node in payload["activities"]
+        if node["name"] == "Export GMT with DAPPER GeneSet identifiers"
+    )
+    assert any(
+        edge["subject"] == companion_file["id"] and edge["object"] == export_activity["id"]
+        for edge in payload["was_generated_by_edges"]
+    )

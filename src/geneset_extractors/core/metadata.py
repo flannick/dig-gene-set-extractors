@@ -446,6 +446,7 @@ def make_metadata(
     upstream_provenance_graph_path: str | None = None,
     provenance_mirror_local_prefix: str | None = None,
     provenance_mirror_remote_prefix: str | None = None,
+    dapper: dict[str, object] | None = None,
 ) -> dict[str, object]:
     file_hashes = [f["sha256"] for f in files]
     geneset_id = build_geneset_id(converter_name, file_hashes, parameters)
@@ -522,6 +523,10 @@ def make_metadata(
     payload["output"] = {"files": output_files_payload}
     if gmt is not None:
         payload["gmt"] = gmt
+    if dapper is not None:
+        # DAPPER's row-level GMT export is deliberately opt-in: converters
+        # must declare the gene namespace rather than have DIG guess one.
+        payload["dapper"] = dapper
     payload["_provenance_overlay_json"] = provenance_overlay_json
     payload["_upstream_provenance_graph_path"] = upstream_provenance_graph_path
     payload["_provenance_mirror_local_prefix"] = provenance_mirror_local_prefix
