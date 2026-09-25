@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 from rdflib import Graph, Literal, URIRef
@@ -44,7 +45,7 @@ _HASHABLE_SLOTS = {
     "File": ("description", "filename", "md5", "mime_type", "name", "sha256", "size_in_bytes"),
     "C2M2File": ("c2m2_uuid", "dcc_url", "description", "drc_url", "filename", "local_id", "md5", "mime_type", "name", "persistent_id", "sha256", "size_in_bytes"),
     "Activity": ("activity_type", "code_version", "command", "container_image", "dcc_url", "description", "drc_url", "entrypoint", "has_agentic_workspace", "has_lineage_step", "name", "observed_command", "repo_url", "script_url", "software_name", "software_version"),
-    "GeneSet": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
+    "GeneSet": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_gmt_file", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
     "GeneSetCollection": ("access_level", "alternate_identifier", "assay", "controlled_access", "data_type", "dcc_url", "description", "drc_url", "funded_by", "genome_build", "has_contributor", "has_creator", "has_gmt_file", "has_license", "has_recommended_citation", "is_described_by", "member_type", "members", "n_genes", "n_members", "n_sets", "name", "organism", "term_prefix", "was_attributed_to", "was_derived_from", "was_generated_by"),
 }
 _RELATIONSHIP_SLOTS = {
@@ -53,10 +54,13 @@ _RELATIONSHIP_SLOTS = {
         "funded_by",
         "has_contributor",
         "has_creator",
+        "has_gmt_file",
         "has_license",
         "has_recommended_citation",
         "is_described_by",
         "members",
+        "in_gene_set_collection",
+        "in_gmt_file",
         "was_attributed_to",
         "was_derived_from",
         "was_generated_by",
@@ -74,6 +78,14 @@ _RELATIONSHIP_SLOTS = {
         "was_derived_from",
         "was_generated_by",
     },
+}
+# Some DAPPER references are deliberately unhashable representation or inverse
+# links. They must be rewritten, but must not become minting dependencies: a
+# row's inverse collection link would otherwise form a circular hash with the
+# collection's identity-bearing ``members`` list.
+_HASHABLE_RELATIONSHIP_SLOTS = {
+    class_name: slots - {"in_gene_set_collection", "in_gmt_file"}
+    for class_name, slots in _RELATIONSHIP_SLOTS.items()
 }
 _SELF = URIRef("urn:dapper:self")
 _CLASS_PREDICATE = URIRef("urn:dapper:class")
@@ -225,7 +237,7 @@ def _mint_dapper_ids(document: dict[str, list[dict[str, Any]]]) -> None:
             raise ValueError(f"cycle in DAPPER hashable references: {cycle}")
         state[old_id] = 1
         class_name, node = nodes[old_id]
-        for slot in _RELATIONSHIP_SLOTS.get(class_name, set()):
+        for slot in _HASHABLE_RELATIONSHIP_SLOTS.get(class_name, set()):
             for dependency in sorted(_local_relationship_ids(node.get(slot), set(nodes))):
                 if dependency != old_id:
                     mint(dependency, trail + (old_id,))
@@ -262,9 +274,24 @@ def _sha256_by_local_id(metadata: dict[str, Any]) -> dict[str, str]:
     return checksums
 
 
+def _dapper_uri(value: object) -> str | None:
+    """Keep only absolute URI values in DAPPER URI/CURIE slots.
+
+    Legacy DIG graphs historically used local filesystem paths in C2M2's
+    ``local_id``/``dcc_url``/``drc_url`` fields. DAPPER 0.2 treats those as
+    identifiers, not locations.  Preserve the path in ``location`` instead
+    of exporting an invalid URI-like value.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = value.strip()
+    return candidate if urlparse(candidate).scheme else None
+
+
 def _c2m2_file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
     c2m2 = node.get("c2m2_properties", {}) or {}
-    local_id = c2m2.get("local_id")
+    raw_local_id = c2m2.get("local_id")
+    location = node.get("location") or node.get("path") or node.get("local_path") or raw_local_id
     return _clean(
         {
             "id": node.get("id"),
@@ -272,13 +299,14 @@ def _c2m2_file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any
             "description": node.get("description"),
             "filename": c2m2.get("filename"),
             "persistent_id": c2m2.get("persistent_id"),
-            "local_id": local_id,
+            "local_id": _dapper_uri(raw_local_id),
             "c2m2_uuid": c2m2.get("_uuid"),
             "md5": c2m2.get("md5"),
-            "sha256": checksums.get(str(local_id)),
+            "sha256": checksums.get(str(raw_local_id)),
             "size_in_bytes": c2m2.get("size_in_bytes"),
-            "dcc_url": node.get("dcc_url"),
-            "drc_url": node.get("drc_url"),
+            "dcc_url": _dapper_uri(node.get("dcc_url")),
+            "drc_url": _dapper_uri(node.get("drc_url")),
+            "location": location,
         }
     )
 
@@ -320,8 +348,8 @@ def _activity(node: dict[str, Any]) -> dict[str, Any]:
             "code_version": analysis.get("version"),
             "entrypoint": environment.get("entrypoint"),
             "container_image": environment.get("container_image"),
-            "dcc_url": node.get("dcc_url"),
-            "drc_url": node.get("drc_url"),
+            "dcc_url": _dapper_uri(node.get("dcc_url")),
+            "drc_url": _dapper_uri(node.get("drc_url")),
         }
     )
     if c2m2.get("synonyms"):
@@ -449,16 +477,227 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
     return {key: value for key, value in document.items() if value}
 
 
+def _dapper_export_config(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """Return explicit row-export configuration, never guessing gene namespaces."""
+    config = metadata.get("dapper")
+    if not isinstance(config, dict):
+        return None
+    prefix = config.get("gene_member_prefix")
+    prefix_uri = config.get("gene_member_prefix_uri")
+    if not isinstance(prefix, str) or not prefix.strip():
+        return None
+    if not isinstance(prefix_uri, str) or not prefix_uri.strip():
+        raise ValueError(
+            "DAPPER row export requires dapper.gene_member_prefix_uri for "
+            "the declared dapper.gene_member_prefix"
+        )
+    return config
+
+
+def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | None:
+    """Resolve the single declared GMT used for an opt-in DAPPER row export."""
+    candidates: list[Path] = []
+    for record in ((metadata.get("output") or {}).get("files") or []):
+        if not isinstance(record, dict):
+            continue
+        raw_path = record.get("path")
+        if not isinstance(raw_path, str) or not raw_path.lower().endswith(".gmt"):
+            continue
+        path = Path(raw_path)
+        path = path if path.is_absolute() else output_dir / path
+        if path.exists() and path.is_file():
+            candidates.append(path)
+    unique = sorted({path.resolve() for path in candidates})
+    if not unique:
+        return None
+    if len(unique) != 1:
+        raise ValueError(
+            "DAPPER row export requires exactly one declared existing GMT output; "
+            f"found {len(unique)}"
+        )
+    return unique[0]
+
+
+def _parse_gmt_rows(path: Path) -> list[tuple[str, list[str], bytes]]:
+    """Parse a GMT while retaining every byte after the first tab-delimited field."""
+    rows: list[tuple[str, list[str], bytes]] = []
+    labels: set[str] = set()
+    for line_number, raw_line in enumerate(path.read_bytes().splitlines(keepends=True), start=1):
+        body = raw_line.rstrip(b"\r\n")
+        parts = body.decode("utf-8").split("\t")
+        if len(parts) < 3 or not parts[0] or any(not token for token in parts[2:]):
+            raise ValueError(f"{path}: invalid GMT row {line_number}")
+        label = parts[0]
+        if label in labels:
+            raise ValueError(f"{path}: duplicate GMT row label {label!r}")
+        labels.add(label)
+        rows.append((label, parts[2:], raw_line))
+    if not rows:
+        raise ValueError(f"{path}: no GMT rows found")
+    return rows
+
+
+def _base64_md5(data: bytes) -> str:
+    return base64.b64encode(hashlib.md5(data).digest()).decode("ascii")
+
+
+def _dapper_gmt_path(gmt_path: Path) -> Path:
+    return gmt_path.with_name(f"{gmt_path.stem}.dapper-ids{gmt_path.suffix}")
+
+
+def _find_gmt_file_id(document: dict[str, Any], gmt_path: Path) -> str | None:
+    matches = [
+        node.get("id")
+        for bucket in ("files", "c2m2_files")
+        for node in document.get(bucket, [])
+        if node.get("filename") == gmt_path.name and isinstance(node.get("id"), str)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _add_dapper_gmt_export(
+    document: dict[str, Any], metadata: dict[str, Any], output_dir: Path
+) -> None:
+    """Add DAPPER's row-level GMT representation without altering the source GMT.
+
+    The source GMT stays the extractor's compatibility artifact. The additive
+    ``*.dapper-ids.gmt`` export replaces only its first column with each minted
+    ``GeneSet`` ID, preserving every remaining byte on each row.
+    """
+    config = _dapper_export_config(metadata)
+    if config is None:
+        return
+    gmt_path = _declared_gmt_path(metadata, output_dir)
+    if gmt_path is None:
+        return
+    collections = document.get("gene_set_collections") or []
+    if len(collections) != 1:
+        raise ValueError(
+            "DAPPER row export requires exactly one GeneSetCollection in the provenance graph"
+        )
+    source_gmt_id = _find_gmt_file_id(document, gmt_path)
+    if source_gmt_id is None:
+        raise ValueError(
+            f"DAPPER row export could not identify one provenance File for {gmt_path.name}"
+        )
+    source_rows = _parse_gmt_rows(gmt_path)
+    prefix = str(config["gene_member_prefix"]).strip()
+    row_labels = config.get("row_display_names")
+    if not isinstance(row_labels, dict):
+        raise ValueError(
+            "DAPPER row export requires dapper.row_display_names for every GMT row; "
+            "do not reuse original GMT labels as human-readable GeneSet names"
+        )
+    producer_by_collection = {
+        edge.get("object")
+        for edge in document.get("was_generated_by_edges", [])
+        if edge.get("subject") == collections[0].get("id")
+    }
+    if len(producer_by_collection) != 1:
+        raise ValueError("DAPPER row export requires one producing Activity for the collection")
+    producer_id = next(iter(producer_by_collection))
+
+    row_nodes: list[dict[str, Any]] = []
+    for index, (label, genes, _raw_line) in enumerate(source_rows, start=1):
+        display_name = row_labels.get(label)
+        if not isinstance(display_name, str) or not display_name.strip() or display_name == label:
+            raise ValueError(
+                "DAPPER row export requires a distinct non-empty readable name for "
+                f"GMT label {label!r} in dapper.row_display_names"
+            )
+        members = [gene if ":" in gene else f"{prefix}:{gene}" for gene in genes]
+        row = {
+            "id": f"urn:dig:dapper-row:{index}",
+            "name": display_name,
+            "alternate_identifier": [label],
+            "member_type": "gene",
+            "members": members,
+            "n_genes": len(set(members)),
+            "was_generated_by": producer_id,
+        }
+        row["id"] = _compute_id(row, "GeneSet", row["id"])
+        row_nodes.append(row)
+
+    export_path = _dapper_gmt_path(gmt_path)
+    rendered_lines = []
+    for row, (_label, _genes, raw_line) in zip(row_nodes, source_rows, strict=True):
+        first_tab = raw_line.find(b"\t")
+        rendered_lines.append(row["id"].encode("utf-8") + raw_line[first_tab:])
+    export_bytes = b"".join(rendered_lines)
+    export_path.write_bytes(export_bytes)
+
+    export_activity = {
+        "id": "urn:dig:dapper-gmt-export",
+        "name": "Export GMT with DAPPER GeneSet identifiers",
+        "description": (
+            "Replace original GMT first-column labels with minted DAPPER GeneSet identifiers; "
+            "preserve descriptions, gene members, row order, and line endings."
+        ),
+        "entrypoint": "geneset_extractors.core.dapper_provenance",
+    }
+    export_activity["id"] = _compute_id(export_activity, "Activity", export_activity["id"])
+    export_file = {
+        "id": "urn:dig:dapper-gmt-file",
+        "name": f"{gmt_path.stem} with DAPPER GeneSet identifiers",
+        "description": "GMT export whose first-column names are DAPPER GeneSet identifiers.",
+        "filename": export_path.name,
+        "location": export_path.name,
+        "md5": _base64_md5(export_bytes),
+        "sha256": hashlib.sha256(export_bytes).hexdigest(),
+        "size_in_bytes": len(export_bytes),
+    }
+    export_file["id"] = _compute_id(export_file, "File", export_file["id"])
+
+    old_collection = collections[0]
+    collection = dict(old_collection)
+    collection["id"] = "urn:dig:dapper-collection"
+    collection["members"] = [row["id"] for row in row_nodes]
+    collection["n_members"] = len(row_nodes)
+    collection["n_sets"] = len(row_nodes)
+    collection["n_genes"] = len({gene for row in row_nodes for gene in row["members"]})
+    collection["has_gmt_file"] = export_file["id"]
+    collection["member_type"] = "gene_set"
+    collection["id"] = _compute_id(collection, "GeneSetCollection", collection["id"])
+
+    for row in row_nodes:
+        row["in_gene_set_collection"] = [collection["id"]]
+        row["in_gmt_file"] = export_file["id"]
+        row["gmt_entry"] = row["id"]
+
+    old_collection_id = old_collection["id"]
+    document["gene_set_collections"] = [collection]
+    document.setdefault("gene_sets", []).extend(row_nodes)
+    document.setdefault("files", []).append(export_file)
+    document.setdefault("activities", []).append(export_activity)
+    for edge in document.get("was_generated_by_edges", []):
+        if edge.get("subject") == old_collection_id:
+            edge["subject"] = collection["id"]
+    document.setdefault("used_edges", []).append(
+        {"subject": export_activity["id"], "predicate": "prov:used", "object": source_gmt_id, "edge_role": "data_input"}
+    )
+    document.setdefault("was_generated_by_edges", []).append(
+        {"subject": export_file["id"], "predicate": "prov:wasGeneratedBy", "object": export_activity["id"]}
+    )
+    document["prefixes"] = {
+        str(config["gene_member_prefix"]): str(config["gene_member_prefix_uri"])
+    }
+
+
 def build_dapper_provenance(
-    legacy_payload: dict[str, Any], metadata: dict[str, Any]
-) -> dict[str, list[dict[str, Any]]]:
+    legacy_payload: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    output_dir: Path | None = None,
+) -> dict[str, Any]:
     """Convert all graphs in a legacy DIG payload into one DAPPER YAML document."""
-    document: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in _BUCKETS}
+    document: dict[str, Any] = {bucket: [] for bucket in _BUCKETS}
     for graph in legacy_payload.values():
         if not isinstance(graph, dict) or "nodes" not in graph:
             continue
         for bucket, values in _convert_graph(graph, metadata).items():
             document[bucket].extend(values)
+    if output_dir is not None:
+        _add_dapper_gmt_export(document, metadata, output_dir)
     return {key: value for key, value in document.items() if value}
 
 
@@ -469,7 +708,7 @@ def write_dapper_provenance(
     output_path = Path(path)
     output_path.write_text(
         yaml.safe_dump(
-            build_dapper_provenance(legacy_payload, metadata),
+            build_dapper_provenance(legacy_payload, metadata, output_dir=output_path.parent),
             sort_keys=False,
             default_flow_style=False,
             allow_unicode=True,
