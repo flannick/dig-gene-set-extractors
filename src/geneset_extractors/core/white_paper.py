@@ -499,12 +499,20 @@ def write_white_paper(
         raise FileNotFoundError("white-paper generation requires both provenance sidecars")
     paths: list[tuple[Path, Path]] = []
     for gmt_path in gmt_paths:
-        markdown = render_white_paper(
-            metadata=metadata,
-            gmt_path=gmt_path,
-            legacy_provenance_path=legacy_path,
-            dapper_provenance_path=dapper_path,
-        )
+        try:
+            markdown = render_white_paper(
+                metadata=metadata,
+                gmt_path=gmt_path,
+                legacy_provenance_path=legacy_path,
+                dapper_provenance_path=dapper_path,
+            )
+        except ValueError as exc:
+            # Existing converters deliberately leave an empty GMT when no
+            # candidate set meets their thresholds. That remains a valid
+            # converter result; it simply has no gene-set statistics to report.
+            if str(exc).endswith(": no GMT rows found"):
+                continue
+            raise
         if len(gmt_paths) == 1:
             markdown_path = directory / WHITE_PAPER_MARKDOWN_FILENAME
             pdf_path = directory / WHITE_PAPER_PDF_FILENAME

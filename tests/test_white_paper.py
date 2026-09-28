@@ -100,6 +100,16 @@ def test_multiple_declared_gmts_receive_distinct_stemmed_sidecars(tmp_path: Path
     assert (tmp_path / "secondary.whitepaper.pdf").is_file()
 
 
+def test_empty_gmt_skips_white_paper_without_failing_metadata_write(tmp_path: Path):
+    metadata = _metadata_with_gmt(tmp_path)
+    (tmp_path / "genesets.gmt").write_text("", encoding="utf-8")
+
+    write_metadata(tmp_path / "geneset.meta.json", metadata)
+
+    assert not (tmp_path / WHITE_PAPER_MARKDOWN_FILENAME).exists()
+    assert not (tmp_path / WHITE_PAPER_PDF_FILENAME).exists()
+
+
 def test_white_paper_includes_every_ordered_provenance_activity(tmp_path: Path):
     write_metadata(tmp_path / "geneset.meta.json", _metadata_with_gmt(tmp_path))
     (tmp_path / "geneset.provenance.legacy.json").write_text(
