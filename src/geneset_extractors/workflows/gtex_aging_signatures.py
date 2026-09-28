@@ -101,7 +101,7 @@ def _parse_age_group(value: object) -> str | None:
 
 def _sanitize_tissue_label(value: str) -> str:
     parts = [part for part in _WS_RE.sub(" ", str(value).strip()).split() if part]
-    return "".join(parts)
+    return "_".join(parts)
 
 
 def _strip_ensembl_version(gene_id: str) -> str:
