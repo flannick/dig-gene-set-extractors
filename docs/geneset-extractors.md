@@ -26,12 +26,28 @@ Every emitted gene-set directory now writes:
 - `geneset.meta.json`
 - `geneset.provenance.legacy.json`
 - `geneset.provenance.dapper.yaml`
+- `geneset.whitepaper.md` and `geneset.whitepaper.pdf` for a single declared GMT (or one stemmed pair per GMT)
 
 `geneset.meta.json` is the compact summary/index file. `geneset.provenance.legacy.json` is the graph-oriented DIG record with file nodes, a focus gene-set node, and one collapsed `extract_gene_set` operation. `geneset.provenance.dapper.yaml` is its DAPPER-ID-1 YAML representation, with content-addressed node IDs and rewritten references. The emitted sidecar targets Dapper release `0.2.0-a0` (`af9f391fdcc64a0d1bc3a4f3073c0fff6a55e968`): C2M2-backed files use `c2m2_files`, while a graph file without C2M2 properties uses the generic `files` bucket.
 
 Grouped outputs still use `manifest.tsv`, but manifests now retain `path` and add portal-friendly columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id`.
 
 Use `--provenance_overlay_json <overlay.json>` with any converter when you want to enrich local-only provenance with known public URLs, persistent IDs, script URLs, notebook URLs, or replay/container metadata.
+
+## White-paper sidecars
+
+For every declared GMT in a metadata/provenance pair, DIG emits a Markdown
+white paper and a PDF rendering of that same canonical Markdown. A single GMT
+uses `geneset.whitepaper.md` / `geneset.whitepaper.pdf`; multiple GMTs use the
+corresponding GMT stem to avoid collisions.
+The report summarizes declared inputs, converter parameters and command, code
+version, provenance checksums, and GMT-level set and gene statistics. It is a
+human-readable interpretation of the authoritative GMT and provenance sidecars,
+not a replacement for them. Rebuild an existing pair with:
+
+```bash
+geneset-extractors provenance white-paper path/to/geneset.meta.json
+```
 
 ## Practical guides
 

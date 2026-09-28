@@ -13,6 +13,7 @@ from typing import Any
 
 from geneset_extractors import __version__
 from geneset_extractors.core.dapper_provenance import write_dapper_provenance
+from geneset_extractors.core.white_paper import write_white_paper
 from geneset_extractors.hashing import sha256_file, stable_hash_object
 from geneset_extractors.core.provenance import (
     REPO_URL,
@@ -77,6 +78,12 @@ def write_metadata(path: str | Path, payload: dict[str, object]) -> None:
             provenance_payload,
             clean_payload,
         )
+        write_white_paper(
+            metadata=clean_payload,
+            output_dir=p.parent,
+            legacy_provenance_path=legacy_path,
+            dapper_provenance_path=p.parent / DAPPER_PROVENANCE_FILENAME,
+        )
 
 
 def write_provenance_from_metadata(
@@ -103,6 +110,12 @@ def write_provenance_from_metadata(
     )
     write_canonical_json(out_path, provenance_payload)
     write_dapper_provenance(meta_path.parent / DAPPER_PROVENANCE_FILENAME, provenance_payload, payload)
+    write_white_paper(
+        metadata=payload,
+        output_dir=meta_path.parent,
+        legacy_provenance_path=out_path,
+        dapper_provenance_path=meta_path.parent / DAPPER_PROVENANCE_FILENAME,
+    )
     return out_path
 
 

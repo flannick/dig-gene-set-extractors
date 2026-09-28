@@ -50,6 +50,8 @@ def test_metadata_write_emits_renamed_legacy_and_dapper_provenance(tmp_path: Pat
     assert legacy_path.exists()
     assert dapper_path.exists()
     assert not (tmp_path / "geneset.provenance.json").exists()
+    assert not (tmp_path / "geneset.whitepaper.md").exists()
+    assert not (tmp_path / "geneset.whitepaper.pdf").exists()
 
     meta_payload = json.loads((tmp_path / "geneset.meta.json").read_text(encoding="utf-8"))
     assert meta_payload["provenance"] == {
