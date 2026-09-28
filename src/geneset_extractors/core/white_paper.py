@@ -66,7 +66,9 @@ def _sha256(path: Path) -> str:
 
 def _table(rows: list[tuple[str, object]]) -> str:
     lines = ["| Field | Value |", "| --- | --- |"]
-    lines.extend(f"| {field} | {str(value).replace('|', '\\|')} |" for field, value in rows)
+    for field, value in rows:
+        escaped_value = str(value).replace("|", "\\|")
+        lines.append(f"| {field} | {escaped_value} |")
     return "\n".join(lines)
 
 
