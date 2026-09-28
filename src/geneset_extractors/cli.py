@@ -7,6 +7,7 @@ from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
 from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
+from geneset_extractors.core.white_paper import write_white_paper_from_metadata
 from geneset_extractors.core.validate import validate_output_dir
 from geneset_extractors.resource_manager import (
     describe_resource,
@@ -1689,6 +1690,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--upstream_provenance_graph_json",
         help="Optional upstream provenance graph JSON to merge into rebuilt provenance.",
     )
+    p_prov_white_paper = prov_sub.add_parser(
+        "white-paper",
+        help="Write scientific-style Markdown and PDF sidecars for one metadata/GMT/provenance combination.",
+    )
+    p_prov_white_paper.add_argument("metadata_json", help="Path to an existing geneset.meta.json file.")
 
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
@@ -2360,6 +2366,18 @@ def main(argv: list[str] | None = None) -> int:
                     provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None),
                 )
                 print(json.dumps({"status": "ok", "provenance_path": str(out_path)}))
+                return 0
+            if args.provenance_command == "white-paper":
+                paths = write_white_paper_from_metadata(args.metadata_json)
+                if not paths:
+                    raise ValueError("metadata has no declared existing GMT output")
+                print(json.dumps({
+                    "status": "ok",
+                    "white_papers": [
+                        {"markdown_path": str(markdown_path), "pdf_path": str(pdf_path)}
+                        for markdown_path, pdf_path in paths
+                    ],
+                }))
                 return 0
 
         if args.command == "metadata":
