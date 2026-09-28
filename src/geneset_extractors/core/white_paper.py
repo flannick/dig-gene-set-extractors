@@ -124,6 +124,107 @@ def _parameter_sentence(parameters: object) -> str:
     return "The recorded parameterization was " + _human_list(items) + "."
 
 
+def _activity_records(legacy_provenance_path: Path) -> list[dict[str, object]]:
+    """Extract the ordered activity trace from legacy provenance graph records.
+
+    DIG has emitted both compact graph records and JSON-LD-shaped activity
+    records over time.  This accepts either spelling and deduplicates repeated
+    representations of the same recorded step.
+    """
+    payload = json.loads(legacy_provenance_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return []
+    candidates: list[dict[str, Any]] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            direct_type = str(value.get("type") or value.get("@type") or "")
+            analysis = value.get("analysis") if isinstance(value.get("analysis"), dict) else {}
+            if (
+                direct_type in {"AnalysisType", "Activity", "prov:Activity"}
+                or any(key in value for key in ("observed_command", "replay_command", "parameters", "dig:observed_command"))
+                or any(key in analysis for key in ("observed_command", "command", "parameters"))
+            ):
+                candidates.append(value)
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(payload)
+    records: dict[tuple[object, str], dict[str, object]] = {}
+    for node in candidates:
+        analysis = node.get("analysis") if isinstance(node.get("analysis"), dict) else {}
+        step_index = node.get("step_index", node.get("dig:step_index", analysis.get("step_index")))
+        try:
+            order = int(step_index) if step_index is not None else 10**9
+        except (TypeError, ValueError):
+            order = 10**9
+        name = str(node.get("name") or analysis.get("name") or node.get("id") or "unnamed activity")
+        command = (
+            node.get("observed_command")
+            or node.get("dig:observed_command")
+            or analysis.get("observed_command")
+            or node.get("command")
+            or analysis.get("command")
+            or node.get("replay_command")
+            or node.get("dig:replay_command")
+            or analysis.get("replay_command")
+            or "not declared"
+        )
+        if isinstance(command, list):
+            command = " ".join(str(item) for item in command)
+        parameters = node.get("parameters") or node.get("dig:parameters") or analysis.get("parameters") or {}
+        entrypoint = node.get("entrypoint") or node.get("dig:entrypoint") or analysis.get("entrypoint") or "not declared"
+        key = (order, name)
+        candidate = {
+            "order": order,
+            "name": name,
+            "command": str(command),
+            "parameters": parameters,
+            "entrypoint": str(entrypoint),
+        }
+        existing = records.get(key)
+        if existing is None or len(_compact_json(candidate)) > len(_compact_json(existing)):
+            records[key] = candidate
+    return sorted(records.values(), key=lambda record: (int(record["order"]), str(record["name"])))
+
+
+def _workflow_trace_markdown(legacy_provenance_path: Path) -> list[str]:
+    records = _activity_records(legacy_provenance_path)
+    if not records:
+        return [
+            "No ordered activity records were found in the legacy provenance graph. "
+            "The recorded final command is retained above, but the complete workflow cannot be reconstructed from this provenance file.",
+            "",
+        ]
+    lines = [
+        f"The legacy provenance graph records {len(records)} activity step(s) from source data to the final artifact. "
+        "The commands and parameter blocks below are ordered by their recorded workflow step index.",
+        "",
+    ]
+    for position, record in enumerate(records, start=1):
+        number = record["order"] if int(record["order"]) < 10**9 else position
+        lines.extend(
+            [
+                f"### Step {number}: {record['name']}",
+                "",
+                f"This step used entrypoint `{record['entrypoint']}`. {_parameter_sentence(record['parameters'])}",
+                "",
+                "```text",
+                str(record["command"]),
+                "```",
+                "",
+                "```json",
+                _compact_json(record["parameters"]),
+                "```",
+                "",
+            ]
+        )
+    return lines
+
+
 def render_white_paper(
     *,
     metadata: dict[str, Any],
@@ -225,6 +326,9 @@ def render_white_paper(
             str(command),
             "```",
             "",
+            "## Complete provenance workflow trace",
+            "",
+            *_workflow_trace_markdown(legacy_provenance_path),
             "## Output generated",
             "",
             output_paragraph,

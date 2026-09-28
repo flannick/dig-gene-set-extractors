@@ -45,9 +45,11 @@ Output generated sections, followed by compact inventories. The PDF applies a
 paper-style title/section hierarchy, body text, code blocks, tables, pagination,
 and page footer to that same canonical report. It summarizes declared inputs,
 converter parameters and command, code version, provenance checksums, and
-GMT-level set and gene statistics. It is a human-readable interpretation of
-the authoritative GMT and provenance sidecars, not a replacement for them.
-Rebuild an existing pair with:
+GMT-level set and gene statistics. It also reconstructs the complete ordered
+activity trace recorded in the legacy provenance graph, including every
+recorded workflow/converter command and parameter object from raw inputs to
+the GMT. It is a human-readable interpretation of the authoritative GMT and
+provenance sidecars, not a replacement for them. Rebuild an existing pair with:
 
 ```bash
 geneset-extractors provenance white-paper path/to/geneset.meta.json

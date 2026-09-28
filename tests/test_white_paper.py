@@ -98,3 +98,45 @@ def test_multiple_declared_gmts_receive_distinct_stemmed_sidecars(tmp_path: Path
     assert len(paths) == 2
     assert (tmp_path / "genesets.whitepaper.md").is_file()
     assert (tmp_path / "secondary.whitepaper.pdf").is_file()
+
+
+def test_white_paper_includes_every_ordered_provenance_activity(tmp_path: Path):
+    write_metadata(tmp_path / "geneset.meta.json", _metadata_with_gmt(tmp_path))
+    (tmp_path / "geneset.provenance.legacy.json").write_text(
+        json.dumps(
+            {
+                "trace": {
+                    "nodes": [
+                        {
+                            "id": "activity:prepare",
+                            "type": "AnalysisType",
+                            "name": "prepare_source_data",
+                            "step_index": 1,
+                            "entrypoint": "geneset-extractors workflows prepare",
+                            "observed_command": "python -m geneset_extractors.cli workflows prepare --raw raw.tsv",
+                            "parameters": {"raw": "raw.tsv", "normalization": "log1p"},
+                        },
+                        {
+                            "id": "activity:extract",
+                            "type": "AnalysisType",
+                            "name": "extract_gene_sets",
+                            "step_index": 2,
+                            "entrypoint": "geneset-extractors convert toy_converter",
+                            "observed_command": "python -m geneset_extractors.cli convert toy_converter --input prepared.tsv",
+                            "parameters": {"threshold": 0.05},
+                        },
+                    ],
+                    "edges": [],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    write_white_paper_from_metadata(tmp_path / "geneset.meta.json")
+    markdown = (tmp_path / WHITE_PAPER_MARKDOWN_FILENAME).read_text(encoding="utf-8")
+    assert "## Complete provenance workflow trace" in markdown
+    assert markdown.index("### Step 1: prepare_source_data") < markdown.index("### Step 2: extract_gene_sets")
+    assert "workflows prepare --raw raw.tsv" in markdown
+    assert "convert toy_converter --input prepared.tsv" in markdown
+    assert '"normalization": "log1p"' in markdown
