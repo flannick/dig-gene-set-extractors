@@ -40,10 +40,14 @@ For every declared GMT in a metadata/provenance pair, DIG emits a Markdown
 white paper and a PDF rendering of that same canonical Markdown. A single GMT
 uses `geneset.whitepaper.md` / `geneset.whitepaper.pdf`; multiple GMTs use the
 corresponding GMT stem to avoid collisions.
-The report summarizes declared inputs, converter parameters and command, code
-version, provenance checksums, and GMT-level set and gene statistics. It is a
-human-readable interpretation of the authoritative GMT and provenance sidecars,
-not a replacement for them. Rebuild an existing pair with:
+The Markdown contains narrative Data used, Workflow and parameterization, and
+Output generated sections, followed by compact inventories. The PDF applies a
+paper-style title/section hierarchy, body text, code blocks, tables, pagination,
+and page footer to that same canonical report. It summarizes declared inputs,
+converter parameters and command, code version, provenance checksums, and
+GMT-level set and gene statistics. It is a human-readable interpretation of
+the authoritative GMT and provenance sidecars, not a replacement for them.
+Rebuild an existing pair with:
 
 ```bash
 geneset-extractors provenance white-paper path/to/geneset.meta.json

@@ -52,13 +52,22 @@ def test_metadata_write_emits_matching_white_paper_sidecars(tmp_path: Path):
     markdown = markdown_path.read_text(encoding="utf-8")
     pdf = pdf_path.read_bytes()
     assert "# toy_converter:" in markdown
-    assert "## Computational method" in markdown
+    assert "## Data used" in markdown
+    assert "The **source_tsv** input was obtained from" in markdown
+    assert "workspace path omitted" in markdown
+    assert str(tmp_path) not in markdown
+    assert "## Workflow and parameterization" in markdown
+    assert "The recorded parameterization was `threshold=0.05`." in markdown
+    assert "## Output generated" in markdown
+    assert "The workflow produced `genesets.gmt`, containing 2 named gene sets" in markdown
     assert "Named gene sets | 2" in markdown
     assert "Distinct genes | 4" in markdown
     assert "Genes per set (min / median / max) | 2 / 2.5 / 3" in markdown
     assert pdf.startswith(b"%PDF-1.4")
     assert pdf.rstrip().endswith(b"%%EOF")
     assert hashlib.sha256(markdown.encode("utf-8")).hexdigest().encode("ascii") in pdf
+    assert b"/Helvetica-Bold" in pdf
+    assert b"/Courier" in pdf
 
 
 def test_white_paper_cli_rebuilds_an_existing_pair(tmp_path: Path):
