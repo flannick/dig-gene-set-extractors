@@ -1,0 +1,14 @@
+# Local derivations: mostly Python 3 standard library (os, json, csv, glob, gzip, urllib, collections).
+# The packages below are only needed for specific scripts / the cluster pipelines.
+
+# scRNA cNMF gene programs (cluster/cluster_pipeline)
+numpy
+scipy
+pandas
+scanpy
+anndata
+h5py
+numba
+cnmf
+
+# (region/accessibility scripts optionally use bedtools at the shell level; not a pip package)

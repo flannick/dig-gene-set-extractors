@@ -1,0 +1,52 @@
+{
+  "name": "encode_concordance",
+  "description": "Per-biosample ENCODE accessibility × RNA-seq/GTEx concordance gene sets (concordant_active, open_silent, expressed_closed, bgsneak_delta, GTEx enriched/not-accessible)",
+  "inputs": [
+    {
+      "name": "accessible_genes_dir",
+      "type": "directory",
+      "description": "Directory of per-biosample raw accessible gene set subdirs (encode_accessible_genes output). Each subdir must contain geneset.tsv and optionally geneset.meta.json. Provides raw-mode accessible genes.",
+      "required": false
+    },
+    {
+      "name": "contrast_dir",
+      "type": "directory",
+      "description": "Directory of LOO-contrast accessible gene set subdirs (encode_accessibility_contrast output). Up sets (specifically accessible, LOO prevalence < 0.25) are used as control-mode accessible genes.",
+      "required": false
+    },
+    {
+      "name": "rnaseq_dir",
+      "type": "directory",
+      "description": "Directory of per-biosample RNA-seq expressed gene set subdirs. Each subdir contains geneset.tsv; biosample is read from geneset.meta.json or inferred from dir name.",
+      "required": false
+    },
+    {
+      "name": "gtex_enriched_dir",
+      "type": "directory",
+      "description": "Directory of per-tissue GTEx tissue-enriched gene set subdirs (gtex_tissue_enriched output). Tissue name is inferred by stripping the GTEx_tissue_enriched_ prefix from the dir name.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "ATAC-seq",
+      "help": "Assay label for output set names and provenance. Use 'ATAC-seq' or 'DNase-seq'. Default: ATAC-seq."
+    }
+  ],
+  "outputs": [
+    {"name": "ENCODE_<assay>_raw_concordant_active_<biosample>/", "description": "Genes accessible (raw) AND expressed"},
+    {"name": "ENCODE_<assay>_raw_open_but_silent_<biosample>/", "description": "Genes accessible (raw) but NOT expressed"},
+    {"name": "ENCODE_<assay>_raw_expressed_but_closed_<biosample>/", "description": "Genes expressed but NOT accessible (raw)"},
+    {"name": "ENCODE_<assay>_control_concordant_active_<biosample>/", "description": "Genes accessible (LOO control) AND expressed"},
+    {"name": "ENCODE_<assay>_control_open_but_silent_<biosample>/", "description": "Genes accessible (LOO control) but NOT expressed"},
+    {"name": "ENCODE_<assay>_control_expressed_but_closed_<biosample>/", "description": "Genes expressed but NOT accessible (LOO control)"},
+    {"name": "ENCODE_<assay>_bgsneak_silent_<biosample>/", "description": "Background-sneak silent: accessible in raw but absorbed by LOO, not expressed"},
+    {"name": "ENCODE_<assay>_bgsneak_expressed_<biosample>/", "description": "Background-sneak expressed: accessible in raw but absorbed by LOO, and expressed"},
+    {"name": "GTEx_<assay>_raw_enriched_not_accessible_<biosample>/", "description": "GTEx tissue-enriched but NOT accessible (raw)"},
+    {"name": "GTEx_<assay>_raw_open_not_enriched_<biosample>/", "description": "Accessible (raw) but NOT GTEx tissue-enriched"},
+    {"name": "GTEx_<assay>_control_enriched_not_accessible_<biosample>/", "description": "GTEx tissue-enriched but NOT accessible (LOO control)"},
+    {"name": "GTEx_<assay>_control_open_not_enriched_<biosample>/", "description": "Accessible (LOO control) but NOT GTEx tissue-enriched"}
+  ]
+}

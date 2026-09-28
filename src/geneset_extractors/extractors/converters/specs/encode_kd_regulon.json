@@ -1,0 +1,61 @@
+{
+  "name": "encode_kd_regulon",
+  "description": "ENCODE shRNA/CRISPR knockdown RNA-seq functional regulon sets: KD vs matched-control log2FC per factor, split into up/down/regulated",
+  "inputs": [
+    {
+      "name": "encode_kd_manifest_tsv",
+      "type": "tsv",
+      "description": "Optional pre-built manifest TSV with columns: target, role (kd/ctrl), file_accession, href, experiment_accession. If not provided, the ENCODE portal API is queried live at https://www.encodeproject.org/search/ for shRNA/CRISPR RNA-seq experiments. Providing a manifest makes the run reproducible without network access.",
+      "required": false
+    },
+    {
+      "name": "ncbi_gene_info_gz",
+      "type": "tsv_gz",
+      "description": "NCBI Homo_sapiens.gene_info.gz for ENSG-to-symbol mapping. If not provided, auto-downloaded from https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz and cached under out_dir/references/.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "shRNA RNA-seq",
+      "help": "ENCODE assay title(s) to query. Use 'shRNA RNA-seq' (default) or 'CRISPR RNA-seq', or pipe-separated list 'shRNA RNA-seq|CRISPR RNA-seq'."
+    },
+    {
+      "name": "perturbation",
+      "type": "string",
+      "default": "shRNA knockdown",
+      "help": "Perturbation label for set descriptions and provenance (default: 'shRNA knockdown')."
+    },
+    {
+      "name": "lib_prefix",
+      "type": "string",
+      "default": null,
+      "help": "Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_regulon'."
+    },
+    {
+      "name": "lfc_threshold",
+      "type": "number",
+      "default": 1.0,
+      "help": "log2 fold-change threshold for calling differential expression (default: 1.0; |log2FC| >= threshold). Corresponds to 2-fold change."
+    },
+    {
+      "name": "expr_threshold",
+      "type": "number",
+      "default": 1.0,
+      "help": "Minimum expression threshold in TPM (or equivalent). Genes where max(KD, ctrl) < threshold are filtered before calling DE (default: 1.0)."
+    }
+  ],
+  "outputs": [
+    {"name": "<lib_prefix>_<target>_regulated/genesets.gmt", "description": "All differentially expressed genes (up or down) on knockdown of this factor"},
+    {"name": "<lib_prefix>_<target>_regulated/geneset.tsv", "description": "Gene list (header: gene)"},
+    {"name": "<lib_prefix>_<target>_regulated/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "<lib_prefix>_<target>_up/genesets.gmt", "description": "Genes UP on knockdown (de-repressed; factor was a repressor or indirect activator)"},
+    {"name": "<lib_prefix>_<target>_up/geneset.tsv", "description": "Gene list (header: gene)"},
+    {"name": "<lib_prefix>_<target>_up/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "<lib_prefix>_<target>_down/genesets.gmt", "description": "Genes DOWN on knockdown (factor-dependent; factor was an activator or indirect repressor)"},
+    {"name": "<lib_prefix>_<target>_down/geneset.tsv", "description": "Gene list (header: gene)"},
+    {"name": "<lib_prefix>_<target>_down/geneset.meta.json", "description": "Metadata and provenance JSON"}
+  ]
+}

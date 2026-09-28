@@ -29,6 +29,7 @@ class RuntimeContext:
     overlay_path: str | None
     provenance_mirror_local_prefix: str | None
     provenance_mirror_remote_prefix: str | None
+    upstream_provenance_graph_path: str | None = None
 
 
 def _extract_cli_option(command: list[str], flag: str) -> str | None:
@@ -104,6 +105,7 @@ def activate_runtime_context(converter_name: str, overlay_path: str | None = Non
         overlay_path=(str(overlay_path).strip() if overlay_path else None),
         provenance_mirror_local_prefix=_extract_cli_option(command, "--provenance_mirror_local_prefix"),
         provenance_mirror_remote_prefix=_extract_cli_option(command, "--provenance_mirror_remote_prefix"),
+        upstream_provenance_graph_path=_extract_cli_option(command, "--upstream_provenance_graph_json"),
     )
 
 

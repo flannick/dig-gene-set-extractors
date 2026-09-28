@@ -1,0 +1,64 @@
+{
+  "name": "encode_accessibility_contrast",
+  "description": "LOO prevalence-background-corrected accessibility contrast sets (Up/Down) from per-biosample accessible-gene collections",
+  "inputs": [
+    {
+      "name": "accessible_genes_dir",
+      "type": "directory",
+      "description": "Directory of per-biosample accessible-gene set subdirectories (output of encode_accessible_genes or catlas_accessible_genes). Each subdir must contain geneset.tsv (one gene per line, header 'gene') and optionally geneset.meta.json with 'biosample' and group fields.",
+      "required": false
+    },
+    {
+      "name": "accessible_genes_zip",
+      "type": "zip",
+      "description": "Zip archive of per-biosample accessible-gene set subdirectories. Alternative to accessible_genes_dir for compatibility with submission zips.",
+      "required": false
+    },
+    {
+      "name": "symbol_universe_tsv",
+      "type": "tsv",
+      "description": "Optional TSV whose first column is valid HGNC gene symbols (e.g. the GTEx t-stat matrix). Genes not in this universe are filtered out before contrast computation. Useful when input sets contain ENSG IDs or enhancer element IDs.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "ATAC-seq",
+      "help": "Assay label for set names and provenance. Default 'ATAC-seq'."
+    },
+    {
+      "name": "low_prevalence",
+      "type": "number",
+      "default": 0.25,
+      "help": "LOO-prevalence ceiling for Up (specifically accessible) sets. A gene is Up if it is accessible in this biosample AND its prevalence across all other biosamples is below this threshold. Default 0.25."
+    },
+    {
+      "name": "high_prevalence",
+      "type": "number",
+      "default": 0.75,
+      "help": "LOO-prevalence floor for Down (specifically inaccessible) sets. A gene is Down if it is absent in this biosample AND its prevalence across all other biosamples is above this threshold. Default 0.75."
+    },
+    {
+      "name": "group_by_key",
+      "type": "string",
+      "default": null,
+      "help": "Optional metadata key from geneset.meta.json to use for within-group background computation. Example: 'library' for histone-mark sets (prevents pooling H3K4me3 with H3K27me3). If not set all biosamples are pooled into one background group."
+    },
+    {
+      "name": "lib_filter",
+      "type": "string",
+      "default": null,
+      "help": "Optional substring filter on the 'library' metadata field. Only sets whose library contains this substring are processed. Useful when processing a mixed-assay zip."
+    }
+  ],
+  "outputs": [
+    {"name": "ENCODE_<assay>_<biosample>_accessible_Up/genesets.gmt", "description": "Specifically accessible genes (LOO prevalence < low_prevalence)"},
+    {"name": "ENCODE_<assay>_<biosample>_accessible_Up/geneset.tsv", "description": "Gene list for the Up set"},
+    {"name": "ENCODE_<assay>_<biosample>_accessible_Up/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "ENCODE_<assay>_<biosample>_inaccessible_Down/genesets.gmt", "description": "Specifically inaccessible genes (LOO prevalence > high_prevalence)"},
+    {"name": "ENCODE_<assay>_<biosample>_inaccessible_Down/geneset.tsv", "description": "Gene list for the Down set"},
+    {"name": "ENCODE_<assay>_<biosample>_inaccessible_Down/geneset.meta.json", "description": "Metadata and provenance JSON"}
+  ]
+}

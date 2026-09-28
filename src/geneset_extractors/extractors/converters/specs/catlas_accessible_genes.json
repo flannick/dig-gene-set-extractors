@@ -1,0 +1,38 @@
+{
+  "name": "catlas_accessible_genes",
+  "description": "Cell-type accessible gene sets from CATlas human scATAC-seq via promoter overlap with background-controlled specifically-accessible regions",
+  "inputs": [
+    {
+      "name": "bed_dir",
+      "type": "directory",
+      "description": "Directory containing background-prevalence-controlled cell-type-specifically-accessible region files (*_Up.bed.gz). Each file represents one cell type; filenames use the convention {cell_type}_Up.bed.gz with '___' as a separator for multi-word cell type names.",
+      "required": true
+    },
+    {
+      "name": "refgene_gz",
+      "type": "tsv_gz",
+      "description": "UCSC refGene.txt.gz for GRCh38/hg38. If not provided the file is automatically downloaded from https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz and cached under out_dir/references/.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "promoter_window",
+      "type": "integer",
+      "default": 1000,
+      "help": "Half-width of the promoter window around the TSS in base pairs. Promoter = TSS +/- promoter_window. Default 1000."
+    },
+    {
+      "name": "bin_size",
+      "type": "integer",
+      "default": 1000,
+      "help": "Genome bin size in base pairs used for region-to-promoter overlap. Must match the bin size used to generate the input BED files. Default 1000."
+    }
+  ],
+  "outputs": [
+    {"name": "<set_name>/genesets.gmt", "description": "GMT file with one gene set per cell type"},
+    {"name": "<set_name>/geneset.tsv", "description": "Gene list for this cell type's accessible genes"},
+    {"name": "<set_name>/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "<set_name>/geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}

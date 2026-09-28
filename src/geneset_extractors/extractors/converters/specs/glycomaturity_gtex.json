@@ -1,0 +1,26 @@
+{
+  "name": "glycomaturity_gtex",
+  "description": "Per-tissue glycosylation enzyme catalog gene sets (6 pathway sets A-F) annotated with GTEx V8 expression",
+  "inputs": [
+    {
+      "name": "gtex_tstat_tsv",
+      "type": "tsv",
+      "description": "Tab-delimited GTEx t-statistic matrix (genes x tissues), derived from GTEx V8 median TPM. Accepts a local path or the canonical URL: https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz",
+      "required": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "expression_threshold",
+      "type": "number",
+      "default": 2.0,
+      "help": "GTEx t-stat threshold used to annotate 'enriched' status in the TSV output. Does not filter genes out; all catalog members are emitted. Default 2.0."
+    }
+  ],
+  "outputs": [
+    {"name": "genesets.gmt", "description": "GMT file listing all catalog genes for this pathway set and tissue"},
+    {"name": "geneset.tsv", "description": "Catalog genes with GTEx t-stat and tissue_status annotation"},
+    {"name": "geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}

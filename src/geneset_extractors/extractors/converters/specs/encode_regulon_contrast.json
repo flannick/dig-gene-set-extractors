@@ -1,0 +1,52 @@
+{
+  "name": "encode_regulon_contrast",
+  "description": "LOO binding-prevalence-background-corrected regulon contrast sets (specific_Up/promiscuous_Down) from per-factor ENCODE TF ChIP-seq or eCLIP target-gene collections",
+  "inputs": [
+    {
+      "name": "regulon_dir",
+      "type": "directory",
+      "description": "Directory of per-factor regulon set subdirectories. Each subdir must contain geneset.tsv (header: gene) and optionally geneset.meta.json with a 'target' field for the factor name (TF symbol or RBP name). Typical source: output of an encode_regulons converter or the derive_encode_target_regulons.py reference script.",
+      "required": false
+    },
+    {
+      "name": "regulon_zip",
+      "type": "zip",
+      "description": "Zip archive of per-factor regulon set subdirectories. Alternative to regulon_dir.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "TF ChIP-seq",
+      "help": "Assay label for set names and provenance. Use 'TF ChIP-seq' (default) or 'eCLIP'."
+    },
+    {
+      "name": "lib_prefix",
+      "type": "string",
+      "default": null,
+      "help": "Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_regulon_bgcorrected'."
+    },
+    {
+      "name": "low_prevalence",
+      "type": "number",
+      "default": 0.25,
+      "help": "LOO-prevalence ceiling for specific_Up sets. A gene is Up if this factor binds it AND its prevalence across all other factors is below this threshold (default: 0.25). Removes promiscuous/HOT-region binding."
+    },
+    {
+      "name": "high_prevalence",
+      "type": "number",
+      "default": 0.75,
+      "help": "LOO-prevalence floor for promiscuous_Down sets. A gene is Down if this factor does NOT bind it AND its prevalence across all other factors is above this threshold (default: 0.75). Identifies broadly-bound genes absent from this factor."
+    }
+  ],
+  "outputs": [
+    {"name": "<lib_prefix>_<target>_specific_Up/genesets.gmt", "description": "Genes specifically targeted by this factor (LOO-prevalence < low_prevalence)"},
+    {"name": "<lib_prefix>_<target>_specific_Up/geneset.tsv", "description": "Gene list for the specific_Up set"},
+    {"name": "<lib_prefix>_<target>_specific_Up/geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "<lib_prefix>_<target>_promiscuous_Down/genesets.gmt", "description": "Commonly-bound genes absent from this factor (LOO-prevalence > high_prevalence)"},
+    {"name": "<lib_prefix>_<target>_promiscuous_Down/geneset.tsv", "description": "Gene list for the promiscuous_Down set"},
+    {"name": "<lib_prefix>_<target>_promiscuous_Down/geneset.meta.json", "description": "Metadata and provenance JSON"}
+  ]
+}

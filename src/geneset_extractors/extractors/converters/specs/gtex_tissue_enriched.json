@@ -1,0 +1,26 @@
+{
+  "name": "gtex_tissue_enriched",
+  "description": "Tissue-enriched gene sets from GTEx V8 t-statistic matrix (t >= threshold per tissue)",
+  "inputs": [
+    {
+      "name": "gtex_tstat_tsv",
+      "type": "tsv",
+      "description": "Tab-delimited GTEx t-statistic matrix (genes x tissues), derived from GTEx V8 median TPM. Accepts a local path or the canonical URL: https://storage.googleapis.com/adult-gtex/bulk-gex/v8/rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz",
+      "required": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "tstat_threshold",
+      "type": "number",
+      "default": 4.0,
+      "help": "Minimum t-statistic for a gene to be considered tissue-enriched. Default 4.0."
+    }
+  ],
+  "outputs": [
+    {"name": "genesets.gmt", "description": "GMT file with one set per enriched tissue"},
+    {"name": "geneset.tsv", "description": "Selected genes with t-stat score"},
+    {"name": "geneset.meta.json", "description": "Metadata and provenance JSON"},
+    {"name": "geneset.provenance.json", "description": "Provenance graph JSON"}
+  ]
+}

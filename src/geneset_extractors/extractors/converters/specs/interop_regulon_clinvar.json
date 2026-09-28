@@ -1,0 +1,58 @@
+{
+  "name": "interop_regulon_clinvar",
+  "description": "Cross-NIH interoperability: per-factor regulon gene sets intersected with ClinVar Pathogenic/Likely-pathogenic disease genes (ENCODE x ClinVar)",
+  "inputs": [
+    {
+      "name": "regulon_dir",
+      "type": "directory",
+      "description": "Directory of per-factor regulon set subdirectories. Each subdir must contain geneset.tsv (header: gene) and optionally geneset.meta.json with 'target' field. Recommended input: output of encode_regulon_contrast (_specific_Up sets) to use background-corrected binding specificity. Raw regulon output also accepted.",
+      "required": false
+    },
+    {
+      "name": "regulon_zip",
+      "type": "zip",
+      "description": "Zip archive of per-factor regulon set subdirectories. Alternative to regulon_dir.",
+      "required": false
+    },
+    {
+      "name": "clinvar_genes_tsv",
+      "type": "tsv",
+      "description": "Pre-computed ClinVar pathogenic gene set TSV (header: gene), e.g. from ClinVar_pathogenic_genes_all/geneset.tsv. Provides reproducibility without re-downloading variant_summary. If neither this nor variant_summary_gz is provided, variant_summary.txt.gz is auto-downloaded from https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz.",
+      "required": false
+    },
+    {
+      "name": "variant_summary_gz",
+      "type": "tsv_gz",
+      "description": "ClinVar variant_summary.txt.gz (NCBI FTP). Used to derive pathogenic gene sets on-the-fly (GRCh38; Pathogenic/Likely-pathogenic; single-gene variants). Auto-downloaded from https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz if not provided and clinvar_genes_tsv is also absent.",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "assay",
+      "type": "string",
+      "default": "TF ChIP-seq",
+      "help": "Assay label for set names and provenance (e.g. 'TF ChIP-seq', 'eCLIP'). Default 'TF ChIP-seq'."
+    },
+    {
+      "name": "lib_prefix",
+      "type": "string",
+      "default": null,
+      "help": "Prefix for output set names. Defaults to 'ENCODE_<safe_assay>_x_ClinVar'."
+    },
+    {
+      "name": "min_genes",
+      "type": "integer",
+      "default": 1,
+      "help": "Minimum intersection size to emit a set (default: 1). Increase to filter out near-empty sets."
+    }
+  ],
+  "outputs": [
+    {"name": "<lib_prefix>_<target>_disease_targets/genesets.gmt", "description": "ClinVar pathogenic genes targeted by this factor"},
+    {"name": "<lib_prefix>_<target>_disease_targets/geneset.tsv", "description": "Gene list (header: gene)"},
+    {"name": "<lib_prefix>_<target>_disease_targets/geneset.meta.json", "description": "Metadata and provenance JSON (branch-standard)"},
+    {"name": "<lib_prefix>_any_factor_disease_targets/genesets.gmt", "description": "Union: ClinVar pathogenic genes targeted by at least one factor"},
+    {"name": "<lib_prefix>_any_factor_disease_targets/geneset.tsv", "description": "Gene list for union set"},
+    {"name": "<lib_prefix>_any_factor_disease_targets/geneset.meta.json", "description": "Metadata and provenance JSON for union set"}
+  ]
+}

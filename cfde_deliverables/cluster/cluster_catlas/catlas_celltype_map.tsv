@@ -1,0 +1,28 @@
+# Fetal (GSE149683) -> Adult (GSE184462 CATlas) cell type mapping for maturation contrast.
+# Tab-separated: fetal_cell_type <tab> adult_cell_type
+# adult_cell_type must match exactly the cell_type field in adult geneset.meta.json
+# Multiple adult types for one fetal type: comma-separated (union will be taken)
+# Lines starting with # are comments; blank lines ignored
+# Unmapped fetal types produce fetal-only sets (no contrast); add mappings here to extend.
+Acinar cells	Pancreatic Acinar Cell
+Adrenocortical cells	Transitional Zone Cortical Cell
+Bronchiolar and alveolar epithelial cells	Alveolar Type 2 (AT2) Cell
+Cardiomyocytes	Ventricular Cardiomyocyte
+Ductal cells	Ductal Cell (Pancreatic)
+Endocardial cells	Endocardial Cell
+Goblet cells	Colonic Goblet Cell,Small Intestinal Goblet Cell,Airway Goblet Cell
+Hepatoblasts	Hepatocyte
+Intestinal epithelial cells	Small Intestinal Enterocyte,Colon Epithelial Cell 1
+Lymphatic endothelial cells	Lymphatic Endothelial Cell
+Mesothelial cells	Mesothelial Cell
+Myeloid cells	Macrophage (General)
+Neuroendocrine cells	Gastric Neuroendocrine Cell
+Parietal and chief cells	Chief Cell,Parietal Cell
+Satellite cells	Satellite Cell
+Schwann cells	Schwann Cell (General)
+Skeletal muscle cells	Type I Skeletal Myocyte,Type II Skeletal Myocyte
+Smooth muscle cells	Vascular Smooth Muscle 1,Smooth Muscle (Esophageal Muscularis) 1
+Stellate cells	Fibroblast (Liver Adrenal)
+Stromal cells	Fibroblast (General)
+Thymocytes	T Lymphocyte 1 (CD8+),T lymphocyte 2 (CD4+)
+Vascular endothelial cells	Endothelial Cell (General) 1,Endothelial Cell (General) 2
