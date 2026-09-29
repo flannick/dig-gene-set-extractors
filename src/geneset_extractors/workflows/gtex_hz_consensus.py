@@ -9,12 +9,16 @@ import csv
 import gzip
 import math
 import tempfile
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
 
 from geneset_extractors.core.provenance import activate_runtime_context
+from geneset_extractors.core.metadata import write_metadata
+from geneset_extractors.core.qc import write_run_summary_files
+from geneset_extractors.core.gmt import write_gmt
 from geneset_extractors.workflows.gtex_runtime_common import (
     build_sample_metadata_rows,
     parse_gct_header,
@@ -24,6 +28,12 @@ from geneset_extractors.workflows.gtex_runtime_common import (
 
 
 AGE_BINS = ("20-29", "30-39", "40-49", "50-59", "60-69", "70-79")
+_NAME_TOKEN_RE = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _consensus_geneset_name(tissue: str, sex: str, age: str) -> str:
+    tissue_token = _NAME_TOKEN_RE.sub("_", tissue).strip("_")
+    return f"GTEx_Tissues_V8_Consensus_{tissue_token}_{sex}_{age}_up"
 
 
 def _open_text(path: Path):
@@ -181,6 +191,8 @@ def run(args) -> dict[str, object]:
         raise ValueError(f"Expected {expected} tissue-sex-age groups; reconstructed {len(groups)}")
     gmt_path = out_dir / "genesets.gmt"
     support_path = out_dir / "gene_support.tsv"
+    selected_path = out_dir / "geneset.tsv"
+    full_path = out_dir / "geneset.full.tsv"
     ordered_groups = sorted(groups.items(), key=lambda item: f"{item[0][0]} {item[0][1]} {item[0][2]} Up")
     group_for_sample = {sample_id: group_index for group_index, (_, members) in enumerate(ordered_groups) for sample_id in members}
     selected_ids = set(group_for_sample)
@@ -191,23 +203,84 @@ def run(args) -> dict[str, object]:
             up_indices = _ecdf_up_gene_indices(expression[sample_index, :], float(args.up_cutoff))
             support_counts[group_for_sample[sample_id], up_indices] += 1
         del expression
-        with gmt_path.open("w", encoding="utf-8", newline="\n") as gmt_handle, support_path.open("w", encoding="utf-8", newline="") as support_handle:
+        gmt_sets: list[tuple[str, list[str]]] = []
+        with support_path.open("w", encoding="utf-8", newline="") as support_handle, selected_path.open("w", encoding="utf-8", newline="") as selected_handle, full_path.open("w", encoding="utf-8", newline="") as full_handle:
             support_writer = csv.writer(support_handle, delimiter="\t", lineterminator="\n")
             support_writer.writerow(["term", "gene_symbol", "support_count", "support_fraction"])
+            selected_writer = csv.writer(selected_handle, delimiter="\t", lineterminator="\n")
+            full_writer = csv.writer(full_handle, delimiter="\t", lineterminator="\n")
+            artifact_header = ["geneset_name", "gene_symbol", "support_count", "support_fraction"]
+            selected_writer.writerow(artifact_header)
+            full_writer.writerow(artifact_header)
             for group_index, ((tissue, sex, age), members) in enumerate(ordered_groups):
                 counts = support_counts[group_index, :]
                 eligible = np.flatnonzero(counts.astype(np.float64) / len(members) >= float(args.support_fraction))
                 ranked = sorted(eligible, key=lambda index: (-(int(counts[index]) / len(members)), -int(counts[index]), symbols[index]))
                 term = f"{tissue} {sex} {age} Up"
+                geneset_name = _consensus_geneset_name(tissue, sex, age)
                 genes = [symbols[index] for index in ranked[:int(args.top_n)]]
-                gmt_handle.write("\t".join([term, str(args.description), *genes]) + "\n")
+                gmt_sets.append((geneset_name, genes))
                 for index in ranked:
-                    support_writer.writerow([term, symbols[index], int(counts[index]), int(counts[index]) / len(members)])
+                    row = [geneset_name, symbols[index], int(counts[index]), int(counts[index]) / len(members)]
+                    support_writer.writerow([term, *row[1:]])
+                    full_writer.writerow(row)
+                for index in ranked[:int(args.top_n)]:
+                    selected_writer.writerow([geneset_name, symbols[index], int(counts[index]), int(counts[index]) / len(members)])
+        write_gmt(gmt_sets, gmt_path)
     graph = write_workflow_provenance_graph(
         workflow_name="gtex_hz_consensus", module_name=__name__, output_dir=out_dir,
         focus_output_path=gmt_path, output_paths=[(gmt_path, "gmt"), (support_path, "gene_support")],
         input_paths=[(expression_gct, "gtex_v8_tpm"), (sample_attributes, "sample_attributes_tsv_v8"), (subject_phenotypes, "subject_phenotypes_tsv_v8")],
         parameters={"grouping": "SMTSD x SEX x AGE; n_samples >= %d" % int(args.min_samples_per_group), "sample_signature": "log2(TPM+1), sample quantile normalization, robust median/MAD z-score with mean-absolute-deviation fallback, ECDF Up >= %.2f" % float(args.up_cutoff), "consensus": "support_fraction >= %.2f; top_n=%d" % (float(args.support_fraction), int(args.top_n)), "historical_drc_aggregation": "unavailable; scientifically comparable reconstruction, not set-equivalent"},
     )
-    graph.replace(out_dir / "geneset.provenance.legacy.json")
+    metadata_path = out_dir / "geneset.meta.json"
+    write_metadata(metadata_path, {
+        "schema_version": "1",
+        "geneset_id": "gtex_hz2_consensus",
+        "gene_set": {
+            "id": "geneset:gtex_hz2_consensus",
+            "name": "GTEx V8 tissue-sex-age consensus",
+            "description": str(args.description),
+        },
+        "converter": {
+            "name": "gtex_hz_consensus",
+            "parameters": {"support_fraction": float(args.support_fraction), "top_n": int(args.top_n), "up_cutoff": float(args.up_cutoff)},
+            "code": {"module": __name__},
+            "execution": {"entrypoint": "geneset-extractors workflows gtex_hz_consensus"},
+        },
+        "input": {"files": [
+            {"path": str(expression_gct), "role": "gtex_v8_tpm"},
+            {"path": str(sample_attributes), "role": "sample_attributes_tsv_v8"},
+            {"path": str(subject_phenotypes), "role": "subject_phenotypes_tsv_v8"},
+        ]},
+        "output": {"files": [
+            {"path": "genesets.gmt", "role": "gmt"},
+            {"path": "geneset.tsv", "role": "selected_program"},
+            {"path": "geneset.full.tsv", "role": "full_scores"},
+            {"path": "gene_support.tsv", "role": "gene_support"},
+        ]},
+        "provenance": {"focus_node_id": "geneset:gtex_hz2_consensus"},
+        "library": "GTEx",
+        "model_id": "HZ2",
+        "model_family": "hz_consensus",
+        "method": "gtex_hz_consensus",
+        "description": str(args.description),
+        "output_files": ["genesets.gmt", "geneset.tsv", "geneset.full.tsv", "gene_support.tsv"],
+        "n_gene_sets": len(ordered_groups),
+        "_provenance_overlay_json": getattr(args, "provenance_overlay_json", None),
+        "_upstream_provenance_graph_path": str(graph),
+    })
+    (out_dir / "geneset.model.json").write_text(
+        '{\n  "library": "GTEx",\n  "model_id": "HZ2",\n  "model_family": "hz_consensus",\n  "signature_pattern": "GTEx_Tissues_V8_Consensus_<tissue>_<sex>_<age>_up"\n}\n',
+        encoding="utf-8",
+    )
+    write_run_summary_files(out_dir, {
+        "workflow": "gtex_hz_consensus",
+        "model_id": "HZ2",
+        "n_groups": len(ordered_groups),
+        "n_samples": len(sample_ids),
+        "n_genes": len(symbols),
+        "support_fraction": float(args.support_fraction),
+        "top_n": int(args.top_n),
+    })
     return {"out_dir": str(out_dir), "n_groups": len(groups), "n_samples": len(sample_ids)}
