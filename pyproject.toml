@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "pandas>=1.5",
+  "tqdm>=4.0",
 ]
 scrna_tools = [
   "numpy>=1.23",

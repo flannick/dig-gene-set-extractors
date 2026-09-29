@@ -201,6 +201,7 @@ def run(args) -> dict[str, object]:
         parameters={
             "term_column": args.term_column,
             "term_prefix": getattr(args, "term_prefix", ""),
+            "signature_name": getattr(args, "signature_name", None),
             "gene_id_column": args.gene_id_column,
             "gene_symbol_column": args.gene_symbol_column,
             "score_column": args.score_column,
