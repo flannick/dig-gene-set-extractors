@@ -388,12 +388,14 @@ def _build_comparisons(
         case_all = age_to_samples.get(age_group, [])
         n_balanced = min(len(reference_all), len(case_all))
         comparison_id = _comparison_id(age_group, reference_age_group)
+        gmt_comparison_label = f"{reference_age_group}_{age_group}"
         aging_signature = f"GTEx_aging_{tissue_compact}_{reference_age_group}_{age_group}"
         status = "ok"
         if n_balanced < min_samples_per_group:
             status = f"skipped: n per group < {min_samples_per_group}"
         comparison_row = {
             "comparison_id": comparison_id,
+            "gmt_comparison_label": gmt_comparison_label,
             "comparison_kind": "reference_level",
             "aging_signature": aging_signature,
             "group_column": "age_group",
@@ -750,7 +752,7 @@ def run(args) -> dict[str, object]:
     _write_tsv(
         comparison_manifest_path,
         comparisons,
-        ["comparison_id", "comparison_kind", "aging_signature", "group_column", "group_a", "group_b", "tissue_label"],
+        ["comparison_id", "gmt_comparison_label", "comparison_kind", "aging_signature", "group_column", "group_a", "group_b", "tissue_label"],
     )
     _write_tsv(
         comparison_audit_path,
