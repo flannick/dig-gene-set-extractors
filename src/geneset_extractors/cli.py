@@ -303,6 +303,20 @@ def _add_gtex_aging_signatures_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_gtex_hz_consensus_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--expression_gct", required=True, help="GTEx V8 TPM GCT file.")
+    parser.add_argument("--sample_attributes_tsv", required=True)
+    parser.add_argument("--subject_phenotypes_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--min_samples_per_group", type=int, default=3)
+    parser.add_argument("--support_fraction", type=float, default=0.50)
+    parser.add_argument("--top_n", type=int, default=100)
+    parser.add_argument("--up_cutoff", type=float, default=0.95)
+    parser.add_argument("--expected_group_count", type=int)
+    parser.add_argument("--description", default="GTEx V8 Harmonizome-style tissue-sex-age majority consensus")
+    _add_provenance_flags(parser)
+
+
 def _add_gtex_age_binned_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--expression_gct", required=True)
     parser.add_argument("--sample_attributes_tsv", required=True)
@@ -1749,6 +1763,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_provenance_flags(p_rna_de_prepare)
     p_gtex_aging_signatures = wf_sub.add_parser("gtex_aging_signatures")
     _add_gtex_aging_signatures_flags(p_gtex_aging_signatures)
+    p_gtex_hz_consensus = wf_sub.add_parser("gtex_hz_consensus")
+    _add_gtex_hz_consensus_flags(p_gtex_hz_consensus)
     p_gtex_age_binned = wf_sub.add_parser("gtex_age_binned")
     _add_gtex_age_binned_flags(p_gtex_age_binned)
     p_gtex_continuous_age = wf_sub.add_parser("gtex_continuous_age")
@@ -2553,6 +2569,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=gtex_aging_signatures n_comparisons={result.get('n_comparisons')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "gtex_hz_consensus":
+                from geneset_extractors.workflows.gtex_hz_consensus import run as run_gtex_hz_consensus
+
+                result = run_gtex_hz_consensus(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=gtex_hz_consensus n_groups={result.get('n_groups')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
