@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import gzip
 import math
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -68,13 +69,36 @@ def _sample_up_sets(gene_symbols: list[str], values: np.ndarray, cutoff: float) 
     return up
 
 
-def _read_expression(expression_gct: Path, selected_ids: set[str]) -> tuple[list[str], list[str], np.ndarray]:
+def _gct_row_count(expression_gct: Path) -> int:
+    with _open_text(expression_gct) as handle:
+        handle.readline()
+        dimensions = handle.readline().strip().split("\t")
+    try:
+        return int(dimensions[0])
+    except (IndexError, ValueError) as exc:
+        raise ValueError("Expected a GCT dimensions line with a row count") from exc
+
+
+def _write_sample_major_expression(
+    expression_gct: Path,
+    selected_ids: set[str],
+    temp_dir: Path,
+) -> tuple[list[str], list[str], np.memmap]:
+    """Materialize only a disk-backed float32 expression matrix.
+
+    The V8 TPM GCT is too large for nested Python lists or multiple dense
+    in-memory arrays.  Gene-major layout permits efficient GCT ingestion; a
+    sample-major copy makes the later rank computation contiguous per sample.
+    """
     _, all_ids = parse_gct_header(expression_gct)
     sample_ids = [sample_id for sample_id in all_ids if sample_id in selected_ids]
     if not sample_ids:
         raise ValueError("No metadata-selected samples occur in the expression GCT")
     sample_positions = {sample_id: index + 2 for index, sample_id in enumerate(all_ids)}
-    rows: dict[str, list[float]] = {}
+    max_rows = _gct_row_count(expression_gct)
+    gene_major = np.memmap(temp_dir / "gene_major.float32.mmap", mode="w+", dtype=np.float32, shape=(max_rows, len(sample_ids)))
+    best_row_by_symbol: dict[str, tuple[int, float]] = {}
+    retained_rows = 0
     with _open_text(expression_gct) as handle:
         handle.readline(); handle.readline()
         reader = csv.reader(handle, delimiter="\t")
@@ -85,20 +109,44 @@ def _read_expression(expression_gct: Path, selected_ids: set[str]) -> tuple[list
             symbol = str(row[1]).strip()
             if not symbol or symbol == "-":
                 continue
-            values = []
-            for sample_id in sample_ids:
+            values = np.zeros(len(sample_ids), dtype=np.float32)
+            for index, sample_id in enumerate(sample_ids):
                 try:
-                    values.append(float(row[sample_positions[sample_id]] or 0.0))
+                    values[index] = max(float(row[sample_positions[sample_id]] or 0.0), 0.0)
                 except (IndexError, ValueError):
-                    values.append(0.0)
-            # Gene-symbol duplicate merge retains the higher-mean expression row.
-            previous = rows.get(symbol)
-            if previous is None or sum(values) > sum(previous):
-                rows[symbol] = values
-    if not rows:
+                    pass
+            gene_major[retained_rows, :] = values
+            value_sum = float(values.sum(dtype=np.float64))
+            previous = best_row_by_symbol.get(symbol)
+            # Preserve the established deterministic duplicate policy.
+            if previous is None or value_sum > previous[1]:
+                best_row_by_symbol[symbol] = (retained_rows, value_sum)
+            retained_rows += 1
+    if not best_row_by_symbol:
         raise ValueError("No usable gene-symbol rows were found in the expression GCT")
-    symbols = sorted(rows)
-    return sample_ids, symbols, np.asarray([rows[symbol] for symbol in symbols], dtype=float)
+    symbols = sorted(best_row_by_symbol)
+    source_rows = np.asarray([best_row_by_symbol[symbol][0] for symbol in symbols], dtype=np.intp)
+    sample_major = np.memmap(temp_dir / "sample_major.float32.mmap", mode="w+", dtype=np.float32, shape=(len(sample_ids), len(symbols)))
+    # Bounded blocks avoid a whole-matrix transpose allocation.
+    for start in range(0, len(sample_ids), 128):
+        stop = min(start + 128, len(sample_ids))
+        sample_major[start:stop, :] = gene_major[source_rows, start:stop].T
+    sample_major.flush()
+    del gene_major
+    return sample_ids, symbols, sample_major
+
+
+def _ecdf_up_gene_indices(sample_values: np.ndarray, cutoff: float) -> np.ndarray:
+    """Return the positive ECDF extreme without materializing transformed matrices.
+
+    log2(TPM + 1), quantile normalization, and the positive-scale robust
+    z-score are order-preserving within a sample.  The documented final Up call
+    is solely ECDF rank >= cutoff, so this stable rank calculation is exactly
+    equivalent to applying those intermediate monotonic transforms first.
+    """
+    order = np.argsort(sample_values, kind="mergesort")
+    first_rank = int(math.ceil(float(cutoff) * len(order))) - 1
+    return order[max(first_rank, 0):]
 
 
 def _groups(sample_rows: list[dict[str, str]], expression_ids: set[str], min_samples: int) -> dict[tuple[str, str, str], list[str]]:
@@ -131,27 +179,30 @@ def run(args) -> dict[str, object]:
     expected = getattr(args, "expected_group_count", None)
     if expected is not None and len(groups) != int(expected):
         raise ValueError(f"Expected {expected} tissue-sex-age groups; reconstructed {len(groups)}")
-    selected_ids = {sample_id for members in groups.values() for sample_id in members}
-    sample_ids, symbols, expression = _read_expression(expression_gct, selected_ids)
-    calls_by_column = _sample_up_sets(symbols, expression, float(args.up_cutoff))
-    calls = {sample_id: calls_by_column[str(index)] for index, sample_id in enumerate(sample_ids)}
-
     gmt_path = out_dir / "genesets.gmt"
     support_path = out_dir / "gene_support.tsv"
-    support_rows: list[tuple[str, str, int, float]] = []
-    with gmt_path.open("w", encoding="utf-8", newline="\n") as handle:
-        for (tissue, sex, age), members in sorted(groups.items(), key=lambda item: f"{item[0][0]} {item[0][1]} {item[0][2]} Up"):
-            counts: Counter[str] = Counter(gene for sample_id in members for gene in calls[sample_id])
-            ranked = [(gene, count, count / len(members)) for gene, count in counts.items() if count / len(members) >= float(args.support_fraction)]
-            ranked.sort(key=lambda item: (-item[2], -item[1], item[0]))
-            term = f"{tissue} {sex} {age} Up"
-            genes = [gene for gene, _, _ in ranked[:int(args.top_n)]]
-            handle.write("\t".join([term, str(args.description), *genes]) + "\n")
-            support_rows.extend((term, gene, count, fraction) for gene, count, fraction in ranked)
-    with support_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(["term", "gene_symbol", "support_count", "support_fraction"])
-        writer.writerows(support_rows)
+    ordered_groups = sorted(groups.items(), key=lambda item: f"{item[0][0]} {item[0][1]} {item[0][2]} Up")
+    group_for_sample = {sample_id: group_index for group_index, (_, members) in enumerate(ordered_groups) for sample_id in members}
+    selected_ids = set(group_for_sample)
+    with tempfile.TemporaryDirectory(prefix="gtex_hz_consensus_", dir=out_dir) as temp_name:
+        sample_ids, symbols, expression = _write_sample_major_expression(expression_gct, selected_ids, Path(temp_name))
+        support_counts = np.zeros((len(ordered_groups), len(symbols)), dtype=np.uint16)
+        for sample_index, sample_id in enumerate(sample_ids):
+            up_indices = _ecdf_up_gene_indices(expression[sample_index, :], float(args.up_cutoff))
+            support_counts[group_for_sample[sample_id], up_indices] += 1
+        del expression
+        with gmt_path.open("w", encoding="utf-8", newline="\n") as gmt_handle, support_path.open("w", encoding="utf-8", newline="") as support_handle:
+            support_writer = csv.writer(support_handle, delimiter="\t", lineterminator="\n")
+            support_writer.writerow(["term", "gene_symbol", "support_count", "support_fraction"])
+            for group_index, ((tissue, sex, age), members) in enumerate(ordered_groups):
+                counts = support_counts[group_index, :]
+                eligible = np.flatnonzero(counts.astype(np.float64) / len(members) >= float(args.support_fraction))
+                ranked = sorted(eligible, key=lambda index: (-(int(counts[index]) / len(members)), -int(counts[index]), symbols[index]))
+                term = f"{tissue} {sex} {age} Up"
+                genes = [symbols[index] for index in ranked[:int(args.top_n)]]
+                gmt_handle.write("\t".join([term, str(args.description), *genes]) + "\n")
+                for index in ranked:
+                    support_writer.writerow([term, symbols[index], int(counts[index]), int(counts[index]) / len(members)])
     graph = write_workflow_provenance_graph(
         workflow_name="gtex_hz_consensus", module_name=__name__, output_dir=out_dir,
         focus_output_path=gmt_path, output_paths=[(gmt_path, "gmt"), (support_path, "gene_support")],
