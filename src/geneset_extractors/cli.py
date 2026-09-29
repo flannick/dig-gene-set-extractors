@@ -2238,6 +2238,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_signed_term.add_argument("--genome_build", required=True)
     p_signed_term.add_argument("--term_column", default="term")
     p_signed_term.add_argument("--term_prefix", default="")
+    p_signed_term.add_argument(
+        "--signature_name",
+        help="Human-readable collection name for metadata and provenance.",
+    )
     p_signed_term.add_argument("--gene_id_column", default="gene_id")
     p_signed_term.add_argument("--gene_symbol_column", default="gene_symbol")
     p_signed_term.add_argument("--score_column", default="score")
