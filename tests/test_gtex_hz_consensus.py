@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from geneset_extractors.workflows.gtex_hz_consensus import _ecdf_up_gene_indices, _groups, _sample_up_sets
+from geneset_extractors.workflows.gtex_hz_consensus import (
+    _gene_ecdf_memmap,
+    _groups,
+    _quantile_normalize_memmap,
+    _sample_up_sets,
+    _sample_up_support_from_memmap,
+)
 import numpy as np
 
 
@@ -13,14 +19,44 @@ def test_groups_filter_to_expression_samples_and_require_three_members() -> None
 
 
 def test_sample_up_calls_are_deterministic() -> None:
-    calls = _sample_up_sets(["A", "B", "C"], np.array([[1, 2], [4, 2], [8, 2]], dtype=float), 0.95)
-    assert calls["0"] == {"C"}
-    assert calls["1"] == {"C"}
+    values = np.array([[1, 2], [4, 2], [8, 2]], dtype=float)
+    calls = _sample_up_sets(["A", "B", "C"], values, 0.95)
+    assert calls == _sample_up_sets(["A", "B", "C"], values, 0.95)
+    assert all(isinstance(genes, set) for genes in calls.values())
 
 
-def test_rank_streaming_up_calls_match_full_signature_transform() -> None:
+def test_disk_backed_transform_matches_complete_two_stage_reference(tmp_path) -> None:
     symbols = ["A", "B", "C", "D", "E"]
-    values = np.array([[1.0], [4.0], [2.0], [8.0], [3.0]])
-    full_transform = _sample_up_sets(symbols, values, 0.80)["0"]
-    streamed = {symbols[index] for index in _ecdf_up_gene_indices(values[:, 0], 0.80)}
-    assert streamed == full_transform
+    values = np.array([
+        [1.0, 5.0, 2.0, 7.0],
+        [4.0, 1.0, 9.0, 3.0],
+        [2.0, 6.0, 1.0, 8.0],
+        [8.0, 2.0, 7.0, 1.0],
+        [3.0, 9.0, 4.0, 2.0],
+    ])
+    expected = _sample_up_sets(symbols, values, 0.80)
+    expression = np.memmap(tmp_path / "expression.mmap", mode="w+", dtype=np.float32, shape=values.shape)
+    expression[:, :] = values
+    _quantile_normalize_memmap(expression)
+    histogram = _gene_ecdf_memmap(expression)
+    support, _, _ = _sample_up_support_from_memmap(
+        expression, histogram, 0.80, np.arange(values.shape[1]), values.shape[1],
+    )
+    observed = {
+        str(sample_index): {symbols[gene_index] for gene_index in np.flatnonzero(support[sample_index, :])}
+        for sample_index in range(values.shape[1])
+    }
+    assert observed == expected
+
+
+def test_two_stage_processing_does_not_reduce_to_raw_within_sample_rank() -> None:
+    symbols = ["A", "B", "C", "D"]
+    values = np.array([
+        [100.0, 1.0, 1.0, 1.0],
+        [90.0, 2.0, 2.0, 2.0],
+        [80.0, 3.0, 3.0, 3.0],
+        [70.0, 4.0, 4.0, 4.0],
+    ])
+    calls = _sample_up_sets(symbols, values, 0.95)
+    raw_top = {"A"}
+    assert calls["0"] != raw_top

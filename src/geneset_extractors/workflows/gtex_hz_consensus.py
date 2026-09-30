@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import csv
 import gzip
-import math
 import tempfile
 import re
 from collections import Counter, defaultdict
@@ -61,22 +60,37 @@ def _quantile_normalize_by_sample(values: np.ndarray) -> np.ndarray:
 
 
 def _sample_up_sets(gene_symbols: list[str], values: np.ndarray, cutoff: float) -> dict[str, set[str]]:
-    """Return Harmonizome-style Up calls after robust per-sample standardization."""
+    """Return Up calls from the complete historical-style Harmonizome transform.
+
+    ``values`` is gene by sample.  This small in-memory implementation is
+    intentionally kept as the reference for the disk-backed production path.
+    """
+    standardized = _harmonizome_standardize(values)
+    up: dict[str, set[str]] = {}
+    for column in range(standardized.shape[1]):
+        up[str(column)] = {gene_symbols[index] for index in np.flatnonzero(standardized[:, column] >= cutoff)}
+    return up
+
+
+def _ecdf(values: np.ndarray) -> np.ndarray:
+    """Right-continuous empirical CDF values, preserving equal-value ties."""
+    ordered = np.sort(values, kind="mergesort")
+    return np.searchsorted(ordered, values, side="right").astype(np.float64) / len(values)
+
+
+def _harmonizome_standardize(values: np.ndarray) -> np.ndarray:
+    """Apply the complete two-stage Harmonizome sample-signature transform."""
     normalized = _quantile_normalize_by_sample(np.log2(np.maximum(values, 0.0) + 1.0))
-    median = np.median(normalized, axis=0)
-    mad = np.median(np.abs(normalized - median), axis=0)
-    fallback = np.mean(np.abs(normalized - median), axis=0)
+    median = np.median(normalized, axis=1, keepdims=True)
+    mad = np.median(np.abs(normalized - median), axis=1, keepdims=True)
+    fallback = np.mean(np.abs(normalized - np.mean(normalized, axis=1, keepdims=True)), axis=1, keepdims=True)
     scale = np.where(mad > 0, mad, fallback)
     scale = np.where(scale > 0, scale, 1.0)
     robust_z = (normalized - median) / scale
-    up: dict[str, set[str]] = {}
-    for column in range(robust_z.shape[1]):
-        order = np.argsort(robust_z[:, column], kind="mergesort")
-        ranks = np.empty(robust_z.shape[0], dtype=float)
-        ranks[order] = np.arange(1, robust_z.shape[0] + 1, dtype=float)
-        ecdf = ranks / float(robust_z.shape[0])
-        up[str(column)] = {gene_symbols[index] for index in np.flatnonzero(ecdf >= cutoff)}
-    return up
+    gene_ecdf = np.empty_like(robust_z, dtype=np.float64)
+    for gene_index in range(robust_z.shape[0]):
+        gene_ecdf[gene_index, :] = _ecdf(robust_z[gene_index, :])
+    return _ecdf(gene_ecdf.reshape(-1)).reshape(gene_ecdf.shape)
 
 
 def _gct_row_count(expression_gct: Path) -> int:
@@ -89,16 +103,17 @@ def _gct_row_count(expression_gct: Path) -> int:
         raise ValueError("Expected a GCT dimensions line with a row count") from exc
 
 
-def _write_sample_major_expression(
+def _write_gene_major_expression(
     expression_gct: Path,
     selected_ids: set[str],
     temp_dir: Path,
 ) -> tuple[list[str], list[str], np.memmap]:
-    """Materialize only a disk-backed float32 expression matrix.
+    """Materialize a disk-backed, gene-major float32 expression matrix.
 
     The V8 TPM GCT is too large for nested Python lists or multiple dense
     in-memory arrays.  Gene-major layout permits efficient GCT ingestion; a
-    sample-major copy makes the later rank computation contiguous per sample.
+    The gene-major layout supports the required gene-wise robust scaling and
+    first ECDF stage without putting the full matrix in memory.
     """
     _, all_ids = parse_gct_header(expression_gct)
     sample_ids = [sample_id for sample_id in all_ids if sample_id in selected_ids]
@@ -136,27 +151,75 @@ def _write_sample_major_expression(
         raise ValueError("No usable gene-symbol rows were found in the expression GCT")
     symbols = sorted(best_row_by_symbol)
     source_rows = np.asarray([best_row_by_symbol[symbol][0] for symbol in symbols], dtype=np.intp)
-    sample_major = np.memmap(temp_dir / "sample_major.float32.mmap", mode="w+", dtype=np.float32, shape=(len(sample_ids), len(symbols)))
-    # Bounded blocks avoid a whole-matrix transpose allocation.
-    for start in range(0, len(sample_ids), 128):
-        stop = min(start + 128, len(sample_ids))
-        sample_major[start:stop, :] = gene_major[source_rows, start:stop].T
-    sample_major.flush()
+    retained = np.memmap(temp_dir / "expression.float32.mmap", mode="w+", dtype=np.float32, shape=(len(symbols), len(sample_ids)))
+    retained[:, :] = gene_major[source_rows, :]
+    retained.flush()
     del gene_major
-    return sample_ids, symbols, sample_major
+    return sample_ids, symbols, retained
 
 
-def _ecdf_up_gene_indices(sample_values: np.ndarray, cutoff: float) -> np.ndarray:
-    """Return the positive ECDF extreme without materializing transformed matrices.
+def _quantile_normalize_memmap(expression: np.memmap) -> None:
+    """Quantile-normalize sample columns with only one column in memory."""
+    n_genes, n_samples = expression.shape
+    mean_by_rank = np.zeros(n_genes, dtype=np.float64)
+    for sample_index in range(n_samples):
+        values = np.log2(np.maximum(np.asarray(expression[:, sample_index], dtype=np.float64), 0.0) + 1.0)
+        expression[:, sample_index] = values
+        order = np.argsort(values, kind="mergesort")
+        mean_by_rank += values[order]
+    mean_by_rank /= n_samples
+    for sample_index in range(n_samples):
+        values = np.asarray(expression[:, sample_index], dtype=np.float64)
+        order = np.argsort(values, kind="mergesort")
+        normalized = np.empty(n_genes, dtype=np.float32)
+        normalized[order] = mean_by_rank
+        expression[:, sample_index] = normalized
+    expression.flush()
 
-    log2(TPM + 1), quantile normalization, and the positive-scale robust
-    z-score are order-preserving within a sample.  The documented final Up call
-    is solely ECDF rank >= cutoff, so this stable rank calculation is exactly
-    equivalent to applying those intermediate monotonic transforms first.
-    """
-    order = np.argsort(sample_values, kind="mergesort")
-    first_rank = int(math.ceil(float(cutoff) * len(order))) - 1
-    return order[max(first_rank, 0):]
+
+def _gene_ecdf_memmap(expression: np.memmap) -> np.ndarray:
+    """Replace expression with gene-wise ECDF ranks and return their histogram."""
+    n_genes, n_samples = expression.shape
+    histogram = np.zeros(n_samples + 1, dtype=np.int64)
+    for gene_index in range(n_genes):
+        values = np.asarray(expression[gene_index, :], dtype=np.float64)
+        median = np.median(values)
+        deviations = np.abs(values - median)
+        scale = np.median(deviations)
+        if scale <= 0:
+            scale = float(np.mean(np.abs(values - np.mean(values))))
+        if scale <= 0:
+            scale = 1.0
+        robust_z = (values - median) / scale
+        ordered = np.sort(robust_z, kind="mergesort")
+        ranks = np.searchsorted(ordered, robust_z, side="right")
+        histogram += np.bincount(ranks, minlength=n_samples + 1)
+        expression[gene_index, :] = ranks.astype(np.float32) / n_samples
+    expression.flush()
+    return histogram
+
+
+def _sample_up_support_from_memmap(
+    expression: np.memmap,
+    histogram: np.ndarray,
+    cutoff: float,
+    group_indices: np.ndarray,
+    n_groups: int,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Apply global ECDF and accumulate sample calls into group support counts."""
+    n_genes, n_samples = expression.shape
+    global_ecdf_by_rank = np.cumsum(histogram, dtype=np.float64) / float(n_genes * n_samples)
+    support_counts = np.zeros((n_groups, n_genes), dtype=np.uint16)
+    sample_up_counts = np.zeros(n_samples, dtype=np.int32)
+    unique_up_genes = 0
+    for gene_index in range(n_genes):
+        ranks = np.rint(np.asarray(expression[gene_index, :], dtype=np.float64) * n_samples).astype(np.intp)
+        is_up = global_ecdf_by_rank[ranks] >= cutoff
+        sample_up_counts += is_up
+        if np.any(is_up):
+            unique_up_genes += 1
+            support_counts[:, gene_index] = np.bincount(group_indices[is_up], minlength=n_groups)
+    return support_counts, sample_up_counts, unique_up_genes
 
 
 def _groups(sample_rows: list[dict[str, str]], expression_ids: set[str], min_samples: int) -> dict[tuple[str, str, str], list[str]]:
@@ -197,11 +260,13 @@ def run(args) -> dict[str, object]:
     group_for_sample = {sample_id: group_index for group_index, (_, members) in enumerate(ordered_groups) for sample_id in members}
     selected_ids = set(group_for_sample)
     with tempfile.TemporaryDirectory(prefix="gtex_hz_consensus_", dir=out_dir) as temp_name:
-        sample_ids, symbols, expression = _write_sample_major_expression(expression_gct, selected_ids, Path(temp_name))
-        support_counts = np.zeros((len(ordered_groups), len(symbols)), dtype=np.uint16)
-        for sample_index, sample_id in enumerate(sample_ids):
-            up_indices = _ecdf_up_gene_indices(expression[sample_index, :], float(args.up_cutoff))
-            support_counts[group_for_sample[sample_id], up_indices] += 1
+        sample_ids, symbols, expression = _write_gene_major_expression(expression_gct, selected_ids, Path(temp_name))
+        _quantile_normalize_memmap(expression)
+        gene_ecdf_histogram = _gene_ecdf_memmap(expression)
+        group_indices = np.asarray([group_for_sample[sample_id] for sample_id in sample_ids], dtype=np.intp)
+        support_counts, sample_up_counts, unique_up_genes = _sample_up_support_from_memmap(
+            expression, gene_ecdf_histogram, float(args.up_cutoff), group_indices, len(ordered_groups),
+        )
         del expression
         gmt_sets: list[tuple[str, list[str]]] = []
         with support_path.open("w", encoding="utf-8", newline="") as support_handle, selected_path.open("w", encoding="utf-8", newline="") as selected_handle, full_path.open("w", encoding="utf-8", newline="") as full_handle:
@@ -231,7 +296,7 @@ def run(args) -> dict[str, object]:
         workflow_name="gtex_hz_consensus", module_name=__name__, output_dir=out_dir,
         focus_output_path=gmt_path, output_paths=[(gmt_path, "gmt"), (support_path, "gene_support")],
         input_paths=[(expression_gct, "gtex_v8_tpm"), (sample_attributes, "sample_attributes_tsv_v8"), (subject_phenotypes, "subject_phenotypes_tsv_v8")],
-        parameters={"grouping": "SMTSD x SEX x AGE; n_samples >= %d" % int(args.min_samples_per_group), "sample_signature": "log2(TPM+1), sample quantile normalization, robust median/MAD z-score with mean-absolute-deviation fallback, ECDF Up >= %.2f" % float(args.up_cutoff), "consensus": "support_fraction >= %.2f; top_n=%d" % (float(args.support_fraction), int(args.top_n)), "historical_drc_aggregation": "unavailable; scientifically comparable reconstruction, not set-equivalent"},
+        parameters={"grouping": "SMTSD x SEX x AGE; n_samples >= %d" % int(args.min_samples_per_group), "sample_signature": "log2(TPM+1), sample-column quantile normalization, gene-wise robust median/MAD z-score with mean-absolute-deviation fallback, gene-wise ECDF then global ECDF Up >= %.2f" % float(args.up_cutoff), "consensus": "support_fraction >= %.2f; top_n=%d" % (float(args.support_fraction), int(args.top_n)), "historical_drc_aggregation": "unavailable; scientifically comparable reconstruction, not set-equivalent"},
     )
     metadata_path = out_dir / "geneset.meta.json"
     write_metadata(metadata_path, {
@@ -282,5 +347,11 @@ def run(args) -> dict[str, object]:
         "n_genes": len(symbols),
         "support_fraction": float(args.support_fraction),
         "top_n": int(args.top_n),
+        "sample_up_genes": {
+            "median": float(np.median(sample_up_counts)),
+            "min": int(sample_up_counts.min()),
+            "max": int(sample_up_counts.max()),
+        },
+        "n_unique_genes_ever_up": int(unique_up_genes),
     })
     return {"out_dir": str(out_dir), "n_groups": len(groups), "n_samples": len(sample_ids)}
