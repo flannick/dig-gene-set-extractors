@@ -61,7 +61,7 @@ def test_metadata_write_emits_renamed_legacy_and_dapper_provenance(tmp_path: Pat
     }
     dapper_payload = yaml.safe_load(dapper_path.read_text(encoding="utf-8"))
     assert {
-        "c2m2_files",
+        "files",
         "activities",
         "gene_set_collections",
         "used_edges",
@@ -69,7 +69,7 @@ def test_metadata_write_emits_renamed_legacy_and_dapper_provenance(tmp_path: Pat
     }.issubset(dapper_payload)
     all_node_ids = {
         node["id"]
-        for bucket in ("c2m2_files", "activities", "gene_set_collections")
+        for bucket in ("files", "activities", "gene_set_collections")
         for node in dapper_payload[bucket]
     }
     assert all(node_id.startswith("dapper:") for node_id in all_node_ids)
@@ -249,7 +249,9 @@ def test_dapper_row_export_creates_companion_gmt_and_complete_collection(tmp_pat
     assert rows[0]["n_genes"] == 2
     companion_file = next(node for node in payload["files"] if node["filename"] == companion.name)
     assert collection["has_gmt_file"] == companion_file["id"]
-    source_file = next(node for node in payload["c2m2_files"] if node["filename"] == "source.tsv")
+    original_gmt_file = next(node for node in payload["c2m2_files"] if node["filename"] == "genesets.gmt")
+    assert original_gmt_file["location"] == str(original_gmt)
+    source_file = next(node for node in payload["files"] if node["filename"] == "source.tsv")
     assert source_file["location"] == str(source)
     assert "local_id" not in source_file
     assert "dcc_url" not in source_file
@@ -268,3 +270,41 @@ def test_dapper_row_export_creates_companion_gmt_and_complete_collection(tmp_pat
         edge["subject"] == companion_file["id"] and edge["object"] == export_activity["id"]
         for edge in payload["was_generated_by_edges"]
     )
+
+
+def test_dapper_row_export_uses_the_standard_symbol_namespace_by_default(tmp_path: Path):
+    """Every eligible human-library GMT gets the same structural DAPPER export."""
+    source = tmp_path / "source.tsv"
+    source.write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    (tmp_path / "geneset.tsv").write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    (tmp_path / "genesets.gmt").write_text("legacy_label\tDescription\tGENE1\n", encoding="utf-8")
+    metadata = make_metadata(
+        converter_name="toy_converter",
+        parameters={"term_prefix": "Toy"},
+        data_type="expression",
+        assay="bulk_rna",
+        organism="human",
+        genome_build="hg38",
+        files=[input_file_record(source, "source_tsv")],
+        gene_annotation={"mode": "none", "source": "toy", "gene_id_field": "symbol"},
+        weights={"weight_type": "score", "normalization": {}, "aggregation": "none"},
+        summary={
+            "n_input_features": 1,
+            "n_genes": 1,
+            "n_features_assigned": 1,
+            "fraction_features_assigned": 1.0,
+            "n_sets_emitted": 1,
+        },
+        output_files=[{"path": "genesets.gmt", "role": "gmt_library"}],
+    )
+    write_metadata(tmp_path / "geneset.meta.json", metadata)
+
+    payload = yaml.safe_load((tmp_path / DAPPER_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    collection = payload["gene_set_collections"][0]
+    row = payload["gene_sets"][0]
+    assert payload["prefixes"]["HGNC.SYMBOL"] == "https://identifiers.org/hgnc.symbol:"
+    assert row["alternate_identifier"] == ["legacy_label"]
+    assert row["name"] != row["alternate_identifier"][0]
+    assert row["members"] == ["HGNC.SYMBOL:GENE1"]
+    assert collection["members"] == [row["id"]]
+    assert row["in_gene_set_collection"] == [collection["id"]]

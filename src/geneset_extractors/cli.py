@@ -2297,6 +2297,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_unsigned_term.add_argument("--gene_id_column", default="gene_id")
     p_unsigned_term.add_argument("--gene_symbol_column", default="gene_symbol")
     p_unsigned_term.add_argument("--score_column", default="score")
+    p_unsigned_term.add_argument(
+        "--dapper_gene_member_prefix",
+        help="Optional DAPPER CURIE prefix for GMT gene members; requires --dapper_gene_member_prefix_uri.",
+    )
+    p_unsigned_term.add_argument(
+        "--dapper_gene_member_prefix_uri",
+        help="Namespace URI declared with --dapper_gene_member_prefix.",
+    )
+    p_unsigned_term.add_argument(
+        "--dapper_row_display_separator",
+        default="_",
+        help="Separator replaced with spaces to create readable DAPPER GeneSet names.",
+    )
     _add_gmt_flags(p_unsigned_term)
     _add_provenance_flags(p_unsigned_term)
     p_unsigned_term.set_defaults(

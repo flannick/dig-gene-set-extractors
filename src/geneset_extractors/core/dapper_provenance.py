@@ -135,7 +135,7 @@ def _compute_id(node: dict[str, Any], class_name: str, identifier: str | None) -
     graph.add((_SELF, _CLASS_PREDICATE, Literal(class_name)))
     for slot in _HASHABLE_SLOTS[class_name]:
         raw_value = node.get(slot)
-        if slot in _RELATIONSHIP_SLOTS.get(class_name, set()) or isinstance(raw_value, (list, dict)):
+        if slot in _RELATIONSHIP_SLOTS.get(class_name, set()):
             value = _replace_self(raw_value, identifier, substring=False)
         elif isinstance(raw_value, str) and (" " in raw_value or "\n" in raw_value):
             value = _replace_self(raw_value, identifier, substring=True)
@@ -183,9 +183,11 @@ def _rewrite_node(
         elif isinstance(value, str) and (" " in value or "\n" in value):
             rewritten[key] = _rewrite_substrings(value, identifiers)
         elif isinstance(value, (list, dict)):
-            # DIG's emitted DAPPER node slots are literals, not relationships;
-            # list/dict members therefore use exact rather than substring rewrites.
-            rewritten[key] = _rewrite_exact(value, identifiers)
+            # This is a literal-valued slot.  In particular,
+            # ``alternate_identifier`` preserves the original extractor/GMT
+            # identifier rather than silently replacing it with the new
+            # DAPPER identifier.  Relationship slots were handled above.
+            rewritten[key] = value
         else:
             rewritten[key] = value
     return rewritten
@@ -332,6 +334,30 @@ def _file(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
     )
 
 
+def _generic_file_from_c2m2(node: dict[str, Any], checksums: dict[str, str]) -> dict[str, Any]:
+    """Retain physical facts without claiming C2M2 registration.
+
+    Legacy provenance attaches a C2M2-shaped record to many local
+    intermediates. DAPPER reserves ``C2M2File`` for the registered source GMT
+    and represents unregistered intermediates as ordinary Files.
+    """
+    c2m2 = node.get("c2m2_properties", {}) or {}
+    raw_local_id = c2m2.get("local_id")
+    location = node.get("location") or node.get("path") or node.get("local_path") or raw_local_id
+    return _clean(
+        {
+            "id": node.get("id"),
+            "name": node.get("name"),
+            "description": node.get("description"),
+            "filename": c2m2.get("filename"),
+            "md5": c2m2.get("md5"),
+            "sha256": checksums.get(str(raw_local_id)),
+            "size_in_bytes": c2m2.get("size_in_bytes"),
+            "location": location,
+        }
+    )
+
+
 def _activity(node: dict[str, Any]) -> dict[str, Any]:
     analysis = node.get("analysis", {}) or {}
     environment = analysis.get("environment", {}) or {}
@@ -359,8 +385,10 @@ def _activity(node: dict[str, Any]) -> dict[str, Any]:
 
 def _is_gene_set_collection(node: dict[str, Any], metadata: dict[str, Any]) -> bool:
     summary = metadata.get("summary", {}) or {}
+    focus_node_id = (metadata.get("provenance", {}) or {}).get("focus_node_id")
     return (
         node.get("type") == "GeneSetCollection"
+        or node.get("id") == focus_node_id
         or summary.get("n_sets_emitted") is not None
         or node.get("n_sets") is not None
     )
@@ -371,10 +399,14 @@ def _gene_set(node: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     summary = metadata.get("summary", {}) or {}
     parameters = (metadata.get("converter", {}) or {}).get("parameters", {}) or {}
     is_collection = _is_gene_set_collection(node, metadata)
+    name = node.get("name")
+    if is_collection and isinstance(name, str):
+        name = name.replace("_", " ")
     return _clean(
         {
             "id": node.get("id"),
-            "name": node.get("name"),
+            "name": name,
+            "alternate_identifier": [node["id"]] if isinstance(node.get("id"), str) else None,
             "description": node.get("description") or gene_set.get("description"),
             "member_type": "gene_set" if is_collection else "gene",
             "assay": gene_set.get("assay"),
@@ -433,8 +465,11 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
             continue
         match node.get("type"):
             case "File":
-                if node.get("c2m2_properties"):
+                filename = str((node.get("c2m2_properties", {}) or {}).get("filename", ""))
+                if node.get("c2m2_properties") and filename.lower().endswith(".gmt"):
                     document["c2m2_files"].append(_c2m2_file(node, checksums))
+                elif node.get("c2m2_properties"):
+                    document["files"].append(_generic_file_from_c2m2(node, checksums))
                 else:
                     document["files"].append(_file(node, checksums))
             case "AnalysisType":
@@ -478,20 +513,36 @@ def _convert_graph(graph: dict[str, Any], metadata: dict[str, Any]) -> dict[str,
 
 
 def _dapper_export_config(metadata: dict[str, Any]) -> dict[str, Any] | None:
-    """Return explicit row-export configuration, never guessing gene namespaces."""
-    config = metadata.get("dapper")
-    if not isinstance(config, dict):
+    """Return row-export configuration for every eligible one-GMT output.
+
+    Legacy metadata did not carry DAPPER row-export settings.  Use an
+    organism-aware symbol namespace as the compatibility default, while
+    allowing producers to override it explicitly or opt out for outputs that
+    are not a gene-symbol GMT.
+    """
+    declared = metadata.get("dapper")
+    if isinstance(declared, dict) and declared.get("row_export") is False:
         return None
-    prefix = config.get("gene_member_prefix")
-    prefix_uri = config.get("gene_member_prefix_uri")
-    if not isinstance(prefix, str) or not prefix.strip():
-        return None
-    if not isinstance(prefix_uri, str) or not prefix_uri.strip():
-        raise ValueError(
-            "DAPPER row export requires dapper.gene_member_prefix_uri for "
-            "the declared dapper.gene_member_prefix"
-        )
+    config = dict(declared) if isinstance(declared, dict) else {}
+    organism = str((metadata.get("gene_set") or {}).get("organism", "")).lower()
+    defaults = (
+        {"gene_member_prefix": "MGI", "gene_member_prefix_uri": "https://identifiers.org/mgi:"}
+        if organism == "mouse"
+        else {"gene_member_prefix": "HGNC.SYMBOL", "gene_member_prefix_uri": "https://identifiers.org/hgnc.symbol:"}
+    )
+    config.setdefault("gene_member_prefix", defaults["gene_member_prefix"])
+    config.setdefault("gene_member_prefix_uri", defaults["gene_member_prefix_uri"])
+    prefix = config["gene_member_prefix"]
+    prefix_uri = config["gene_member_prefix_uri"]
+    if not isinstance(prefix, str) or not prefix.strip() or not isinstance(prefix_uri, str) or not prefix_uri.strip():
+        raise ValueError("DAPPER row export requires a non-empty gene-member prefix and prefix URI")
     return config
+
+
+def _default_row_display_name(label: str, separator: str) -> str:
+    """Make a readable label while retaining the original as an alternate ID."""
+    readable = label.replace(separator, " ")
+    return readable if readable != label else f"Gene set {label}"
 
 
 def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | None:
@@ -555,6 +606,29 @@ def _find_gmt_file_id(document: dict[str, Any], gmt_path: Path) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _collection_from_metadata(metadata: dict[str, Any], producer_id: str) -> dict[str, Any]:
+    """Create the missing library node for legacy one-GMT converters."""
+    gene_set = metadata.get("gene_set") or {}
+    parameters = (metadata.get("converter") or {}).get("parameters") or {}
+    original_id = gene_set.get("id")
+    name = str(gene_set.get("name") or "Gene-set library").replace("_", " ")
+    return _clean(
+        {
+            "id": "urn:dig:dapper-collection",
+            "name": name,
+            "alternate_identifier": [original_id] if isinstance(original_id, str) else None,
+            "description": gene_set.get("description"),
+            "member_type": "gene_set",
+            "assay": gene_set.get("assay"),
+            "data_type": gene_set.get("data_type"),
+            "organism": gene_set.get("organism"),
+            "genome_build": gene_set.get("genome_build"),
+            "term_prefix": parameters.get("term_prefix"),
+            "was_generated_by": producer_id,
+        }
+    )
+
+
 def _add_dapper_gmt_export(
     document: dict[str, Any], metadata: dict[str, Any], output_dir: Path
 ) -> None:
@@ -570,36 +644,51 @@ def _add_dapper_gmt_export(
     gmt_path = _declared_gmt_path(metadata, output_dir)
     if gmt_path is None:
         return
-    collections = document.get("gene_set_collections") or []
-    if len(collections) != 1:
-        raise ValueError(
-            "DAPPER row export requires exactly one GeneSetCollection in the provenance graph"
-        )
+    # A valid converter may deliberately emit an empty GMT when every
+    # candidate set falls below its minimum-size policy. There is no row-level
+    # collection to export in that case.
+    if not gmt_path.read_bytes().strip():
+        return
     source_gmt_id = _find_gmt_file_id(document, gmt_path)
     if source_gmt_id is None:
         raise ValueError(
             f"DAPPER row export could not identify one provenance File for {gmt_path.name}"
         )
+    collections = document.get("gene_set_collections") or []
+    source_producers = {
+        edge.get("object")
+        for edge in document.get("was_generated_by_edges", [])
+        if edge.get("subject") == source_gmt_id and isinstance(edge.get("object"), str)
+    }
+    synthesized_collection = False
+    if not collections and len(source_producers) == 1:
+        collections = [_collection_from_metadata(metadata, next(iter(source_producers)))]
+        document["gene_set_collections"] = collections
+        synthesized_collection = True
+    if len(collections) != 1:
+        raise ValueError(
+            "DAPPER row export requires exactly one GeneSetCollection or one GMT-producing Activity"
+        )
     source_rows = _parse_gmt_rows(gmt_path)
     prefix = str(config["gene_member_prefix"]).strip()
     row_labels = config.get("row_display_names")
-    if not isinstance(row_labels, dict):
-        raise ValueError(
-            "DAPPER row export requires dapper.row_display_names for every GMT row; "
-            "do not reuse original GMT labels as human-readable GeneSet names"
-        )
+    if row_labels is not None and not isinstance(row_labels, dict):
+        raise ValueError("dapper.row_display_names must be a mapping when declared")
+    separator = str(config.get("row_display_separator", "_") or "_")
     producer_by_collection = {
         edge.get("object")
         for edge in document.get("was_generated_by_edges", [])
         if edge.get("subject") == collections[0].get("id")
     }
+    if not producer_by_collection and isinstance(collections[0].get("was_generated_by"), str):
+        producer_by_collection = {collections[0]["was_generated_by"]}
     if len(producer_by_collection) != 1:
         raise ValueError("DAPPER row export requires one producing Activity for the collection")
     producer_id = next(iter(producer_by_collection))
 
     row_nodes: list[dict[str, Any]] = []
     for index, (label, genes, _raw_line) in enumerate(source_rows, start=1):
-        display_name = row_labels.get(label)
+        display_name = row_labels.get(label) if isinstance(row_labels, dict) else _default_row_display_name(label, separator)
         if not isinstance(display_name, str) or not display_name.strip() or display_name == label:
             raise ValueError(
                 "DAPPER row export requires a distinct non-empty readable name for "
@@ -672,15 +761,19 @@ def _add_dapper_gmt_export(
     for edge in document.get("was_generated_by_edges", []):
         if edge.get("subject") == old_collection_id:
             edge["subject"] = collection["id"]
+    if synthesized_collection:
+        document.setdefault("was_generated_by_edges", []).append(
+            {"subject": collection["id"], "predicate": "prov:wasGeneratedBy", "object": producer_id}
+        )
     document.setdefault("used_edges", []).append(
         {"subject": export_activity["id"], "predicate": "prov:used", "object": source_gmt_id, "edge_role": "data_input"}
     )
     document.setdefault("was_generated_by_edges", []).append(
         {"subject": export_file["id"], "predicate": "prov:wasGeneratedBy", "object": export_activity["id"]}
     )
-    document["prefixes"] = {
-        str(config["gene_member_prefix"]): str(config["gene_member_prefix_uri"])
-    }
+    prefixes = dict(document.get("prefixes") or {})
+    prefixes[str(config["gene_member_prefix"])] = str(config["gene_member_prefix_uri"])
+    document["prefixes"] = prefixes
 
 
 def build_dapper_provenance(

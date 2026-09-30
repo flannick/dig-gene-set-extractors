@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from geneset_extractors.cli import main
 
 
@@ -24,4 +26,9 @@ def test_signed_term_gene_uses_signature_name_for_metadata_and_dapper_collection
 
     metadata = json.loads((out_dir / "geneset.meta.json").read_text(encoding="utf-8"))
     assert metadata["gene_set"]["name"] == "LINCS_L1000_Chem_Pert"
-    assert "name: LINCS_L1000_Chem_Pert" in (out_dir / "geneset.provenance.dapper.yaml").read_text(encoding="utf-8")
+    payload = yaml.safe_load((out_dir / "geneset.provenance.dapper.yaml").read_text(encoding="utf-8"))
+    collection = payload["gene_set_collections"][0]
+    rows = payload["gene_sets"]
+    assert collection["name"] == "LINCS L1000 Chem Pert"
+    assert collection["members"] == [row["id"] for row in rows]
+    assert (out_dir / "genesets.dapper-ids.gmt").is_file()
