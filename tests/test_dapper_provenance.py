@@ -296,6 +296,9 @@ def test_dapper_row_export_uses_the_standard_symbol_namespace_by_default(tmp_pat
             "n_sets_emitted": 1,
         },
         output_files=[{"path": "genesets.gmt", "role": "gmt_library"}],
+        # Simulate a legacy converter that constructed labels before a later
+        # GMT writer normalized them.  The actual GMT row must still export.
+        dapper={"row_display_names": {"pre_render_label": "Pre-render label"}},
     )
     write_metadata(tmp_path / "geneset.meta.json", metadata)
 
@@ -305,6 +308,7 @@ def test_dapper_row_export_uses_the_standard_symbol_namespace_by_default(tmp_pat
     assert payload["prefixes"]["HGNC.SYMBOL"] == "https://identifiers.org/hgnc.symbol:"
     assert row["alternate_identifier"] == ["legacy_label"]
     assert row["name"] != row["alternate_identifier"][0]
+    assert row["name"] == "legacy label"
     assert row["members"] == ["HGNC.SYMBOL:GENE1"]
     assert collection["members"] == [row["id"]]
     assert row["in_gene_set_collection"] == [collection["id"]]

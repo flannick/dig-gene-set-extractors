@@ -689,7 +689,14 @@ def _add_dapper_gmt_export(
     row_nodes: list[dict[str, Any]] = []
     for index, (label, genes, _raw_line) in enumerate(source_rows, start=1):
         display_name = row_labels.get(label) if isinstance(row_labels, dict) else _default_row_display_name(label, separator)
+        # Explicit mappings are useful when a workflow can provide richer
+        # labels, but the source GMT remains authoritative.  Some legacy
+        # writers normalize their first column after the converter constructs
+        # its mapping.  Fall back to a deterministic readable rendering of
+        # that actual row label instead of failing a completed extraction.
         if not isinstance(display_name, str) or not display_name.strip() or display_name == label:
+            display_name = _default_row_display_name(label, separator)
+        if display_name == label:
             raise ValueError(
                 "DAPPER row export requires a distinct non-empty readable name for "
                 f"GMT label {label!r} in dapper.row_display_names"
