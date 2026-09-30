@@ -309,7 +309,7 @@ def _add_gtex_hz_consensus_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--subject_phenotypes_tsv", required=True)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--min_samples_per_group", type=int, default=3)
-    parser.add_argument("--support_fraction", type=float, default=0.50)
+    parser.add_argument("--support_fraction", type=float, default=0.25)
     parser.add_argument("--top_n", type=int, default=100)
     parser.add_argument("--up_cutoff", type=float, default=0.95)
     parser.add_argument("--expected_group_count", type=int)
