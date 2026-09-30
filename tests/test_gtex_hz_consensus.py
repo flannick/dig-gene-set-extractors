@@ -3,6 +3,8 @@ from __future__ import annotations
 from geneset_extractors.workflows.gtex_hz_consensus import (
     _gene_ecdf_memmap,
     _groups,
+    _modified_row_zscore_memmap,
+    _quantile_normalize_by_sample,
     _quantile_normalize_memmap,
     _sample_up_sets,
     _sample_up_support_from_memmap,
@@ -25,6 +27,13 @@ def test_sample_up_calls_are_deterministic() -> None:
     assert all(isinstance(genes, set) for genes in calls.values())
 
 
+def test_reference_quantile_normalization_assigns_ties_to_first_rank() -> None:
+    values = np.array([[1.0, 1.0], [1.0, 3.0], [4.0, 5.0]])
+    normalized = _quantile_normalize_by_sample(values)
+    assert np.array_equal(normalized[:, 0], np.array([1.0, 1.0, 4.5]))
+    assert np.array_equal(normalized[:, 1], np.array([1.0, 2.0, 4.5]))
+
+
 def test_disk_backed_transform_matches_complete_two_stage_reference(tmp_path) -> None:
     symbols = ["A", "B", "C", "D", "E"]
     values = np.array([
@@ -38,9 +47,10 @@ def test_disk_backed_transform_matches_complete_two_stage_reference(tmp_path) ->
     expression = np.memmap(tmp_path / "expression.mmap", mode="w+", dtype=np.float32, shape=values.shape)
     expression[:, :] = values
     _quantile_normalize_memmap(expression)
-    histogram = _gene_ecdf_memmap(expression)
-    support, _, _ = _sample_up_support_from_memmap(
-        expression, histogram, 0.80, np.arange(values.shape[1]), values.shape[1],
+    _modified_row_zscore_memmap(expression)
+    _, stage_one_cutoff = _gene_ecdf_memmap(expression, values.shape[1], 1, 0.80)
+    support, _, _, _ = _sample_up_support_from_memmap(
+        expression, stage_one_cutoff, np.arange(values.shape[1]), values.shape[1],
     )
     observed = {
         str(sample_index): {symbols[gene_index] for gene_index in np.flatnonzero(support[sample_index, :])}

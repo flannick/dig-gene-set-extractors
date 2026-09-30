@@ -312,6 +312,8 @@ def _add_gtex_hz_consensus_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--support_fraction", type=float, default=0.25)
     parser.add_argument("--top_n", type=int, default=100)
     parser.add_argument("--up_cutoff", type=float, default=0.95)
+    parser.add_argument("--global_quantile_sample_per_gene", type=int, default=500)
+    parser.add_argument("--random_seed", type=int, default=1)
     parser.add_argument("--expected_group_count", type=int)
     parser.add_argument("--description", default="GTEx V8 Harmonizome-style tissue-sex-age majority consensus")
     _add_provenance_flags(parser)

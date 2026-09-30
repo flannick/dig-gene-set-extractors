@@ -9,7 +9,7 @@ import csv
 import gzip
 import tempfile
 import re
-from collections import Counter, defaultdict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -49,13 +49,14 @@ def _sex_label(value: str) -> str | None:
 
 
 def _quantile_normalize_by_sample(values: np.ndarray) -> np.ndarray:
-    """Quantile normalize columns, with stable ordering for tied expression."""
-    order = np.argsort(values, axis=0, kind="mergesort")
-    sorted_values = np.take_along_axis(values, order, axis=0)
+    """Match the reference's column quantile normalization, including ties."""
+    sorted_values = np.sort(values, axis=0)
     mean_by_rank = sorted_values.mean(axis=1)
     normalized = np.empty_like(values, dtype=float)
     for column in range(values.shape[1]):
-        normalized[order[:, column], column] = mean_by_rank
+        # The reference assigns every tied value to its *first* sorted rank.
+        first_rank = np.searchsorted(sorted_values[:, column], values[:, column], side="left")
+        normalized[:, column] = mean_by_rank[first_rank]
     return normalized
 
 
@@ -79,18 +80,31 @@ def _ecdf(values: np.ndarray) -> np.ndarray:
 
 
 def _harmonizome_standardize(values: np.ndarray) -> np.ndarray:
-    """Apply the complete two-stage Harmonizome sample-signature transform."""
-    normalized = _quantile_normalize_by_sample(np.log2(np.maximum(values, 0.0) + 1.0))
+    """Reference implementation of the patched Harmonizome transformations."""
+    imputed = np.asarray(values, dtype=float).copy()
+    imputed[imputed == 0] = np.nan
+    row_means = np.nanmean(imputed, axis=1)
+    row_means[~np.isfinite(row_means)] = 0.0
+    missing = np.where(~np.isfinite(imputed))
+    imputed[missing] = row_means[missing[0]]
+    normalized = _quantile_normalize_by_sample(np.log2(imputed + 1.0))
     median = np.median(normalized, axis=1, keepdims=True)
     mad = np.median(np.abs(normalized - median), axis=1, keepdims=True)
-    fallback = np.mean(np.abs(normalized - np.mean(normalized, axis=1, keepdims=True)), axis=1, keepdims=True)
-    scale = np.where(mad > 0, mad, fallback)
-    scale = np.where(scale > 0, scale, 1.0)
-    robust_z = (normalized - median) / scale
+    meanad = np.mean(np.abs(normalized - median), axis=1, keepdims=True)
+    robust_z = np.zeros_like(normalized, dtype=float)
+    use_mad = mad != 0
+    robust_z[use_mad[:, 0], :] = 0.6745 * (normalized[use_mad[:, 0], :] - median[use_mad[:, 0], :]) / mad[use_mad[:, 0], :]
+    use_fallback = ~use_mad[:, 0]
+    denominator = 1.253314 * meanad[use_fallback, :]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        robust_z[use_fallback, :] = (normalized[use_fallback, :] - median[use_fallback, :]) / denominator
+    robust_z[~np.isfinite(robust_z)] = 0.0
     gene_ecdf = np.empty_like(robust_z, dtype=np.float64)
     for gene_index in range(robust_z.shape[0]):
-        gene_ecdf[gene_index, :] = _ecdf(robust_z[gene_index, :])
-    return _ecdf(gene_ecdf.reshape(-1)).reshape(gene_ecdf.shape)
+        ecdf = _ecdf(robust_z[gene_index, :])
+        gene_ecdf[gene_index, :] = 2.0 * (ecdf - ecdf.mean())
+    global_ecdf = _ecdf(gene_ecdf.reshape(-1))
+    return (2.0 * (global_ecdf - global_ecdf.mean())).reshape(gene_ecdf.shape)
 
 
 def _gct_row_count(expression_gct: Path) -> int:
@@ -105,7 +119,6 @@ def _gct_row_count(expression_gct: Path) -> int:
 
 def _write_gene_major_expression(
     expression_gct: Path,
-    selected_ids: set[str],
     temp_dir: Path,
 ) -> tuple[list[str], list[str], np.memmap]:
     """Materialize a disk-backed, gene-major float32 expression matrix.
@@ -116,14 +129,27 @@ def _write_gene_major_expression(
     first ECDF stage without putting the full matrix in memory.
     """
     _, all_ids = parse_gct_header(expression_gct)
-    sample_ids = [sample_id for sample_id in all_ids if sample_id in selected_ids]
-    if not sample_ids:
-        raise ValueError("No metadata-selected samples occur in the expression GCT")
-    sample_positions = {sample_id: index + 2 for index, sample_id in enumerate(all_ids)}
     max_rows = _gct_row_count(expression_gct)
-    gene_major = np.memmap(temp_dir / "gene_major.float32.mmap", mode="w+", dtype=np.float32, shape=(max_rows, len(sample_ids)))
-    best_row_by_symbol: dict[str, tuple[int, float]] = {}
+    nonzero_by_sample = np.zeros(len(all_ids), dtype=np.int64)
+    with _open_text(expression_gct) as handle:
+        handle.readline(); handle.readline()
+        reader = csv.reader(handle, delimiter="\t")
+        next(reader)
+        for row in reader:
+            for index in range(len(all_ids)):
+                try:
+                    nonzero_by_sample[index] += float(row[index + 2]) != 0.0
+                except (IndexError, ValueError):
+                    pass
+    keep_samples = nonzero_by_sample >= int(0.05 * max_rows)
+    sample_ids = [sample_id for sample_id, keep in zip(all_ids, keep_samples) if keep]
+    if not sample_ids:
+        raise ValueError("The Harmonizome 5% non-missing filter removed every expression sample")
+    sample_positions = [index + 2 for index, keep in enumerate(keep_samples) if keep]
+    gene_major = np.memmap(temp_dir / "source_expression.float32.mmap", mode="w+", dtype=np.float32, shape=(max_rows, len(sample_ids)))
+    source_symbols: list[str] = []
     retained_rows = 0
+    min_row_nonzero = int(0.05 * len(sample_ids))
     with _open_text(expression_gct) as handle:
         handle.readline(); handle.readline()
         reader = csv.reader(handle, delimiter="\t")
@@ -135,27 +161,27 @@ def _write_gene_major_expression(
             if not symbol or symbol == "-":
                 continue
             values = np.zeros(len(sample_ids), dtype=np.float32)
-            for index, sample_id in enumerate(sample_ids):
+            for index, position in enumerate(sample_positions):
                 try:
-                    values[index] = max(float(row[sample_positions[sample_id]] or 0.0), 0.0)
+                    values[index] = max(float(row[position] or 0.0), 0.0)
                 except (IndexError, ValueError):
                     pass
+            if np.count_nonzero(values) < min_row_nonzero:
+                continue
+            missing = values == 0
+            if np.any(missing):
+                row_mean = float(values[~missing].mean()) if np.any(~missing) else 0.0
+                values[missing] = row_mean
             gene_major[retained_rows, :] = values
-            value_sum = float(values.sum(dtype=np.float64))
-            previous = best_row_by_symbol.get(symbol)
-            # Preserve the established deterministic duplicate policy.
-            if previous is None or value_sum > previous[1]:
-                best_row_by_symbol[symbol] = (retained_rows, value_sum)
+            source_symbols.append(symbol)
             retained_rows += 1
-    if not best_row_by_symbol:
+    if not source_symbols:
         raise ValueError("No usable gene-symbol rows were found in the expression GCT")
-    symbols = sorted(best_row_by_symbol)
-    source_rows = np.asarray([best_row_by_symbol[symbol][0] for symbol in symbols], dtype=np.intp)
-    retained = np.memmap(temp_dir / "expression.float32.mmap", mode="w+", dtype=np.float32, shape=(len(symbols), len(sample_ids)))
-    retained[:, :] = gene_major[source_rows, :]
-    retained.flush()
+    expression = np.memmap(temp_dir / "expression.float32.mmap", mode="w+", dtype=np.float32, shape=(retained_rows, len(sample_ids)))
+    expression[:, :] = gene_major[:retained_rows, :]
+    expression.flush()
     del gene_major
-    return sample_ids, symbols, retained
+    return sample_ids, source_symbols, expression
 
 
 def _quantile_normalize_memmap(expression: np.memmap) -> None:
@@ -170,56 +196,103 @@ def _quantile_normalize_memmap(expression: np.memmap) -> None:
     mean_by_rank /= n_samples
     for sample_index in range(n_samples):
         values = np.asarray(expression[:, sample_index], dtype=np.float64)
-        order = np.argsort(values, kind="mergesort")
-        normalized = np.empty(n_genes, dtype=np.float32)
-        normalized[order] = mean_by_rank
-        expression[:, sample_index] = normalized
+        first_rank = np.searchsorted(np.sort(values, kind="mergesort"), values, side="left")
+        expression[:, sample_index] = mean_by_rank[first_rank].astype(np.float32)
     expression.flush()
 
 
-def _gene_ecdf_memmap(expression: np.memmap) -> np.ndarray:
-    """Replace expression with gene-wise ECDF ranks and return their histogram."""
-    n_genes, n_samples = expression.shape
-    histogram = np.zeros(n_samples + 1, dtype=np.int64)
+def _modified_row_zscore_memmap(expression: np.memmap) -> None:
+    """Apply the reference modified row z-score in place."""
+    n_genes, _ = expression.shape
     for gene_index in range(n_genes):
         values = np.asarray(expression[gene_index, :], dtype=np.float64)
         median = np.median(values)
         deviations = np.abs(values - median)
-        scale = np.median(deviations)
-        if scale <= 0:
-            scale = float(np.mean(np.abs(values - np.mean(values))))
-        if scale <= 0:
-            scale = 1.0
-        robust_z = (values - median) / scale
-        ordered = np.sort(robust_z, kind="mergesort")
-        ranks = np.searchsorted(ordered, robust_z, side="right")
-        histogram += np.bincount(ranks, minlength=n_samples + 1)
-        expression[gene_index, :] = ranks.astype(np.float32) / n_samples
+        mad = np.median(deviations)
+        if mad != 0:
+            zscore = 0.6745 * (values - median) / mad
+        else:
+            denominator = 1.253314 * float(np.mean(deviations))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                zscore = (values - median) / denominator
+        zscore[~np.isfinite(zscore)] = 0.0
+        expression[gene_index, :] = zscore
     expression.flush()
-    return histogram
+
+
+def _merge_duplicate_symbols_memmap(
+    expression: np.memmap, source_symbols: list[str], temp_dir: Path,
+) -> tuple[list[str], np.memmap]:
+    """Match reference mapping/merge behavior when source symbols are labels."""
+    rows_by_symbol: OrderedDict[str, list[int]] = OrderedDict()
+    for row_index, symbol in enumerate(source_symbols):
+        rows_by_symbol.setdefault(symbol, []).append(row_index)
+    symbols = list(rows_by_symbol)
+    merged = np.memmap(temp_dir / "mapped_merged.float32.mmap", mode="w+", dtype=np.float32, shape=(len(symbols), expression.shape[1]))
+    for merged_index, source_rows in enumerate(rows_by_symbol.values()):
+        if len(source_rows) == 1:
+            merged[merged_index, :] = expression[source_rows[0], :]
+        else:
+            merged[merged_index, :] = np.mean(expression[source_rows, :], axis=0, dtype=np.float64)
+    merged.flush()
+    return symbols, merged
+
+
+def _gene_ecdf_memmap(
+    expression: np.memmap, sample_per_gene: int, seed: int, final_up_cutoff: float,
+) -> tuple[float, float]:
+    """Apply the reference first ECDF stage in place.
+
+    The reference uses a deterministic, per-gene random sample to estimate the
+    final global-ECDF cutoff instead of sorting the entire V8-scale matrix.
+    """
+    n_genes, n_samples = expression.shape
+    sampled_count = min(sample_per_gene, n_samples)
+    sampled = np.empty((n_genes, sampled_count), dtype=np.float32)
+    rng = np.random.default_rng(seed)
+    for gene_index in range(n_genes):
+        values = np.asarray(expression[gene_index, :], dtype=np.float64)
+        ordered = np.sort(values, kind="mergesort")
+        ranks = np.searchsorted(ordered, values, side="right")
+        ecdf = ranks.astype(np.float32) / n_samples
+        stage_one = 2.0 * (ecdf - ecdf.mean(dtype=np.float64))
+        expression[gene_index, :] = stage_one
+        sampled[gene_index, :] = stage_one[rng.choice(n_samples, size=sampled_count, replace=False)]
+    expression.flush()
+    global_sample = sampled.reshape(-1)
+    global_sample.sort()
+    global_ranks = np.searchsorted(global_sample, global_sample, side="right")
+    global_ecdf_mean = float(np.mean(global_ranks / len(global_sample)))
+    target_ecdf = min(1.0, global_ecdf_mean + 0.5 * final_up_cutoff)
+    quantile_index = min(len(global_sample) - 1, max(0, int(np.ceil(target_ecdf * len(global_sample))) - 1))
+    return global_ecdf_mean, float(global_sample[quantile_index])
 
 
 def _sample_up_support_from_memmap(
     expression: np.memmap,
-    histogram: np.ndarray,
-    cutoff: float,
+    stage_one_cutoff: float,
     group_indices: np.ndarray,
     n_groups: int,
-) -> tuple[np.ndarray, np.ndarray, int]:
-    """Apply global ECDF and accumulate sample calls into group support counts."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Aggregate reference Up fractions and mean stage-one scores by group."""
     n_genes, n_samples = expression.shape
-    global_ecdf_by_rank = np.cumsum(histogram, dtype=np.float64) / float(n_genes * n_samples)
     support_counts = np.zeros((n_groups, n_genes), dtype=np.uint16)
+    score_sums = np.zeros((n_groups, n_genes), dtype=np.float32)
     sample_up_counts = np.zeros(n_samples, dtype=np.int32)
     unique_up_genes = 0
     for gene_index in range(n_genes):
-        ranks = np.rint(np.asarray(expression[gene_index, :], dtype=np.float64) * n_samples).astype(np.intp)
-        is_up = global_ecdf_by_rank[ranks] >= cutoff
+        scores = np.asarray(expression[gene_index, :], dtype=np.float64)
+        is_up = scores >= stage_one_cutoff
         sample_up_counts += is_up
         if np.any(is_up):
             unique_up_genes += 1
-            support_counts[:, gene_index] = np.bincount(group_indices[is_up], minlength=n_groups)
-    return support_counts, sample_up_counts, unique_up_genes
+            valid_up = is_up & (group_indices >= 0)
+            support_counts[:, gene_index] = np.bincount(group_indices[valid_up], minlength=n_groups)
+        valid_scores = group_indices >= 0
+        score_sums[:, gene_index] = np.bincount(
+            group_indices[valid_scores], weights=scores[valid_scores], minlength=n_groups,
+        )
+    return support_counts, score_sums, sample_up_counts, unique_up_genes
 
 
 def _groups(sample_rows: list[dict[str, str]], expression_ids: set[str], min_samples: int) -> dict[tuple[str, str, str], list[str]]:
@@ -258,16 +331,24 @@ def run(args) -> dict[str, object]:
     full_path = out_dir / "geneset.full.tsv"
     ordered_groups = sorted(groups.items(), key=lambda item: f"{item[0][0]} {item[0][1]} {item[0][2]} Up")
     group_for_sample = {sample_id: group_index for group_index, (_, members) in enumerate(ordered_groups) for sample_id in members}
-    selected_ids = set(group_for_sample)
     with tempfile.TemporaryDirectory(prefix="gtex_hz_consensus_", dir=out_dir) as temp_name:
-        sample_ids, symbols, expression = _write_gene_major_expression(expression_gct, selected_ids, Path(temp_name))
+        sample_ids, source_symbols, expression = _write_gene_major_expression(expression_gct, Path(temp_name))
         _quantile_normalize_memmap(expression)
-        gene_ecdf_histogram = _gene_ecdf_memmap(expression)
-        group_indices = np.asarray([group_for_sample[sample_id] for sample_id in sample_ids], dtype=np.intp)
-        support_counts, sample_up_counts, unique_up_genes = _sample_up_support_from_memmap(
-            expression, gene_ecdf_histogram, float(args.up_cutoff), group_indices, len(ordered_groups),
-        )
+        _modified_row_zscore_memmap(expression)
+        symbols, merged_expression = _merge_duplicate_symbols_memmap(expression, source_symbols, Path(temp_name))
         del expression
+        global_ecdf_mean, stage_one_cutoff = _gene_ecdf_memmap(
+            merged_expression, int(getattr(args, "global_quantile_sample_per_gene", 500)),
+            int(getattr(args, "random_seed", 1)), float(args.up_cutoff),
+        )
+        group_indices = np.asarray([group_for_sample.get(sample_id, -1) for sample_id in sample_ids], dtype=np.intp)
+        group_sample_counts = np.bincount(group_indices[group_indices >= 0], minlength=len(ordered_groups))
+        if np.any(group_sample_counts == 0):
+            raise ValueError("The Harmonizome 5% sample filter removed every sample from one or more tissue-sex-age groups")
+        support_counts, score_sums, sample_up_counts, unique_up_genes = _sample_up_support_from_memmap(
+            merged_expression, stage_one_cutoff, group_indices, len(ordered_groups),
+        )
+        del merged_expression
         gmt_sets: list[tuple[str, list[str]]] = []
         with support_path.open("w", encoding="utf-8", newline="") as support_handle, selected_path.open("w", encoding="utf-8", newline="") as selected_handle, full_path.open("w", encoding="utf-8", newline="") as full_handle:
             support_writer = csv.writer(support_handle, delimiter="\t", lineterminator="\n")
@@ -279,24 +360,26 @@ def run(args) -> dict[str, object]:
             full_writer.writerow(artifact_header)
             for group_index, ((tissue, sex, age), members) in enumerate(ordered_groups):
                 counts = support_counts[group_index, :]
-                eligible = np.flatnonzero(counts.astype(np.float64) / len(members) >= float(args.support_fraction))
-                ranked = sorted(eligible, key=lambda index: (-(int(counts[index]) / len(members)), -int(counts[index]), symbols[index]))
+                n_members = int(group_sample_counts[group_index])
+                eligible = np.flatnonzero(counts.astype(np.float64) / n_members >= float(args.support_fraction))
+                mean_scores = score_sums[group_index, :] / n_members
+                ranked = sorted(eligible, key=lambda index: (-(int(counts[index]) / n_members), -float(mean_scores[index]), symbols[index]))
                 term = f"{tissue} {sex} {age} Up"
                 geneset_name = _consensus_geneset_name(tissue, sex, age)
                 genes = [symbols[index] for index in ranked[:int(args.top_n)]]
                 gmt_sets.append((geneset_name, genes))
                 for index in ranked:
-                    row = [geneset_name, symbols[index], int(counts[index]), int(counts[index]) / len(members)]
+                    row = [geneset_name, symbols[index], int(counts[index]), int(counts[index]) / n_members]
                     support_writer.writerow([term, *row[1:]])
                     full_writer.writerow(row)
                 for index in ranked[:int(args.top_n)]:
-                    selected_writer.writerow([geneset_name, symbols[index], int(counts[index]), int(counts[index]) / len(members)])
+                    selected_writer.writerow([geneset_name, symbols[index], int(counts[index]), int(counts[index]) / n_members])
         write_gmt(gmt_sets, gmt_path)
     graph = write_workflow_provenance_graph(
         workflow_name="gtex_hz_consensus", module_name=__name__, output_dir=out_dir,
         focus_output_path=gmt_path, output_paths=[(gmt_path, "gmt"), (support_path, "gene_support")],
         input_paths=[(expression_gct, "gtex_v8_tpm"), (sample_attributes, "sample_attributes_tsv_v8"), (subject_phenotypes, "subject_phenotypes_tsv_v8")],
-        parameters={"grouping": "SMTSD x SEX x AGE; n_samples >= %d" % int(args.min_samples_per_group), "sample_signature": "log2(TPM+1), sample-column quantile normalization, gene-wise robust median/MAD z-score with mean-absolute-deviation fallback, gene-wise ECDF then global ECDF Up >= %.2f" % float(args.up_cutoff), "consensus": "support_fraction >= %.2f; top_n=%d" % (float(args.support_fraction), int(args.top_n)), "historical_drc_aggregation": "unavailable; scientifically comparable reconstruction, not set-equivalent"},
+        parameters={"grouping": "SMTSD x SEX x AGE; n_samples >= %d" % int(args.min_samples_per_group), "sample_signature": "5%% non-missing filtering; zero-to-row-mean imputation; log2(TPM+1); sample-column quantile normalization; modified row z-score; duplicate-symbol row-mean merge; gene-wise ECDF and deterministic sampled global-ECDF Up >= %.2f" % float(args.up_cutoff), "global_ecdf_sample_per_gene": int(getattr(args, "global_quantile_sample_per_gene", 500)), "global_ecdf_seed": int(getattr(args, "random_seed", 1)), "consensus": "support_fraction >= %.2f; top_n=%d" % (float(args.support_fraction), int(args.top_n)), "historical_drc_aggregation": "reference-aligned Harmonizome reconstruction"},
     )
     metadata_path = out_dir / "geneset.meta.json"
     write_metadata(metadata_path, {
@@ -309,7 +392,7 @@ def run(args) -> dict[str, object]:
         },
         "converter": {
             "name": "gtex_hz_consensus",
-            "parameters": {"support_fraction": float(args.support_fraction), "top_n": int(args.top_n), "up_cutoff": float(args.up_cutoff)},
+            "parameters": {"support_fraction": float(args.support_fraction), "top_n": int(args.top_n), "up_cutoff": float(args.up_cutoff), "global_quantile_sample_per_gene": int(getattr(args, "global_quantile_sample_per_gene", 500)), "random_seed": int(getattr(args, "random_seed", 1))},
             "code": {"module": __name__},
             "execution": {"entrypoint": "geneset-extractors workflows gtex_hz_consensus"},
         },
@@ -353,5 +436,9 @@ def run(args) -> dict[str, object]:
             "max": int(sample_up_counts.max()),
         },
         "n_unique_genes_ever_up": int(unique_up_genes),
+        "global_ecdf_mean_estimate": global_ecdf_mean,
+        "stage1_cutoff_for_final_up": stage_one_cutoff,
+        "global_quantile_sample_per_gene": int(getattr(args, "global_quantile_sample_per_gene", 500)),
+        "random_seed": int(getattr(args, "random_seed", 1)),
     })
     return {"out_dir": str(out_dir), "n_groups": len(groups), "n_samples": len(sample_ids)}
