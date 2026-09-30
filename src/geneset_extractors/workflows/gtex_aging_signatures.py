@@ -503,6 +503,7 @@ all_rows <- list()
 for (i in seq_len(nrow(comps))) {{
   comp <- comps[i, , drop=FALSE]
   comparison_id <- as.character(comp$comparison_id[1])
+  gmt_comparison_label <- as.character(comp$gmt_comparison_label[1])
   group_a <- as.character(comp$group_a[1])
   group_b <- as.character(comp$group_b[1])
   aging_signature <- as.character(comp$aging_signature[1])
@@ -534,6 +535,7 @@ for (i in seq_len(nrow(comps))) {{
   tt$gene_symbol <- rownames(tt)
   tt$gene_id <- gene_ids[match(tt$gene_symbol, gene_symbols)]
   tt$comparison_id <- comparison_id
+  tt$gmt_comparison_label <- gmt_comparison_label
   tt$aging_signature <- aging_signature
   tt$group_a <- group_a
   tt$group_b <- group_b
@@ -543,7 +545,7 @@ for (i in seq_len(nrow(comps))) {{
   tt$n_group_b <- length(ref_samples)
   tt$mean_expr <- tt$AveExpr
   tt$model_formula <- "B-A"
-  keep_cols <- c("comparison_id", "aging_signature", "gene_id", "gene_symbol", "logFC", "t", "P.Value", "adj.P.Val", "group_a", "group_b", "stratum", "backend", "n_group_a", "n_group_b", "mean_expr", "model_formula")
+  keep_cols <- c("comparison_id", "gmt_comparison_label", "aging_signature", "gene_id", "gene_symbol", "logFC", "t", "P.Value", "adj.P.Val", "group_a", "group_b", "stratum", "backend", "n_group_a", "n_group_b", "mean_expr", "model_formula")
   tt <- tt[, keep_cols, drop=FALSE]
   write.table(tt, file=file.path("{comparisons_dir}", paste0(comparison_id, ".tsv")), sep="\\t", row.names=FALSE, quote=FALSE)
   colnames(tt)[colnames(tt) == "t"] <- "stat"
@@ -557,6 +559,7 @@ if (length(all_rows)) {{
 }} else {{
   out <- data.frame(
     comparison_id=character(),
+    gmt_comparison_label=character(),
     aging_signature=character(),
     gene_id=character(),
     gene_symbol=character(),

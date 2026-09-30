@@ -22,3 +22,5 @@ def test_gtex_aging_signature_source_emits_comparison_label_for_gmt_layout() -> 
     assert 'gmt_comparison_label = f"{reference_age_group}_{age_group}"' in source
     assert '"gmt_comparison_label": gmt_comparison_label' in source
     assert '"comparison_id", "gmt_comparison_label", "comparison_kind"' in source
+    assert 'tt$gmt_comparison_label <- gmt_comparison_label' in source
+    assert 'comparison_id=character(),\n    gmt_comparison_label=character()' in source
