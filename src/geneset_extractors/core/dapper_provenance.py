@@ -546,8 +546,16 @@ def _default_row_display_name(label: str, separator: str) -> str:
 
 
 def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | None:
-    """Resolve the single declared GMT used for an opt-in DAPPER row export."""
-    candidates: list[Path] = []
+    """Resolve the primary declared GMT used for a DAPPER row export.
+
+    A metadata record can describe multiple GMT artifacts (for example a
+    library and an auxiliary export).  The legacy graph has one focus
+    collection, so only its primary GMT can safely receive row-level DAPPER
+    records without an explicit per-GMT collection mapping.  Prefer the
+    established ``gmt_library`` role; otherwise retain deterministic legacy
+    behavior by choosing ``genesets.gmt`` or the first path.
+    """
+    candidates: list[tuple[Path, str]] = []
     for record in ((metadata.get("output") or {}).get("files") or []):
         if not isinstance(record, dict):
             continue
@@ -557,16 +565,15 @@ def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | Non
         path = Path(raw_path)
         path = path if path.is_absolute() else output_dir / path
         if path.exists() and path.is_file():
-            candidates.append(path)
-    unique = sorted({path.resolve() for path in candidates})
+            candidates.append((path.resolve(), str(record.get("role") or "")))
+    unique = sorted({path for path, _role in candidates})
     if not unique:
         return None
-    if len(unique) != 1:
-        raise ValueError(
-            "DAPPER row export requires exactly one declared existing GMT output; "
-            f"found {len(unique)}"
-        )
-    return unique[0]
+    primary = {path for path, role in candidates if role == "gmt_library"}
+    if len(primary) == 1:
+        return next(iter(primary))
+    conventional = [path for path in unique if path.name == "genesets.gmt"]
+    return conventional[0] if len(conventional) == 1 else unique[0]
 
 
 def _parse_gmt_rows(path: Path) -> list[tuple[str, list[str], bytes]]:

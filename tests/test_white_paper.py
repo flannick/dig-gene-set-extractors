@@ -94,6 +94,10 @@ def test_multiple_declared_gmts_receive_distinct_stemmed_sidecars(tmp_path: Path
     metadata["output"]["files"].append({"path": "secondary.gmt", "role": "secondary_gmt"})  # type: ignore[index]
     write_metadata(tmp_path / "geneset.meta.json", metadata)
 
+    # DAPPER uses the declared primary library GMT; auxiliary GMT sidecars
+    # remain independently covered by the white-paper writer below.
+    assert (tmp_path / "genesets.dapper-ids.gmt").is_file()
+
     paths = write_white_paper_from_metadata(tmp_path / "geneset.meta.json")
     assert len(paths) == 2
     assert (tmp_path / "genesets.whitepaper.md").is_file()
