@@ -101,6 +101,8 @@ def _build_gene_sets_grouped_rows(args, rows: list[dict[str, object]]) -> tuple[
     label_map = {"up": "up", "dn": "dn"}
     if args.gmt_signed_labels == "pos_neg":
         label_map = {"up": "pos", "dn": "neg"}
+    elif args.gmt_signed_labels == "up_down":
+        label_map = {"up": "up", "dn": "down"}
     elif args.gmt_signed_labels == "Up_Down":
         label_map = {"up": "Up", "dn": "Down"}
     for (term, direction), group_rows in sorted(grouped.items()):
@@ -128,6 +130,8 @@ def _build_gene_sets_ternary_matrix_notebook(args, rows: list[dict[str, object]]
     label_map = {"up": "up", "dn": "dn"}
     if args.gmt_signed_labels == "pos_neg":
         label_map = {"up": "pos", "dn": "neg"}
+    elif args.gmt_signed_labels == "up_down":
+        label_map = {"up": "up", "dn": "down"}
     elif args.gmt_signed_labels == "Up_Down":
         label_map = {"up": "Up", "dn": "Down"}
 
@@ -188,7 +192,13 @@ def run(args) -> dict[str, object]:
     gene_sets, summary_rows = _build_gene_sets(args, rows)
     upstream_graph_path = _resolve_upstream_provenance_graph_path(args.table_tsv)
     if bool(args.emit_gmt):
-        write_gmt(gene_sets, out_dir / "genesets.gmt", gmt_format=getattr(args, "gmt_format", "classic"))
+        write_gmt(
+            gene_sets,
+            out_dir / "genesets.gmt",
+            gmt_format=getattr(args, "gmt_format", "classic"),
+            description=getattr(args, "gmt_description", "na"),
+            preserve_names=bool(getattr(args, "gmt_preserve_names", False)),
+        )
 
     summary_path = out_dir / "signature_summary.tsv"
     with summary_path.open("w", encoding="utf-8", newline="") as handle:
@@ -209,6 +219,8 @@ def run(args) -> dict[str, object]:
             "emit_mode": args.emit_mode,
             "gmt_name_separator": args.gmt_name_separator,
             "gmt_signed_labels": args.gmt_signed_labels,
+            "gmt_description": getattr(args, "gmt_description", "na"),
+            "gmt_preserve_names": bool(getattr(args, "gmt_preserve_names", False)),
             "gmt_min_genes": args.gmt_min_genes,
             "emit_small_gene_sets": args.emit_small_gene_sets,
         },

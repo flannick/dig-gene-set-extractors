@@ -483,6 +483,19 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_lincs_l1000_cp_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--signature_manifest_tsv", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--cache_dir")
+    parser.add_argument("--organism", choices=["human", "mouse"], default="human")
+    parser.add_argument("--genome_build", default="hg38")
+    parser.add_argument("--top_n", type=int, default=250)
+    parser.add_argument("--source_url_base", default="https://lincs-dcic.s3.amazonaws.com/LINCS-sigs-2021/cd/cp/")
+    parser.add_argument("--request_timeout", type=int, default=300)
+    parser.add_argument("--limit_signatures", type=int)
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1789,6 +1802,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_lincs_l1000_chempert_flags(p_lincs_l1000_chempert)
     p_lincs_l1000_crisprko = wf_sub.add_parser("lincs_l1000_crisprko")
     _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
+    p_lincs_l1000_cp = wf_sub.add_parser("lincs_l1000_cp")
+    _add_lincs_l1000_cp_flags(p_lincs_l1000_cp)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2269,8 +2284,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["grouped_rows", "ternary_matrix_notebook"],
         default="grouped_rows",
     )
-    p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_"], default="_")
-    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "Up_Down"], default="up_dn")
+    p_signed_term.add_argument("--gmt_name_separator", choices=["__", "_", " "], default="_")
+    p_signed_term.add_argument("--gmt_signed_labels", choices=["pos_neg", "up_dn", "up_down", "Up_Down"], default="up_dn")
+    p_signed_term.add_argument("--gmt_description", default="na")
+    p_signed_term.add_argument("--gmt_preserve_names", action="store_true")
     _add_gmt_flags(p_signed_term)
     _add_provenance_flags(p_signed_term)
     p_signed_term.set_defaults(
@@ -2693,6 +2710,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=lincs_l1000_crisprko n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_cp":
+                from geneset_extractors.workflows.lincs_l1000_cp import run as run_lincs_l1000_cp
+
+                result = run_lincs_l1000_cp(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_cp n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )
