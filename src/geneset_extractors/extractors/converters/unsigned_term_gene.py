@@ -102,6 +102,32 @@ def _build_gene_sets(args, rows: list[dict[str, object]]) -> tuple[list[tuple[st
     return gene_sets, summary_rows
 
 
+def _dapper_config(args, gene_sets: list[tuple[str, list[str]]]) -> dict[str, object] | None:
+    """Build explicit DAPPER GMT-row metadata when the caller opts in."""
+    prefix = str(getattr(args, "dapper_gene_member_prefix", "") or "").strip()
+    prefix_uri = str(getattr(args, "dapper_gene_member_prefix_uri", "") or "").strip()
+    if not prefix and not prefix_uri:
+        return None
+    if not prefix or not prefix_uri:
+        raise ValueError(
+            "--dapper_gene_member_prefix and --dapper_gene_member_prefix_uri must be supplied together"
+        )
+    separator = str(getattr(args, "dapper_row_display_separator", "_") or "_")
+    row_display_names: dict[str, str] = {}
+    for label, _genes in gene_sets:
+        readable = label.replace(separator, " ")
+        # Preserve source labels in alternate_identifier and make the human
+        # readable name distinct even if the configured separator is absent.
+        if readable == label:
+            readable = f"Gene set {label}"
+        row_display_names[label] = readable
+    return {
+        "gene_member_prefix": prefix,
+        "gene_member_prefix_uri": prefix_uri,
+        "row_display_names": row_display_names,
+    }
+
+
 def run(args) -> dict[str, object]:
     activate_runtime_context("unsigned_term_gene", getattr(args, "provenance_overlay_json", None))
     out_dir = Path(args.out_dir)
@@ -110,6 +136,7 @@ def run(args) -> dict[str, object]:
     rows = _read_rows(args)
     _write_full_tables(out_dir, rows)
     gene_sets, summary_rows = _build_gene_sets(args, rows)
+    dapper = _dapper_config(args, gene_sets)
     upstream_graph_path = _resolve_upstream_provenance_graph_path(args.table_tsv)
     if bool(args.emit_gmt):
         write_gmt(gene_sets, out_dir / "genesets.gmt", gmt_format=getattr(args, "gmt_format", "classic"))
@@ -158,6 +185,7 @@ def run(args) -> dict[str, object]:
             {"path": "signature_summary.tsv", "role": "signature_summary"},
             {"path": "geneset.meta.json", "role": "metadata_json"},
         ],
+        dapper=dapper,
     )
     write_metadata(out_dir / "geneset.meta.json", meta)
     return {"n_peaks": len(rows), "n_genes": len({str(row['gene_id']) for row in rows}), "out_dir": str(out_dir)}

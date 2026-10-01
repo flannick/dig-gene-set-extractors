@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from geneset_extractors.cli import main
 
 
@@ -25,4 +27,16 @@ def test_unsigned_term_gene_uses_signature_name_for_metadata_and_dapper_collecti
     metadata = json.loads((out_dir / "geneset.meta.json").read_text(encoding="utf-8"))
     assert metadata["gene_set"]["name"] == "HuBMAP_ASCTB"
     dapper = (out_dir / "geneset.provenance.dapper.yaml").read_text(encoding="utf-8")
-    assert "name: HuBMAP_ASCTB" in dapper
+    payload = yaml.safe_load(dapper)
+    collection = payload["gene_set_collections"][0]
+    rows = payload["gene_sets"]
+    companion = out_dir / "genesets.dapper-ids.gmt"
+    assert collection["name"] == "HuBMAP ASCTB"
+    assert collection["members"] == [row["id"] for row in rows]
+    assert companion.is_file()
+    companion_file = next(node for node in payload["files"] if node["filename"] == companion.name)
+    assert collection["has_gmt_file"] == companion_file["id"]
+    for row, line in zip(rows, companion.read_text(encoding="utf-8").splitlines(), strict=True):
+        assert row["id"] == row["gmt_entry"] == line.split("\t", 1)[0]
+        assert row["in_gmt_file"] == companion_file["id"]
+        assert row["in_gene_set_collection"] == [collection["id"]]
