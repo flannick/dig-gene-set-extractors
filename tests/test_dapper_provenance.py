@@ -8,6 +8,7 @@ from geneset_extractors.core.dapper_provenance import (
     DAPPER_SCHEMA_REVISION,
     _compute_id,
     build_dapper_provenance,
+    write_dapper_provenance,
 )
 from geneset_extractors.core.metadata import (
     DAPPER_PROVENANCE_FILENAME,
@@ -312,3 +313,41 @@ def test_dapper_row_export_uses_the_standard_symbol_namespace_by_default(tmp_pat
     assert row["members"] == ["HGNC.SYMBOL:GENE1"]
     assert collection["members"] == [row["id"]]
     assert row["in_gene_set_collection"] == [collection["id"]]
+
+
+def test_dapper_export_uses_local_sibling_for_a_declared_public_gmt(tmp_path: Path):
+    """Refresh can publish output paths before DAPPER parses the local GMT."""
+    source = tmp_path / "source.tsv"
+    source.write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    (tmp_path / "geneset.tsv").write_text("gene_id\tscore\nGENE1\t1\n", encoding="utf-8")
+    (tmp_path / "genesets.gmt").write_text("legacy_label\tDescription\tGENE1\n", encoding="utf-8")
+    metadata = make_metadata(
+        converter_name="toy_converter",
+        parameters={"term_prefix": "Toy"},
+        data_type="expression",
+        assay="bulk_rna",
+        organism="human",
+        genome_build="hg38",
+        files=[input_file_record(source, "source_tsv")],
+        gene_annotation={"mode": "none", "source": "toy", "gene_id_field": "symbol"},
+        weights={"weight_type": "score", "normalization": {}, "aggregation": "none"},
+        summary={
+            "n_input_features": 1,
+            "n_genes": 1,
+            "n_features_assigned": 1,
+            "fraction_features_assigned": 1.0,
+            "n_sets_emitted": 1,
+        },
+        output_files=[{"path": "genesets.gmt", "role": "gmt_library"}],
+    )
+    write_metadata(tmp_path / "geneset.meta.json", metadata)
+    legacy = json.loads((tmp_path / LEGACY_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    metadata["output"]["files"][0]["path"] = "s3://example-bucket/library/genesets.gmt"  # type: ignore[index]
+
+    write_dapper_provenance(tmp_path / DAPPER_PROVENANCE_FILENAME, legacy, metadata)
+
+    payload = yaml.safe_load((tmp_path / DAPPER_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    assert payload["gene_sets"]
+    companion = next(node for node in payload["files"] if node["filename"] == "genesets.dapper-ids.gmt")
+    assert companion["location"] == "s3://example-bucket/library/genesets.dapper-ids.gmt"
+    assert (tmp_path / "genesets.dapper-ids.gmt").is_file()

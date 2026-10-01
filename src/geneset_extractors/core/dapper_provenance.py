@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
@@ -562,8 +563,17 @@ def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | Non
         raw_path = record.get("path")
         if not isinstance(raw_path, str) or not raw_path.lower().endswith(".gmt"):
             continue
-        path = Path(raw_path)
-        path = path if path.is_absolute() else output_dir / path
+        parsed = urlparse(raw_path)
+        if parsed.scheme:
+            # Refresh intentionally replaces local output locations with their
+            # final public URI before regenerating DAPPER.  The URI remains
+            # the provenance location, while the same-named sibling file is
+            # the local source that supplies GMT rows.
+            filename = PurePosixPath(parsed.path).name
+            path = output_dir / filename if filename else output_dir / "__missing_gmt_name__"
+        else:
+            path = Path(raw_path)
+            path = path if path.is_absolute() else output_dir / path
         if path.exists() and path.is_file():
             candidates.append((path.resolve(), str(record.get("role") or "")))
     unique = sorted({path for path, _role in candidates})
@@ -574,6 +584,26 @@ def _declared_gmt_path(metadata: dict[str, Any], output_dir: Path) -> Path | Non
         return next(iter(primary))
     conventional = [path for path in unique if path.name == "genesets.gmt"]
     return conventional[0] if len(conventional) == 1 else unique[0]
+
+
+def _dapper_export_location(metadata: dict[str, Any], gmt_path: Path, export_path: Path) -> str:
+    """Return the final public location for a DAPPER-ID GMT when available."""
+    matching_uris: list[str] = []
+    for record in ((metadata.get("output") or {}).get("files") or []):
+        if not isinstance(record, dict):
+            continue
+        raw_path = record.get("path")
+        if not isinstance(raw_path, str):
+            continue
+        parsed = urlparse(raw_path)
+        if parsed.scheme and PurePosixPath(parsed.path).name == gmt_path.name:
+            matching_uris.append(raw_path)
+    if len(set(matching_uris)) == 1:
+        parsed = urlparse(matching_uris[0])
+        return parsed._replace(
+            path=str(PurePosixPath(parsed.path).with_name(export_path.name))
+        ).geturl()
+    return export_path.name
 
 
 def _parse_gmt_rows(path: Path) -> list[tuple[str, list[str], bytes]]:
@@ -744,7 +774,7 @@ def _add_dapper_gmt_export(
         "name": f"{gmt_path.stem} with DAPPER GeneSet identifiers",
         "description": "GMT export whose first-column names are DAPPER GeneSet identifiers.",
         "filename": export_path.name,
-        "location": export_path.name,
+        "location": _dapper_export_location(metadata, gmt_path, export_path),
         "md5": _base64_md5(export_bytes),
         "sha256": hashlib.sha256(export_bytes).hexdigest(),
         "size_in_bytes": len(export_bytes),
