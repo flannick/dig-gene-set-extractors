@@ -2358,7 +2358,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_geo.add_argument("--human_gene_info", required=True)
     p_rumma_geo.add_argument("--mouse_gene_info", required=True)
     p_rumma_geo.add_argument("--gene_orthologs", required=True)
-    p_rumma_geo.add_argument("--model_id", required=True, choices=["gene_perturbations", "drug_perturbations"])
+    p_rumma_geo.add_argument("--model_id", required=True, choices=["HZ1", "HZ2"], help="HZ1=drug perturbations; HZ2=gene perturbations.")
     p_rumma_geo.add_argument("--out_dir", required=True)
     p_rumma_geo.add_argument("--genome_build", default="hg38")
     p_rumma_geo.add_argument("--min_genes", type=int, default=5)

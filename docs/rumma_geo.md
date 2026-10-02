@@ -1,7 +1,7 @@
 # RummaGEO reconstruction
 
-`rumma_geo` reconstructs one of two RummaGEO models: `gene_perturbations` or
-`drug_perturbations`. It ports the downstream behavior of the Ma'ayan Lab
+`rumma_geo` reconstructs one of two RummaGEO models: `HZ1` (drug perturbations)
+or `HZ2` (gene perturbations). It ports the downstream behavior of the Ma'ayan Lab
 notebooks: exact human protein-coding symbol filtering, mouse-symbol to human
 ortholog conversion, complete removal of duplicate term/gene pairs, and a
 five-gene minimum for directional GMT sets. It intentionally performs no

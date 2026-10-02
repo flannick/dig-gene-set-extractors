@@ -21,6 +21,7 @@ from geneset_extractors.core.provenance import activate_runtime_context
 
 DRUG_FALSE_POSITIVES = frozenset({"1B", "ATPA", "AVA", "C-1", "CDC", "FIT", "ITE", "PIT", "RITA", "TRIM", "compe", "iq", "niacin", "pen", "rutin"})
 VALID_STATUSES = frozenset({"signature", "reversed"})
+MODEL_FAMILIES = {"HZ1": "drug_perturbations", "HZ2": "gene_perturbations"}
 
 
 def _open_text(path: Path):
@@ -66,7 +67,7 @@ def _source_memberships(path: Path) -> Iterable[tuple[str, str, str]]:
                     yield source_term, direction, gene
 
 
-def _normalized_term(row: dict[str, str], model_id: str) -> str:
+def _normalized_term(row: dict[str, str], model_family: str) -> str:
     explicit = row.get("normalized_term", "").strip()
     if explicit:
         return explicit.replace("/", "-").replace(",", " ")
@@ -77,7 +78,7 @@ def _normalized_term(row: dict[str, str], model_id: str) -> str:
     context = row.get("context", "").strip()
     expression = row.get("expression", "").strip()
     pieces = [row["gse"].replace(",", "_"), row["search_term"]]
-    if model_id == "gene_perturbations" and expression:
+    if model_family == "gene_perturbations" and expression:
         pieces.append(expression)
     if context:
         pieces.append(context)
@@ -85,7 +86,7 @@ def _normalized_term(row: dict[str, str], model_id: str) -> str:
     return "_".join(pieces).replace("/", "-").replace(",", " ")
 
 
-def _selection(path: Path, model_id: str) -> dict[str, tuple[str, bool]]:
+def _selection(path: Path, model_id: str, model_family: str) -> dict[str, tuple[str, bool]]:
     selected: dict[str, tuple[str, bool]] = {}
     for row in _rows(path):
         source_term = row.get("source_term", "").strip()
@@ -93,11 +94,11 @@ def _selection(path: Path, model_id: str) -> dict[str, tuple[str, bool]]:
             raise ValueError("selection manifest requires source_term")
         if row.get("model_id", "").strip() != model_id or row.get("status", "").strip() not in VALID_STATUSES:
             continue
-        if model_id == "drug_perturbations" and row.get("search_term", "").strip() in DRUG_FALSE_POSITIVES:
+        if model_family == "drug_perturbations" and row.get("search_term", "").strip() in DRUG_FALSE_POSITIVES:
             continue
         if source_term in selected:
             raise ValueError(f"selection manifest has duplicate selected source_term: {source_term}")
-        selected[source_term] = (_normalized_term(row, model_id), row["status"].strip() == "reversed")
+        selected[source_term] = (_normalized_term(row, model_family), row["status"].strip() == "reversed")
     if not selected:
         raise ValueError(f"selection manifest selected no {model_id} records")
     return selected
@@ -141,8 +142,9 @@ def _validate_against_legacy(generated: dict[str, set[str]], legacy_gmt: Path) -
 def run(args: argparse.Namespace) -> dict[str, object]:
     activate_runtime_context("rumma_geo", getattr(args, "provenance_overlay_json", None))
     model_id = args.model_id
-    if model_id not in {"gene_perturbations", "drug_perturbations"}:
+    if model_id not in MODEL_FAMILIES:
         raise ValueError(f"unsupported RummaGEO model_id: {model_id}")
+    model_family = MODEL_FAMILIES[model_id]
     paths = [Path(getattr(args, name)).resolve() for name in ("human_gmt", "mouse_gmt", "selection_manifest", "human_gene_info", "mouse_gene_info", "gene_orthologs")]
     if any(not path.is_file() for path in paths):
         raise FileNotFoundError("all RummaGEO inputs must exist")
@@ -152,7 +154,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise FileNotFoundError(f"missing RummaGEO source manifest: {source_manifest}")
     source_records = _source_records(source_manifest, roles)
     human_pc, mouse_to_human = _mappings(paths[3], paths[4], paths[5])
-    selected = _selection(paths[2], model_id)
+    selected = _selection(paths[2], model_id, model_family)
     raw: list[tuple[str, str, str]] = []
     source_count = 0
     for source_path in paths[:2]:
@@ -189,10 +191,10 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             sign = 1 if direction == "up" else -1
             for rank, gene in enumerate(genes, start=1):
                 writer.writerow({"term": term, "direction": direction, "gene_id": gene, "gene_symbol": gene, "score": 1, "signed_score": sign, "sign": sign, "rank": rank})
-    diagnostics: dict[str, object] = {"model_id": model_id, "n_selected_source_terms": len(selected), "n_source_memberships_selected": source_count, "n_memberships_after_human_filter": len(raw), "n_memberships_removed_as_duplicate_term_gene": len(raw) - len(filtered), "n_sets_before_min_genes": len(grouped), "n_sets_emitted": len(emitted)}
+    diagnostics: dict[str, object] = {"model_id": model_id, "model_family": model_family, "n_selected_source_terms": len(selected), "n_source_memberships_selected": source_count, "n_memberships_after_human_filter": len(raw), "n_memberships_removed_as_duplicate_term_gene": len(raw) - len(filtered), "n_sets_before_min_genes": len(grouped), "n_sets_emitted": len(emitted)}
     if getattr(args, "legacy_gmt", None):
         diagnostics["legacy_validation"] = _validate_against_legacy(emitted, Path(args.legacy_gmt).resolve())
     (out_dir / "reconstruction_diagnostics.json").write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    metadata = make_metadata(converter_name="rumma_geo", parameters={"model_id": model_id, "min_genes": args.min_genes, "selection_method": "recorded_harmonizome_query_manifest", "duplicate_membership_policy": "drop_all_duplicate_term_gene_pairs", "mouse_mapping": "NCBI_mouse_symbol_to_human_ortholog_symbol", "human_filter": "NCBI_type_of_gene_protein-coding_exact_symbol"}, data_type="transcriptomics", assay="rna_seq", organism="human", genome_build=args.genome_build, files=[input_file_record(path, role, resource_record=source_records[role]) for path, role in zip(paths, roles)] + [input_file_record(source_manifest, "input_provenance_manifest")], gene_annotation={"mode": "exact_symbol_filter", "source": "NCBI Gene", "gene_id_field": "gene_symbol", "synonym_rescue": False}, weights={"weight_type": "signed_unweighted", "normalization": {"method": "none"}, "aggregation": "RummaGEO notebook ternary membership"}, summary={"n_input_features": source_count, "n_genes": len(set().union(*emitted.values())) if emitted else 0, "n_features_assigned": len(filtered), "fraction_features_assigned": len(filtered) / source_count if source_count else 0.0, "n_gene_sets": len(emitted), **diagnostics}, output_files=[{"path": "genesets.gmt", "role": "gmt_library"}, {"path": "geneset.tsv", "role": "selected_program"}, {"path": "signature_summary.tsv", "role": "signature_summary"}, {"path": "reconstruction_diagnostics.json", "role": "reconstruction_diagnostics"}, {"path": "geneset.meta.json", "role": "metadata_json"}], gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": args.min_genes, "max_genes": None, "plans": [{"name": "historical_rummageo_notebook", "method": "signed_ternary_membership", "parameters": {"deterministic_sort": "term then gene"}, "n_genes_emitted": sum(map(len, emitted.values())), "token_type": "gene_symbol", "n_duplicates_dropped": len(raw) - len(filtered)}]}, gene_set_description=f"RummaGEO {model_id.replace('_', ' ')} signatures reconstructed from recorded source and NCBI mapping snapshots.", provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None), provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None))
+    metadata = make_metadata(converter_name="rumma_geo", parameters={"model_id": model_id, "model_family": model_family, "min_genes": args.min_genes, "selection_method": "recorded_harmonizome_query_manifest", "duplicate_membership_policy": "drop_all_duplicate_term_gene_pairs", "mouse_mapping": "NCBI_mouse_symbol_to_human_ortholog_symbol", "human_filter": "NCBI_type_of_gene_protein-coding_exact_symbol"}, data_type="transcriptomics", assay="rna_seq", organism="human", genome_build=args.genome_build, files=[input_file_record(path, role, resource_record=source_records[role]) for path, role in zip(paths, roles)] + [input_file_record(source_manifest, "input_provenance_manifest")], gene_annotation={"mode": "exact_symbol_filter", "source": "NCBI Gene", "gene_id_field": "gene_symbol", "synonym_rescue": False}, weights={"weight_type": "signed_unweighted", "normalization": {"method": "none"}, "aggregation": "RummaGEO notebook ternary membership"}, summary={"n_input_features": source_count, "n_genes": len(set().union(*emitted.values())) if emitted else 0, "n_features_assigned": len(filtered), "fraction_features_assigned": len(filtered) / source_count if source_count else 0.0, "n_gene_sets": len(emitted), **diagnostics}, output_files=[{"path": "genesets.gmt", "role": "gmt_library"}, {"path": "geneset.tsv", "role": "selected_program"}, {"path": "signature_summary.tsv", "role": "signature_summary"}, {"path": "reconstruction_diagnostics.json", "role": "reconstruction_diagnostics"}, {"path": "geneset.meta.json", "role": "metadata_json"}], gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": args.min_genes, "max_genes": None, "plans": [{"name": "historical_rummageo_notebook", "method": "signed_ternary_membership", "parameters": {"deterministic_sort": "term then gene"}, "n_genes_emitted": sum(map(len, emitted.values())), "token_type": "gene_symbol", "n_duplicates_dropped": len(raw) - len(filtered)}]}, gene_set_description=f"RummaGEO {model_family.replace('_', ' ')} signatures reconstructed with model {model_id} from recorded source and NCBI mapping snapshots.", provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None), provenance_mirror_remote_prefix=getattr(args, "provenance_mirror_remote_prefix", None))
     write_metadata(out_dir / "geneset.meta.json", metadata)
     return {"n_peaks": len(filtered), "n_genes": len(set().union(*emitted.values())) if emitted else 0, "n_sets": len(emitted), "out_dir": str(out_dir)}

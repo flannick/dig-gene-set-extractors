@@ -9,7 +9,7 @@
     {"name": "NCBI Gene snapshots", "type": "tsv.gz", "description": "Human, mouse, and ortholog mapping inputs pinned by checksum"}
   ],
   "parameters": [
-    {"name": "model_id", "type": "string", "default": "gene_perturbations", "enum": ["gene_perturbations", "drug_perturbations"], "help": "RummaGEO perturbation family"},
+    {"name": "model_id", "type": "string", "default": "HZ1", "enum": ["HZ1", "HZ2"], "help": "RummaGEO model: HZ1=drug perturbations; HZ2=gene perturbations"},
     {"name": "min_genes", "type": "integer", "default": 5, "help": "Historical minimum membership threshold"}
   ],
   "outputs": [
