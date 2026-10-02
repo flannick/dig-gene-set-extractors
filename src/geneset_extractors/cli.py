@@ -2373,6 +2373,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_selection.add_argument("--out_dir", required=True)
     _add_provenance_flags(p_rumma_selection)
 
+    p_rumma_acquire = conv.add_parser("rumma_geo_acquire")
+    p_rumma_acquire.add_argument("--model_id", required=True, choices=["HZ1", "HZ2"])
+    p_rumma_acquire.add_argument("--drug_terms_json")
+    p_rumma_acquire.add_argument("--out_dir", required=True)
+    p_rumma_acquire.add_argument("--endpoint", default="https://rummageo.com/graphql")
+    p_rumma_acquire.add_argument("--page_size", type=int, default=10000)
+
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
     p_unsigned_term.add_argument("--out_dir", required=True)
