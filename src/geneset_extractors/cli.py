@@ -2324,6 +2324,19 @@ def build_parser() -> argparse.ArgumentParser:
         emit_small_gene_sets=False,
     )
 
+    p_lincs_cp_gmt = conv.add_parser("lincs_l1000_cp_gmt")
+    p_lincs_cp_gmt.add_argument("--gmt", required=True, help="Direct GMT emitted by the LINCS CP workflow.")
+    p_lincs_cp_gmt.add_argument("--out_dir", required=True)
+    p_lincs_cp_gmt.add_argument("--organism", choices=["human"], default="human")
+    p_lincs_cp_gmt.add_argument("--genome_build", default="hg38")
+    p_lincs_cp_gmt.add_argument(
+        "--signature_name",
+        default="LINCS L1000 chemical perturbation Characteristic Direction signatures",
+    )
+    p_lincs_cp_gmt.add_argument("--gmt_description", default="LINCS L1000 chemical perturbation Characteristic Direction signature")
+    p_lincs_cp_gmt.add_argument("--upstream_provenance_graph_json")
+    _add_provenance_flags(p_lincs_cp_gmt)
+
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
     p_unsigned_term.add_argument("--out_dir", required=True)

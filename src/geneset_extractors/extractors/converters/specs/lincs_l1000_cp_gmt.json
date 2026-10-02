@@ -1,0 +1,20 @@
+{
+  "name": "lincs_l1000_cp_gmt",
+  "description": "Streaming finalizer for direct LINCS L1000 chemical-perturbation GMT output",
+  "inputs": [
+    {"name": "gmt", "type": "gmt", "description": "Direct GMT emitted by the LINCS CP workflow"}
+  ],
+  "parameters": [
+    {"name": "signature_name", "type": "string", "default": "LINCS L1000 chemical perturbation Characteristic Direction signatures", "help": "Collection name for metadata"},
+    {"name": "gmt_description", "type": "string", "default": "LINCS L1000 chemical perturbation Characteristic Direction signature", "help": "Non-empty GMT description field"}
+  ],
+  "outputs": [
+    {"name": "genesets.gmt", "description": "Authoritative signed GMT library"},
+    {"name": "geneset.tsv", "description": "Streaming signed term-gene table"},
+    {"name": "geneset.full.tsv", "description": "Streaming full signed term-gene table"},
+    {"name": "signature_summary.tsv", "description": "Per-set summary"},
+    {"name": "geneset.meta.json", "description": "Metadata JSON"},
+    {"name": "geneset.provenance.legacy.json", "description": "Legacy provenance graph JSON"},
+    {"name": "geneset.provenance.dapper.yaml", "description": "DAPPER provenance YAML"}
+  ]
+}
