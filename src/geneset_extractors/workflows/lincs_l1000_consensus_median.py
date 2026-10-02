@@ -85,8 +85,8 @@ def run(args) -> dict[str, object]:
             values = np.asarray(matrix[groups[pert_name], :], dtype=np.float64)
             median = np.median(values, axis=0)
             up, down = rank_consensus(genes, median, top_n)
-            output.write("\t".join([f"{pert_name} up", "", *up]) + "\n")
-            output.write("\t".join([f"{pert_name} down", "", *down]) + "\n")
+            output.write("\t".join([f"{pert_name}_up", "", *up]) + "\n")
+            output.write("\t".join([f"{pert_name}_dn", "", *down]) + "\n")
     manifest_path = out_dir / "lincs_l1000_consensus_median_partition.json"
     manifest = {"gctx_path": str(gctx_path), "public_gctx_url": PUBLIC_GCTX_URL, "sigcom_library_uuid": SIGCOM_LIBRARY_UUID, "sigcom_metadata_api": SIGCOM_METADATA_API, "matrix_shape": shape, "min_signatures": min_signatures, "top_n": top_n, "n_source_signatures": len(pert_names), "n_perturbagens": len(groups), "n_eligible_perturbagens": len(eligible), "partition_index": partition_index, "partition_count": partition_count, "perturbagens": selected, "n_generated_sets": len(selected) * 2}
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

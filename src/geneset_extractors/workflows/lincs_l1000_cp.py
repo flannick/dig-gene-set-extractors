@@ -141,7 +141,8 @@ def rank_signature(genes: list[str], coefficients: np.ndarray, top_n: int) -> tu
 def _write_gmt(path: Path, rows: list[tuple[str, str, list[str]]]) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         for term, direction, genes in rows:
-            handle.write("\t".join([f"{term} {direction}", "", *genes]) + "\n")
+            label = "up" if direction == "up" else "dn"
+            handle.write("\t".join([f"{term}_{label}", "", *genes]) + "\n")
 
 
 def _write_signed(path: Path, rows: list[tuple[str, str, list[str]]]) -> None:
@@ -191,7 +192,8 @@ def run(args) -> dict[str, object]:
                 up, down = rank_signature(genes, coefficients, top_n)
                 directions = (("up", up), ("down", down)) if emit_signed_tsv else (("down", down), ("up", up))
                 for direction, selected in directions:
-                    gmt_handle.write("\t".join([f"{term} {direction}", "", *selected]) + "\n")
+                    label = "up" if direction == "up" else "dn"
+                    gmt_handle.write("\t".join([f"{term}_{label}", "", *selected]) + "\n")
                     if writer is not None:
                         for rank, gene in enumerate(selected, start=1):
                             writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": top_n - rank + 1, "sign": 1 if direction == "up" else -1})

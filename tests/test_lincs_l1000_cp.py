@@ -40,7 +40,7 @@ def test_validates_and_exports_gctx_partitions(tmp_path: Path) -> None:
     result = run(_args(gctx_path, tmp_path / "part_a", 0, 1))
     assert result["n_sets"] == 2
     lines = (tmp_path / "part_a/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()
-    assert [line.split("\t", 1)[0] for line in lines] == ["fixture_a up", "fixture_a down"]
+    assert [line.split("\t", 1)[0] for line in lines] == ["fixture_a_up", "fixture_a_dn"]
     assert all(len(line.split("\t")) == 252 for line in lines)
 
 
@@ -88,7 +88,7 @@ def test_plans_cell_line_time_worklists_and_exports_one_task(tmp_path: Path) -> 
     args.raw_indices_tsv = rows[1]["raw_indices_tsv"]
     result = run(args)
     assert result["n_sets"] == 2
-    assert (tmp_path / "task/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_b up\t")
+    assert (tmp_path / "task/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_b_up\t")
 
 
 def test_direct_gmt_mode_avoids_the_signed_intermediate(tmp_path: Path) -> None:
@@ -100,7 +100,7 @@ def test_direct_gmt_mode_avoids_the_signed_intermediate(tmp_path: Path) -> None:
     result = run(args)
     assert result["n_sets"] == 4
     assert (out_dir / "l1000_cp.gmt").is_file()
-    assert (out_dir / "l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_a down\t")
+    assert (out_dir / "l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_a_dn\t")
     assert not (out_dir / "lincs_l1000_cp_signed_term_gene.tsv").exists()
     assert (out_dir / "l1000_cp.provenance_graph.json").is_file()
 

@@ -9,11 +9,11 @@ from geneset_extractors.core.provenance import activate_runtime_context
 
 
 def _term_direction(set_name: str) -> tuple[str, str, float]:
-    if set_name.endswith(" up"):
+    if set_name.endswith("_up"):
         return set_name[:-3], "up", 1.0
-    if set_name.endswith(" down"):
-        return set_name[:-5], "dn", -1.0
-    raise ValueError(f"LINCS CP GMT set name must end in ' up' or ' down': {set_name}")
+    if set_name.endswith("_dn"):
+        return set_name[:-3], "dn", -1.0
+    raise ValueError(f"LINCS CP GMT set name must end in '_up' or '_dn': {set_name}")
 
 
 def run(args) -> dict[str, object]:

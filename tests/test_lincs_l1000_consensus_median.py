@@ -48,6 +48,6 @@ def test_consensus_partitions_and_merge(tmp_path: Path) -> None:
     assert run(_args(gctx_path, first, 0, 2))["n_sets"] == 2
     assert run(_args(gctx_path, second, 1, 2))["n_sets"] == 2
     first_terms = [line.split("\t", 1)[0] for line in (first / "lincs_l1000_consensus_median.gmt").read_text(encoding="utf-8").splitlines()]
-    assert first_terms == ["drug_a up", "drug_a down"]
+    assert first_terms == ["drug_a_up", "drug_a_dn"]
     merged = merge_partitions([second, first], tmp_path / "merged")
     assert merged == {"n_partitions": 2, "n_terms": 4}
