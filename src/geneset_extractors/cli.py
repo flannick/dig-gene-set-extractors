@@ -520,6 +520,16 @@ def _add_lincs_l1000_cp_flags(parser: argparse.ArgumentParser) -> None:
     _add_provenance_flags(parser)
 
 
+def _add_lincs_l1000_consensus_median_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--gctx_path", required=True)
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--top_n", type=int, default=200)
+    parser.add_argument("--min_signatures", type=int, default=10)
+    parser.add_argument("--partition_index", type=int, default=0)
+    parser.add_argument("--partition_count", type=int, default=1)
+    _add_provenance_flags(parser)
+
+
 def _add_ptm_site_diff_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature_name")
     parser.add_argument("--dataset_label")
@@ -1828,6 +1838,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_lincs_l1000_crisprko_flags(p_lincs_l1000_crisprko)
     p_lincs_l1000_cp = wf_sub.add_parser("lincs_l1000_cp")
     _add_lincs_l1000_cp_flags(p_lincs_l1000_cp)
+    p_lincs_l1000_consensus_median = wf_sub.add_parser("lincs_l1000_consensus_median")
+    _add_lincs_l1000_consensus_median_flags(p_lincs_l1000_consensus_median)
     p_prism_prepare = wf_sub.add_parser("prism_prepare")
     _add_prism_prepare_flags(p_prism_prepare)
     p_ptm_public = wf_sub.add_parser("ptm_prepare_public")
@@ -2334,6 +2346,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="LINCS L1000 chemical perturbation Characteristic Direction signatures",
     )
     p_lincs_cp_gmt.add_argument("--gmt_description", default="LINCS L1000 chemical perturbation Characteristic Direction signature")
+    p_lincs_cp_gmt.add_argument("--genes_per_set", type=int, default=250)
     p_lincs_cp_gmt.add_argument("--upstream_provenance_graph_json")
     _add_provenance_flags(p_lincs_cp_gmt)
 
@@ -2779,6 +2792,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "workflow_completed "
                     f"workflow=lincs_l1000_cp n_rows={result.get('n_rows')} "
+                    f"out={result.get('out_dir')}",
+                    file=sys.stderr,
+                )
+                return 0
+            if args.workflow_command == "lincs_l1000_consensus_median":
+                from geneset_extractors.workflows.lincs_l1000_consensus_median import run as run_lincs_l1000_consensus_median
+
+                result = run_lincs_l1000_consensus_median(args)
+                print(
+                    "workflow_completed "
+                    f"workflow=lincs_l1000_consensus_median n_rows={result.get('n_rows')} "
                     f"out={result.get('out_dir')}",
                     file=sys.stderr,
                 )

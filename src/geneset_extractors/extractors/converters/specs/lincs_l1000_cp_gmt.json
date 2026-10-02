@@ -6,7 +6,8 @@
   ],
   "parameters": [
     {"name": "signature_name", "type": "string", "default": "LINCS L1000 chemical perturbation Characteristic Direction signatures", "help": "Collection name for metadata"},
-    {"name": "gmt_description", "type": "string", "default": "LINCS L1000 chemical perturbation Characteristic Direction signature", "help": "Non-empty GMT description field"}
+    {"name": "gmt_description", "type": "string", "default": "LINCS L1000 chemical perturbation Characteristic Direction signature", "help": "Non-empty GMT description field"},
+    {"name": "genes_per_set", "type": "integer", "default": 250, "help": "Expected fixed number of genes per signed set"}
   ],
   "outputs": [
     {"name": "genesets.gmt", "description": "Authoritative signed GMT library"},

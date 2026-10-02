@@ -51,7 +51,7 @@ def run(args) -> dict[str, object]:
                 genes.add(gene)
     metadata = make_metadata(
         converter_name="lincs_l1000_cp_gmt",
-        parameters={"signature_name": args.signature_name, "gmt_description": description, "streaming": True},
+        parameters={"signature_name": args.signature_name, "gmt_description": description, "genes_per_set": args.genes_per_set, "streaming": True},
         data_type="transcriptomics",
         assay="bulk",
         organism=args.organism,
@@ -61,7 +61,7 @@ def run(args) -> dict[str, object]:
         weights={"weight_type": "signed_rank", "normalization": {"method": "none", "target_sum": None}, "aggregation": "streamed_per_signature_rank"},
         summary={"n_input_features": n_rows, "n_genes": len(genes), "n_features_assigned": n_rows, "fraction_features_assigned": 1.0, "n_sets_emitted": n_sets},
         output_files=[{"path": "genesets.gmt", "role": "gmt_library"}, {"path": "geneset.tsv", "role": "selected_program"}, {"path": "geneset.full.tsv", "role": "full_scores"}, {"path": "signature_summary.tsv", "role": "signature_summary"}, {"path": "geneset.meta.json", "role": "metadata_json"}],
-        gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": 250, "max_genes": 250, "plans": [{"name": "streamed_per_signature", "method": "direct_gctx_rank", "parameters": {"description": description, "format": "classic", "signed": True}, "n_genes_emitted": n_rows, "token_type": "gene_symbol", "n_duplicates_dropped": 0}]},
+        gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": args.genes_per_set, "max_genes": args.genes_per_set, "plans": [{"name": "streamed_per_signature", "method": "direct_gctx_rank", "parameters": {"description": description, "format": "classic", "signed": True}, "n_genes_emitted": n_rows, "token_type": "gene_symbol", "n_duplicates_dropped": 0}]},
         gene_set_description=args.signature_name,
         upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
         provenance_mirror_local_prefix=getattr(args, "provenance_mirror_local_prefix", None),
