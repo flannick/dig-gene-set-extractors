@@ -2366,6 +2366,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_geo.add_argument("--legacy_gmt", help="Optional legacy GMT validation target; never used in reconstruction.")
     _add_provenance_flags(p_rumma_geo)
 
+    p_rumma_selection = conv.add_parser("rumma_geo_selection")
+    p_rumma_selection.add_argument("--query_records_json", required=True, help="Cached GraphQL records annotated with search_term; never derive from a legacy GMT.")
+    p_rumma_selection.add_argument("--drug_terms_json", help="Pinned SigCom-LINCS drug-term JSON; required for HZ1.")
+    p_rumma_selection.add_argument("--model_id", required=True, choices=["HZ1", "HZ2"])
+    p_rumma_selection.add_argument("--out_dir", required=True)
+    _add_provenance_flags(p_rumma_selection)
+
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
     p_unsigned_term.add_argument("--out_dir", required=True)
