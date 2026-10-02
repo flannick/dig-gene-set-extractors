@@ -37,9 +37,12 @@ def run(args):
         selected.setdefault(uid, {'uuid':uid,'source_term':source,'model_id':model,'status':status,'search_term':r['search_term'],'gse':gse,'condition_1':c1,'condition_2':c2,'species':species,'source_direction':direction,'condition_1_title':a,'condition_2_title':b,'title':str(r.get('title',''))})
     out=Path(args.out_dir).resolve(); out.mkdir(parents=True,exist_ok=True); rows=sorted(selected.values(),key=lambda r:(r['source_term'],r['uuid']))
     fields=list(rows[0]) if rows else ['uuid','source_term','model_id','status','search_term','gse','condition_1','condition_2','species','source_direction','condition_1_title','condition_2_title','title']
-    with (out/'selection_manifest.tsv').open('w',encoding='utf-8',newline='') as h:
-        w=csv.DictWriter(h,fieldnames=fields,delimiter='\t',lineterminator='\n'); w.writeheader(); w.writerows(rows)
+    for name in ('selection_manifest.tsv', 'geneset.tsv'):
+        with (out / name).open('w', encoding='utf-8', newline='') as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter='\t', lineterminator='\n')
+            writer.writeheader()
+            writer.writerows(rows)
     (out/'query_records.used.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n',encoding='utf-8')
     files=[input_file_record(query,'cached_rummageo_graphql_records')]+([input_file_record(drugs,'sigcom_lincs_drug_terms')] if drugs else [])
-    meta=make_metadata('rumma_geo_selection',{'model_id':model,'control_terms':sorted(CONTROL_TERMS),'gene_search_terms':list(GENE_TERMS),'drug_exclusions':sorted(DRUG_EXCLUSIONS),'uuid_deduplication':'stable_first_by_search_term_then_uuid'},'metadata','rna_seq','human','hg38',files,{'mode':'none'},{'weight_type':'unweighted','normalization':{},'aggregation':'selection'}, {'n_input_features':len(records),'n_genes':0,'n_features_assigned':len(rows),'fraction_features_assigned':len(rows)/len(records) if records else 0,'n_gene_sets':len(rows)},output_files=[{'path':'selection_manifest.tsv','role':'selection_manifest'},{'path':'query_records.used.json','role':'selected_query_records'}],gene_set_description='RummaGEO cached-query selection manifest')
+    meta=make_metadata('rumma_geo_selection',{'model_id':model,'control_terms':sorted(CONTROL_TERMS),'gene_search_terms':list(GENE_TERMS),'drug_exclusions':sorted(DRUG_EXCLUSIONS),'uuid_deduplication':'stable_first_by_search_term_then_uuid'},'metadata','rna_seq','human','hg38',files,{'mode':'none'},{'weight_type':'unweighted','normalization':{},'aggregation':'selection'}, {'n_input_features':len(records),'n_genes':0,'n_features_assigned':len(rows),'fraction_features_assigned':len(rows)/len(records) if records else 0,'n_gene_sets':len(rows)},output_files=[{'path':'selection_manifest.tsv','role':'selection_manifest'},{'path':'geneset.tsv','role':'selected_program'},{'path':'query_records.used.json','role':'selected_query_records'}],gene_set_description='RummaGEO cached-query selection manifest')
     write_metadata(out/'geneset.meta.json',meta); return {'n_peaks':len(rows),'n_genes':0,'out_dir':str(out)}
