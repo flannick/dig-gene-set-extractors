@@ -50,6 +50,8 @@ def write_gmt(
     out_path: str | Path,
     *,
     gmt_format: str = "classic",
+    description: str = "na",
+    preserve_names: bool = False,
 ) -> None:
     p = Path(out_path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -58,8 +60,10 @@ def write_gmt(
         raise ValueError(f"Unsupported gmt_format: {gmt_format}")
     with p.open("w", encoding="utf-8", newline="\n") as fh:
         for name, genes in gene_sets:
-            sanitized = sanitize_gmt_name(name)
-            fh.write("\t".join([sanitized, "na", *genes]) + "\n")
+            rendered_name = str(name).strip() if preserve_names else sanitize_gmt_name(name)
+            if not rendered_name:
+                raise ValueError("GMT gene-set names must be non-empty")
+            fh.write("\t".join([rendered_name, str(description), *genes]) + "\n")
 
 
 def parse_int_list_csv(value: str) -> list[int]:
