@@ -13,6 +13,7 @@ authors = [{name = "DIG"}]
 dependencies = [
   "jsonschema>=4.0",
   "numpy>=1.23",
+  "h5py>=3.8",
   "PyYAML>=6.0",
   "rdflib>=7.0",
 ]

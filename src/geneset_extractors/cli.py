@@ -484,15 +484,14 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_lincs_l1000_cp_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--signature_manifest_tsv", required=True)
+    parser.add_argument("--gctx_path", required=True)
     parser.add_argument("--out_dir", required=True)
-    parser.add_argument("--cache_dir")
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")
     parser.add_argument("--top_n", type=int, default=250)
-    parser.add_argument("--source_url_base", default="https://lincs-dcic.s3.amazonaws.com/LINCS-sigs-2021/cd/cp/")
-    parser.add_argument("--request_timeout", type=int, default=300)
-    parser.add_argument("--limit_signatures", type=int)
+    parser.add_argument("--block_size", type=int, default=256)
+    parser.add_argument("--start_index", type=int, default=0)
+    parser.add_argument("--end_index", type=int)
     _add_provenance_flags(parser)
 
 

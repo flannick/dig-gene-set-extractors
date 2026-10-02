@@ -1,150 +1,132 @@
-"""Export individual LINCS L1000 chemical-perturbation CD signatures."""
+"""Stream LINCS L1000 chemical-perturbation CD signatures from a GCTX file."""
 from __future__ import annotations
 
 import csv
-import math
-import shutil
+import json
 from pathlib import Path
-from urllib.parse import unquote, urlparse
-from urllib.request import urlopen
+from typing import Iterable
 
-from geneset_extractors.workflows.gtex_runtime_common import write_tsv, write_workflow_provenance_graph
+import numpy as np
 
+from geneset_extractors.workflows.gtex_runtime_common import write_workflow_provenance_graph
 
-LIBRARY_ID = "54198d6e-fe17-5ef8-91ac-02b425761653"
-FILENAME_PREFIX = "L1000_LINCS_DCIC_"
-
-
-def persistent_id_to_term(persistent_id: str) -> str:
-    """Convert a SigCom persistent ID (filename or URL) to a legacy GMT term."""
-    value = str(persistent_id or "").strip()
-    filename = Path(unquote(urlparse(value).path or value)).name
-    if filename.startswith(FILENAME_PREFIX):
-        filename = filename[len(FILENAME_PREFIX) :]
-    if filename.endswith(".tsv"):
-        filename = filename[: -len(".tsv")]
-    if not filename:
-        raise ValueError(f"Cannot derive a term from persistent_id={persistent_id!r}")
-    return filename
+PUBLIC_GCTX_URL = "https://lincs-dcic.s3.amazonaws.com/LINCS-sigs-2021/gctx/cd-coefficient/cp_coeff_mat.gctx"
+MATRIX_PATH = "0/DATA/0/matrix"
+ROW_ID_PATH = "0/META/ROW/id"
+LINCS_ID_PATH = "0/META/COL/lincs_id"
 
 
-def _source_url(row: dict[str, str], source_url_base: str) -> str:
-    explicit = str(row.get("source_url", "")).strip()
-    if explicit:
-        return explicit
-    persistent_id = str(row.get("persistent_id", "")).strip()
-    if persistent_id.startswith(("https://", "http://")):
-        return persistent_id
-    if not persistent_id:
-        raise ValueError("Signature manifest row has neither source_url nor persistent_id")
-    return source_url_base.rstrip("/") + "/" + persistent_id
-
-
-def _read_signature(path: Path, top_n: int) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        missing = {"symbol", "CD-coefficient"}.difference(reader.fieldnames or [])
-        if missing:
-            raise ValueError(f"{path} is missing required column(s): {', '.join(sorted(missing))}")
-        rows: list[tuple[str, float]] = []
-        symbols: set[str] = set()
-        for line_number, row in enumerate(reader, start=2):
-            symbol = str(row.get("symbol", "")).strip()
-            if not symbol:
-                raise ValueError(f"{path}:{line_number} has an empty symbol")
-            if symbol in symbols:
-                raise ValueError(f"{path}:{line_number} has duplicate symbol {symbol!r}")
-            try:
-                coefficient = float(str(row.get("CD-coefficient", "")).strip())
-            except ValueError as error:
-                raise ValueError(f"{path}:{line_number} has non-numeric CD-coefficient") from error
-            if not math.isfinite(coefficient):
-                raise ValueError(f"{path}:{line_number} has non-finite CD-coefficient")
-            symbols.add(symbol)
-            rows.append((symbol, coefficient))
-    if len(rows) < top_n * 2:
-        raise ValueError(f"{path} has {len(rows)} unique genes; need at least {top_n * 2}")
-    ranked = sorted(rows, key=lambda item: (-item[1], item[0]))
-    return ranked[:top_n], ranked[-top_n:]
-
-
-def _materialize_source(row: dict[str, str], cache_dir: Path, source_url_base: str, timeout: int) -> Path:
-    source_path = str(row.get("source_path", "")).strip()
-    if source_path:
-        path = Path(source_path).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Missing source_path from signature manifest: {path}")
-        return path
-    url = _source_url(row, source_url_base)
-    filename = Path(unquote(urlparse(url).path)).name
-    if not filename:
-        raise ValueError(f"Cannot derive cache filename from source URL {url!r}")
-    destination = cache_dir / filename
-    if destination.is_file() and destination.stat().st_size > 0:
-        return destination
-    temporary = destination.with_suffix(destination.suffix + ".partial")
+def _h5py():
     try:
-        with urlopen(url, timeout=timeout) as response, temporary.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        temporary.replace(destination)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-    return destination
+        import h5py
+    except ImportError as error:
+        raise RuntimeError("lincs_l1000_cp requires h5py to read GCTX inputs") from error
+    return h5py
 
 
-def _manifest_rows(path: Path, limit_signatures: int | None) -> list[dict[str, str]]:
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    if not rows or "persistent_id" not in rows[0]:
-        raise ValueError(f"Signature manifest must be non-empty and have a persistent_id column: {path}")
-    rows = sorted(rows, key=lambda row: persistent_id_to_term(row.get("persistent_id", "")))
-    terms = [persistent_id_to_term(row.get("persistent_id", "")) for row in rows]
-    if len(terms) != len(set(terms)):
-        raise ValueError("Signature manifest resolves multiple persistent IDs to the same GMT term")
-    return rows[:limit_signatures] if limit_signatures is not None else rows
+def _strings(values: Iterable[object]) -> list[str]:
+    return [value.decode("utf-8") if isinstance(value, bytes) else str(value) for value in values]
+
+
+def inspect_gctx(gctx_path: Path) -> tuple[list[str], list[str], tuple[int, int]]:
+    """Validate the required public GCTX datasets and their dimensions."""
+    h5py = _h5py()
+    with h5py.File(gctx_path, "r") as handle:
+        missing = [path for path in (MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH) if path not in handle]
+        if missing:
+            raise ValueError(f"GCTX is missing required dataset(s): {', '.join(missing)}")
+        shape = tuple(int(value) for value in handle[MATRIX_PATH].shape)
+        genes = [value.strip() for value in _strings(handle[ROW_ID_PATH][...])]
+        signatures = [value.strip() for value in _strings(handle[LINCS_ID_PATH][...])]
+    if len(shape) != 2 or shape != (len(signatures), len(genes)):
+        raise ValueError(f"GCTX matrix shape {shape} is incompatible with {len(signatures)} lincs_id values and {len(genes)} row IDs")
+    if not genes or any(not value for value in genes) or len(genes) != len(set(genes)):
+        raise ValueError(f"{ROW_ID_PATH} must contain unique non-empty gene symbols")
+    if not signatures or any(not value for value in signatures) or len(signatures) != len(set(signatures)):
+        raise ValueError(f"{LINCS_ID_PATH} must contain unique non-empty lincs_id values")
+    return genes, signatures, shape
+
+
+def resolve_range(n_signatures: int, start_index: int, end_index: int | None) -> tuple[int, int]:
+    end = n_signatures if end_index is None else end_index
+    if start_index < 0 or end < start_index or end > n_signatures:
+        raise ValueError(f"Invalid signature range [{start_index}, {end}) for {n_signatures} signatures")
+    return start_index, end
+
+
+def rank_signature(genes: list[str], coefficients: np.ndarray, top_n: int) -> tuple[list[str], list[str]]:
+    if len(genes) < top_n * 2:
+        raise ValueError(f"Need at least {top_n * 2} genes; found {len(genes)}")
+    values = np.asarray(coefficients, dtype=np.float64)
+    if values.ndim != 1 or len(values) != len(genes) or not np.isfinite(values).all():
+        raise ValueError("Invalid CD-coefficient vector")
+    order = np.lexsort((np.asarray(genes, dtype=str), -values))
+    return [genes[index] for index in order[:top_n]], [genes[index] for index in order[-top_n:]]
+
+
+def _write_gmt(path: Path, rows: list[tuple[str, str, list[str]]]) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for term, direction, genes in rows:
+            handle.write("\t".join([f"{term} {direction}", "", *genes]) + "\n")
+
+
+def _write_signed(path: Path, rows: list[tuple[str, str, list[str]]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, delimiter="\t", fieldnames=["term", "gene_id", "gene_symbol", "score", "sign"], lineterminator="\n")
+        writer.writeheader()
+        for term, direction, genes in rows:
+            for rank, gene in enumerate(genes, start=1):
+                writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": len(genes) - rank + 1, "sign": 1 if direction == "up" else -1})
 
 
 def run(args) -> dict[str, object]:
-    manifest = Path(args.signature_manifest_tsv).resolve()
-    if not manifest.is_file():
-        raise FileNotFoundError(f"Missing signature manifest: {manifest}")
+    gctx_path = Path(args.gctx_path).resolve()
+    if not gctx_path.is_file():
+        raise FileNotFoundError(f"Missing cp_coeff_mat.gctx: {gctx_path}")
+    top_n, block_size = int(args.top_n), int(args.block_size)
+    if top_n <= 0 or block_size <= 0:
+        raise ValueError("top_n and block_size must be positive")
+    genes, signatures, shape = inspect_gctx(gctx_path)
+    start, end = resolve_range(len(signatures), int(args.start_index), args.end_index)
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else out_dir / "source_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    top_n = int(args.top_n)
-    if top_n <= 0:
-        raise ValueError("top_n must be positive")
-    manifest_rows = _manifest_rows(manifest, args.limit_signatures)
-    signed_rows: list[dict[str, object]] = []
-    gmt_rows: list[tuple[str, list[str]]] = []
-    source_rows: list[dict[str, object]] = []
-    for row in manifest_rows:
-        persistent_id = str(row["persistent_id"])
-        term = persistent_id_to_term(persistent_id)
-        source = _materialize_source(row, cache_dir, args.source_url_base, int(args.request_timeout))
-        up, down = _read_signature(source, top_n)
-        gmt_rows.extend([(f"{term} up", [symbol for symbol, _ in up]), (f"{term} down", [symbol for symbol, _ in down])])
-        for sign, records in ((1, up), (-1, down)):
-            for symbol, coefficient in records:
-                signed_rows.append({"term": term, "gene_id": symbol, "gene_symbol": symbol, "score": abs(coefficient), "sign": sign})
-        source_rows.append({"persistent_id": persistent_id, "term": term, "source_path": str(source), "source_url": _source_url(row, args.source_url_base)})
-    signed_path = out_dir / "lincs_l1000_cp_signed_term_gene.tsv"
-    write_tsv(signed_path, signed_rows, ["term", "gene_id", "gene_symbol", "score", "sign"])
-    source_path = out_dir / "lincs_l1000_cp_sources.tsv"
-    write_tsv(source_path, source_rows, ["persistent_id", "term", "source_path", "source_url"])
-    workflow_gmt = out_dir / "l1000_cp.gmt"
-    with workflow_gmt.open("w", encoding="utf-8", newline="\n") as handle:
-        for term, genes in gmt_rows:
-            handle.write("\t".join([term, "", *genes]) + "\n")
-    write_workflow_provenance_graph(
-        workflow_name="lincs_l1000_cp",
-        module_name="geneset_extractors.workflows.lincs_l1000_cp",
-        output_dir=out_dir,
-        focus_output_path=signed_path,
-        output_paths=[(signed_path, "signed_term_gene_tsv"), (source_path, "source_manifest_tsv"), (workflow_gmt, "per_signature_gmt")],
-        input_paths=[(manifest, "sigcom_signature_manifest")],
-        parameters={"sigcom_library_id": LIBRARY_ID, "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "n_signatures": len(manifest_rows), "n_sets": len(gmt_rows)},
-    )
-    return {"n_rows": len(signed_rows), "n_sets": len(gmt_rows), "out_dir": str(out_dir)}
+    n_sets = 0
+    h5py = _h5py()
+    gmt_path, signed_path = out_dir / "l1000_cp.gmt", out_dir / "lincs_l1000_cp_signed_term_gene.tsv"
+    with gmt_path.open("w", encoding="utf-8", newline="\n") as gmt_handle, signed_path.open("w", encoding="utf-8", newline="") as signed_handle, h5py.File(gctx_path, "r") as handle:
+        writer = csv.DictWriter(signed_handle, delimiter="\t", fieldnames=["term", "gene_id", "gene_symbol", "score", "sign"], lineterminator="\n")
+        writer.writeheader()
+        matrix = handle[MATRIX_PATH]
+        for block_start in range(start, end, block_size):
+            block_end = min(block_start + block_size, end)
+            for offset, coefficients in enumerate(matrix[block_start:block_end, :]):
+                term = signatures[block_start + offset]
+                up, down = rank_signature(genes, coefficients, top_n)
+                for direction, selected in (("up", up), ("down", down)):
+                    gmt_handle.write("\t".join([f"{term} {direction}", "", *selected]) + "\n")
+                    for rank, gene in enumerate(selected, start=1):
+                        writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": top_n - rank + 1, "sign": 1 if direction == "up" else -1})
+                    n_sets += 1
+    manifest_path = out_dir / "lincs_l1000_cp_partition.json"
+    manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "n_signatures": end - start, "n_sets": n_sets, "top_n": top_n}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "n_source_signatures": len(signatures), "n_generated_sets": n_sets})
+    return {"n_rows": n_sets * top_n, "n_sets": n_sets, "out_dir": str(out_dir)}
+
+
+def merge_partitions(partition_dirs: list[Path], out_dir: Path) -> dict[str, int]:
+    manifests = [json.loads((path / "lincs_l1000_cp_partition.json").read_text(encoding="utf-8")) for path in partition_dirs]
+    ordered = sorted(zip(manifests, partition_dirs), key=lambda item: item[0]["start_index"])
+    expected_start, seen_terms = 0, set()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with (out_dir / "l1000_cp.gmt").open("w", encoding="utf-8", newline="\n") as output:
+        for manifest, directory in ordered:
+            if manifest["start_index"] != expected_start:
+                raise ValueError("Partition ranges are not contiguous from signature index 0")
+            expected_start = manifest["end_index"]
+            for line in (directory / "l1000_cp.gmt").open(encoding="utf-8"):
+                term = line.split("\t", 1)[0]
+                if term in seen_terms:
+                    raise ValueError(f"Duplicate output GMT term: {term}")
+                seen_terms.add(term)
+                output.write(line)
+    return {"n_partitions": len(ordered), "n_terms": len(seen_terms), "end_index": expected_start}
