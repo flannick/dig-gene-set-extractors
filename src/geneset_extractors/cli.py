@@ -493,6 +493,12 @@ def _add_lincs_l1000_cp_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--end_index", type=int)
     parser.add_argument(
+        "--emit_signed_tsv",
+        type=_parse_bool,
+        default=True,
+        help="Write the signed term-gene intermediate TSV (default: true).",
+    )
+    parser.add_argument(
         "--raw_indices_tsv",
         help="Optional raw_index worklist produced by --plan_cell_line_time.",
     )

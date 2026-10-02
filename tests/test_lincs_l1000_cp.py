@@ -91,6 +91,20 @@ def test_plans_cell_line_time_worklists_and_exports_one_task(tmp_path: Path) -> 
     assert (tmp_path / "task/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_b up\t")
 
 
+def test_direct_gmt_mode_avoids_the_signed_intermediate(tmp_path: Path) -> None:
+    gctx_path = tmp_path / "fixture.gctx"
+    _gctx(gctx_path)
+    out_dir = tmp_path / "direct"
+    args = _args(gctx_path, out_dir)
+    args.emit_signed_tsv = False
+    result = run(args)
+    assert result["n_sets"] == 4
+    assert (out_dir / "l1000_cp.gmt").is_file()
+    assert (out_dir / "l1000_cp.gmt").read_text(encoding="utf-8").splitlines()[0].startswith("fixture_a down\t")
+    assert not (out_dir / "lincs_l1000_cp_signed_term_gene.tsv").exists()
+    assert (out_dir / "l1000_cp.provenance_graph.json").is_file()
+
+
 def test_rejects_missing_required_dataset(tmp_path: Path) -> None:
     path = tmp_path / "bad.gctx"
     with h5py.File(path, "w") as handle:

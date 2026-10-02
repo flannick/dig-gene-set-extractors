@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Iterable
 
@@ -157,6 +158,7 @@ def run(args) -> dict[str, object]:
     if not gctx_path.is_file():
         raise FileNotFoundError(f"Missing cp_coeff_mat.gctx: {gctx_path}")
     top_n, block_size = int(args.top_n), int(args.block_size)
+    emit_signed_tsv = bool(getattr(args, "emit_signed_tsv", True))
     if top_n <= 0 or block_size <= 0:
         raise ValueError("top_n and block_size must be positive")
     genes, signatures, shape = inspect_gctx(gctx_path)
@@ -173,9 +175,12 @@ def run(args) -> dict[str, object]:
     n_sets = 0
     h5py = _h5py()
     gmt_path, signed_path = out_dir / "l1000_cp.gmt", out_dir / "lincs_l1000_cp_signed_term_gene.tsv"
-    with gmt_path.open("w", encoding="utf-8", newline="\n") as gmt_handle, signed_path.open("w", encoding="utf-8", newline="") as signed_handle, h5py.File(gctx_path, "r") as handle:
-        writer = csv.DictWriter(signed_handle, delimiter="\t", fieldnames=["term", "gene_id", "gene_symbol", "score", "sign"], lineterminator="\n")
-        writer.writeheader()
+    signed_context = signed_path.open("w", encoding="utf-8", newline="") if emit_signed_tsv else nullcontext(None)
+    with gmt_path.open("w", encoding="utf-8", newline="\n") as gmt_handle, signed_context as signed_handle, h5py.File(gctx_path, "r") as handle:
+        writer = None
+        if signed_handle is not None:
+            writer = csv.DictWriter(signed_handle, delimiter="\t", fieldnames=["term", "gene_id", "gene_symbol", "score", "sign"], lineterminator="\n")
+            writer.writeheader()
         matrix = handle[MATRIX_PATH]
         exact_duplicate_groups, differing_duplicate_groups = duplicate_vector_counts(matrix, duplicate_groups)
         for block_start in range(0, len(selected_indices), block_size):
@@ -184,15 +189,20 @@ def run(args) -> dict[str, object]:
                 coefficients = matrix[raw_index, :]
                 term = signatures[raw_index]
                 up, down = rank_signature(genes, coefficients, top_n)
-                for direction, selected in (("up", up), ("down", down)):
+                directions = (("up", up), ("down", down)) if emit_signed_tsv else (("down", down), ("up", up))
+                for direction, selected in directions:
                     gmt_handle.write("\t".join([f"{term} {direction}", "", *selected]) + "\n")
-                    for rank, gene in enumerate(selected, start=1):
-                        writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": top_n - rank + 1, "sign": 1 if direction == "up" else -1})
+                    if writer is not None:
+                        for rank, gene in enumerate(selected, start=1):
+                            writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": top_n - rank + 1, "sign": 1 if direction == "up" else -1})
                     n_sets += 1
     manifest_path = out_dir / "lincs_l1000_cp_partition.json"
     duplicate_summary = {"raw_signature_columns": len(signatures), "unique_lincs_id": len(retained_indices), "duplicate_lincs_id_groups": len(duplicate_groups), "exact_duplicate_vector_groups": exact_duplicate_groups, "differing_duplicate_vector_groups": differing_duplicate_groups, "resolution_policy": "last GCTX column occurrence wins"}
     manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "raw_indices_tsv": raw_indices_tsv, "n_signatures": len(selected_indices), "n_sets": n_sets, "top_n": top_n, "duplicate_resolution": duplicate_summary}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "raw_indices_tsv": raw_indices_tsv, "n_source_signatures": len(signatures), "n_unique_lincs_id": len(retained_indices), "duplicate_resolution": duplicate_summary, "n_generated_sets": n_sets})
+    output_paths = [(gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")]
+    if emit_signed_tsv:
+        output_paths.insert(0, (signed_path, "signed_term_gene_tsv"))
+    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=gmt_path if not emit_signed_tsv else signed_path, output_paths=output_paths, input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "emit_signed_tsv": emit_signed_tsv, "start_index": start, "end_index": end, "raw_indices_tsv": raw_indices_tsv, "n_source_signatures": len(signatures), "n_unique_lincs_id": len(retained_indices), "duplicate_resolution": duplicate_summary, "n_generated_sets": n_sets})
     return {"n_rows": n_sets * top_n, "n_sets": n_sets, "out_dir": str(out_dir)}
 
 
