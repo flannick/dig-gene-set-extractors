@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import pytest
 
-from geneset_extractors.workflows.lincs_l1000_cp import inspect_gctx, merge_partitions, run
+from geneset_extractors.workflows.lincs_l1000_cp import inspect_gctx, merge_partitions, resolve_last_occurrences, run
 
 
 def _gctx(path: Path) -> None:
@@ -45,6 +45,26 @@ def test_merge_requires_contiguous_partitions(tmp_path: Path) -> None:
     merged = merge_partitions([second, first], tmp_path / "merged")
     assert merged == {"n_partitions": 2, "n_terms": 4, "end_index": 2}
     assert len((tmp_path / "merged/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()) == 4
+
+
+def test_duplicate_lincs_ids_retain_the_last_gctx_column(tmp_path: Path) -> None:
+    path = tmp_path / "duplicate.gctx"
+    genes = np.asarray([f"GENE{index:03d}".encode() for index in range(500)])
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("0/DATA/0/matrix", data=np.vstack((np.arange(500, 0, -1), np.arange(500))))
+        handle.create_dataset("0/META/ROW/id", data=genes)
+        handle.create_dataset("0/META/COL/lincs_id", data=np.asarray([b"duplicate", b"duplicate"]))
+    _, signatures, _ = inspect_gctx(path)
+    retained, groups = resolve_last_occurrences(signatures)
+    assert retained == [1]
+    assert groups == {"duplicate": [0, 1]}
+    run(_args(path, tmp_path / "out"))
+    lines = (tmp_path / "out/l1000_cp.gmt").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert lines[0].split("\t")[2] == "GENE499"
+    summary = __import__("json").loads((tmp_path / "out/lincs_l1000_cp_partition.json").read_text(encoding="utf-8"))["duplicate_resolution"]
+    assert summary["unique_lincs_id"] == 1
+    assert summary["differing_duplicate_vector_groups"] == 1
 
 
 def test_rejects_missing_required_dataset(tmp_path: Path) -> None:

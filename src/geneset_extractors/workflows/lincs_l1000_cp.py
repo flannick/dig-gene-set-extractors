@@ -42,9 +42,30 @@ def inspect_gctx(gctx_path: Path) -> tuple[list[str], list[str], tuple[int, int]
         raise ValueError(f"GCTX matrix shape {shape} is incompatible with {len(signatures)} lincs_id values and {len(genes)} row IDs")
     if not genes or any(not value for value in genes) or len(genes) != len(set(genes)):
         raise ValueError(f"{ROW_ID_PATH} must contain unique non-empty gene symbols")
-    if not signatures or any(not value for value in signatures) or len(signatures) != len(set(signatures)):
-        raise ValueError(f"{LINCS_ID_PATH} must contain unique non-empty lincs_id values")
+    if not signatures or any(not value for value in signatures):
+        raise ValueError(f"{LINCS_ID_PATH} must contain non-empty lincs_id values")
     return genes, signatures, shape
+
+
+def resolve_last_occurrences(signatures: list[str]) -> tuple[list[int], dict[str, list[int]]]:
+    """Return retained raw-column indices and duplicate groups; later columns win."""
+    positions: dict[str, list[int]] = {}
+    for index, signature in enumerate(signatures):
+        positions.setdefault(signature, []).append(index)
+    retained = sorted(indices[-1] for indices in positions.values())
+    duplicates = {signature: indices for signature, indices in positions.items() if len(indices) > 1}
+    return retained, duplicates
+
+
+def duplicate_vector_counts(matrix, duplicate_groups: dict[str, list[int]]) -> tuple[int, int]:
+    exact, differing = 0, 0
+    for indices in duplicate_groups.values():
+        replacement = matrix[indices[-1], :]
+        if all(np.array_equal(matrix[index, :], replacement) for index in indices[:-1]):
+            exact += 1
+        else:
+            differing += 1
+    return exact, differing
 
 
 def resolve_range(n_signatures: int, start_index: int, end_index: int | None) -> tuple[int, int]:
@@ -87,7 +108,8 @@ def run(args) -> dict[str, object]:
     if top_n <= 0 or block_size <= 0:
         raise ValueError("top_n and block_size must be positive")
     genes, signatures, shape = inspect_gctx(gctx_path)
-    start, end = resolve_range(len(signatures), int(args.start_index), args.end_index)
+    retained_indices, duplicate_groups = resolve_last_occurrences(signatures)
+    start, end = resolve_range(len(retained_indices), int(args.start_index), args.end_index)
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     n_sets = 0
@@ -97,10 +119,13 @@ def run(args) -> dict[str, object]:
         writer = csv.DictWriter(signed_handle, delimiter="\t", fieldnames=["term", "gene_id", "gene_symbol", "score", "sign"], lineterminator="\n")
         writer.writeheader()
         matrix = handle[MATRIX_PATH]
+        exact_duplicate_groups, differing_duplicate_groups = duplicate_vector_counts(matrix, duplicate_groups)
         for block_start in range(start, end, block_size):
             block_end = min(block_start + block_size, end)
-            for offset, coefficients in enumerate(matrix[block_start:block_end, :]):
-                term = signatures[block_start + offset]
+            raw_indices = retained_indices[block_start:block_end]
+            for raw_index in raw_indices:
+                coefficients = matrix[raw_index, :]
+                term = signatures[raw_index]
                 up, down = rank_signature(genes, coefficients, top_n)
                 for direction, selected in (("up", up), ("down", down)):
                     gmt_handle.write("\t".join([f"{term} {direction}", "", *selected]) + "\n")
@@ -108,8 +133,9 @@ def run(args) -> dict[str, object]:
                         writer.writerow({"term": term, "gene_id": gene, "gene_symbol": gene, "score": top_n - rank + 1, "sign": 1 if direction == "up" else -1})
                     n_sets += 1
     manifest_path = out_dir / "lincs_l1000_cp_partition.json"
-    manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "n_signatures": end - start, "n_sets": n_sets, "top_n": top_n}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "n_source_signatures": len(signatures), "n_generated_sets": n_sets})
+    duplicate_summary = {"raw_signature_columns": len(signatures), "unique_lincs_id": len(retained_indices), "duplicate_lincs_id_groups": len(duplicate_groups), "exact_duplicate_vector_groups": exact_duplicate_groups, "differing_duplicate_vector_groups": differing_duplicate_groups, "resolution_policy": "last GCTX column occurrence wins"}
+    manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "n_signatures": end - start, "n_sets": n_sets, "top_n": top_n, "duplicate_resolution": duplicate_summary}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "n_source_signatures": len(signatures), "n_unique_lincs_id": len(retained_indices), "duplicate_resolution": duplicate_summary, "n_generated_sets": n_sets})
     return {"n_rows": n_sets * top_n, "n_sets": n_sets, "out_dir": str(out_dir)}
 
 
