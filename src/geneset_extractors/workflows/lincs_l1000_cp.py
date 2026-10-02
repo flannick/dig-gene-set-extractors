@@ -14,6 +14,8 @@ PUBLIC_GCTX_URL = "https://lincs-dcic.s3.amazonaws.com/LINCS-sigs-2021/gctx/cd-c
 MATRIX_PATH = "0/DATA/0/matrix"
 ROW_ID_PATH = "0/META/ROW/id"
 LINCS_ID_PATH = "0/META/COL/lincs_id"
+CELL_LINE_PATH = "0/META/COL/cell_line"
+PERT_TIME_PATH = "0/META/COL/pert_time"
 
 
 def _h5py():
@@ -75,6 +77,56 @@ def resolve_range(n_signatures: int, start_index: int, end_index: int | None) ->
     return start_index, end
 
 
+def plan_cell_time_partitions(gctx_path: Path, out_dir: Path, max_signatures_per_task: int) -> int:
+    """Write deterministic retained-signature worklists grouped by cell line/time."""
+    if max_signatures_per_task <= 0:
+        raise ValueError("max_signatures_per_task must be positive")
+    _genes, signatures, _shape = inspect_gctx(gctx_path)
+    retained_indices, _duplicates = resolve_last_occurrences(signatures)
+    h5py = _h5py()
+    with h5py.File(gctx_path, "r") as handle:
+        missing = [path for path in (CELL_LINE_PATH, PERT_TIME_PATH) if path not in handle]
+        if missing:
+            raise ValueError(f"GCTX is missing partition metadata dataset(s): {', '.join(missing)}")
+        cell_lines = [value.strip() or "NA" for value in _strings(handle[CELL_LINE_PATH][...])]
+        pert_times = [value.strip() or "NA" for value in _strings(handle[PERT_TIME_PATH][...])]
+    if len(cell_lines) != len(signatures) or len(pert_times) != len(signatures):
+        raise ValueError("GCTX partition metadata length is incompatible with lincs_id")
+    groups: dict[tuple[str, str], list[int]] = {}
+    for raw_index in retained_indices:
+        groups.setdefault((cell_lines[raw_index], pert_times[raw_index]), []).append(raw_index)
+    indices_dir = out_dir / "indices"
+    indices_dir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, object]] = []
+    task_number = 0
+    for cell_line, pert_time in sorted(groups):
+        indices = groups[(cell_line, pert_time)]
+        for offset in range(0, len(indices), max_signatures_per_task):
+            task_number += 1
+            selected = indices[offset : offset + max_signatures_per_task]
+            task_id = f"hz4_{task_number:04d}"
+            index_path = indices_dir / f"{task_id}.tsv"
+            index_path.write_text("raw_index\n" + "".join(f"{index}\n" for index in selected), encoding="utf-8")
+            rows.append({"task_id": task_id, "cell_line": cell_line, "pert_time": pert_time, "raw_indices_tsv": str(index_path), "n_signatures": len(selected)})
+    with (out_dir / "task_manifest.tsv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, delimiter="\t", fieldnames=["task_id", "cell_line", "pert_time", "raw_indices_tsv", "n_signatures"], lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    return len(rows)
+
+
+def _read_raw_indices(path_text: str, retained_indices: list[int]) -> list[int]:
+    path = Path(path_text).resolve()
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if not reader.fieldnames or "raw_index" not in reader.fieldnames:
+            raise ValueError(f"Index file lacks raw_index column: {path}")
+        indices = [int(row["raw_index"]) for row in reader]
+    if not indices or len(indices) != len(set(indices)) or set(indices).difference(retained_indices):
+        raise ValueError(f"Index file must contain unique retained GCTX column indices: {path}")
+    return indices
+
+
 def rank_signature(genes: list[str], coefficients: np.ndarray, top_n: int) -> tuple[list[str], list[str]]:
     if len(genes) < top_n * 2:
         raise ValueError(f"Need at least {top_n * 2} genes; found {len(genes)}")
@@ -109,7 +161,13 @@ def run(args) -> dict[str, object]:
         raise ValueError("top_n and block_size must be positive")
     genes, signatures, shape = inspect_gctx(gctx_path)
     retained_indices, duplicate_groups = resolve_last_occurrences(signatures)
-    start, end = resolve_range(len(retained_indices), int(args.start_index), args.end_index)
+    raw_indices_tsv = getattr(args, "raw_indices_tsv", None)
+    if raw_indices_tsv:
+        selected_indices = _read_raw_indices(raw_indices_tsv, retained_indices)
+        start, end = None, None
+    else:
+        start, end = resolve_range(len(retained_indices), int(args.start_index), args.end_index)
+        selected_indices = retained_indices[start:end]
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     n_sets = 0
@@ -120,9 +178,8 @@ def run(args) -> dict[str, object]:
         writer.writeheader()
         matrix = handle[MATRIX_PATH]
         exact_duplicate_groups, differing_duplicate_groups = duplicate_vector_counts(matrix, duplicate_groups)
-        for block_start in range(start, end, block_size):
-            block_end = min(block_start + block_size, end)
-            raw_indices = retained_indices[block_start:block_end]
+        for block_start in range(0, len(selected_indices), block_size):
+            raw_indices = selected_indices[block_start : block_start + block_size]
             for raw_index in raw_indices:
                 coefficients = matrix[raw_index, :]
                 term = signatures[raw_index]
@@ -134,8 +191,8 @@ def run(args) -> dict[str, object]:
                     n_sets += 1
     manifest_path = out_dir / "lincs_l1000_cp_partition.json"
     duplicate_summary = {"raw_signature_columns": len(signatures), "unique_lincs_id": len(retained_indices), "duplicate_lincs_id_groups": len(duplicate_groups), "exact_duplicate_vector_groups": exact_duplicate_groups, "differing_duplicate_vector_groups": differing_duplicate_groups, "resolution_policy": "last GCTX column occurrence wins"}
-    manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "n_signatures": end - start, "n_sets": n_sets, "top_n": top_n, "duplicate_resolution": duplicate_summary}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "n_source_signatures": len(signatures), "n_unique_lincs_id": len(retained_indices), "duplicate_resolution": duplicate_summary, "n_generated_sets": n_sets})
+    manifest_path.write_text(json.dumps({"gctx_path": str(gctx_path), "public_url": PUBLIC_GCTX_URL, "matrix_shape": shape, "start_index": start, "end_index": end, "raw_indices_tsv": raw_indices_tsv, "n_signatures": len(selected_indices), "n_sets": n_sets, "top_n": top_n, "duplicate_resolution": duplicate_summary}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_workflow_provenance_graph(workflow_name="lincs_l1000_cp", module_name="geneset_extractors.workflows.lincs_l1000_cp", output_dir=out_dir, focus_output_path=signed_path, output_paths=[(signed_path, "signed_term_gene_tsv"), (gmt_path, "per_signature_gmt"), (manifest_path, "partition_manifest")], input_paths=[(gctx_path, "lincs_cp_coeff_mat_gctx")], parameters={"public_gctx_url": PUBLIC_GCTX_URL, "required_datasets": [MATRIX_PATH, ROW_ID_PATH, LINCS_ID_PATH], "top_n": top_n, "ranking": "CD-coefficient descending; symbol ascending", "start_index": start, "end_index": end, "raw_indices_tsv": raw_indices_tsv, "n_source_signatures": len(signatures), "n_unique_lincs_id": len(retained_indices), "duplicate_resolution": duplicate_summary, "n_generated_sets": n_sets})
     return {"n_rows": n_sets * top_n, "n_sets": n_sets, "out_dir": str(out_dir)}
 
 

@@ -485,13 +485,32 @@ def _add_lincs_l1000_crisprko_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_lincs_l1000_cp_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gctx_path", required=True)
-    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--out_dir")
     parser.add_argument("--organism", choices=["human", "mouse"], default="human")
     parser.add_argument("--genome_build", default="hg38")
     parser.add_argument("--top_n", type=int, default=250)
     parser.add_argument("--block_size", type=int, default=256)
     parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--end_index", type=int)
+    parser.add_argument(
+        "--raw_indices_tsv",
+        help="Optional raw_index worklist produced by --plan_cell_line_time.",
+    )
+    parser.add_argument(
+        "--plan_cell_line_time",
+        action="store_true",
+        help="Write cell-line × perturbation-time worklists instead of exporting genesets.",
+    )
+    parser.add_argument(
+        "--partition_plan_dir",
+        help="Directory for task_manifest.tsv and raw-index worklists when planning partitions.",
+    )
+    parser.add_argument(
+        "--max_signatures_per_task",
+        type=int,
+        default=10000,
+        help="Maximum retained signatures in each planned cell-line × perturbation-time task.",
+    )
     _add_provenance_flags(parser)
 
 
@@ -2714,7 +2733,28 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if args.workflow_command == "lincs_l1000_cp":
-                from geneset_extractors.workflows.lincs_l1000_cp import run as run_lincs_l1000_cp
+                from geneset_extractors.workflows.lincs_l1000_cp import (
+                    plan_cell_time_partitions,
+                    run as run_lincs_l1000_cp,
+                )
+
+                if args.plan_cell_line_time:
+                    if not args.partition_plan_dir:
+                        raise ValueError("--partition_plan_dir is required with --plan_cell_line_time")
+                    task_count = plan_cell_time_partitions(
+                        Path(args.gctx_path).resolve(),
+                        Path(args.partition_plan_dir).resolve(),
+                        args.max_signatures_per_task,
+                    )
+                    print(
+                        "workflow_completed "
+                        f"workflow=lincs_l1000_cp_partition_plan n_tasks={task_count} "
+                        f"out={Path(args.partition_plan_dir).resolve()}",
+                        file=sys.stderr,
+                    )
+                    return 0
+                if not args.out_dir:
+                    raise ValueError("--out_dir is required when exporting lincs_l1000_cp genesets")
 
                 result = run_lincs_l1000_cp(args)
                 print(
