@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -29,7 +30,8 @@ def _request(payload: dict[str, object], endpoint: str) -> dict[str, object]:
 
 def acquire(terms: list[str], *, first: int, endpoint: str = ENDPOINT, request_fn=_request) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     records: list[dict[str, object]] = []; pages: list[dict[str, object]] = []
-    for term in terms:
+    for term_index, term in enumerate(terms, start=1):
+        print(f"[rumma_geo_acquire] query {term_index}/{len(terms)} term={term!r}", file=sys.stderr, flush=True)
         offset = 0; total = None; retrieved = 0; requests = 0
         while total is None or offset < total:
             payload = request_fn({"query": QUERY, "variables": {"terms": [term], "offset": offset, "first": first}}, endpoint)
@@ -41,6 +43,7 @@ def acquire(terms: list[str], *, first: int, endpoint: str = ENDPOINT, request_f
             requests += 1
             for node in nodes: records.append({**node, "search_term": term})
             retrieved += len(nodes); offset += len(nodes)
+            print(f"[rumma_geo_acquire] term={term!r} page={requests} retrieved={retrieved}/{total}", file=sys.stderr, flush=True)
             if not nodes and offset < total: raise RuntimeError(f"retrieved {retrieved} of {total} records for {term!r}")
         if retrieved != total: raise RuntimeError(f"retrieved {retrieved} records but API reported {total} for {term!r}")
         pages.append({"search_term": term, "total_count": total, "records_retrieved": retrieved, "multiple_pages": requests > 1})
