@@ -2388,6 +2388,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_all.add_argument("--refresh_sources", action="store_true")
     p_rumma_all.add_argument("--endpoint", default="https://rummageo.com/graphql")
     p_rumma_all.add_argument("--page_size", type=int, default=10000)
+    p_rumma_all.add_argument("--models", default="all")
+    p_rumma_all.add_argument("--prepare_sources", action="store_true")
 
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
