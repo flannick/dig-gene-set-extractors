@@ -1,5 +1,37 @@
 # RummaGEO reconstruction
 
+## Normal workflow
+
+Run both user-facing libraries with one command:
+
+```bash
+geneset-extractors convert rumma_geo_all --human_gmt human-geo-auto.gmt.gz --mouse_gmt mouse-geo-auto.gmt.gz --human_gene_info Homo_sapiens.gene_info.gz --mouse_gene_info Mus_musculus.gene_info.gz --gene_orthologs gene_orthologs.gz --out_dir output
+```
+
+It caches SigCom LINCS metadata, derives deterministic `pert_name` drug terms,
+acquires and caches RummaGEO GraphQL records, creates selection manifests, and
+writes `output/gene_perturbations/`, `output/drug_perturbations/`, and
+`output/provenance/`. Reuse caches by default; `--refresh_sources` explicitly
+reacquires mutable upstream resources. The SigCom URL is
+`https://s3.dev.maayanlab.cloud/sigcom-lincs/ranker/signatures_meta.json`, as
+specified by `RummaGEODrug.ipynb` at HarmonizomePythonScripts commit
+`965d3a7299cdeaa8d54740b31093b80cebd5523b`. Its cached bytes and SHA-256 are
+the reproducible input; the URL is not an immutable historical snapshot.
+
+Supply the two GMTs plus pinned human/mouse NCBI gene-info and ortholog files.
+Current RummaGEO, SigCom, and NCBI resources can differ from unavailable
+historical snapshots, so this is a method-faithful reproducible reconstruction,
+not a claim of byte-for-byte historical reproduction. Recovered snapshots can
+be substituted without changing the algorithm.
+
+## Advanced workflow
+
+For offline inspection or staged reruns, use `rumma_geo_acquire`, then
+`rumma_geo_selection`, then `rumma_geo` directly. `rumma_geo_acquire` records
+GraphQL pagination and cached-query checksums; selection records control and
+reversed classification; reconstruction consumes the resulting
+`selection_manifest.tsv`.
+
 `rumma_geo` reconstructs one of two RummaGEO models: `HZ1` (drug perturbations)
 or `HZ2` (gene perturbations). It ports the downstream behavior of the Ma'ayan Lab
 notebooks: exact human protein-coding symbol filtering, mouse-symbol to human
