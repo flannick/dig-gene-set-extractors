@@ -35,7 +35,13 @@ def run(args):
         if status not in ('signature','reversed'): continue
         uid=str(r['id'])
         selected.setdefault(uid, {'uuid':uid,'source_term':source,'model_id':model,'status':status,'search_term':r['search_term'],'gse':gse,'condition_1':c1,'condition_2':c2,'species':species,'source_direction':direction,'condition_1_title':a,'condition_2_title':b,'title':str(r.get('title',''))})
-    out=Path(args.out_dir).resolve(); out.mkdir(parents=True,exist_ok=True); rows=sorted(selected.values(),key=lambda r:(r['source_term'],r['uuid']))
+    # Different query UUIDs can describe the same source signature.  The
+    # downstream membership table is keyed by source_term, so retain the first
+    # deterministic UUID-deduplicated row for each source term.
+    by_source_term = {}
+    for row in sorted(selected.values(), key=lambda r: (r['source_term'], r['search_term'], r['uuid'])):
+        by_source_term.setdefault(row['source_term'], row)
+    out=Path(args.out_dir).resolve(); out.mkdir(parents=True,exist_ok=True); rows=sorted(by_source_term.values(),key=lambda r:(r['source_term'],r['uuid']))
     fields=list(rows[0]) if rows else ['uuid','source_term','model_id','status','search_term','gse','condition_1','condition_2','species','source_direction','condition_1_title','condition_2_title','title']
     for name in ('selection_manifest.tsv', 'geneset.tsv'):
         with (out / name).open('w', encoding='utf-8', newline='') as handle:
