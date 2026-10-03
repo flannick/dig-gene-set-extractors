@@ -2380,6 +2380,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_acquire.add_argument("--endpoint", default="https://rummageo.com/graphql")
     p_rumma_acquire.add_argument("--page_size", type=int, default=10000)
 
+    p_rumma_all = conv.add_parser("rumma_geo_all")
+    for name in ("human_gmt", "mouse_gmt", "human_gene_info", "mouse_gene_info", "gene_orthologs"):
+        p_rumma_all.add_argument(f"--{name}", required=True)
+    p_rumma_all.add_argument("--out_dir", required=True)
+    p_rumma_all.add_argument("--signatures_meta_json")
+    p_rumma_all.add_argument("--refresh_sources", action="store_true")
+    p_rumma_all.add_argument("--endpoint", default="https://rummageo.com/graphql")
+    p_rumma_all.add_argument("--page_size", type=int, default=10000)
+
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
     p_unsigned_term.add_argument("--out_dir", required=True)
