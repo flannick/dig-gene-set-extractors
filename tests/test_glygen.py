@@ -21,7 +21,7 @@ def test_glycosylated_proteins_normalizes_filters_and_sorts(tmp_path):
         writer = csv.DictWriter(handle, fieldnames=["uniprotkb_canonical_ac", "gene_name"]); writer.writeheader()
         writer.writerows([{ "uniprotkb_canonical_ac": f"P{i}", "gene_name": f" gene{i} "} for i in range(1, 6)])
     out = tmp_path / "out"
-    result = run_glycosylated_proteins(Namespace(unicarbkb=tmp_path / "unicarbkb.csv", harvard=tmp_path / "harvard.csv", glyconnect=tmp_path / "glyconnect.csv", masterlist=tmp_path / "master.csv", out_dir=out, min_genes=5, genome_build="hg38", gmt_description="test", provenance_overlay_json=None))
+    result = run_glycosylated_proteins(Namespace(unicarbkb=tmp_path / "unicarbkb.csv", harvard=tmp_path / "harvard.csv", glyconnect=tmp_path / "glyconnect.csv", masterlist=tmp_path / "master.csv", out_dir=out, model_id="HZ1", min_genes=5, genome_build="hg38", gmt_description="test", provenance_overlay_json=None))
     assert result["n_gene_sets"] == 1
     assert (out / "genesets.gmt").read_text() == "GKEEP\ttest\tGENE1\tGENE2\tGENE3\tGENE4\tGENE5\n"
 
@@ -33,6 +33,6 @@ def test_glycan_enzymes_uses_cached_human_records_only(tmp_path):
     manifest = tmp_path / "manifest.tsv"
     manifest.write_text("accession\tstatus\tcache_file\nG00024MO\tcached\tG00024MO.json\nGEMPTY\tcached\tempty.json\n")
     out = tmp_path / "out"
-    result = run_glycan_synthesizing_enzymes(Namespace(cache_manifest=manifest, out_dir=out, genome_build="hg38", gmt_description="", provenance_overlay_json=None))
+    result = run_glycan_synthesizing_enzymes(Namespace(cache_manifest=manifest, out_dir=out, model_id="HZ2", genome_build="hg38", gmt_description="", provenance_overlay_json=None))
     assert result["n_gene_sets"] == 1
     assert (out / "genesets.gmt").read_text() == "glytoucan:G00024MO\t\tPOGLUT1\tPOGLUT2\tPOGLUT3\n"

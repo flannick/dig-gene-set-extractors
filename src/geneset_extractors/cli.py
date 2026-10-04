@@ -2384,6 +2384,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("unicarbkb", "harvard", "glyconnect", "masterlist"):
         p_glygen_proteins.add_argument(f"--{name}", required=True)
     p_glygen_proteins.add_argument("--out_dir", required=True)
+    p_glygen_proteins.add_argument("--model_id", choices=["HZ1"], default="HZ1")
     p_glygen_proteins.add_argument("--min_genes", type=int, default=5)
     p_glygen_proteins.add_argument("--genome_build", default="hg38")
     p_glygen_proteins.add_argument("--gmt_description", default="GlyGen glycosylated proteins")
@@ -2392,6 +2393,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_glygen_enzymes = conv.add_parser("glygen_glycan_synthesizing_enzymes")
     p_glygen_enzymes.add_argument("--cache_manifest", required=True)
     p_glygen_enzymes.add_argument("--out_dir", required=True)
+    p_glygen_enzymes.add_argument("--model_id", choices=["HZ2"], default="HZ2")
     p_glygen_enzymes.add_argument("--genome_build", default="hg38")
     p_glygen_enzymes.add_argument("--gmt_description", default="GlyGen glycan synthesizing enzymes")
     _add_provenance_flags(p_glygen_enzymes)
