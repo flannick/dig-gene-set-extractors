@@ -2394,6 +2394,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_glygen_cache = p_glygen_enzymes.add_mutually_exclusive_group(required=True)
     p_glygen_cache.add_argument("--cache_dir", help="Directory of cached GlyGen glycan-detail JSON responses.")
     p_glygen_cache.add_argument("--cache_manifest", help="Optional existing acquisition manifest for cached responses.")
+    p_glygen_enzymes.add_argument("--workflow_dir", help="Directory for cache/acquisition workflow artifacts.")
     p_glygen_enzymes.add_argument("--out_dir", required=True)
     p_glygen_enzymes.add_argument("--model_id", choices=["HZ2"], default="HZ2")
     p_glygen_enzymes.add_argument("--genome_build", default="hg38")
