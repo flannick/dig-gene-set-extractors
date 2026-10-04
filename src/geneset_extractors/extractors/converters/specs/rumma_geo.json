@@ -1,0 +1,22 @@
+{
+  "name": "rumma_geo",
+  "description": "Faithful downstream reconstruction of RummaGEO gene and drug perturbation GMT libraries",
+  "inputs": [
+    {"name": "human_gmt", "type": "gmt.gz", "description": "RummaGEO human GEO automatic-signature snapshot"},
+    {"name": "mouse_gmt", "type": "gmt.gz", "description": "RummaGEO mouse GEO automatic-signature snapshot"},
+    {"name": "selection_manifest", "type": "tsv", "description": "Recorded Harmonizome query result with source_term, model_id, status, and naming fields"},
+    {"name": "source_manifest", "type": "json", "description": "Pinned URL and version records for every source input"},
+    {"name": "NCBI Gene snapshots", "type": "tsv.gz", "description": "Human, mouse, and ortholog mapping inputs pinned by checksum"}
+  ],
+  "parameters": [
+    {"name": "model_id", "type": "string", "default": "HZ1", "enum": ["HZ1", "HZ2"], "help": "RummaGEO model: HZ1=drug perturbations; HZ2=gene perturbations"},
+    {"name": "min_genes", "type": "integer", "default": 5, "help": "Historical minimum membership threshold"}
+  ],
+  "outputs": [
+    {"name": "genesets.gmt", "description": "Deterministic signed GMT library"},
+    {"name": "geneset.tsv", "description": "Signed normalized memberships"},
+    {"name": "signature_summary.tsv", "description": "Per-signature membership counts"},
+    {"name": "reconstruction_diagnostics.json", "description": "Filtering and optional legacy comparison diagnostics"},
+    {"name": "geneset.meta.json", "description": "Metadata and pinned input checksums"}
+  ]
+}
