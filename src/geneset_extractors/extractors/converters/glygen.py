@@ -84,27 +84,48 @@ def run_glycosylated_proteins(args) -> dict[str, object]:
 def run_glycan_synthesizing_enzymes(args) -> dict[str, object]:
     """Transform cached GlyGen glycan-detail responses; never contacts the API."""
     activate_runtime_context("glygen_glycan_synthesizing_enzymes", getattr(args, "provenance_overlay_json", None))
-    manifest = Path(args.cache_manifest).resolve()
-    if not manifest.is_file():
-        raise FileNotFoundError(manifest)
+    manifest_value = getattr(args, "cache_manifest", None)
+    cache_dir_value = getattr(args, "cache_dir", None)
+    if bool(manifest_value) == bool(cache_dir_value):
+        raise ValueError("provide exactly one of --cache_dir or --cache_manifest")
+    manifest = Path(manifest_value).resolve() if manifest_value else None
+    cache_dir = Path(cache_dir_value).resolve() if cache_dir_value else None
+    if manifest is not None and not manifest.is_file(): raise FileNotFoundError(manifest)
+    if cache_dir is not None and not cache_dir.is_dir(): raise NotADirectoryError(cache_dir)
     gene_sets: dict[str, set[str]] = {}
     cached_files: list[Path] = []
-    with manifest.open(encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, delimiter="\t"):
-            if row.get("status") not in {"cached", "fetched"} or not row.get("cache_file", "").strip():
-                continue
-            path = Path(row["cache_file"])
-            if not path.is_absolute(): path = manifest.parent / path
+    source_rows: list[dict[str, str]] = []
+    if manifest is not None:
+        with manifest.open(encoding="utf-8", newline="") as handle:
+            source_rows = list(csv.DictReader(handle, delimiter="\t"))
+    else:
+        source_rows = [{"accession": path.stem, "cache_file": str(path), "status": "cached"} for path in sorted(cache_dir.rglob("*.json"))]
+    for row in source_rows:
+        if row.get("status") not in {"cached", "fetched"} or not row.get("cache_file", "").strip():
+            continue
+        path = Path(row["cache_file"])
+        if not path.is_absolute(): path = manifest.parent / path if manifest is not None else cache_dir / path
+        try:
             if not path.is_file(): raise FileNotFoundError(f"cache manifest references missing response: {path}")
             payload = json.loads(path.read_text(encoding="utf-8"))
             genes = {str(record.get("gene", "")).strip().upper() for record in (payload.get("enzyme") or []) if str(record.get("tax_id", "")) == "9606" and str(record.get("gene", "")).strip()}
             if genes: gene_sets[f"glytoucan:{row['accession'].strip()}"] = genes
             cached_files.append(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            row["status"] = "failed"; row["error"] = str(exc)
     out_dir = Path(args.out_dir).resolve()
     _write_outputs(out_dir, gene_sets, args.gmt_description)
+    output_manifest = out_dir / "glygen_api_cache_manifest.tsv"
+    with output_manifest.open("w", encoding="utf-8", newline="") as handle:
+        fields = ["accession", "request_url", "acquired_at", "cache_file", "sha256", "status", "error"]
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n"); writer.writeheader()
+        for row in source_rows:
+            path = Path(row.get("cache_file", "")); path = path if path.is_absolute() else ((manifest.parent if manifest is not None else cache_dir) / path)
+            writer.writerow({"accession": row.get("accession", ""), "request_url": row.get("request_url") or API_TEMPLATE.format(accession=urllib.parse.quote(row.get("accession", ""))), "acquired_at": row.get("acquired_at") or "unknown", "cache_file": str(path), "sha256": row.get("sha256") or (_sha256(path) if path.is_file() else ""), "status": row.get("status", "cached"), "error": row.get("error", "")})
     diagnostics = {"model_id": args.model_id, "model_name": "glycan_synthesizing_enzymes", "source": "GlyGen glycan-detail API / Sandbox biosynthetic-enzyme annotations", "human_tax_id": "9606", "xref_key": "glycan_xref_sandbox", **_summary(gene_sets)}
     (out_dir / "reconstruction_diagnostics.json").write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    metadata = make_metadata(converter_name="glygen_glycan_synthesizing_enzymes", parameters={"model_id": args.model_id, "model_name": "glycan_synthesizing_enzymes", "source": "GlyGen glycan-detail API enzyme[]; xref_key=glycan_xref_sandbox", "tax_id": "9606", "algorithm": "cached response enzyme[] records filtered to human, normalized uppercase, deduplicated within GlyTouCan accession"}, data_type="proteomics", assay="glycan_biosynthesis_annotation", organism="human", genome_build=args.genome_build, files=[input_file_record(manifest, "glygen_api_cache_manifest")] + [input_file_record(path, "glygen_glycan_detail_response") for path in cached_files], gene_annotation={"mode": "GlyGen_API_gene_symbol", "gene_id_field": "gene", "normalization": "strip_uppercase"}, weights={"weight_type": "unweighted", "normalization": {"method": "none"}}, summary=diagnostics, output_files=[{"path": "genesets.gmt", "role": "gmt_library"}, {"path": "geneset.tsv", "role": "selected_program"}, {"path": "reconstruction_diagnostics.json", "role": "reconstruction_diagnostics"}], gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": 1, "max_genes": None, "plans": [{"name": "glygen_sandbox_biosynthetic_enzymes", "method": "glycan_to_human_biosynthetic_enzyme", "parameters": {"deterministic_sort": "term then gene"}, "n_genes_emitted": diagnostics["n_memberships"], "token_type": "gene_symbol"}]}, gene_set_description="GlyGen Sandbox biosynthetic-enzyme annotations grouped by GlyTouCan accession.")
+    input_files = ([input_file_record(manifest, "glygen_api_cache_manifest")] if manifest is not None else []) + [input_file_record(path, "glygen_glycan_detail_response") for path in cached_files]
+    metadata = make_metadata(converter_name="glygen_glycan_synthesizing_enzymes", parameters={"model_id": args.model_id, "model_name": "glycan_synthesizing_enzymes", "source": "GlyGen glycan-detail API enzyme[]; xref_key=glycan_xref_sandbox", "tax_id": "9606", "cache_input": "directory_scan" if cache_dir is not None else "manifest", "algorithm": "cached response enzyme[] records filtered to human, normalized uppercase, deduplicated within GlyTouCan accession"}, data_type="proteomics", assay="glycan_biosynthesis_annotation", organism="human", genome_build=args.genome_build, files=input_files, gene_annotation={"mode": "GlyGen_API_gene_symbol", "gene_id_field": "gene", "normalization": "strip_uppercase"}, weights={"weight_type": "unweighted", "normalization": {"method": "none"}}, summary=diagnostics, output_files=[{"path": "genesets.gmt", "role": "gmt_library"}, {"path": "geneset.tsv", "role": "selected_program"}, {"path": "reconstruction_diagnostics.json", "role": "reconstruction_diagnostics"}, {"path": "glygen_api_cache_manifest.tsv", "role": "input_acquisition_manifest"}], gmt={"written": True, "path": "genesets.gmt", "prefer_symbol": True, "min_genes": 1, "max_genes": None, "plans": [{"name": "glygen_sandbox_biosynthetic_enzymes", "method": "glycan_to_human_biosynthetic_enzyme", "parameters": {"deterministic_sort": "term then gene"}, "n_genes_emitted": diagnostics["n_memberships"], "token_type": "gene_symbol"}]}, gene_set_description="GlyGen Sandbox biosynthetic-enzyme annotations grouped by GlyTouCan accession.")
     write_metadata(out_dir / "geneset.meta.json", metadata)
     return {**diagnostics, "out_dir": str(out_dir)}
 
