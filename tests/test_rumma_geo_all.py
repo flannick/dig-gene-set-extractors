@@ -1,6 +1,12 @@
 from pathlib import Path
 
 
+def test_all_model_source_records_use_absolute_local_paths() -> None:
+    source = (Path(__file__).resolve().parents[1] / "src/geneset_extractors/extractors/converters/rumma_geo_all.py").read_text(encoding="utf-8")
+    assert '"url":str(Path(path).resolve())' in source
+    assert ".resolve().as_uri()" not in source
+
+
 def test_all_model_provenance_records_consumed_selection_manifest() -> None:
     source = (Path(__file__).resolve().parents[1] / "src/geneset_extractors/extractors/converters/rumma_geo_all.py").read_text(encoding="utf-8")
     assert '"recorded_selection_manifest":str(selection/"selection_manifest.tsv")' in source

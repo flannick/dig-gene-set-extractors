@@ -9,7 +9,7 @@ from . import rumma_geo_acquire, rumma_geo_selection, rumma_geo
 SIGCOM_URL = "https://s3.dev.maayanlab.cloud/sigcom-lincs/ranker/signatures_meta.json"
 
 def _sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-def _sources(paths): return {role:{"url":Path(path).resolve().as_uri(),"version":"sha256:"+_sha(path)} for role,path in paths.items()}
+def _sources(paths): return {role:{"url":str(Path(path).resolve()),"version":"sha256:"+_sha(path)} for role,path in paths.items()}
 
 def run(args):
     out=Path(args.out_dir).resolve(); provenance=out/"provenance"; provenance.mkdir(parents=True,exist_ok=True)
