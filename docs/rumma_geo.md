@@ -10,8 +10,9 @@ geneset-extractors convert rumma_geo_all --human_gmt human-geo-auto.gmt.gz --mou
 
 It caches SigCom LINCS metadata, derives deterministic `pert_name` drug terms,
 acquires and caches RummaGEO GraphQL records, creates selection manifests, and
-writes `output/gene_perturbations/`, `output/drug_perturbations/`, and
-`output/provenance/`. Reuse caches by default; `--refresh_sources` explicitly
+writes `output/genesets/all_signatures/models/HZ2/extractor/` and
+`output/genesets/all_signatures/models/HZ1/extractor/`; each model's staged
+artifacts live under its sibling `workflow/` directory. Reuse caches by default; `--refresh_sources` explicitly
 reacquires mutable upstream resources. The SigCom URL is
 `https://s3.dev.maayanlab.cloud/sigcom-lincs/ranker/signatures_meta.json`, as
 specified by `RummaGEODrug.ipynb` at HarmonizomePythonScripts commit

@@ -2390,6 +2390,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_all.add_argument("--page_size", type=int, default=10000)
     p_rumma_all.add_argument("--models", default="all")
     p_rumma_all.add_argument("--prepare_sources", action="store_true")
+    p_rumma_all.add_argument("--sigcom_signatures_meta_json")
+    p_rumma_all.add_argument("--drug_terms_json")
+    p_rumma_all.add_argument("--gene_query_records_json")
+    p_rumma_all.add_argument("--drug_query_records_json")
 
     p_unsigned_term = conv.add_parser("unsigned_term_gene")
     p_unsigned_term.add_argument("--table_tsv", required=True)
