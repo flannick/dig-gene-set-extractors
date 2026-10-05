@@ -2390,6 +2390,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_glygen_proteins.add_argument("--gmt_description", default="GlyGen glycosylated proteins")
     _add_provenance_flags(p_glygen_proteins)
 
+    p_impc_hz1 = conv.add_parser("impc_hz1")
+    p_impc_hz1.add_argument("--assertions", required=True)
+    p_impc_hz1.add_argument("--symbol_mapping", required=True)
+    p_impc_hz1.add_argument("--out_dir", required=True)
+    p_impc_hz1.add_argument("--model_id", choices=["HZ1"], default="HZ1")
+    p_impc_hz1.add_argument("--min_genes", type=int, default=5)
+    p_impc_hz1.add_argument("--genome_build", default="hg38")
+    p_impc_hz1.add_argument("--gmt_description", default="IMPC Data Release 18 direct mouse knockout phenotype association")
+    _add_provenance_flags(p_impc_hz1)
+
     p_glygen_enzymes = conv.add_parser("glygen_glycan_synthesizing_enzymes")
     p_glygen_cache = p_glygen_enzymes.add_mutually_exclusive_group(required=True)
     p_glygen_cache.add_argument("--cache_dir", help="Directory of cached GlyGen glycan-detail JSON responses.")
