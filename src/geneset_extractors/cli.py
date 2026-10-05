@@ -2380,6 +2380,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_rumma_acquire.add_argument("--endpoint", default="https://rummageo.com/graphql")
     p_rumma_acquire.add_argument("--page_size", type=int, default=10000)
 
+    p_glygen_proteins = conv.add_parser("glygen_glycosylated_proteins")
+    for name in ("unicarbkb", "harvard", "glyconnect", "masterlist"):
+        p_glygen_proteins.add_argument(f"--{name}", required=True)
+    p_glygen_proteins.add_argument("--out_dir", required=True)
+    p_glygen_proteins.add_argument("--model_id", choices=["HZ1"], default="HZ1")
+    p_glygen_proteins.add_argument("--min_genes", type=int, default=5)
+    p_glygen_proteins.add_argument("--genome_build", default="hg38")
+    p_glygen_proteins.add_argument("--gmt_description", default="GlyGen glycosylated proteins")
+    _add_provenance_flags(p_glygen_proteins)
+
+    p_glygen_enzymes = conv.add_parser("glygen_glycan_synthesizing_enzymes")
+    p_glygen_cache = p_glygen_enzymes.add_mutually_exclusive_group(required=True)
+    p_glygen_cache.add_argument("--cache_dir", help="Directory of cached GlyGen glycan-detail JSON responses.")
+    p_glygen_cache.add_argument("--cache_manifest", help="Optional existing acquisition manifest for cached responses.")
+    p_glygen_enzymes.add_argument("--workflow_dir", help="Directory for cache/acquisition workflow artifacts.")
+    p_glygen_enzymes.add_argument("--out_dir", required=True)
+    p_glygen_enzymes.add_argument("--model_id", choices=["HZ2"], default="HZ2")
+    p_glygen_enzymes.add_argument("--genome_build", default="hg38")
+    p_glygen_enzymes.add_argument("--gmt_description", default="GlyGen glycan synthesizing enzymes")
+    _add_provenance_flags(p_glygen_enzymes)
+
+    p_glygen_acquire = conv.add_parser("glygen_glycan_synthesizing_enzymes_acquire")
+    p_glygen_acquire.add_argument("--accessions_tsv", required=True)
+    p_glygen_acquire.add_argument("--accession_column", default="accession")
+    p_glygen_acquire.add_argument("--cache_dir", required=True)
+    p_glygen_acquire.add_argument("--manifest", required=True)
+    p_glygen_acquire.add_argument("--timeout_seconds", type=int, default=60)
+    p_glygen_acquire.add_argument("--pause_seconds", type=float, default=0.1)
+    p_glygen_acquire.add_argument("--retries", type=int, default=3)
+
     p_rumma_all = conv.add_parser("rumma_geo_all")
     for name in ("human_gmt", "mouse_gmt", "human_gene_info", "mouse_gene_info", "gene_orthologs"):
         p_rumma_all.add_argument(f"--{name}", required=True)
@@ -2969,6 +2999,18 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
         if args.command == "convert":
+            if args.converter == "glygen_glycosylated_proteins":
+                from geneset_extractors.extractors.converters.glygen import run_glycosylated_proteins
+                result = run_glycosylated_proteins(args)
+                print(json.dumps(result, sort_keys=True)); return 0
+            if args.converter == "glygen_glycan_synthesizing_enzymes":
+                from geneset_extractors.extractors.converters.glygen import run_glycan_synthesizing_enzymes
+                result = run_glycan_synthesizing_enzymes(args)
+                print(json.dumps(result, sort_keys=True)); return 0
+            if args.converter == "glygen_glycan_synthesizing_enzymes_acquire":
+                from geneset_extractors.extractors.converters.glygen import run_glycan_synthesizing_enzymes_acquire
+                result = run_glycan_synthesizing_enzymes_acquire(args)
+                print(json.dumps(result, sort_keys=True)); return 0
             converter = get_converter(args.converter)
             command_argv = [sys.executable, "-m", "geneset_extractors.cli", *raw_argv]
             with invocation_context(command_argv=command_argv, cwd=Path.cwd()):
