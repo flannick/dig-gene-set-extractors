@@ -2420,6 +2420,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_glygen_acquire.add_argument("--pause_seconds", type=float, default=0.1)
     p_glygen_acquire.add_argument("--retries", type=int, default=3)
 
+    for identifier, default_description in (
+        ("idg_drug_targets_2022", "Enrichr IDG Drug Targets 2022"),
+        ("idg_archs4_coexp", "Enrichr ARCHS4 IDG coexpression"),
+    ):
+        idg_parser = conv.add_parser(identifier)
+        idg_parser.add_argument("--input_gmt", help="Cached Enrichr GMT; omit to acquire the named library.")
+        idg_parser.add_argument("--source_url", help="Original URL for a cached input GMT.")
+        idg_parser.add_argument("--out_dir", required=True)
+        idg_parser.add_argument("--genome_build", default="hg38")
+        idg_parser.add_argument("--gmt_description", default=default_description)
+        idg_parser.add_argument("--timeout_seconds", type=int, default=60)
+        idg_parser.add_argument("--overwrite", action="store_true", help="Accepted for submission-wrapper compatibility; outputs are regenerated deterministically.")
+        _add_provenance_flags(idg_parser)
+
     p_rumma_all = conv.add_parser("rumma_geo_all")
     for name in ("human_gmt", "mouse_gmt", "human_gene_info", "mouse_gene_info", "gene_orthologs"):
         p_rumma_all.add_argument(f"--{name}", required=True)
@@ -3020,6 +3034,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.converter == "glygen_glycan_synthesizing_enzymes_acquire":
                 from geneset_extractors.extractors.converters.glygen import run_glycan_synthesizing_enzymes_acquire
                 result = run_glycan_synthesizing_enzymes_acquire(args)
+                print(json.dumps(result, sort_keys=True)); return 0
+            if args.converter in {"idg_drug_targets_2022", "idg_archs4_coexp"}:
+                from geneset_extractors.extractors.converters.idg import run as run_idg
+                result = run_idg(args)
                 print(json.dumps(result, sort_keys=True)); return 0
             converter = get_converter(args.converter)
             command_argv = [sys.executable, "-m", "geneset_extractors.cli", *raw_argv]
