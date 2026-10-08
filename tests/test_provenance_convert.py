@@ -63,6 +63,9 @@ def test_convert_directory_prefers_legacy_filename_and_recurses(tmp_path: Path):
     preferred, _ = _write_old_dig_pair(tmp_path / "two", "geneset.provenance.legacy.json")
     duplicate, _ = _write_old_dig_pair(tmp_path / "two", "geneset.provenance.json")
     third, _ = _write_old_dig_pair(tmp_path / "nested" / "three")
+    discovered = _run("provenance", "discover", str(tmp_path), "--recursive")
+    assert discovered.returncode == 0, discovered.stderr
+    assert discovered.stdout.splitlines() == [str(third.resolve()), str(first.resolve()), str(preferred.resolve())]
     result = _run("provenance", "convert", str(tmp_path), "--recursive")
     assert result.returncode == 0, result.stderr
     assert "summary converted=3 skipped=0 failed=0" in result.stdout

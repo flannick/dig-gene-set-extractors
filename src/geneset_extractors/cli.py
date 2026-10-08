@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
-from geneset_extractors.core.provenance_convert import conversion_targets, convert_legacy_provenance
+from geneset_extractors.core.provenance_convert import conversion_targets, convert_legacy_provenance, discover_legacy_provenance
 from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
 from geneset_extractors.core.white_paper import write_white_paper_from_metadata
 from geneset_extractors.core.validate import validate_output_dir
@@ -1768,6 +1768,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_prov_convert.add_argument("--out", help="Output YAML; defaults to sibling geneset.provenance.dapper.yaml.")
     p_prov_convert.add_argument("--recursive", action="store_true", help="Recursively convert legacy provenance below an input directory.")
     p_prov_convert.add_argument("--overwrite", action="store_true", help="Replace an existing DAPPER YAML output.")
+    p_prov_discover = prov_sub.add_parser("discover", help="List legacy provenance files using DIG's conversion discovery rules.")
+    p_prov_discover.add_argument("input", help="Legacy provenance JSON file or directory.")
+    p_prov_discover.add_argument("--recursive", action="store_true")
 
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
@@ -2622,6 +2625,13 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{status} {target.provenance} -> {target.output}")
                 print("summary " + " ".join(f"{key}={value}" for key, value in counts.items()))
                 return 1 if counts["failed"] else 0
+            if args.provenance_command == "discover":
+                paths = discover_legacy_provenance(Path(args.input), args.recursive)
+                if not paths:
+                    raise ValueError(f"no legacy provenance files found under {args.input}")
+                for path in paths:
+                    print(path.resolve())
+                return 0
 
         if args.command == "metadata":
             if args.metadata_command == "patch":
