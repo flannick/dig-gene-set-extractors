@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import yaml
+import pytest
 
 from geneset_extractors.core.dapper_provenance import (
     DAPPER_RELEASE,
@@ -9,6 +10,7 @@ from geneset_extractors.core.dapper_provenance import (
     _compute_id,
     build_dapper_provenance,
     write_dapper_provenance,
+    validate_dapper_document,
 )
 from geneset_extractors.core.metadata import (
     DAPPER_PROVENANCE_FILENAME,
@@ -143,6 +145,16 @@ def test_dapper_0_2_file_identity_ignores_location_and_preserves_literal_scalars
     first["id"] = first_id
     assert _compute_id(first, "File", first["id"]) == first_id
     assert _compute_id(second, "File", second["id"]) == first_id
+
+
+def test_dapper_validation_reports_both_duplicate_file_records():
+    node_id = "dapper:File.duplicate"
+    document = {"files": [
+        {"id": node_id, "filename": "one.tsv", "location": "/one/one.tsv"},
+        {"id": node_id, "filename": "two.tsv", "location": "/two/two.tsv"},
+    ]}
+    with pytest.raises(ValueError, match=r"files\[0\].*one.tsv.*files\[1\].*two.tsv"):
+        validate_dapper_document(document)
 
 
 def test_dapper_0_2_a1_links_collection_to_its_unique_generated_gmt():
