@@ -246,6 +246,21 @@ Optional artifacts (extractor-specific):
 
 `geneset.provenance.legacy.json` preserves the compact DIG provenance graph with one collapsed extraction operation per emitted gene set, explicit input file nodes, and replay/code pointers when known. `geneset.provenance.dapper.yaml` is the corresponding DAPPER-ID-1 YAML graph: its node identifiers are DAPPER content addresses and every edge is rewritten to those identifiers.
 
+To convert an existing historical sidecar without rerunning extraction or rebuilding its graph, use its paired metadata file:
+
+```bash
+geneset-extractors provenance convert path/to/geneset.provenance.json \
+  --metadata path/to/geneset.meta.json
+```
+
+When metadata is the sibling `geneset.meta.json`, `--metadata` is optional. To convert a tree of old outputs, preferring `geneset.provenance.legacy.json` when both names are present:
+
+```bash
+geneset-extractors provenance convert path/to/outputs --recursive
+```
+
+Existing DAPPER sidecars are skipped unless `--overwrite` is supplied. Conversion reports each result and returns nonzero if any input cannot be represented by the pinned DAPPER target.
+
 Grouped `manifest.tsv` files keep the existing `path` column and now add indexing columns such as `geneset_id`, `label`, `meta_path`, `provenance_path`, and `focus_node_id` when available.
 
 All gene-set converters also accept `--provenance_overlay_json` to attach public URLs, persistent IDs, or external script/notebook/container metadata without changing assay-specific business logic.

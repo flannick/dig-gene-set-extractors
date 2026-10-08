@@ -838,14 +838,45 @@ def build_dapper_provenance(
     return {key: value for key, value in document.items() if value}
 
 
+def validate_dapper_document(document: dict[str, Any]) -> None:
+    """Validate the DAPPER-ID-1 document shape emitted by this pinned target.
+
+    DIG intentionally pins a DAPPER release/revision rather than vendoring a
+    moving upstream schema.  These checks cover the target schema's node
+    buckets, DAPPER IDs, and provenance edge references before serialization.
+    """
+    known_ids: set[str] = set()
+    for bucket, class_name in _CLASS_BY_BUCKET.items():
+        nodes = document.get(bucket, [])
+        if not isinstance(nodes, list):
+            raise ValueError(f"DAPPER schema: {bucket} must be a list")
+        for index, node in enumerate(nodes):
+            if not isinstance(node, dict):
+                raise ValueError(f"DAPPER schema: {bucket}[{index}] must be an object")
+            node_id = node.get("id")
+            if not isinstance(node_id, str) or not node_id.startswith(f"dapper:{class_name}."):
+                raise ValueError(f"DAPPER schema: {bucket}[{index}] has invalid {class_name} id")
+            if node_id in known_ids:
+                raise ValueError(f"DAPPER schema: duplicate node id {node_id}")
+            known_ids.add(node_id)
+    for bucket, predicate in (("used_edges", "prov:used"), ("was_generated_by_edges", "prov:wasGeneratedBy")):
+        for index, edge in enumerate(document.get(bucket, [])):
+            if not isinstance(edge, dict) or edge.get("predicate") != predicate:
+                raise ValueError(f"DAPPER schema: invalid {bucket}[{index}]")
+            if edge.get("subject") not in known_ids or edge.get("object") not in known_ids:
+                raise ValueError(f"DAPPER schema: {bucket}[{index}] references an unknown node")
+
+
 def write_dapper_provenance(
     path: str | Path, legacy_payload: dict[str, Any], metadata: dict[str, Any]
 ) -> Path:
     """Write a deterministic, readable DAPPER YAML sidecar."""
     output_path = Path(path)
+    document = build_dapper_provenance(legacy_payload, metadata, output_dir=output_path.parent)
+    validate_dapper_document(document)
     output_path.write_text(
         yaml.safe_dump(
-            build_dapper_provenance(legacy_payload, metadata, output_dir=output_path.parent),
+            document,
             sort_keys=False,
             default_flow_style=False,
             allow_unicode=True,
