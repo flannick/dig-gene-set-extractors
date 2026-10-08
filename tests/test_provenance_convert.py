@@ -7,6 +7,7 @@ import sys
 import yaml
 
 from geneset_extractors.core.dapper_provenance import validate_dapper_document
+from geneset_extractors.core.provenance_convert import deduplicate_legacy_provenance
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -111,3 +112,20 @@ def test_recursive_conversion_continues_after_failure(tmp_path: Path):
     assert result.returncode == 1
     assert "summary converted=1 skipped=0 failed=1" in result.stdout
     assert (tmp_path / "good" / "geneset.provenance.dapper.yaml").exists()
+
+
+def test_deduplicate_backs_up_and_removes_dapper_equivalent_file_nodes(tmp_path: Path):
+    provenance, _ = _write_old_dig_pair(tmp_path)
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    duplicate = dict(payload["nodes"][0])
+    duplicate["id"] = "source-duplicate"
+    payload["nodes"].append(duplicate)
+    payload["edges"].append({"id": "input-duplicate", "source": "source-duplicate", "target": "extract", "label": "data input"})
+    provenance.write_text(json.dumps(payload), encoding="utf-8")
+    original = provenance.read_bytes()
+    nodes, edges = deduplicate_legacy_provenance(provenance, overwrite=False)
+    assert (nodes, edges) == (1, 1)
+    assert provenance.with_name("geneset.provenance.duplicates.json").read_bytes() == original
+    corrected = json.loads(provenance.read_text(encoding="utf-8"))
+    assert len(corrected["nodes"]) == 3
+    assert len(corrected["edges"]) == 2

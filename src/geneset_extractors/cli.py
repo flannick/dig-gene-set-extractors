@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 
 from geneset_extractors.core.metadata import invocation_context, write_provenance_from_metadata
-from geneset_extractors.core.provenance_convert import conversion_targets, convert_legacy_provenance, discover_legacy_provenance
+from geneset_extractors.core.provenance_convert import (
+    conversion_targets, convert_legacy_provenance, deduplicate_legacy_provenance,
+    discover_legacy_provenance,
+)
 from geneset_extractors.core.metadata_patch import apply_metadata_patch, build_template_context
 from geneset_extractors.core.white_paper import write_white_paper_from_metadata
 from geneset_extractors.core.validate import validate_output_dir
@@ -1771,6 +1774,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_prov_discover = prov_sub.add_parser("discover", help="List legacy provenance files using DIG's conversion discovery rules.")
     p_prov_discover.add_argument("input", help="Legacy provenance JSON file or directory.")
     p_prov_discover.add_argument("--recursive", action="store_true")
+    p_prov_deduplicate = prov_sub.add_parser("deduplicate", help="Back up and remove DAPPER-equivalent duplicate File nodes.")
+    p_prov_deduplicate.add_argument("input", help="Legacy provenance JSON file or directory.")
+    p_prov_deduplicate.add_argument("--recursive", action="store_true")
+    p_prov_deduplicate.add_argument("--overwrite", action="store_true", help="Replace an existing .duplicates.json backup.")
 
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
@@ -2632,6 +2639,26 @@ def main(argv: list[str] | None = None) -> int:
                 for path in paths:
                     print(path.resolve())
                 return 0
+            if args.provenance_command == "deduplicate":
+                paths = discover_legacy_provenance(Path(args.input), args.recursive)
+                if not paths:
+                    raise ValueError(f"no legacy provenance files found under {args.input}")
+                counts = {"corrected": 0, "unchanged": 0, "failed": 0}
+                for path in paths:
+                    try:
+                        nodes, edges = deduplicate_legacy_provenance(path, overwrite=args.overwrite)
+                    except Exception as exc:
+                        counts["failed"] += 1
+                        print(f"failed {path}: {exc}", file=sys.stderr)
+                    else:
+                        if nodes:
+                            counts["corrected"] += 1
+                            print(f"corrected {path}: removed_nodes={nodes} removed_edges={edges}")
+                        else:
+                            counts["unchanged"] += 1
+                            print(f"unchanged {path}")
+                print("summary " + " ".join(f"{key}={value}" for key, value in counts.items()))
+                return 1 if counts["failed"] else 0
 
         if args.command == "metadata":
             if args.metadata_command == "patch":

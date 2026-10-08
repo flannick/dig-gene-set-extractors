@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from geneset_extractors.core.dapper_provenance import write_dapper_provenance
+from geneset_extractors.core.dapper_provenance import build_dapper_provenance, write_dapper_provenance
+from geneset_extractors.core.provenance import write_canonical_json
 
 
 LEGACY_FILENAMES = ("geneset.provenance.legacy.json", "geneset.provenance.json")
@@ -144,3 +145,75 @@ def convert_legacy_provenance(target: ConversionTarget, *, overwrite: bool) -> s
     # deterministic YAML, and optional GMT row export without editing the GMT.
     write_dapper_provenance(target.output, legacy, metadata)
     return "converted"
+
+
+def duplicates_backup_path(path: Path) -> Path:
+    return path.parent / "geneset.provenance.duplicates.json"
+
+
+def deduplicate_legacy_provenance(path: Path, *, overwrite: bool) -> tuple[int, int]:
+    """Back up and coalesce legacy File nodes identical under DIG's DAPPER map.
+
+    The existing converter is deliberately the equivalence authority: nodes
+    are coalesced only when it mints the same DAPPER class and ID. Every edge
+    is redirected to the retained node, then exact source/target/label
+    duplicates are collapsed. The original bytes remain in the companion
+    ``geneset.provenance.duplicates.json`` backup.
+    """
+    payload = _load_json(path, f"legacy provenance {path}")
+    graphs = normalize_legacy_payload(payload, path)
+    metadata_path = path.parent / "geneset.meta.json"
+    metadata = load_conversion_metadata(metadata_path) if metadata_path.is_file() else {}
+    replacements_by_graph: dict[int, dict[str, str]] = {}
+    removed_nodes = 0
+    for graph in graphs.values():
+        replacements: dict[str, str] = {}
+        nodes = graph["nodes"]
+        seen: dict[tuple[str, str], str] = {}
+        retained: list[dict[str, Any]] = []
+        for node in nodes:
+            if node.get("type") != "File":
+                retained.append(node)
+                continue
+            converted = build_dapper_provenance({"node": {"nodes": [node], "edges": []}}, metadata)
+            bucket = "c2m2_files" if converted.get("c2m2_files") else "files"
+            mapped_nodes = converted.get(bucket, [])
+            if len(mapped_nodes) != 1 or not isinstance(mapped_nodes[0].get("id"), str):
+                raise ValueError(f"{path}: could not map File node {node.get('id')!r} for deduplication")
+            key = (bucket, mapped_nodes[0]["id"])
+            node_id = str(node["id"])
+            if key in seen:
+                replacements[node_id] = seen[key]
+                removed_nodes += 1
+            else:
+                seen[key] = node_id
+                retained.append(node)
+        graph["nodes"] = retained
+        replacements_by_graph[id(graph)] = replacements
+    if not any(replacements_by_graph.values()):
+        return 0, 0
+    removed_edges = 0
+    for graph in graphs.values():
+        replacements = replacements_by_graph[id(graph)]
+        retained_edges: list[dict[str, Any]] = []
+        seen_edges: set[tuple[object, object, object]] = set()
+        for edge in graph["edges"]:
+            rewritten = dict(edge)
+            for field in ("source", "target"):
+                if rewritten.get(field) in replacements:
+                    rewritten[field] = replacements[rewritten[field]]
+            key = (rewritten.get("source"), rewritten.get("target"), rewritten.get("label"))
+            if key in seen_edges:
+                removed_edges += 1
+                continue
+            seen_edges.add(key)
+            retained_edges.append(rewritten)
+        graph["edges"] = retained_edges
+    backup = duplicates_backup_path(path)
+    if backup.exists() and not overwrite:
+        raise FileExistsError(f"duplicate provenance backup already exists: {backup}; pass --overwrite to replace it")
+    backup.write_bytes(path.read_bytes())
+    # Preserve the original layout (direct graph or graph map), only changing
+    # the redundant nodes/edges required for DAPPER compatibility.
+    write_canonical_json(path, graphs["legacy"] if "nodes" in payload or "edges" in payload else graphs)
+    return removed_nodes, removed_edges
