@@ -105,12 +105,23 @@ def _write_liger_script(*, subset_dir: Path, input_mode: str, input_path: str, m
 def _write_geneset_extractors_from_liger_script(*, subset_dir: Path, args) -> Path:
     script_path = subset_dir / "run_geneset_extractors_from_liger.sh"
     top_k = int(getattr(args, "extractor_top_k", 250))
+    gtf = str(getattr(args, "gtf", "") or "")
+    gtf_gene_id_field = str(getattr(args, "gtf_gene_id_field", "gene_id") or "gene_id")
+    gtf_source = str(getattr(args, "gtf_source", "") or "")
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
         'OUTDIR="$(pwd)/liger_out"',
         'WORKFLOW_GRAPH="$(cd ../.. && pwd)/prepare_summary.provenance_graph.json"',
+        f'GTF="{gtf}"',
+        f'GTF_GENE_ID_FIELD="{gtf_gene_id_field}"',
+        f'GTF_SOURCE="{gtf_source}"',
+        "GTF_ARGS=()",
+        'if [[ -n "$GTF" ]]; then',
+        '  GTF_ARGS+=(--gtf "$GTF" --gtf_gene_id_field "$GTF_GENE_ID_FIELD")',
+        '  if [[ -n "$GTF_SOURCE" ]]; then GTF_ARGS+=(--gtf_source "$GTF_SOURCE"); fi',
+        "fi",
         "shopt -s nullglob",
         'MATCHES=( "$OUTDIR"/*/gene_loadings.tsv )',
         "shopt -u nullglob",
@@ -131,7 +142,8 @@ def _write_geneset_extractors_from_liger_script(*, subset_dir: Path, args) -> Pa
         "    --score_transform positive \\",
         "    --select top_k \\",
         f"    --top_k {top_k} \\",
-        '    --dataset_label "$PROGRAM_LABEL"',
+        '    --dataset_label "$PROGRAM_LABEL" \\',
+        '    "${GTF_ARGS[@]}"',
         "done",
     ]
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -186,6 +198,9 @@ def _write_liger_prepare_provenance_graph(
             "liger_min_umi": float(getattr(args, "liger_min_umi", 0.0) or 0.0),
             "liger_max_mito": float(getattr(args, "liger_max_mito", 0.0) or 0.0),
             "extractor_top_k": int(getattr(args, "extractor_top_k", 0) or 0),
+            "gtf": getattr(args, "gtf", None),
+            "gtf_gene_id_field": getattr(args, "gtf_gene_id_field", None),
+            "gtf_source": getattr(args, "gtf_source", None),
             "organism": str(getattr(args, "organism", "")),
             "genome_build": str(getattr(args, "genome_build", "")),
         },

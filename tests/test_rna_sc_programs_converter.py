@@ -152,6 +152,30 @@ def test_rna_sc_programs_liger_convenience_parser(tmp_path: Path):
     assert (out_dir / "genesets.gmt").exists()
 
 
+def test_read_program_loadings_accepts_historical_r_row_name_header(tmp_path: Path):
+    path = tmp_path / "historical_liger_loadings.tsv"
+    path.write_text(
+        "\tFactor_1\tFactor_2\tFactor_3\n"
+        "ENSG000001\t0.1\t0.2\t0.3\n"
+        "ENSG000002\t0.4\t0.5\t0.6\n",
+        encoding="utf-8",
+    )
+
+    programs, summary = read_program_loadings(
+        path=path,
+        loadings_format="wide_genes_by_program",
+        gene_id_column="gene_id",
+        program_id_column="program_id",
+        loading_column="loading",
+        transpose=False,
+    )
+
+    assert set(programs) == {"Factor_1", "Factor_2", "Factor_3"}
+    assert programs["Factor_1"]["ENSG000001"] == pytest.approx(0.1)
+    assert programs["Factor_3"]["ENSG000002"] == pytest.approx(0.6)
+    assert summary["used_gene_column"] == ""
+
+
 def test_rna_sc_programs_cnmf_programs_by_gene_orientation(tmp_path: Path):
     args = Args()
     args.out_dir = str(tmp_path / "rna_sc_programs_cnmf_programs_by_gene")

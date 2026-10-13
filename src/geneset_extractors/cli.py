@@ -908,6 +908,9 @@ def _add_scrna_liger_prepare_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--liger_min_umi", type=float, default=500.0)
     parser.add_argument("--liger_max_mito", type=float, default=5.0)
     parser.add_argument("--extractor_top_k", type=int, default=250)
+    parser.add_argument("--gtf", help="Optional GTF used to annotate LIGER feature IDs with gene symbols.")
+    parser.add_argument("--gtf_gene_id_field", default="gene_id")
+    parser.add_argument("--gtf_source")
 
 
 def _add_cnmf_select_k_flags(parser: argparse.ArgumentParser) -> None:

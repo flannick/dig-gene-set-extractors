@@ -79,6 +79,8 @@ load_matrix_mode <- function(input_path, meta_path) {
 
 load_h5ad_mode <- function(input_path) {
   adata <- anndata::read_h5ad(input_path)
+  feature_ids <- as.character(py_to_r(adata$var_names$to_list()))
+  cell_ids <- as.character(py_to_r(adata$obs_names$to_list()))
   raw_x <- adata$X
   if (inherits(raw_x, "Matrix")) {
     counts <- methods::as(Matrix::Matrix(raw_x, sparse = TRUE), "CsparseMatrix")
@@ -89,12 +91,23 @@ load_h5ad_mode <- function(input_path) {
     counts <- t(as.matrix(raw_x))
     counts <- methods::as(Matrix::Matrix(counts, sparse = TRUE), "dgCMatrix")
   }
+  if (length(feature_ids) != nrow(counts) || anyNA(feature_ids) || any(!nzchar(feature_ids)) || anyDuplicated(feature_ids)) {
+    stop("h5ad var_names must contain one unique, non-empty feature ID per matrix row")
+  }
+  if (length(cell_ids) != ncol(counts) || anyNA(cell_ids) || any(!nzchar(cell_ids)) || anyDuplicated(cell_ids)) {
+    stop("h5ad obs_names must contain one unique, non-empty cell ID per matrix column")
+  }
+  rownames(counts) <- feature_ids
+  colnames(counts) <- cell_ids
   meta <- py_to_r(adata$obs)
   meta <- as.data.frame(meta, stringsAsFactors = FALSE)
   if (nrow(meta) == 0) {
-    meta <- data.frame(row.names = colnames(counts))
+    meta <- data.frame(row.names = cell_ids)
   }
-  rownames(meta) <- colnames(counts)
+  if (nrow(meta) != length(cell_ids)) {
+    stop("h5ad obs row count does not match the expression matrix cell count")
+  }
+  rownames(meta) <- cell_ids
   CreateSeuratObject(counts = counts, meta.data = meta)
 }
 
@@ -233,11 +246,33 @@ write_liger_outputs <- function(liger_obj, output_dir, cell_type_label, top_n_ge
   ensure_dir(ct_dir)
 
   W <- liger_obj@W
-  write.table(W, file = file.path(ct_dir, "gene_loadings.tsv"), sep = "\t", quote = FALSE)
+  if (is.null(rownames(W)) || anyNA(rownames(W)) || any(!nzchar(rownames(W))) || anyDuplicated(rownames(W))) {
+    stop("LIGER gene loading matrix must have unique, non-empty gene IDs")
+  }
+  factor_ids <- paste0("Factor_", seq_len(ncol(W)))
+  colnames(W) <- factor_ids
+  write.table(
+    data.frame(gene_id = rownames(W), W, check.names = FALSE),
+    file = file.path(ct_dir, "gene_loadings.tsv"),
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE
+  )
 
   liger_obj_norm <- quantileNorm(liger_obj)
   Hnorm <- liger_obj_norm@H.norm
-  write.table(Hnorm, file = file.path(ct_dir, "cell_scores.tsv"), sep = "\t", quote = FALSE)
+  if (nrow(Hnorm) != length(factor_ids) || is.null(colnames(Hnorm)) ||
+      anyNA(colnames(Hnorm)) || any(!nzchar(colnames(Hnorm))) || anyDuplicated(colnames(Hnorm))) {
+    stop("LIGER normalized cell scores must have one row per factor and unique cell IDs")
+  }
+  rownames(Hnorm) <- factor_ids
+  write.table(
+    data.frame(factor_id = rownames(Hnorm), Hnorm, check.names = FALSE),
+    file = file.path(ct_dir, "cell_scores.tsv"),
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE
+  )
 
   programs <- apply(W, 2, function(w) names(sort(w, decreasing = TRUE))[seq_len(min(length(w), top_n_genes))])
   write.table(

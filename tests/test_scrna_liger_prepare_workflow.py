@@ -45,6 +45,9 @@ def _make_args(out_dir: Path) -> SimpleNamespace:
         liger_min_umi=0.0,
         liger_max_mito=100.0,
         extractor_top_k=250,
+        gtf=None,
+        gtf_gene_id_field="gene_id",
+        gtf_source=None,
     )
 
 
@@ -81,6 +84,19 @@ def test_scrna_liger_prepare_creates_split_subsets_and_scripts(tmp_path: Path):
     assert summary["n_subsets"] == 2
     assert summary["prepare_provenance_graph_path"] == "prepare_summary.provenance_graph.json"
 
+
+def test_scrna_liger_prepare_forwards_gtf_to_conversion_script(tmp_path: Path):
+    args = _make_args(tmp_path / "prep_gtf")
+    args.gtf = "/refs/genes.gtf.gz"
+    args.gtf_gene_id_field = "gene_id"
+    args.gtf_source = "gencode_v47"
+    run_scrna_liger_prepare(args)
+
+    script = next((tmp_path / "prep_gtf" / "subsets").glob("*/run_geneset_extractors_from_liger.sh"))
+    text = script.read_text(encoding="utf-8")
+    assert 'GTF="/refs/genes.gtf.gz"' in text
+    assert '--gtf "$GTF"' in text
+    assert '--gtf_source "$GTF_SOURCE"' in text
 
 def test_scrna_liger_prepare_cli_entrypoint(tmp_path: Path):
     out_dir = tmp_path / "prep_cli"
