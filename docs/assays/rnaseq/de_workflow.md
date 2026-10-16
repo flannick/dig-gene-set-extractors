@@ -2,6 +2,8 @@
 
 `geneset-extractors workflows rna_de_prepare` is the upstream RNA differential-expression workflow.
 
+For no-login GEO bulk studies, first use `workflows geo_bulk_prepare` to standardize a downloaded count matrix, MINiML archive, and gene annotation table. Pass its `geo_bulk_inputs.provenance_graph.json` back to this workflow with `--upstream_provenance_graph_json` so the final gene sets retain lineage to the original GEO URLs.
+
 It is not a new extractor. It prepares standardized differential-expression output that can be consumed directly by the existing extraction layer:
 
 - `convert rna_deg`

@@ -19,6 +19,9 @@ from geneset_extractors.core.provenance import (
     build_edges,
     build_file_node,
     build_output_file_record,
+    flatten_graph_payload,
+    load_graph_payload,
+    merge_graph_components,
     mirror_graph_payload,
     get_runtime_context,
     stable_operation_id,
@@ -255,6 +258,7 @@ def _write_deg_long_provenance_graph(
     batch_cols: list[str],
     repeated_measures: bool,
     approximate_repeated_measures: bool,
+    upstream_provenance_graph_path: str | None,
 ) -> Path:
     runtime_ctx = get_runtime_context()
     mirror_local_prefix = runtime_ctx.provenance_mirror_local_prefix if runtime_ctx is not None else None
@@ -330,13 +334,18 @@ def _write_deg_long_provenance_graph(
         drc_url=REPO_URL,
     )
     graph_path = output_dir / "deg_long.provenance_graph.json"
+    current_edges = build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes)
+    upstream_nodes: list[dict[str, Any]] = []
+    upstream_edges: list[dict[str, Any]] = []
+    if upstream_provenance_graph_path:
+        upstream_payload = load_graph_payload(upstream_provenance_graph_path)
+        upstream_nodes, upstream_edges = flatten_graph_payload(upstream_payload)
+    merged_nodes, merged_edges = merge_graph_components(
+        [upstream_nodes, input_nodes, [operation], output_nodes],
+        [upstream_edges, current_edges],
+    )
     payload = mirror_graph_payload(
-        {
-            "deg_long": {
-                "nodes": input_nodes + [operation] + output_nodes,
-                "edges": build_edges(input_nodes, str(operation["id"]), str(deg_long_node["id"]), extra_output_nodes),
-            }
-        },
+        {"deg_long": {"nodes": merged_nodes, "edges": merged_edges}},
         mirror_local_prefix,
         mirror_remote_prefix,
     )
@@ -789,6 +798,7 @@ def run_de_prepare(
     extractor_gmt_topk_list: str,
     extractor_gmt_min_genes: int,
     extractor_gmt_max_genes: int,
+    upstream_provenance_graph_path: str | None = None,
 ) -> dict[str, Any]:
     output_dir = Path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1218,6 +1228,7 @@ def run_de_prepare(
         batch_cols=batch_cols,
         repeated_measures=repeated_measures,
         approximate_repeated_measures=approximate_repeated_measures,
+        upstream_provenance_graph_path=upstream_provenance_graph_path,
     )
 
     extractor_result: dict[str, Any] | None = None
@@ -1268,6 +1279,9 @@ def run_de_prepare(
             gmt_signed_labels="pos_neg",
             gmt_emit_abs=False,
             gmt_source="full",
+            gmt_mode="standard",
+            gmt_top_n_per_direction=None,
+            gmt_sort_by="adj.P.Val",
             emit_small_gene_sets=False,
             provenance_overlay_json=None,
             padj_max=extractor_padj_max,

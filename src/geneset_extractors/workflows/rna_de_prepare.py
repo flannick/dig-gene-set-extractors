@@ -71,4 +71,5 @@ def run(args) -> dict[str, object]:
         extractor_gmt_topk_list=getattr(args, "extractor_gmt_topk_list", "200"),
         extractor_gmt_min_genes=int(getattr(args, "extractor_gmt_min_genes", 100)),
         extractor_gmt_max_genes=int(getattr(args, "extractor_gmt_max_genes", 500)),
+        upstream_provenance_graph_path=getattr(args, "upstream_provenance_graph_json", None),
     )
