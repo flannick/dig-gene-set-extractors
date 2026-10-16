@@ -89,7 +89,9 @@
     {"name": "gmt_mass_list", "type": "string", "default": "", "help": "Comma-separated mass GMT plans"},
     {"name": "gmt_min_genes", "type": "integer", "default": 100, "help": "Minimum genes per GMT set"},
     {"name": "gmt_max_genes", "type": "integer", "default": 500, "help": "Maximum genes per GMT set"},
-    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes with warning"}
+    {"name": "emit_small_gene_sets", "type": "boolean", "default": false, "help": "Emit sets below gmt_min_genes with warning"},
+    {"name": "gmt_name_style", "type": "string", "default": "verbose", "enum": ["verbose", "publish"], "help": "publish = clean '<signature>_<Variant>_<signed>' GMT names with no converter/signature/ptm_type/score_mode scaffold; verbose = legacy scaffolded names (default, backward compatible)"},
+    {"name": "gmt_signed_labels", "type": "string", "default": "pos,neg", "help": "Comma pair for signed split suffixes used when gmt_name_style=publish, e.g. 'up,dn'"}
   ],
   "outputs": [
     {"name": "geneset.tsv", "description": "Selected PTM-derived gene program for a single contrast"},

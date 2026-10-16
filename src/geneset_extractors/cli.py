@@ -689,6 +689,17 @@ def _add_ptm_site_matrix_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--normalize", choices=["none", "l1", "within_set_l1"], default="within_set_l1")
     parser.add_argument("--emit_full", type=_parse_bool, default=True)
     _add_gmt_flags(parser)
+    parser.add_argument(
+        "--gmt_name_style",
+        choices=["verbose", "publish"],
+        default="verbose",
+        help="publish = clean '<signature>_<Variant>_<signed>' GMT names; verbose = legacy scaffold",
+    )
+    parser.add_argument(
+        "--gmt_signed_labels",
+        default="pos,neg",
+        help="comma pair for signed split suffixes, e.g. 'up,dn'",
+    )
     parser.set_defaults(
         emit_gmt=True,
         gmt_split_signed=True,
@@ -1779,6 +1790,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prov_deduplicate.add_argument("--recursive", action="store_true")
     p_prov_deduplicate.add_argument("--overwrite", action="store_true", help="Replace an existing .duplicates.json backup.")
 
+    p_prov_overlay = prov_sub.add_parser("overlay")
+    p_prov_overlay.add_argument("--pdc_file_manifest_tsv", required=True)
+    p_prov_overlay.add_argument("--prepared_dir", required=True)
+    p_prov_overlay.add_argument("--out_dir", required=True)
+    p_prov_overlay.add_argument("--operation_script_url")
+    p_prov_overlay.add_argument("--operation_description")
+
     p_metadata = sub.add_parser("metadata")
     metadata_sub = p_metadata.add_subparsers(dest="metadata_command", required=True)
     p_meta_patch = metadata_sub.add_parser("patch")
@@ -2659,6 +2677,24 @@ def main(argv: list[str] | None = None) -> int:
                             print(f"unchanged {path}")
                 print("summary " + " ".join(f"{key}={value}" for key, value in counts.items()))
                 return 1 if counts["failed"] else 0
+
+            if args.provenance_command == "overlay":
+                from geneset_extractors.extractors.proteomics import pdc_provenance as _pdc
+
+                rows = _pdc.read_manifest_tsv(args.pdc_file_manifest_tsv)
+                op = {}
+                if args.operation_script_url:
+                    op["script_url"] = args.operation_script_url
+                if args.operation_description:
+                    op["description"] = args.operation_description
+                result = _pdc.write_overlay(
+                    manifest_rows=rows,
+                    prepared_dir=args.prepared_dir,
+                    operation_meta=op,
+                    out_dir=args.out_dir,
+                )
+                print(json.dumps({"status": "ok", **{k: str(v) for k, v in result.items()}}))
+                return 0
 
         if args.command == "metadata":
             if args.metadata_command == "patch":

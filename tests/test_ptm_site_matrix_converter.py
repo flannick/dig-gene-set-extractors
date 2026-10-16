@@ -178,6 +178,49 @@ def test_ptm_site_matrix_protein_adjustment_changes_scores(tmp_path: Path):
     assert sub_scores["G_KCNN4"] != none_scores["G_KCNN4"]
 
 
+def test_ptm_site_matrix_gene_level_proteome_requires_gene_join(tmp_path: Path):
+    """Gene-level proteome reports (e.g. CPTAC CDAP) carry no per-row protein_accession.
+
+    With the default accession-based join, phospho rows key on their RefSeq
+    protein_accession while gene-level proteome rows (empty accession) fall back to
+    gene -> disjoint key spaces -> 0 sites adjusted -> ``subtract`` collapses onto
+    ``none``. Joining on gene_symbol restores the protein-abundance subtraction.
+    Regression guard for the CPTAC/PDC pipeline no-op (subtract == none).
+    """
+    resources_dir = tmp_path / "resources"
+    _copy_resources(resources_dir)
+
+    def _run(out_name: str, *, protein_adjustment: str, protein_accession_column):
+        args = Args()
+        args.out_dir = str(tmp_path / out_name)
+        args.resources_dir = str(resources_dir)
+        args.protein_matrix_tsv = "tests/data/toy_protein_matrix_gene_level.tsv"
+        args.protein_adjustment = protein_adjustment
+        args.protein_accession_column = protein_accession_column
+        ptm_site_matrix.run(args)
+        return Path(args.out_dir)
+
+    def _scores(out_dir: Path) -> dict[str, float]:
+        with (out_dir / "geneset.full.tsv").open("r", encoding="utf-8") as fh:
+            return {row["gene_id"]: float(row["score"]) for row in csv.DictReader(fh, delimiter="\t")}
+
+    def _n_adjusted(out_dir: Path) -> int:
+        meta = json.loads((out_dir / "geneset.meta.json").read_text(encoding="utf-8"))
+        return int(meta["summary"]["n_sites_with_protein_adjustment"])
+
+    # Default accession join: proteome accession is empty -> 0 sites adjusted -> subtract == none.
+    none_default = _run("gl_none_default", protein_adjustment="none", protein_accession_column=None)
+    sub_default = _run("gl_sub_default", protein_adjustment="subtract", protein_accession_column=None)
+    assert _n_adjusted(sub_default) == 0
+    assert _scores(sub_default) == _scores(none_default)
+
+    # Gene-symbol join: proteome contrast is matched -> sites adjusted -> subtract != none.
+    none_gene = _run("gl_none_gene", protein_adjustment="none", protein_accession_column="gene_symbol")
+    sub_gene = _run("gl_sub_gene", protein_adjustment="subtract", protein_accession_column="gene_symbol")
+    assert _n_adjusted(sub_gene) > 0
+    assert _scores(sub_gene) != _scores(none_gene)
+
+
 def test_ptm_site_matrix_default_compare_if_protein_emits_grouped_variants(tmp_path: Path):
     resources_dir = tmp_path / "resources"
     _copy_resources(resources_dir)

@@ -87,6 +87,9 @@ def _infer_upstream_graph_from_metadata_payload(payload: dict[str, Any]) -> str 
     if converter_name in {"rna_deg", "rna_deg_multi"}:
         deg_path = _find_input_file_path(payload, ("deg_tsv",))
         return _resolve_deg_upstream_graph(deg_path) if deg_path is not None else None
+    if converter_name == "ptm_site_matrix":
+        table_path = _find_input_file_path(payload, ("ptm_matrix_tsv",))
+        return _resolve_table_upstream_graph(table_path) if table_path is not None else None
     return None
 
 
