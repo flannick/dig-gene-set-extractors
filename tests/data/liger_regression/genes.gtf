@@ -1,0 +1,9 @@
+##description: Tiny synthetic GTF for LIGER regression testing
+chr1	test	gene	100	199	.	+	.	gene_id "ENSG000001"; gene_name "ALPHA1"; gene_type "protein_coding";
+chr1	test	gene	300	399	.	+	.	gene_id "ENSG000002"; gene_name "BETA1"; gene_type "protein_coding";
+chr1	test	gene	500	599	.	+	.	gene_id "ENSG000003"; gene_name "ALPHA2"; gene_type "protein_coding";
+chr1	test	gene	700	799	.	+	.	gene_id "ENSG000004"; gene_name "BETA2"; gene_type "protein_coding";
+chr1	test	gene	900	999	.	+	.	gene_id "ENSG000005"; gene_name "SHARED1"; gene_type "protein_coding";
+chr1	test	gene	1100	1199	.	+	.	gene_id "ENSG000006"; gene_name "BETA3"; gene_type "protein_coding";
+chr1	test	gene	1300	1399	.	+	.	gene_id "ENSG000007"; gene_name "ALPHA3"; gene_type "protein_coding";
+chr1	test	gene	1500	1599	.	+	.	gene_id "ENSG000008"; gene_name "BETA4"; gene_type "protein_coding";

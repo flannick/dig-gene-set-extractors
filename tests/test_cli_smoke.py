@@ -17,6 +17,13 @@ def _run(*args: str):
     )
 
 
+def test_cli_help_builds_complete_parser():
+    p = _run("--help")
+    assert p.returncode == 0
+    assert "usage:" in p.stdout
+    assert "workflows" in p.stdout
+
+
 def test_cli_list():
     p = _run("list")
     assert p.returncode == 0
