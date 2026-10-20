@@ -261,13 +261,13 @@ write_liger_outputs <- function(liger_obj, output_dir, cell_type_label, top_n_ge
 
   liger_obj_norm <- quantileNorm(liger_obj)
   Hnorm <- liger_obj_norm@H.norm
-  if (nrow(Hnorm) != length(factor_ids) || is.null(colnames(Hnorm)) ||
-      anyNA(colnames(Hnorm)) || any(!nzchar(colnames(Hnorm))) || anyDuplicated(colnames(Hnorm))) {
-    stop("LIGER normalized cell scores must have one row per factor and unique cell IDs")
+  if (ncol(Hnorm) != length(factor_ids) || is.null(rownames(Hnorm)) ||
+      anyNA(rownames(Hnorm)) || any(!nzchar(rownames(Hnorm))) || anyDuplicated(rownames(Hnorm))) {
+    stop("LIGER normalized cell scores must have one column per factor and unique cell IDs")
   }
-  rownames(Hnorm) <- factor_ids
+  colnames(Hnorm) <- factor_ids
   write.table(
-    data.frame(factor_id = rownames(Hnorm), Hnorm, check.names = FALSE),
+    data.frame(cell_id = rownames(Hnorm), Hnorm, check.names = FALSE),
     file = file.path(ct_dir, "cell_scores.tsv"),
     sep = "\t",
     quote = FALSE,
@@ -294,7 +294,7 @@ write_liger_outputs <- function(liger_obj, output_dir, cell_type_label, top_n_ge
   write.table(stability_df, file = file.path(ct_dir, "k_stability.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
 
   factor_importance_norm <- sapply(seq_len(ncol(W)), function(i) {
-    sqrt(sum(W[, i]^2)) * sqrt(sum(Hnorm[i, ]^2))
+    sqrt(sum(W[, i]^2)) * sqrt(sum(Hnorm[, i]^2))
   })
   names(factor_importance_norm) <- colnames(W)
   write.table(
