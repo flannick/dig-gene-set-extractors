@@ -1,6 +1,8 @@
 import csv
 import json
+import os
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 from geneset_extractors.cli import main
@@ -95,8 +97,37 @@ def test_scrna_liger_prepare_forwards_gtf_to_conversion_script(tmp_path: Path):
     script = next((tmp_path / "prep_gtf" / "subsets").glob("*/run_geneset_extractors_from_liger.sh"))
     text = script.read_text(encoding="utf-8")
     assert 'GTF="/refs/genes.gtf.gz"' in text
-    assert '--gtf "$GTF"' in text
-    assert '--gtf_source "$GTF_SOURCE"' in text
+    assert 'CONVERT_CMD+=(--gtf "$GTF" --gtf_gene_id_field "$GTF_GENE_ID_FIELD")' in text
+    assert 'CONVERT_CMD+=(--gtf_source "$GTF_SOURCE")' in text
+    assert '"${CONVERT_CMD[@]}"' in text
+
+
+def test_generated_conversion_script_runs_without_optional_gtf(tmp_path: Path):
+    out_dir = tmp_path / "prep_no_gtf"
+    run_scrna_liger_prepare(_make_args(out_dir))
+    subset_dir = next((out_dir / "subsets").iterdir())
+    loadings = subset_dir / "liger_out" / "all" / "gene_loadings.tsv"
+    loadings.parent.mkdir(parents=True)
+    loadings.write_text("gene_id\tFactor_1\nGENE1\t1.0\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_converter = fake_bin / "geneset-extractors"
+    fake_converter.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    fake_converter.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", "run_geneset_extractors_from_liger.sh"],
+        cwd=subset_dir,
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "rna_sc_programs" in completed.stdout
+    assert "--gtf" not in completed.stdout
+
 
 def test_scrna_liger_prepare_cli_entrypoint(tmp_path: Path):
     out_dir = tmp_path / "prep_cli"
